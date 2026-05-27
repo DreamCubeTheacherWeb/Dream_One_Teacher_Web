@@ -47,7 +47,10 @@ const TeacherManager = () => {
         setInvites(invitesRes.data || []);
 
         const iMap = {};
-        (instructorsRes.data || []).forEach(inst => { iMap[inst.user_id] = inst; });
+        (instructorsRes.data || []).forEach(inst => {
+            iMap[inst.id] = inst;  // by instructor.id 確保都進來
+            if (inst.user_id) iMap[`user:${inst.user_id}`] = inst;  // 兼容舊查法(user_id → instructor)
+        });
         setInstructorMap(iMap);
 
         const dbMentors = fetchedUsers.map(u => u.mentor_name).filter(Boolean);
@@ -237,16 +240,29 @@ const TeacherManager = () => {
     const mentorInvites = invites.filter(i => i.role === 'mentor');
     const adminInvites = invites.filter(i => i.role === 'admin');
 
+    // 把 instructors 沒對應 user 的當「未登入講師」加進列表
+    const orphanInstructors = Object.values(instructorMap || {}).filter(i => !i.user_id);
+    const allInstructors = Object.values(instructorMap || {});
+    const orphanActive = orphanInstructors.filter(i => i.employment_status === 'active');
+    const inactiveInstructors = allInstructors.filter(i => i.employment_status === 'cancelled');
+
     const getFilteredList = () => {
-        let userList, inviteList;
-        if (tab === 'pending') { userList = pendingUsers; inviteList = []; }
-        else if (tab === 'teacher') { userList = teacherUsers; inviteList = teacherInvites; }
+        let userList = [], inviteList = [], instructorList = [];
+        if (tab === 'pending') { userList = pendingUsers; }
+        else if (tab === 'teacher') { userList = teacherUsers; inviteList = teacherInvites; instructorList = orphanActive; }
         else if (tab === 'mentor') { userList = mentorUsers; inviteList = mentorInvites; }
-        else { userList = adminUsers; inviteList = adminInvites; }
+        else if (tab === 'admin') { userList = adminUsers; inviteList = adminInvites; }
+        else if (tab === 'inactive') { instructorList = inactiveInstructors; }
 
         const combined = [
             ...userList.map(u => ({ ...u, _type: 'user' })),
             ...inviteList.map(i => ({ ...i, _type: 'invite' })),
+            ...instructorList.map(i => ({
+                ...i,
+                _type: 'instructor',
+                name: i.full_name,
+                email: i.email_primary,
+            })),
         ];
 
         if (!search) return combined;
@@ -346,9 +362,10 @@ const TeacherManager = () => {
                 <div className="flex gap-2 flex-wrap">
                     {[
                         { key: 'pending', label: '待審核', count: pendingUsers.length, activeColor: 'bg-amber-500' },
-                        { key: 'teacher', label: '講師', count: teacherUsers.length + teacherInvites.length, activeColor: 'bg-blue-600' },
+                        { key: 'teacher', label: '講師', count: teacherUsers.length + teacherInvites.length + orphanActive.length, activeColor: 'bg-blue-600' },
                         { key: 'mentor', label: '輔導員', count: mentorUsers.length + mentorInvites.length, activeColor: 'bg-teal-600' },
                         { key: 'admin', label: '管理員', count: adminUsers.length + adminInvites.length, activeColor: 'bg-indigo-600' },
+                        { key: 'inactive', label: '未啟用講師', count: inactiveInstructors.length, activeColor: 'bg-slate-500' },
                     ].map(t => (
                         <button key={t.key} onClick={() => { setTab(t.key); setExpandedId(null); }}
                             className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
@@ -397,11 +414,13 @@ const TeacherManager = () => {
                     <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400">
                         {tab === 'pending' ? '目前沒有待審核的使用者' :
                          tab === 'teacher' ? '目前沒有講師' :
-                         tab === 'mentor' ? '目前沒有輔導員' : '目前沒有管理員'}
+                         tab === 'mentor' ? '目前沒有輔導員' :
+                         tab === 'admin' ? '目前沒有管理員' :
+                         '目前沒有未啟用講師'}
                     </div>
                 )}
                 {filteredList.map(item => {
-                    const inst = item._type === 'user' ? instructorMap[item.id] : null;
+                    const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : null;
                     const isExpanded = showDetail && expandedId === `${item._type}-${item.id}`;
                     return (
                         <div key={`m-${item._type}-${item.id}`} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -426,10 +445,28 @@ const TeacherManager = () => {
                                                 <CheckCircle className="w-4 h-4" />
                                             </button>
                                         )}
-                                        <button onClick={() => item._type === 'user' ? handleDeleteUser(item) : handleDeleteInvite(item.id)}
-                                            className="p-1.5 text-slate-400 hover:text-red-500" title="移除">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        {item._type === 'instructor' && (
+                                            <button
+                                                onClick={async () => {
+                                                    const newStatus = item.employment_status === 'cancelled' ? 'active' : 'cancelled';
+                                                    const action = newStatus === 'cancelled' ? '停用' : '啟用';
+                                                    if (!window.confirm(`確定要${action}「${item.name}」嗎？`)) return;
+                                                    const { error } = await supabase.from('instructors').update({ employment_status: newStatus }).eq('id', item.id);
+                                                    if (error) { alert('操作失敗：' + error.message); return; }
+                                                    fetchData();
+                                                }}
+                                                className={`p-1.5 ${item.employment_status === 'cancelled' ? 'text-emerald-500 hover:text-emerald-700' : 'text-slate-400 hover:text-rose-500'}`}
+                                                title={item.employment_status === 'cancelled' ? '啟用' : '停用'}
+                                            >
+                                                {item.employment_status === 'cancelled' ? <CheckCircle className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+                                            </button>
+                                        )}
+                                        {item._type !== 'instructor' && (
+                                            <button onClick={() => item._type === 'user' ? handleDeleteUser(item) : handleDeleteInvite(item.id)}
+                                                className="p-1.5 text-slate-400 hover:text-red-500" title="移除">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                                 {/* Email */}
@@ -450,7 +487,7 @@ const TeacherManager = () => {
                                             <option value="mentor">輔導員</option>
                                             <option value="admin">管理員</option>
                                         </select>
-                                    ) : (
+                                    ) : item._type === 'invite' ? (
                                         <select value={item.role} onChange={e => handleInviteRoleChange(item.id, e.target.value)}
                                             className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none ${
                                                 item.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
@@ -461,6 +498,10 @@ const TeacherManager = () => {
                                             <option value="mentor">輔導員</option>
                                             <option value="admin">管理員</option>
                                         </select>
+                                    ) : (
+                                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${item.employment_status === 'cancelled' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+                                            {item.employment_status === 'cancelled' ? '已停用' : '未登入講師'}
+                                        </span>
                                     )}
                                     {/* 講師等級 */}
                                     {item._type === 'user' && (
@@ -564,7 +605,7 @@ const TeacherManager = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {filteredList.map(item => {
-                            const inst = item._type === 'user' ? instructorMap[item.id] : null;
+                            const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : null;
                             const isExpanded = showDetail && expandedId === `${item._type}-${item.id}`;
                             const totalCols = 5 + (showMentorCol ? 1 : 0) + 1;
                             return (
@@ -590,7 +631,7 @@ const TeacherManager = () => {
                                                     <option value="mentor">輔導員</option>
                                                     <option value="admin">管理員</option>
                                                 </select>
-                                            ) : (
+                                            ) : item._type === 'invite' ? (
                                                 <select value={item.role} onChange={e => handleInviteRoleChange(item.id, e.target.value)}
                                                     className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none cursor-pointer ${
                                                         item.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
@@ -601,6 +642,10 @@ const TeacherManager = () => {
                                                     <option value="mentor">輔導員</option>
                                                     <option value="admin">管理員</option>
                                                 </select>
+                                            ) : (
+                                                <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${item.employment_status === 'cancelled' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+                                                    {item.employment_status === 'cancelled' ? '已停用' : '未登入講師'}
+                                                </span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
@@ -674,10 +719,28 @@ const TeacherManager = () => {
                                                         <CheckCircle className="w-4 h-4" />
                                                     </button>
                                                 )}
-                                                <button onClick={() => item._type === 'user' ? handleDeleteUser(item) : handleDeleteInvite(item.id)}
-                                                    className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="移除">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                {item._type === 'instructor' && (
+                                                    <button
+                                                        onClick={async () => {
+                                                            const newStatus = item.employment_status === 'cancelled' ? 'active' : 'cancelled';
+                                                            const action = newStatus === 'cancelled' ? '停用' : '啟用';
+                                                            if (!window.confirm(`確定要${action}「${item.name}」嗎？`)) return;
+                                                            const { error } = await supabase.from('instructors').update({ employment_status: newStatus }).eq('id', item.id);
+                                                            if (error) { alert('操作失敗：' + error.message); return; }
+                                                            fetchData();
+                                                        }}
+                                                        className={`p-2 transition-colors ${item.employment_status === 'cancelled' ? 'text-emerald-500 hover:text-emerald-700' : 'text-slate-400 hover:text-rose-500'}`}
+                                                        title={item.employment_status === 'cancelled' ? '啟用' : '停用'}
+                                                    >
+                                                        {item.employment_status === 'cancelled' ? <CheckCircle className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+                                                    </button>
+                                                )}
+                                                {item._type !== 'instructor' && (
+                                                    <button onClick={() => item._type === 'user' ? handleDeleteUser(item) : handleDeleteInvite(item.id)}
+                                                        className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="移除">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

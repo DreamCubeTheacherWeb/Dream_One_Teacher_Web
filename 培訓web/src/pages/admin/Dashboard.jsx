@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
     Plus, Edit2, Trash2, Eye, EyeOff, LayoutGrid, Users,
     ClipboardCheck, UserCog, BarChart3, Megaphone, ChevronRight,
-    ContactRound, BookOpen, GraduationCap, Settings, Shield, FileSignature
+    ContactRound, BookOpen, GraduationCap, Settings, Shield, FileSignature, Wallet
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -117,6 +117,7 @@ const AdminDashboard = () => {
                     <NavCard to="/admin/assignments" icon={ClipboardCheck} title="作業審核中心" desc="查看與回覆講師繳交的作業" color="amber" />
                     <NavCard to="/admin/progress" icon={BarChart3} title="培訓進度總覽" desc="檢視所有講師學習進度與狀態" color="emerald" />
                     <NavCard to="/admin/instructors" icon={ContactRound} title="講師資料總覽" desc="查看所有講師個人資料與文件" color="purple" />
+                    <NavCard to="/admin/salary" icon={Wallet} title="薪資登記中心" desc="登記每月薪資、查看異常與付款狀態" color="rose" />
                 </div>
             </div>
 
@@ -278,6 +279,8 @@ const NavCard = ({ to, icon: Icon, title, desc, color }) => {
         red: { bg: 'bg-red-50', text: 'text-red-500', hoverBg: 'group-hover:bg-red-500', hoverBorder: 'hover:border-red-300', hoverArrow: 'group-hover:text-red-400' },
         purple: { bg: 'bg-purple-50', text: 'text-purple-600', hoverBg: 'group-hover:bg-purple-600', hoverBorder: 'hover:border-purple-300', hoverArrow: 'group-hover:text-purple-400' },
         amber: { bg: 'bg-amber-50', text: 'text-amber-600', hoverBg: 'group-hover:bg-amber-600', hoverBorder: 'hover:border-amber-300', hoverArrow: 'group-hover:text-amber-400' },
+        rose: { bg: 'bg-rose-50', text: 'text-rose-600', hoverBg: 'group-hover:bg-rose-600', hoverBorder: 'hover:border-rose-300', hoverArrow: 'group-hover:text-rose-400' },
+        violet: { bg: 'bg-violet-50', text: 'text-violet-600', hoverBg: 'group-hover:bg-violet-600', hoverBorder: 'hover:border-violet-300', hoverArrow: 'group-hover:text-violet-400' },
     };
     const c = colorMap[color] || colorMap.blue;
 

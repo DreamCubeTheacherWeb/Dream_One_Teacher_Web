@@ -18,6 +18,11 @@ import InstructorList from './pages/admin/InstructorList';
 import ContractSigningFlow from './pages/ContractSigningFlow';
 import ContractView from './pages/ContractView';
 import ContractAdmin from './pages/admin/ContractAdmin';
+import SalaryRegister from './pages/admin/SalaryRegister';
+import MySalary from './pages/MySalary';
+import MySalaryNew from './pages/MySalaryNew';
+import DevLogin from './pages/DevLogin';
+import ClaimRequests from './pages/admin/ClaimRequests';
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false }) => {
   const { user, profile, loading } = useAuth();
@@ -40,6 +45,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<Layout><HomePage /></Layout>} />
+          <Route path="/dev-login" element={<DevLogin />} />
           <Route path="/pending" element={<Layout><PendingApproval /></Layout>} />
           <Route path="/announcements/:id" element={<Layout><AnnouncementDetail /></Layout>} />
           <Route
@@ -131,6 +137,14 @@ function App() {
             }
           />
           <Route
+            path="/admin/claims"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <Layout><ClaimRequests /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/contract"
             element={
               <ProtectedRoute>
@@ -151,6 +165,30 @@ function App() {
             element={
               <ProtectedRoute adminOnly={true}>
                 <Layout><ContractAdmin /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/salary"
+            element={
+              <ProtectedRoute staffOnly={true}>
+                <Layout><SalaryRegister /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my/salary"
+            element={
+              <ProtectedRoute>
+                <Layout><MySalary /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my/salary/new"
+            element={
+              <ProtectedRoute>
+                <Layout><MySalaryNew /></Layout>
               </ProtectedRoute>
             }
           />

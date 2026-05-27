@@ -45,7 +45,7 @@ export const AuthProvider = ({ children }) => {
             let profileData = rows?.[0] || null;
 
             if (profileData) {
-                // 如果 role 還是 pending，檢查 teacher_invites 升級
+                // 如果 role 還是 pending,先試 teacher_invites,再試以同 email 自動綁 instructors
                 if (profileData.role === 'pending') {
                     const invites = await rawQuery('teacher_invites', {
                         select: 'role',
@@ -56,12 +56,24 @@ export const AuthProvider = ({ children }) => {
                         await supabase.from('users').update({ role: invite.role }).eq('id', authUser.id);
                         await supabase.from('teacher_invites').delete().eq('email', profileData.email);
                         profileData = { ...profileData, role: invite.role };
+                    } else {
+                        // Fallback:DB trigger 沒接到時,前端再用 RPC 試一次「email 自動 link」
+                        // 函式內部會檢查 auth.uid() = my user_id,只綁同 email 且 user_id IS NULL 的列
+                        const { data: linkedId } = await supabase.rpc('link_my_instructor_by_email');
+                        if (linkedId) {
+                            const refreshed = await rawQuery('users', {
+                                select: '*', id: `eq.${authUser.id}`,
+                            }, token);
+                            if (refreshed?.[0]) profileData = refreshed[0];
+                        }
                     }
                 }
                 setProfile(profileData);
             } else {
-                // 沒有 profile，嘗試從 teacher_invites 建立
+                // 沒有 profile,先試 teacher_invites
                 const email = authUser.email;
+                let createdProfile = null;
+
                 if (email) {
                     const invites = await rawQuery('teacher_invites', {
                         select: '*',
@@ -78,23 +90,39 @@ export const AuthProvider = ({ children }) => {
                         });
                         if (!insertErr) {
                             await supabase.from('teacher_invites').delete().eq('email', email);
-                            setProfile({ id: authUser.id, name: invite.name, email, role: invite.role });
-                            return;
+                            createdProfile = { id: authUser.id, name: invite.name, email, role: invite.role };
                         }
                     }
                 }
 
-                // 建立 pending 用戶
-                const { error: createErr } = await supabase.from('users').insert({
-                    id: authUser.id,
-                    name: authUser.user_metadata?.full_name || null,
-                    email: authUser.email,
-                    role: 'pending',
-                });
-                if (createErr && !createErr.message?.includes('duplicate')) {
-                    console.warn('Failed to create user entry:', createErr.message);
+                if (!createdProfile) {
+                    // 建立 pending 用戶
+                    const { error: createErr } = await supabase.from('users').insert({
+                        id: authUser.id,
+                        name: authUser.user_metadata?.full_name || null,
+                        email: authUser.email,
+                        role: 'pending',
+                    });
+                    if (createErr && !createErr.message?.includes('duplicate')) {
+                        console.warn('Failed to create user entry:', createErr.message);
+                    }
+
+                    // 建完 users 列後,試以同 email 自動 link instructors
+                    // 若成功 link,RPC 會把 role 升為 teacher,refetch 一次拿到正確 role
+                    const { data: linkedId } = await supabase.rpc('link_my_instructor_by_email');
+                    if (linkedId) {
+                        const refreshed = await rawQuery('users', {
+                            select: '*', id: `eq.${authUser.id}`,
+                        }, token);
+                        if (refreshed?.[0]) createdProfile = refreshed[0];
+                    }
+
+                    if (!createdProfile) {
+                        createdProfile = { id: authUser.id, email: authUser.email, role: 'pending' };
+                    }
                 }
-                setProfile({ id: authUser.id, email: authUser.email, role: 'pending' });
+
+                setProfile(createdProfile);
             }
 
             // 2. 查 instructors（顯示名稱、頭貼）

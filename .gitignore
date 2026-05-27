@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# 含敏感真人資料的檔案（身分證、薪資、聯絡資料）
+*.csv
+*.docx
+*.xlsx
+*.xls
+
+# 個人 prompt 筆記
+coach-mode-prompt*.md
+
+# 本地暫存 / 編輯器
+.vscode/
+.idea/
+*.swp
+*.swo
+*.local
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 建置產物（zeabur 會自己重 build，repo 不需要）
+培訓web/dist/
+培訓web/.cache/
+
+# 環境變數（含 Supabase keys）
+.env
+.env.local
+.env.*.local
