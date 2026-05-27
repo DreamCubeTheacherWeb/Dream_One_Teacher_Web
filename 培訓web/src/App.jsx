@@ -23,6 +23,7 @@ import MySalary from './pages/MySalary';
 import MySalaryNew from './pages/MySalaryNew';
 import DevLogin from './pages/DevLogin';
 import ClaimRequests from './pages/admin/ClaimRequests';
+import DownloadCenter from './pages/admin/DownloadCenter';
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false }) => {
   const { user, profile, loading } = useAuth();
@@ -173,6 +174,14 @@ function App() {
             element={
               <ProtectedRoute staffOnly={true}>
                 <Layout><SalaryRegister /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/download-center"
+            element={
+              <ProtectedRoute staffOnly={true}>
+                <Layout><DownloadCenter /></Layout>
               </ProtectedRoute>
             }
           />

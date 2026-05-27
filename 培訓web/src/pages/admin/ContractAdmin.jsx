@@ -25,6 +25,7 @@ const ContractAdmin = () => {
   const [newDocName, setNewDocName] = useState('');
   const [newDocSlug, setNewDocSlug] = useState('');
   const [newDocMode, setNewDocMode] = useState('view_only');
+  const [newDocCategory, setNewDocCategory] = useState('contract');
 
   const [fieldEditorOpen, setFieldEditorOpen] = useState(false);
   const [fieldEditorTarget, setFieldEditorTarget] = useState(null);
@@ -104,6 +105,7 @@ const ContractAdmin = () => {
       is_active: false,
       display_name: name,
       doc_mode: newDocMode,
+      doc_category: newDocCategory,
       sort_order: maxOrder + 1,
     };
     const { error } = await supabase.from('contract_documents').insert(placeholderRecord);
@@ -113,6 +115,7 @@ const ContractAdmin = () => {
     setNewDocName('');
     setNewDocSlug('');
     setNewDocMode('view_only');
+    setNewDocCategory('contract');
     await loadData();
   };
 
@@ -265,12 +268,12 @@ const ContractAdmin = () => {
         {showAddDoc && (
           <div className="mb-4 bg-blue-50 border border-blue-200 rounded-2xl p-5">
             <h3 className="font-bold text-slate-900 mb-3">新增合約文件類型</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
               <div>
                 <label className="text-xs font-bold text-slate-600 mb-1 block">文件名稱 *</label>
                 <input
                   type="text" value={newDocName} onChange={e => setNewDocName(e.target.value)}
-                  placeholder="例如：保密協議"
+                  placeholder="例如：匯款申請書"
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
@@ -284,6 +287,16 @@ const ContractAdmin = () => {
                 />
               </div>
               <div>
+                <label className="text-xs font-bold text-slate-600 mb-1 block">文件分類</label>
+                <select
+                  value={newDocCategory} onChange={e => setNewDocCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="contract">合約（講師簽署）</option>
+                  <option value="form">行政表單（後台下載）</option>
+                </select>
+              </div>
+              <div>
                 <label className="text-xs font-bold text-slate-600 mb-1 block">文件模式</label>
                 <select
                   value={newDocMode} onChange={e => setNewDocMode(e.target.value)}
@@ -294,6 +307,11 @@ const ContractAdmin = () => {
                 </select>
               </div>
             </div>
+            {newDocCategory === 'form' && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-3 text-xs text-emerald-700">
+                💡 行政表單會出現在「表單下載中心」，由管理員批次下載；不會進入講師簽約流程。
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={handleAddDocType} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700">
                 確認新增

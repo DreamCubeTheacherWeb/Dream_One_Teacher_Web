@@ -4,7 +4,8 @@ import { Rnd } from 'react-rnd';
 import { supabase } from '../lib/supabaseClient';
 import {
   X, Save, Plus, Trash2, ChevronLeft, ChevronRight,
-  User, Shield, CreditCard, MapPin, Phone, PenTool, Eye
+  User, Shield, CreditCard, MapPin, Phone, PenTool, Eye,
+  Mail, Landmark, Hash, Image as ImageIcon, Camera
 } from 'lucide-react';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -12,13 +13,32 @@ import 'react-pdf/dist/Page/TextLayer.css';
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const FIELD_DEFS = [
-  { type: 'name', label: '姓名', icon: User, color: '#22c55e', defaultW: 160, defaultH: 24 },
-  { type: 'instructor_role', label: '講師等級', icon: Shield, color: '#3b82f6', defaultW: 100, defaultH: 24 },
-  { type: 'id_number', label: '身分證字號', icon: CreditCard, color: '#f97316', defaultW: 160, defaultH: 24 },
-  { type: 'address', label: '地址', icon: MapPin, color: '#a855f7', defaultW: 280, defaultH: 24 },
-  { type: 'phone', label: '電話', icon: Phone, color: '#ef4444', defaultW: 160, defaultH: 24 },
-  { type: 'signature', label: '簽名', icon: PenTool, color: '#eab308', defaultW: 140, defaultH: 50 },
+  // 合約用既有欄位
+  { type: 'name', label: '姓名', icon: User, color: '#22c55e', defaultW: 160, defaultH: 24, group: '合約' },
+  { type: 'instructor_role', label: '講師等級', icon: Shield, color: '#3b82f6', defaultW: 100, defaultH: 24, group: '合約' },
+  { type: 'id_number', label: '身分證字號', icon: CreditCard, color: '#f97316', defaultW: 160, defaultH: 24, group: '合約' },
+  { type: 'address', label: '地址', icon: MapPin, color: '#a855f7', defaultW: 280, defaultH: 24, group: '合約' },
+  { type: 'phone', label: '電話', icon: Phone, color: '#ef4444', defaultW: 160, defaultH: 24, group: '合約' },
+  { type: 'signature', label: '簽名', icon: PenTool, color: '#eab308', defaultW: 140, defaultH: 50, group: '合約' },
+
+  // 匯款申請書用新欄位
+  { type: 'nickname', label: '講師暱稱', icon: User, color: '#10b981', defaultW: 160, defaultH: 24, group: '匯款表單' },
+  { type: 'email_primary', label: 'Email', icon: Mail, color: '#0ea5e9', defaultW: 220, defaultH: 24, group: '匯款表單' },
+  { type: 'bank_account_name', label: '匯款戶名', icon: Landmark, color: '#84cc16', defaultW: 160, defaultH: 24, group: '匯款表單' },
+  { type: 'bank_name', label: '銀行別', icon: Landmark, color: '#06b6d4', defaultW: 120, defaultH: 24, group: '匯款表單' },
+  { type: 'bank_branch', label: '分行別', icon: Landmark, color: '#14b8a6', defaultW: 120, defaultH: 24, group: '匯款表單' },
+  { type: 'bank_account_number', label: '銀行帳號', icon: Hash, color: '#f59e0b', defaultW: 180, defaultH: 24, group: '匯款表單' },
+  { type: 'bank_code', label: '銀行代碼', icon: Hash, color: '#d97706', defaultW: 100, defaultH: 24, group: '匯款表單' },
+
+  // 圖片欄位
+  { type: 'photo', label: '大頭照', icon: Camera, color: '#ec4899', defaultW: 100, defaultH: 130, group: '圖片' },
+  { type: 'id_front_image', label: '身分證正面', icon: ImageIcon, color: '#f43f5e', defaultW: 180, defaultH: 110, group: '圖片' },
+  { type: 'id_back_image', label: '身分證反面', icon: ImageIcon, color: '#e11d48', defaultW: 180, defaultH: 110, group: '圖片' },
+  { type: 'bankbook_image', label: '存摺封面', icon: ImageIcon, color: '#be123c', defaultW: 200, defaultH: 130, group: '圖片' },
 ];
+
+const IMAGE_FIELDS = new Set(['photo', 'id_front_image', 'id_back_image', 'bankbook_image']);
+const SIGN_FIELDS = new Set(['signature']);
 
 const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) => {
   const [numPages, setNumPages] = useState(null);
@@ -88,7 +108,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
       yFromTop: 100,
       width: def.defaultW,
       height: def.defaultH,
-      fontSize: fieldType === 'signature' ? 0 : 13,
+      fontSize: SIGN_FIELDS.has(fieldType) || IMAGE_FIELDS.has(fieldType) ? 0 : 13,
     }]);
   };
 
@@ -153,6 +173,17 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
     address: '台北市中正區重慶南路一段122號',
     phone: '0912345678',
     signature: '[簽名]',
+    nickname: '小明老師',
+    email_primary: 'xiaoming@example.com',
+    bank_account_name: '王小明',
+    bank_name: '華南銀行',
+    bank_branch: '仁愛分行',
+    bank_account_number: '123-45-678901-2',
+    bank_code: '0080001',
+    photo: '[大頭照]',
+    id_front_image: '[身分證正面]',
+    id_back_image: '[身分證反面]',
+    bankbook_image: '[存摺封面]',
   };
 
   if (!isOpen) return null;
@@ -243,6 +274,22 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
                 const pxH = f.height * scale;
 
                 if (previewMode) {
+                  if (IMAGE_FIELDS.has(f.fieldType)) {
+                    return (
+                      <div
+                        key={f.id}
+                        className="absolute pointer-events-none border border-dashed flex items-center justify-center"
+                        style={{
+                          left: pxX, top: pxY, width: pxW, height: pxH,
+                          borderColor: def.color, backgroundColor: `${def.color}10`,
+                        }}
+                      >
+                        <span className="text-[10px] font-bold" style={{ color: def.color }}>
+                          {sampleData[f.fieldType]}
+                        </span>
+                      </div>
+                    );
+                  }
                   return (
                     <div
                       key={f.id}
@@ -313,27 +360,40 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
               <h3 className="text-sm font-bold text-slate-900 mb-1">可用欄位</h3>
               <p className="text-xs text-slate-400">點擊下方按鈕新增欄位到當前頁面，然後拖拉定位</p>
             </div>
-            <div className="p-3 space-y-2">
-              {FIELD_DEFS.map(def => {
-                const FieldIcon = def.icon;
+            <div className="p-3 space-y-3">
+              {['合約', '匯款表單', '圖片'].map(group => {
+                const groupFields = FIELD_DEFS.filter(d => d.group === group);
+                if (groupFields.length === 0) return null;
                 return (
-                  <button
-                    key={def.type}
-                    onClick={() => addField(def.type)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all text-left"
-                  >
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ backgroundColor: `${def.color}15` }}
-                    >
-                      <FieldIcon className="w-4 h-4" style={{ color: def.color }} />
+                  <div key={group}>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 px-1">
+                      {group}
+                    </h4>
+                    <div className="space-y-1.5">
+                      {groupFields.map(def => {
+                        const FieldIcon = def.icon;
+                        return (
+                          <button
+                            key={def.type}
+                            onClick={() => addField(def.type)}
+                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all text-left"
+                          >
+                            <div
+                              className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                              style={{ backgroundColor: `${def.color}15` }}
+                            >
+                              <FieldIcon className="w-3.5 h-3.5" style={{ color: def.color }} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-bold text-slate-800 truncate">{def.label}</div>
+                              <div className="text-[10px] text-slate-400 truncate">{def.type}</div>
+                            </div>
+                            <Plus className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                          </button>
+                        );
+                      })}
                     </div>
-                    <div>
-                      <div className="text-sm font-bold text-slate-800">{def.label}</div>
-                      <div className="text-xs text-slate-400">{def.type}</div>
-                    </div>
-                    <Plus className="w-4 h-4 text-slate-300 ml-auto" />
-                  </button>
+                  </div>
                 );
               })}
             </div>

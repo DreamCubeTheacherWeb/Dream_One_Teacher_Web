@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import ProfileCompleteGate from './ProfileCompleteGate';
 
 const ROLE_LABELS = { admin: '管理員', mentor: '輔導員', teacher: '講師', pending: '待審核' };
 
@@ -102,6 +103,12 @@ const Layout = ({ children }) => {
                                     <UserCircle className="w-4 h-4" />
                                     個人資料
                                 </Link>
+                                {profile && profile.role !== 'pending' && (
+                                    <Link to="/my/salary" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                        <Wallet className="w-4 h-4" />
+                                        我的薪資
+                                    </Link>
+                                )}
                                 {(profile?.role === 'admin' || profile?.role === 'mentor') && (
                                     <Link to="/admin" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
                                         <LayoutDashboard className="w-4 h-4" />
@@ -211,8 +218,14 @@ const Layout = ({ children }) => {
                                         <UserCircle className="w-5 h-5" />
                                         個人資料
                                     </Link>
+                                    {profile && profile.role !== 'pending' && (
+                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                            <Wallet className="w-5 h-5" />
+                                            我的薪資
+                                        </Link>
+                                    )}
                                     {(profile?.role === 'admin' || profile?.role === 'mentor') && (
-                                        <Link to="/admin" className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
                                             <LayoutDashboard className="w-5 h-5" />
                                             後台管理
                                         </Link>
@@ -235,6 +248,8 @@ const Layout = ({ children }) => {
                     </div>
                 )}
             </header>
+
+            <ProfileCompleteGate />
 
             <main className="flex-1 max-w-7xl mx-auto w-full">
                 {children}
@@ -413,13 +428,22 @@ const LoginForm = () => {
     const { signInWithGoogle } = useAuth();
 
     return (
-        <button
-            onClick={signInWithGoogle}
-            className="flex items-center gap-2 px-5 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 hover:shadow-sm transition-all text-sm font-medium text-slate-700"
-        >
-            <GoogleIcon />
-            使用 Google 登入
-        </button>
+        <div className="flex items-center gap-3">
+            <button
+                onClick={signInWithGoogle}
+                className="flex items-center gap-2 px-5 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 hover:shadow-sm transition-all text-sm font-medium text-slate-700"
+            >
+                <GoogleIcon />
+                使用 Google 登入
+            </button>
+            <Link
+                to="/dev-login"
+                className="text-xs text-slate-400 hover:text-amber-600 underline decoration-dotted underline-offset-4"
+                title="Google OAuth 串接前的臨時 email 登入"
+            >
+                臨時登入
+            </Link>
+        </div>
     );
 };
 
@@ -438,6 +462,12 @@ const MobileLoginForm = () => {
                 使用 Google 帳號登入
             </button>
             <p className="text-center text-xs text-slate-400">首次登入即自動完成註冊</p>
+            <Link
+                to="/dev-login"
+                className="block text-center text-xs text-slate-400 hover:text-amber-600 underline decoration-dotted underline-offset-4 pt-1"
+            >
+                臨時 email 登入(Google OAuth 串接前)
+            </Link>
         </div>
     );
 };

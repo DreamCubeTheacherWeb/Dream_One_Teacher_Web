@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock } from 'lucide-react';
+import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const TW_REGIONS = {
@@ -43,6 +43,11 @@ const REQUIRED_FIELDS = [
     { key: 'teaching_freq_semester', label: '接課頻率（學期間）' },
     { key: 'teaching_freq_vacation', label: '接課頻率（寒暑假）' },
     { key: 'bio_notes', label: '經歷 / 理念' },
+    { key: 'bank_account_name', label: '匯款戶名' },
+    { key: 'bank_name', label: '銀行別' },
+    { key: 'bank_branch', label: '分行別' },
+    { key: 'bank_account_number', label: '銀行帳號' },
+    { key: 'bank_code', label: '銀行代碼' },
 ];
 
 const INITIAL_FORM = {
@@ -52,6 +57,8 @@ const INITIAL_FORM = {
     instructor_role: '', teaching_freq_semester: '', teaching_freq_vacation: '',
     teaching_regions: [],
     bio_notes: '',
+    bank_account_name: '', bank_name: '', bank_branch: '',
+    bank_account_number: '', bank_code: '',
     photo_path: null, photo_mime: null, photo_size: null, photo_uploaded_at: null,
     id_front_path: null, id_front_mime: null, id_front_size: null, id_front_uploaded_at: null,
     id_back_path: null, id_back_mime: null, id_back_size: null, id_back_uploaded_at: null,
@@ -71,13 +78,27 @@ const ProfilePage = () => {
     const fileRefs = useRef({});
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
+    const [showClaimModal, setShowClaimModal] = useState(false);
+    const [existingClaim, setExistingClaim] = useState(null);
 
     useEffect(() => {
         if (user) {
             loadProfile();
             loadContractStatus();
+            loadExistingClaim();
         }
     }, [user]);
+
+    const loadExistingClaim = async () => {
+        const { data } = await supabase
+            .from('instructor_claim_requests')
+            .select('id, status, instructor:instructor_id ( full_name )')
+            .eq('requester_user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        setExistingClaim(data || null);
+    };
 
     const loadContractStatus = async () => {
         try {
@@ -103,11 +124,25 @@ const ProfilePage = () => {
     };
 
     const loadProfile = async () => {
-        const { data } = await supabase
+        let { data } = await supabase
             .from('instructors')
             .select('*')
             .eq('user_id', user.id)
             .maybeSingle();
+
+        // 雙保險:萬一 AuthContext 的 fallback link 也沒接到(同 email 但 user_id IS NULL)
+        // 在這裡再試一次,避免使用者填新資料造成「同人兩列」
+        if (!data) {
+            const { data: linkedId } = await supabase.rpc('link_my_instructor_by_email');
+            if (linkedId) {
+                const { data: linkedRow } = await supabase
+                    .from('instructors')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+                data = linkedRow;
+            }
+        }
 
         if (data) {
             setIsFirstTime(false);
@@ -236,6 +271,18 @@ const ProfilePage = () => {
             return;
         }
 
+        if (form.bank_account_name.trim() !== form.full_name.trim()) {
+            const ok = window.confirm(
+                `⚠️ 匯款戶名（${form.bank_account_name}）與身分證姓名（${form.full_name}）不同。\n\n依公司規定戶名應與身分證姓名相同，確定要繼續送出嗎？`
+            );
+            if (!ok) return;
+        }
+
+        if (form.bank_code && form.bank_code.length !== 7) {
+            alert('銀行代碼必須為 7 碼數字');
+            return;
+        }
+
         setSaving(true);
         const payload = {
             user_id: user.id,
@@ -279,6 +326,41 @@ const ProfilePage = () => {
                     <p className="text-blue-800 font-medium">
                         填寫完下方資料後才算完成註冊，請務必填寫所有必填欄位並按下「送出資料」。
                     </p>
+                </div>
+            )}
+
+            {/* ── 認領歷史講師資料(僅 isFirstTime 且尚未提出 pending 申請時顯示)── */}
+            {isFirstTime && (!existingClaim || existingClaim.status === 'rejected') && (
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-2xl p-5 mb-6 flex items-start gap-3">
+                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shrink-0 shadow-sm">
+                        <UserSearch className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div className="flex-1">
+                        <p className="text-purple-900 font-bold">您是已建檔的講師嗎?</p>
+                        <p className="text-purple-700 text-sm mt-0.5">
+                            如果您之前已經填過資料、想用這個 Google 帳號接收歷史記錄,可以提出認領申請,管理員審核通過後就會自動綁定。
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => setShowClaimModal(true)}
+                            className="mt-3 inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-lg text-sm transition-colors"
+                        >
+                            <UserSearch className="w-4 h-4" /> 認領我的講師資料
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── 顯示既有 claim 狀態 ── */}
+            {existingClaim?.status === 'pending' && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-6 flex items-start gap-3">
+                    <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                        <p className="text-amber-900 font-bold">認領申請審核中</p>
+                        <p className="text-amber-700 text-sm mt-0.5">
+                            您已申請認領 <strong>{existingClaim.instructor?.full_name}</strong> 的講師資料,等候管理員審核中。通過後會自動綁定。
+                        </p>
+                    </div>
                 </div>
             )}
 
@@ -458,6 +540,65 @@ const ProfilePage = () => {
                 </div>
             </Section>
 
+            {/* ── 匯款銀行資訊 ── */}
+            <Section icon={Landmark} title="匯款銀行資訊">
+                <p className="text-sm text-slate-500 mb-4">
+                    此區資訊將用於「廠商匯款申請書」的自動填寫，<strong className="text-amber-600">匯款戶名請務必與身分證姓名相同</strong>。
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="匯款戶名" required>
+                        <input
+                            type="text"
+                            value={form.bank_account_name}
+                            onChange={e => handleChange('bank_account_name', e.target.value)}
+                            className={inputCls}
+                            placeholder="須與身分證姓名相同"
+                        />
+                    </Field>
+                    <Field label="銀行別" required>
+                        <input
+                            type="text"
+                            value={form.bank_name}
+                            onChange={e => handleChange('bank_name', e.target.value)}
+                            className={inputCls}
+                            placeholder="例：華南銀行"
+                        />
+                    </Field>
+                    <Field label="分行別" required>
+                        <input
+                            type="text"
+                            value={form.bank_branch}
+                            onChange={e => handleChange('bank_branch', e.target.value)}
+                            className={inputCls}
+                            placeholder="例：仁愛分行"
+                        />
+                    </Field>
+                    <Field label="銀行代碼（7 碼）" required>
+                        <input
+                            type="text"
+                            value={form.bank_code}
+                            onChange={e => handleChange('bank_code', e.target.value.replace(/\D/g, '').slice(0, 7))}
+                            className={inputCls + ' font-mono tracking-wider'}
+                            placeholder="0000000"
+                            maxLength={7}
+                        />
+                        <p className="text-xs text-slate-400 mt-1">共 7 碼數字（{form.bank_code.length}/7）</p>
+                    </Field>
+                    <Field label="銀行帳號（含檢查碼）" required>
+                        <input
+                            type="text"
+                            value={form.bank_account_number}
+                            onChange={e => handleChange('bank_account_number', e.target.value.replace(/[^0-9\-]/g, ''))}
+                            className={inputCls + ' font-mono tracking-wider md:col-span-2'}
+                            placeholder="請填寫完整帳號"
+                        />
+                    </Field>
+                </div>
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                    💡 銀行帳戶為華南銀行者免扣手續費；非華南銀行將扣匯款手續費 30 元。
+                </div>
+            </Section>
+
             {/* ── 經歷與自我介紹 ── */}
             <Section icon={FileText} title="經歷與自我介紹">
                 <Field label="教學經歷 / 教學理念 / 想說的話" required>
@@ -613,6 +754,18 @@ const ProfilePage = () => {
                 </Section>
             )}
 
+            {/* ── 認領歷史講師資料 Modal ── */}
+            {showClaimModal && (
+                <ClaimInstructorModal
+                    initialName={form.full_name || profile?.name || ''}
+                    onClose={() => setShowClaimModal(false)}
+                    onSubmitted={() => {
+                        setShowClaimModal(false);
+                        loadExistingClaim();
+                    }}
+                />
+            )}
+
             {/* ── 註冊完成彈窗 ── */}
             {showSuccess && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -662,5 +815,201 @@ const Field = ({ label, required, children }) => (
         {children}
     </div>
 );
+
+// ═══════════════════════════════════════════════════════════════
+// 認領歷史講師資料 Modal
+// 流程:輸入姓名(+選填手機末四碼)→ 搜尋 → 選一筆 → 送出申請
+// 後端 RPC search_unlinked_instructors 只回遮罩過的資訊
+// ═══════════════════════════════════════════════════════════════
+const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
+    const [nameQuery, setNameQuery] = useState(initialName || '');
+    const [phoneLast4, setPhoneLast4] = useState('');
+    const [results, setResults] = useState([]);
+    const [searched, setSearched] = useState(false);
+    const [searching, setSearching] = useState(false);
+    const [selected, setSelected] = useState(null);
+    const [phoneFull, setPhoneFull] = useState('');
+    const [message, setMessage] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [err, setErr] = useState('');
+
+    const inputCls = 'w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none text-sm';
+
+    const doSearch = async (e) => {
+        e?.preventDefault();
+        setErr('');
+        if (!nameQuery.trim()) {
+            setErr('請輸入姓名');
+            return;
+        }
+        if (phoneLast4 && phoneLast4.length !== 4) {
+            setErr('手機末四碼請填 4 位數,或留白');
+            return;
+        }
+        setSearching(true);
+        const { data, error } = await supabase.rpc('search_unlinked_instructors', {
+            name_query: nameQuery.trim(),
+            phone_last4: phoneLast4 || null,
+        });
+        setSearching(false);
+        setSearched(true);
+        if (error) {
+            setErr('搜尋失敗:' + error.message);
+            return;
+        }
+        setResults(data || []);
+        setSelected(null);
+    };
+
+    const doSubmit = async () => {
+        if (!selected) return;
+        setErr('');
+        setSubmitting(true);
+        const { error } = await supabase.rpc('submit_claim_request', {
+            target_instructor_id: selected.id,
+            phone_input: phoneFull.trim() || null,
+            message_input: message.trim() || null,
+        });
+        setSubmitting(false);
+        if (error) {
+            setErr('送出失敗:' + error.message);
+            return;
+        }
+        alert('已送出認領申請,請等待管理員審核。');
+        onSubmitted();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between">
+                    <div>
+                        <h2 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                            <UserSearch className="w-5 h-5 text-purple-600" /> 認領講師資料
+                        </h2>
+                        <p className="text-xs text-slate-500 mt-1">
+                            請輸入您過去填寫資料時使用的姓名,我們會在歷史記錄中比對。
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700 shrink-0">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                    {!selected && (
+                        <>
+                            <form onSubmit={doSearch} className="space-y-3">
+                                <Field label="姓名" required>
+                                    <input
+                                        type="text" value={nameQuery}
+                                        onChange={e => setNameQuery(e.target.value)}
+                                        className={inputCls} placeholder="例:王小明"
+                                    />
+                                </Field>
+                                <Field label="手機末四碼(選填,用以縮小結果)">
+                                    <input
+                                        type="text" value={phoneLast4}
+                                        onChange={e => setPhoneLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                                        className={inputCls} placeholder="1234" maxLength={4}
+                                    />
+                                </Field>
+                                <button
+                                    type="submit" disabled={searching}
+                                    className="w-full inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50"
+                                >
+                                    {searching ? '搜尋中⋯' : '搜尋'}
+                                </button>
+                            </form>
+
+                            {searched && results.length === 0 && !searching && (
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center text-slate-500 text-sm">
+                                    <AlertCircle className="w-5 h-5 mx-auto mb-1 text-slate-400" />
+                                    沒有找到符合的講師資料,請確認姓名,或直接填寫下方表單註冊新講師。
+                                </div>
+                            )}
+
+                            {results.length > 0 && (
+                                <div className="space-y-2">
+                                    <div className="text-xs font-bold text-slate-500 px-1">
+                                        找到 {results.length} 筆,請點選您本人
+                                    </div>
+                                    {results.map(r => (
+                                        <button
+                                            key={r.id}
+                                            onClick={() => { setSelected(r); setPhoneFull(''); setMessage(''); }}
+                                            className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-purple-300 hover:bg-purple-50/50 transition-colors"
+                                        >
+                                            <div className="font-bold text-slate-800">{r.full_name}</div>
+                                            <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3">
+                                                {r.email_masked && <span>📧 {r.email_masked}</span>}
+                                                {r.phone_masked && <span>📱 {r.phone_masked}</span>}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {selected && (
+                        <div className="space-y-4">
+                            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                                <div className="text-xs text-purple-700 font-bold mb-1">即將認領</div>
+                                <div className="font-bold text-slate-900">{selected.full_name}</div>
+                                <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3">
+                                    {selected.email_masked && <span>📧 {selected.email_masked}</span>}
+                                    {selected.phone_masked && <span>📱 {selected.phone_masked}</span>}
+                                </div>
+                                <button onClick={() => setSelected(null)}
+                                    className="text-xs text-purple-600 hover:underline mt-2">
+                                    ← 重新選擇
+                                </button>
+                            </div>
+
+                            <Field label="您的完整手機號碼(供管理員核對)">
+                                <input
+                                    type="tel" value={phoneFull}
+                                    onChange={e => setPhoneFull(e.target.value)}
+                                    className={inputCls} placeholder="0912345678"
+                                />
+                            </Field>
+
+                            <Field label="說明(選填,協助管理員快速辨識)">
+                                <textarea
+                                    value={message}
+                                    onChange={e => setMessage(e.target.value)}
+                                    rows={3}
+                                    className={inputCls + ' resize-none'}
+                                    placeholder="例:之前用 work@gmail.com 註冊,現在改用個人 Gmail"
+                                />
+                            </Field>
+                        </div>
+                    )}
+
+                    {err && (
+                        <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                            {err}
+                        </div>
+                    )}
+                </div>
+
+                {selected && (
+                    <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+                        <button onClick={onClose}
+                            className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold text-sm">
+                            取消
+                        </button>
+                        <button onClick={doSubmit} disabled={submitting}
+                            className="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm disabled:opacity-50 inline-flex items-center gap-1.5">
+                            <Send className="w-4 h-4" />
+                            {submitting ? '送出⋯' : '送出認領申請'}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 export default ProfilePage;
