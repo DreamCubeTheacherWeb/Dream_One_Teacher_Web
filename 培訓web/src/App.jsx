@@ -24,6 +24,7 @@ import MySalaryNew from './pages/MySalaryNew';
 import DevLogin from './pages/DevLogin';
 import ClaimRequests from './pages/admin/ClaimRequests';
 import DownloadCenter from './pages/admin/DownloadCenter';
+import Leaderboard from './pages/Leaderboard';
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false }) => {
   const { user, profile, loading } = useAuth();
@@ -62,6 +63,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Layout><CourseList /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/leaderboard"
+            element={
+              <ProtectedRoute>
+                <Layout><Leaderboard /></Layout>
               </ProtectedRoute>
             }
           />

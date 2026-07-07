@@ -273,7 +273,7 @@ const AdminDashboard = () => {
     );
 };
 
-const NavCard = ({ to, icon: Icon, title, desc, color }) => {
+const NavCard = ({ to, title, desc, color }) => {
     const colorMap = {
         blue: { bg: 'bg-blue-50', text: 'text-blue-600', hoverBg: 'group-hover:bg-blue-600', hoverBorder: 'hover:border-blue-300', hoverArrow: 'group-hover:text-blue-400' },
         emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', hoverBg: 'group-hover:bg-emerald-600', hoverBorder: 'hover:border-emerald-300', hoverArrow: 'group-hover:text-emerald-400' },

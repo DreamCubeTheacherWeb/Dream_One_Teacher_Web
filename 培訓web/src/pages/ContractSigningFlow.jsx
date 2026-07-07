@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 import { PDFDocument } from 'pdf-lib';
 import DocumentViewer from '../components/DocumentViewer';
 import SignaturePadComponent from '../components/SignaturePad';
+import EmailOtpGate from '../components/EmailOtpGate';
 import {
   FileText, FileCheck, PenTool, CheckCircle2, ChevronRight,
   ChevronLeft, AlertCircle, Download, PartyPopper, Shield, User,
@@ -20,6 +21,7 @@ const ContractSigningFlow = () => {
   const [docs, setDocs] = useState({});
   const [docUrls, setDocUrls] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [existingContract, setExistingContract] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -33,10 +35,40 @@ const ContractSigningFlow = () => {
   const [completed, setCompleted] = useState(false);
   const [newContractId, setNewContractId] = useState(null);
 
-  useEffect(() => { if (user) loadData(); }, [user]);
+  // 本人身分驗證（簽名前的 email OTP gate）
+  const [verified, setVerified] = useState(false);
+  const [verifiedAt, setVerifiedAt] = useState(null);
+  // 缺簽名欄位座標的文件（admin 未設定 → 會產出無效合約，須擋下）
+  const [missingSigTitles, setMissingSigTitles] = useState([]);
+
+  // 只在使用者身分（id）確立時載入一次；避免 token 續期或 OTP 驗證換 session
+  // 導致 user 參考改變而重跑 loadData、洗掉使用者已填/已簽的內容。
+  useEffect(() => { if (user) loadData(); }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 找出「需簽署但尚未設定簽名欄位座標」的文件標題。
+  // 回傳 { missing:[標題], failed:boolean }；failed 表示無法確認（查詢出錯），
+  // 呼叫端據此決定是否保守擋下。
+  const findDocsMissingSignatureField = async (docsMap, stepsList) => {
+    const fillSign = stepsList.filter(s => s.docMode === 'fill_sign');
+    const missing = [];
+    let failed = false;
+    for (const s of fillSign) {
+      const doc = docsMap[s.docType];
+      if (!doc) continue;
+      const { data: positions, error: posErr } = await supabase
+        .from('contract_field_positions')
+        .select('field_type')
+        .eq('doc_type', doc.doc_type)
+        .eq('doc_version', doc.version);
+      if (posErr) { failed = true; continue; }
+      if (!(positions || []).some(p => p.field_type === 'signature')) missing.push(s.title);
+    }
+    return { missing, failed };
+  };
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const { data: docsData } = await supabase
         .from('contract_documents')
@@ -62,6 +94,11 @@ const ContractSigningFlow = () => {
       });
       setSteps(stepList);
       setDocs(activeMap);
+
+      // 最佳努力：預先偵測缺簽名欄位的文件，於畫面顯示提示並停用送出（查詢出錯則不預先擋，
+      // 交由送出前的權威檢查把關）。
+      const sigCheck = await findDocsMissingSignatureField(activeMap, stepList);
+      setMissingSigTitles(sigCheck.missing);
 
       const urls = {};
       for (const [type, doc] of Object.entries(activeMap)) {
@@ -98,7 +135,10 @@ const ContractSigningFlow = () => {
         .limit(1)
         .single();
       if (contractData) setExistingContract(contractData);
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      console.error('[ContractSigningFlow] loadData 失敗：', e);
+      setLoadError('資料載入失敗，請重新整理頁面，或聯繫管理員。');
+    }
     setLoading(false);
   };
 
@@ -113,6 +153,9 @@ const ContractSigningFlow = () => {
   const isFillSign = currentStep?.docMode === 'fill_sign';
   const showFormOnThisStep = isFillSign && isLastStep;
 
+  // 講師等級空白＝缺前置資料（唯讀欄，由系統帶入），不是使用者操作錯
+  const roleMissing = hasFillSignSteps && !formData.instructorRole.trim();
+
   const isFormValid = () => {
     if (!hasFillSignSteps) return true;
     return (
@@ -121,7 +164,8 @@ const ContractSigningFlow = () => {
       formData.idNumber.trim().length === 10 &&
       formData.address.trim() &&
       formData.phone.trim() &&
-      agreedTerms && agreedElectronic && signatureDataUrl
+      agreedTerms && agreedElectronic && verified && signatureDataUrl &&
+      missingSigTitles.length === 0
     );
   };
 
@@ -243,6 +287,21 @@ const ContractSigningFlow = () => {
     setSubmitting(true);
 
     try {
+      // 送出前權威檢查：每份需簽署文件都必須有簽名欄位座標，否則會產出「沒有簽名的 PDF」
+      // 卻顯示簽約成功。缺欄位或無法確認時，一律擋在任何寫入（含作廢舊約）之前。
+      const sigCheck = await findDocsMissingSignatureField(docs, steps);
+      if (sigCheck.missing.length > 0) {
+        setMissingSigTitles(sigCheck.missing);
+        alert(`「${sigCheck.missing.join('、')}」尚未設定簽名欄位，請聯繫管理員設定後再簽署。`);
+        setSubmitting(false);
+        return;
+      }
+      if (sigCheck.failed) {
+        alert('無法確認合約簽名欄位設定，請稍後再試或聯繫管理員。');
+        setSubmitting(false);
+        return;
+      }
+
       if (existingContract) {
         await supabase.from('instructor_contracts')
           .update({ status: 'voided' })
@@ -291,12 +350,14 @@ const ContractSigningFlow = () => {
         signed_pdf_path: firstSignedPath,
         ip_address: null,
         user_agent: navigator.userAgent,
+        verified_at: verifiedAt,
+        verify_method: 'email_otp',
       };
 
       try {
         const resp = await fetch('https://api.ipify.org?format=json');
         contractRecord.ip_address = (await resp.json()).ip;
-      } catch (e) { /* ignore */ }
+      } catch { /* ignore */ }
 
       const { data: newContract, error: insertErr } = await supabase
         .from('instructor_contracts')
@@ -317,6 +378,26 @@ const ContractSigningFlow = () => {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="animate-spin w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-2xl mx-auto p-4 sm:p-8">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-lg p-8 text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-slate-900 mb-2">資料載入失敗</h2>
+          <p className="text-slate-500 mb-6">{loadError}</p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button onClick={() => loadData()} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all">
+              重新載入
+            </button>
+            <button onClick={() => navigate('/profile')} className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all">
+              返回個人資料
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -444,6 +525,33 @@ const ContractSigningFlow = () => {
               <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                 <PenTool className="w-5 h-5 text-blue-600" /> 填寫契約資料
               </h3>
+
+              {roleMissing && (
+                <div className="mb-5 rounded-xl border-2 border-red-200 bg-red-50 p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-red-700">尚無法簽署：您的講師等級尚未設定</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      講師等級由系統依您的資料自動帶入，目前為空白，屬於缺少前置資料（非您操作錯誤）。
+                      請聯繫管理員設定講師等級後，再回來完成簽署。
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {missingSigTitles.length > 0 && (
+                <div className="mb-5 rounded-xl border-2 border-red-200 bg-red-50 p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-red-700">尚無法簽署：合約尚未設定簽名欄位</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      以下文件尚未由管理員設定簽名欄位位置，若強行簽署會產生沒有簽名的無效合約：
+                      「{missingSigTitles.join('、')}」。請聯繫管理員設定後再簽署。
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
@@ -507,6 +615,12 @@ const ContractSigningFlow = () => {
                 </label>
               </div>
 
+              <EmailOtpGate
+                email={user?.email}
+                verified={verified}
+                onVerified={(ts) => { setVerified(true); setVerifiedAt(ts); }}
+              />
+
               <div className="mb-6">
                 <h4 className="text-sm font-bold text-slate-700 mb-3">甲方簽名</h4>
                 {signatureDataUrl ? (
@@ -524,15 +638,19 @@ const ContractSigningFlow = () => {
                   </div>
                 ) : (
                   <button onClick={() => setShowSignaturePad(true)}
-                    disabled={!agreedTerms || !agreedElectronic}
+                    disabled={!agreedTerms || !agreedElectronic || !verified}
                     className={`w-full py-8 border-2 border-dashed rounded-xl transition-all flex flex-col items-center gap-2 ${
-                      agreedTerms && agreedElectronic
+                      agreedTerms && agreedElectronic && verified
                         ? 'border-blue-300 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-400 cursor-pointer text-blue-600'
                         : 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
                     }`}>
                     <PenTool className="w-8 h-8" />
                     <span className="font-bold">
-                      {agreedTerms && agreedElectronic ? '點擊此處進行簽名' : '請先勾選上方兩個同意項目'}
+                      {!agreedTerms || !agreedElectronic
+                        ? '請先勾選上方兩個同意項目'
+                        : !verified
+                          ? '請先完成上方 Email 身分驗證'
+                          : '點擊此處進行簽名'}
                     </span>
                   </button>
                 )}

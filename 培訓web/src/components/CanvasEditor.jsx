@@ -245,7 +245,7 @@ const TextBoxContent = ({ body, isEditing, onContentChange, onStartEdit }) => {
     const li = findParentLi(sel.anchorNode);
     if (li) {
       if (e.shiftKey) { outdentListItem(li); } else { indentListItem(li); }
-      try { sel.removeAllRanges(); sel.addRange(range); } catch (_) { /* noop */ }
+      try { sel.removeAllRanges(); sel.addRange(range); } catch { /* noop */ }
     } else {
       let block = getBlockParent(sel.anchorNode);
       if (!block) {
@@ -268,7 +268,7 @@ const TextBoxContent = ({ body, isEditing, onContentChange, onStartEdit }) => {
       className="w-full h-full p-3 overflow-auto rounded-lg canvas-text-content"
       contentEditable={isEditing} suppressContentEditableWarning
       onKeyDown={isEditing ? handleKeyDown : undefined}
-      onBlur={(e) => {
+      onBlur={() => {
         if (ref.current) onContentChange(ref.current.innerHTML);
       }}
       onDoubleClick={(e) => { e.stopPropagation(); onStartEdit(); }}
@@ -301,7 +301,7 @@ const ButtonContent = ({ body, isEditing, onContentChange, onStartEdit, fillColo
       }}>
       <span ref={ref}
         contentEditable={isEditing} suppressContentEditableWarning
-        onBlur={(e) => { if (ref.current) onContentChange(ref.current.textContent); }}
+        onBlur={() => { if (ref.current) onContentChange(ref.current.textContent); }}
         onDoubleClick={(e) => { e.stopPropagation(); onStartEdit(); }}
         className="font-bold text-center px-2"
         style={{ color: textColor || '#ffffff', outline: 'none', fontSize: 16, minWidth: 20 }}
@@ -707,7 +707,10 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  });
+    // handler 內用到的 updateElement/deleteElement/exitEditing 皆以 functional setState
+    // 或閉包讀取下列狀態，identity 變動不帶新資訊，故僅依賴狀態值即可（安全省略函式）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId, selectedId, elements]);
 
   if (loading) {
     return (
@@ -763,7 +766,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
               </button>
               {shapeMenuOpen && (
                 <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-slate-200 p-2 grid grid-cols-3 gap-1 w-[210px] z-50">
-                  {SHAPE_TYPES.map(({ key, label, Icon }) => (
+                  {SHAPE_TYPES.map(({ key, label }) => (
                     <button key={key} onClick={() => handleAddShape(key)}
                       className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-slate-50 transition text-slate-600 hover:text-slate-900">
                       <Icon className="w-5 h-5" />

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 const ContractAdmin = () => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [docTypes, setDocTypes] = useState([]);
   const [documents, setDocuments] = useState({});
   const [contracts, setContracts] = useState([]);
@@ -549,7 +549,7 @@ const ContractAdmin = () => {
   );
 };
 
-const StatCard = ({ icon: Icon, label, value, color }) => (
+const StatCard = ({ label, value, color }) => (
   <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
     <div className={`w-11 h-11 bg-${color}-50 text-${color}-600 rounded-xl flex items-center justify-center`}>
       <Icon className="w-5 h-5" />

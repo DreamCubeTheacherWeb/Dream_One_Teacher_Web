@@ -237,7 +237,7 @@ const ContractView = () => {
   );
 };
 
-const InfoRow = ({ icon: Icon, label, value }) => (
+const InfoRow = ({ label, value }) => (
   <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
     <Icon className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
     <div>

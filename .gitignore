@@ -32,3 +32,14 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+
+# ── 除錯／截圖工作殘渣（非專案資產，可隨時刪）───────────────────
+# Playwright MCP 執行紀錄
+.playwright-mcp/
+# 開發過程的截圖與量測 dump（根目錄）
+/*.png
+/*.json
+# 一次性資料匯入腳本的中間產物（腳本本身若要保留，見 scripts/README）
+scripts/*.json
+scripts/*.txt
+scripts/__pycache__/

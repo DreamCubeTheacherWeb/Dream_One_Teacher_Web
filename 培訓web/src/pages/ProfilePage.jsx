@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle } from 'lucide-react';
+import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle, Trophy, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { computeBadges } from '../lib/badges';
+import { downloadCertificate } from '../lib/certificate';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -120,7 +122,7 @@ const ProfilePage = () => {
                 docsData.forEach(d => { versions[d.doc_type] = d.version; });
                 setLatestDocVersions(versions);
             }
-        } catch (e) { /* ignore */ }
+        } catch { /* ignore */ }
     };
 
     const loadProfile = async () => {
@@ -421,6 +423,11 @@ const ProfilePage = () => {
                 </div>
             </div>
 
+            {/* ── 我的成就（僅非首次註冊時顯示）── */}
+            {!isFirstTime && user && (
+                <AchievementsSection userId={user.id} certName={form.full_name || profile?.name || ''} />
+            )}
+
             {/* ── 基本資料 ── */}
             <Section icon={User} title="基本資料">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -588,7 +595,7 @@ const ProfilePage = () => {
                         <input
                             type="text"
                             value={form.bank_account_number}
-                            onChange={e => handleChange('bank_account_number', e.target.value.replace(/[^0-9\-]/g, ''))}
+                            onChange={e => handleChange('bank_account_number', e.target.value.replace(/[^0-9-]/g, ''))}
                             className={inputCls + ' font-mono tracking-wider md:col-span-2'}
                             placeholder="請填寫完整帳號"
                         />
@@ -616,7 +623,7 @@ const ProfilePage = () => {
             <Section icon={Upload} title="文件上傳">
                 <p className="text-sm text-slate-500 mb-4">以下文件皆為必填，支援 JPEG、PNG、GIF、WebP 格式，單檔上限 20MB</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {DOC_TYPES.map(({ key, label, Icon }) => (
+                    {DOC_TYPES.map(({ key, label }) => (
                         <div key={key} className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-300 transition-colors">
                             <div className="text-sm font-medium text-slate-700 mb-3 flex items-center justify-center gap-1.5">
                                 <Icon className="w-4 h-4 text-slate-400" /> {label} <span className="text-red-500">*</span>
@@ -798,7 +805,144 @@ const ProfilePage = () => {
     );
 };
 
-const Section = ({ icon: Icon, title, children }) => (
+// ═══════════════════════════════════════════════════════════════
+// 我的成就：徽章牆 + 完成培訓證明下載
+// 資料來源：get_teacher_stats() RPC（SQL 上線後才有真資料）
+// ═══════════════════════════════════════════════════════════════
+const AchievementsSection = ({ userId, certName }) => {
+    const [stats, setStats] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+    const [downloading, setDownloading] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            setLoading(true);
+            setError(false);
+            try {
+                const { data, error: rpcErr } = await supabase.rpc('get_teacher_stats');
+                if (rpcErr) throw rpcErr;
+                if (cancelled) return;
+                const mine = (data || []).find((r) => r.user_id === userId) || null;
+                setStats(mine);
+            } catch (err) {
+                console.error('Achievements load failed:', err);
+                if (!cancelled) setError(true);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [userId]);
+
+    const badges = computeBadges(stats);
+    const earnedCount = badges.filter((b) => b.earned).length;
+    const canDownloadCert = Number(stats?.completed_courses || 0) >= 1;
+
+    const handleDownloadCert = async () => {
+        setDownloading(true);
+        try {
+            await downloadCertificate({ name: certName || '講師' });
+        } catch (err) {
+            console.error('Certificate generation failed:', err);
+            alert('證書產生失敗，請稍後再試。');
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Trophy className="w-5 h-5 text-amber-500" /> 我的成就
+                </h2>
+                {!loading && !error && (
+                    <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
+                        已解鎖 {earnedCount} / {badges.length}
+                    </span>
+                )}
+            </div>
+
+            {loading ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[...Array(8)].map((_, i) => (
+                        <div key={i} className="h-28 rounded-xl bg-slate-100 animate-pulse" />
+                    ))}
+                </div>
+            ) : error ? (
+                <div className="py-8 text-center">
+                    <AlertCircle className="w-8 h-8 text-red-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500">成就載入失敗，請稍後再試。</p>
+                </div>
+            ) : (
+                <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {badges.map((b) => {
+                            const BadgeIcon = b.icon;
+                            return (
+                                <div
+                                    key={b.code}
+                                    className={`relative rounded-xl border p-3 flex flex-col items-center text-center transition-all ${
+                                        b.earned
+                                            ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white shadow-sm'
+                                            : 'border-slate-100 bg-slate-50'
+                                    }`}
+                                    title={b.description}
+                                >
+                                    <div
+                                        className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${
+                                            b.earned
+                                                ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow'
+                                                : 'bg-slate-200 text-slate-400'
+                                        }`}
+                                    >
+                                        <BadgeIcon className="w-6 h-6" />
+                                    </div>
+                                    <div className={`text-sm font-bold ${b.earned ? 'text-slate-800' : 'text-slate-400'}`}>
+                                        {b.name}
+                                    </div>
+                                    <div className={`text-[11px] mt-0.5 leading-tight ${b.earned ? 'text-amber-600' : 'text-slate-400'}`}>
+                                        {b.earned ? '已解鎖' : b.description}
+                                    </div>
+                                    {!b.earned && (
+                                        <Lock className="w-3.5 h-3.5 text-slate-300 absolute top-2 right-2" />
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* 完成培訓證明 */}
+                    {canDownloadCert && (
+                        <div className="mt-5 pt-5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center shrink-0">
+                                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                                </div>
+                                <div>
+                                    <div className="font-bold text-slate-800 text-sm">恭喜完成培訓！</div>
+                                    <div className="text-xs text-slate-400">你已完成培訓課程，可下載完成證明</div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleDownloadCert}
+                                disabled={downloading}
+                                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Download className="w-4 h-4" />
+                                {downloading ? '產生中⋯' : '下載完成培訓證明'}
+                            </button>
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
+    );
+};
+
+const Section = ({ title, children }) => (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
             <Icon className="w-5 h-5 text-blue-600" /> {title}

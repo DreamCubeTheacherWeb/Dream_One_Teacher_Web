@@ -80,7 +80,7 @@ const normalizeImageToBytes = async (blob) => {
     const img = await new Promise((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = (e) => reject(new Error('圖片載入失敗'));
+      el.onerror = () => reject(new Error('圖片載入失敗'));
       el.src = url;
     });
     const canvas = document.createElement('canvas');
@@ -172,7 +172,7 @@ export async function generateFilledForm({ docMeta, positions, instructor }) {
       let embedded;
       try {
         embedded = await pdfDoc.embedPng(imageBytes);
-      } catch (e) {
+      } catch {
         try {
           embedded = await pdfDoc.embedJpg(imageBytes);
         } catch (e2) {
@@ -252,7 +252,7 @@ export async function generateFormForInstructor({ docType, userId }) {
   if (!instructor) throw new Error(`找不到講師資料：${userId}`);
 
   const bytes = await generateFilledForm({ docMeta, positions, instructor });
-  const safeName = (instructor.full_name || 'unknown').replace(/[\/\\?%*:|"<>]/g, '_');
+  const safeName = (instructor.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
   const filename = `${safeName}-${docMeta.display_name || docType}.pdf`;
 
   return { bytes, filename, instructor };

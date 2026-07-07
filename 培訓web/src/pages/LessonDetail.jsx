@@ -6,12 +6,6 @@ import { ChevronLeft, ChevronRight, Play, FileText, CheckCircle, Circle, Image a
 
 const CANVAS_WIDTH = 960;
 
-// Strip HTML tags and return plain text preview
-const stripHtml = (html) => {
-    if (!html) return '';
-    return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-};
-
 // YouTube URL → embed URL 轉換
 const toEmbedUrl = (url) => {
     if (!url) return '';

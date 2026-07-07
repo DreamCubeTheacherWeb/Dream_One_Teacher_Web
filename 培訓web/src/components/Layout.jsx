@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Trophy } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ProfileCompleteGate from './ProfileCompleteGate';
 
@@ -98,6 +98,12 @@ const Layout = ({ children }) => {
                                         <BookOpen className="w-4 h-4" />
                                         我的課程
                                     </button>
+                                )}
+                                {profile && profile.role !== 'pending' && (
+                                    <Link to="/leaderboard" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                        <Trophy className="w-4 h-4" />
+                                        排行榜
+                                    </Link>
                                 )}
                                 <Link to="/profile" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
                                     <UserCircle className="w-4 h-4" />
@@ -213,6 +219,12 @@ const Layout = ({ children }) => {
                                             <BookOpen className="w-5 h-5" />
                                             我的課程
                                         </button>
+                                    )}
+                                    {profile && profile.role !== 'pending' && (
+                                        <Link to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                            <Trophy className="w-5 h-5" />
+                                            排行榜
+                                        </Link>
                                     )}
                                     <Link to="/profile" className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
                                         <UserCircle className="w-5 h-5" />

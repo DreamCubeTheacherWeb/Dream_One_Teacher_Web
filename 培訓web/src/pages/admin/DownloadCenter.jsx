@@ -131,7 +131,7 @@ const DownloadCenter = () => {
     try {
       const { docMeta, positions } = await loadFormTemplate(selectedForm);
       const bytes = await generateFilledForm({ docMeta, positions, instructor: inst });
-      const safe = (inst.full_name || 'unknown').replace(/[\/\\?%*:|"<>]/g, '_');
+      const safe = (inst.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
       const filename = `${safe}-${docMeta.display_name || selectedForm}.pdf`;
 
       const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -174,7 +174,7 @@ const DownloadCenter = () => {
         setProgress({ done: i, total: targets.length, current: inst.full_name || '' });
         try {
           const bytes = await generateFilledForm({ docMeta, positions, instructor: inst });
-          const safe = (inst.full_name || `unknown_${i}`).replace(/[\/\\?%*:|"<>]/g, '_');
+          const safe = (inst.full_name || `unknown_${i}`).replace(/[/\\?%*:|"<>]/g, '_');
           zip.file(`${safe}-${docMeta.display_name || selectedForm}.pdf`, bytes);
           logs.push({
             downloaded_by: user.id,
