@@ -1,7 +1,22 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-07（兩條線：①交接整理 session ②第一站課程重建 session，Fable 5）。
+> 最後更新：2026-07-08（交接整理 + 遊戲化改版 session，Fable 5）。
+
+---
+
+## 🚨 2026-07-08 已 push 到 main（commit e49ac53、febebd6）— 上線前必做兩件事
+
+已推上 GitHub，若 Zeabur 自動部署，這批就會上線。**上線後要能正常運作，先做**：
+1. **Supabase 開 Email provider（Authentication → Providers → Email）**——否則合約簽署的
+   OTP 驗證碼寄不出，**老師會卡在驗證那步簽不了名**。這是最急、影響最大的一項。
+2. **跑 `培訓web/supabase/2026-07-08_teaching_leaderboard.sql`**——否則「講師榮譽榜」與個人頁
+   「我的教學成就」會顯示載入失敗（函式還沒建）。
+（先前已跑：資安、gamification、esign 三份 SQL。）
+
+**本次改版重點**：排行榜從「學習排名」改為「接課榮譽榜」（點數＝接課時數×10＋里程碑、
+歷屆/年度切換、年度教學王稱號）；個人頁徽章從學習型改為接課里程碑；已刪 lib/badges.js。
+資料源＝class_sessions（薪資系統的接課登記）。點數/里程碑公式集中在 src/lib/leaderboard.js。
 
 ---
 
