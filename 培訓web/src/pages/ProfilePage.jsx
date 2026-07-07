@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle, Trophy, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { computeBadges } from '../lib/badges';
+import { computePoints, nextMilestone, toHours, MILESTONES } from '../lib/leaderboard';
 import { downloadCertificate } from '../lib/certificate';
 
 const TW_REGIONS = {
@@ -810,7 +810,9 @@ const ProfilePage = () => {
 // 資料來源：get_teacher_stats() RPC（SQL 上線後才有真資料）
 // ═══════════════════════════════════════════════════════════════
 const AchievementsSection = ({ userId, certName }) => {
-    const [stats, setStats] = useState(null);
+    const [hours, setHours] = useState(0);
+    const [sessions, setSessions] = useState(0);
+    const [completedCourses, setCompletedCourses] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [downloading, setDownloading] = useState(false);
@@ -821,11 +823,21 @@ const AchievementsSection = ({ userId, certName }) => {
             setLoading(true);
             setError(false);
             try {
-                const { data, error: rpcErr } = await supabase.rpc('get_teacher_stats');
+                const { data, error: rpcErr } = await supabase.rpc('get_teaching_leaderboard');
                 if (rpcErr) throw rpcErr;
                 if (cancelled) return;
-                const mine = (data || []).find((r) => r.user_id === userId) || null;
-                setStats(mine);
+                const mine = (data || []).find((r) => r.user_id === userId);
+                setHours(Number(mine?.total_hours || 0));
+                setSessions(Number(mine?.session_count || 0));
+                // 完訓數（給證書解鎖用）：讀自己的 course_training_status；失敗不影響成就顯示
+                try {
+                    const { count } = await supabase
+                        .from('course_training_status')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('user_id', userId)
+                        .eq('status', 'completed');
+                    if (!cancelled) setCompletedCourses(Number(count || 0));
+                } catch { /* 證書解鎖條件維持 0 */ }
             } catch (err) {
                 console.error('Achievements load failed:', err);
                 if (!cancelled) setError(true);
@@ -836,9 +848,10 @@ const AchievementsSection = ({ userId, certName }) => {
         return () => { cancelled = true; };
     }, [userId]);
 
-    const badges = computeBadges(stats);
-    const earnedCount = badges.filter((b) => b.earned).length;
-    const canDownloadCert = Number(stats?.completed_courses || 0) >= 1;
+    const points = computePoints(hours);
+    const earnedCount = MILESTONES.filter((m) => hours >= m.hours).length;
+    const next = nextMilestone(hours);
+    const canDownloadCert = completedCourses >= 1;
 
     const handleDownloadCert = async () => {
         setDownloading(true);
@@ -856,11 +869,11 @@ const AchievementsSection = ({ userId, certName }) => {
         <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Trophy className="w-5 h-5 text-amber-500" /> 我的成就
+                    <Trophy className="w-5 h-5 text-amber-500" /> 我的教學成就
                 </h2>
                 {!loading && !error && (
                     <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
-                        已解鎖 {earnedCount} / {badges.length}
+                        里程碑 {earnedCount} / {MILESTONES.length}
                     </span>
                 )}
             </div>
@@ -878,41 +891,54 @@ const AchievementsSection = ({ userId, certName }) => {
                 </div>
             ) : (
                 <>
+                    {/* 教學數據摘要 */}
+                    <div className="grid grid-cols-3 gap-3 mb-5">
+                        {[
+                            { label: '接課時數', value: toHours(hours), unit: '小時' },
+                            { label: '接課場次', value: sessions, unit: '場' },
+                            { label: '教學點數', value: points, unit: '點' },
+                        ].map((s) => (
+                            <div key={s.label} className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-center">
+                                <div className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{s.value}</div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">{s.label}（{s.unit}）</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* 接課里程碑 */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {badges.map((b) => {
-                            const BadgeIcon = b.icon;
+                        {MILESTONES.map((m) => {
+                            const earned = hours >= m.hours;
                             return (
                                 <div
-                                    key={b.code}
+                                    key={m.hours}
                                     className={`relative rounded-xl border p-3 flex flex-col items-center text-center transition-all ${
-                                        b.earned
+                                        earned
                                             ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white shadow-sm'
                                             : 'border-slate-100 bg-slate-50'
                                     }`}
-                                    title={b.description}
                                 >
-                                    <div
-                                        className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${
-                                            b.earned
-                                                ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow'
-                                                : 'bg-slate-200 text-slate-400'
-                                        }`}
-                                    >
-                                        <BadgeIcon className="w-6 h-6" />
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 text-2xl ${
+                                        earned ? 'bg-gradient-to-br from-amber-400 to-orange-500 shadow' : 'bg-slate-200'
+                                    }`}>
+                                        {earned ? m.emoji : <Lock className="w-5 h-5 text-slate-400" />}
                                     </div>
-                                    <div className={`text-sm font-bold ${b.earned ? 'text-slate-800' : 'text-slate-400'}`}>
-                                        {b.name}
+                                    <div className={`text-sm font-bold ${earned ? 'text-slate-800' : 'text-slate-400'}`}>
+                                        {m.name}
                                     </div>
-                                    <div className={`text-[11px] mt-0.5 leading-tight ${b.earned ? 'text-amber-600' : 'text-slate-400'}`}>
-                                        {b.earned ? '已解鎖' : b.description}
+                                    <div className={`text-[11px] mt-0.5 leading-tight ${earned ? 'text-amber-600' : 'text-slate-400'}`}>
+                                        {earned ? '已達成' : `接課滿 ${m.hours} 小時`}
                                     </div>
-                                    {!b.earned && (
-                                        <Lock className="w-3.5 h-3.5 text-slate-300 absolute top-2 right-2" />
-                                    )}
                                 </div>
                             );
                         })}
                     </div>
+
+                    {next && (
+                        <p className="mt-3 text-xs text-center text-slate-500">
+                            再接課 <b className="text-amber-600 tabular-nums">{next.remain}</b> 小時，即可解鎖「{next.emoji} {next.name}」
+                        </p>
+                    )}
 
                     {/* 完成培訓證明 */}
                     {canDownloadCert && (
