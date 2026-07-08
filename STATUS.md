@@ -1,7 +1,44 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-08 晚（手機優化＋方塊競速已 commit＋push，Opus 4.8）。
+> 最後更新：2026-07-09（認領講師故障診斷＋講師名單通盤查核，Fable 5）。
+
+---
+
+## 🔍 2026-07-09：認領講師故障＋名單人數不一致 診斷結果
+
+**✅ 已修復（2026-07-09，使用者親跑 SQL，線上探測確認生效）**：
+`2025_instructor_claim.sql`（認領功能全套）＋ `2026-07-09_mentor_instructor_read.sql`
+（mentor 可讀講師名冊）已由使用者貼入 Supabase 執行。修復後線上實測：
+search_unlinked_instructors 回 `[]`（原 PGRST202 不存在）、instructor_claim_requests
+表存在且 RLS 正常擋 anon（原 PGRST205 不存在）。
+**尚待人測**：登入網站實搜「侯宥圻＋6712」走完認領流程（OAuth 擋自動化）。
+**仍未結案**：38 個薪資姓名比對（見下方成因 2）等使用者裁決後出修正 SQL。
+
+**線上實測（用 anon key 唯讀探測正式 Supabase，證據＝API 回應）**：
+- ✅ 已在線上：`delete_user_completely`（含 admin 守衛版）、`get_teacher_stats`、
+  `get_teaching_leaderboard`、`get_teaching_years`、`get_cube_leaderboard`
+  ——即 security_hardening／gamification／teaching_leaderboard／cube_speed 四份 SQL
+  **其實都已套用**（下方舊段落「尚未套用」的警告已過時，僅 esign 欄位未驗）。
+- ❌ 不在線上：`2025_instructor_claim.sql` 的 8 個函式＋`instructor_claim_requests` 表
+  **全部不存在**＝這份 SQL 從未跑過 → 「認領講師資料」搜尋報
+  `Could not find the function public.search_unlinked_instructors`。
+  該檔已審（冪等、與現行 schema 相容、8 函式皆有守衛），**整份貼進 SQL Editor 執行即修**。
+- 順帶：線上沒有 `teachers` 表（前端也沒人查它，無影響）。
+
+**名單人數不一致的三個成因（離線重演 9,551 筆薪資 CSV 得出，腳本在
+scratchpad/replay_leaderboard.py，可重跑）**：
+1. 榮譽榜漏斗：主檔 251 位 → CSV 有課且姓名比對到 192 → 上榜 189
+   （59 位主檔講師在薪資表完全沒課；3 位只剩科教館/科博館課被過濾）。
+2. **38 個薪資表姓名比對不到主檔**（約 91 堂課的 instructor_id 是 NULL、榜上看不到），
+   其中 9 組高度疑似同人異字：吳宜蓁↔吳珮蓁、林芸芷↔林沄芷、王士恆↔王士恒、
+   賴柏沅↔賴柏廷、陳宥均↔陳宥瑄、陳弈心↔陳奕心、陳彥碩↔陳奕碩、黃于倫↔黃于瑄、
+   侯佑祈↔侯宥圻(?)；最大宗是李思誼 38 堂（主檔查無此人）。名單要人工裁決後修資料。
+3. TeacherManager（/admin/teachers）預設停在「待審核」分頁，要切分頁才看得到全部。
+
+**潛在缺口（待使用者拍板）**：`instructors` 表 RLS 只允許 admin 讀全表
+（instructors_setup.sql:140-158 無 mentor 政策），但 /admin/instructors 頁面 mentor
+也進得去 → mentor 帳號開這頁會近乎空白。若有 mentor 帳號在用，需補一條 SELECT 政策。
 
 ---
 
@@ -204,7 +241,10 @@ CHECK 約束只擋離譜值（<3 秒、<10 步）。
 
 ## 🚧 半成品 / 需使用者出手的事
 
-1. **🔴 最急：資安 SQL 要套用到正式 Supabase**（我沒有存取權，無法代跑）。
+1. ~~**🔴 最急：資安 SQL 要套用到正式 Supabase**~~ ✅ **2026-07-09 線上實測確認已套用**
+   （delete_user_completely 已含 admin 守衛，見最上方診斷段）。gamification 與
+   teaching_leaderboard 同樣已上線。改為最急：**跑 `2025_instructor_claim.sql`**（認領功能全斷）。
+   （以下原文留存）（我沒有存取權，無法代跑）。
    到 Supabase SQL Editor 貼上 `2026-07-07_security_hardening.sql` 整份執行，
    再照檔尾「攻擊重演」段用非 admin 測試帳號驗證漏洞已堵。**在套用前，任何登入者
    （含 pending）都能刪任意帳號、下載全體講師合約 PDF——這是真實可被利用的洞。**
