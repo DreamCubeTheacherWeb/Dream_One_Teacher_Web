@@ -36,7 +36,7 @@ const AnnouncementDetail = () => {
             <div className="min-h-[60vh] flex flex-col items-center justify-center p-8">
                 <h2 className="text-xl font-bold text-slate-900 mb-2">找不到這則公告</h2>
                 <p className="text-slate-500 mb-6">公告可能已被移除或尚未發佈。</p>
-                <Link to="/" className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-2">
+                <Link to="/" className="relative text-blue-600 hover:text-blue-800 font-bold flex items-center gap-2 before:content-[''] before:absolute before:-inset-3">
                     <ArrowLeft className="w-4 h-4" /> 返回首頁
                 </Link>
             </div>
@@ -47,7 +47,7 @@ const AnnouncementDetail = () => {
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-12">
-            <Link to="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-blue-600 transition-colors mb-8">
+            <Link to="/" className="relative inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-blue-600 transition-colors mb-8 before:content-[''] before:absolute before:-inset-3">
                 <ArrowLeft className="w-4 h-4" /> 返回首頁
             </Link>
 
@@ -74,13 +74,13 @@ const AnnouncementDetail = () => {
                 </h1>
 
                 <div
-                    className="prose prose-slate max-w-none prose-img:rounded-xl prose-img:shadow-md prose-a:text-blue-600 prose-headings:font-bold prose-p:leading-relaxed"
+                    className="prose prose-slate max-w-none prose-img:rounded-xl prose-img:shadow-md prose-a:text-blue-600 prose-headings:font-bold prose-p:leading-relaxed [&_img]:max-w-full [&_img]:h-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
                     dangerouslySetInnerHTML={{ __html: announcement.content }}
                 />
             </article>
 
             <div className="mt-12 pt-8 border-t border-slate-200">
-                <Link to="/" className="inline-flex items-center gap-2 text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                <Link to="/" className="relative inline-flex items-center gap-2 text-sm font-bold text-blue-600 hover:text-blue-800 transition-colors before:content-[''] before:absolute before:-inset-3">
                     <ArrowLeft className="w-4 h-4" /> 返回首頁
                 </Link>
             </div>

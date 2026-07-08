@@ -3,8 +3,42 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body {
+    /* 手機安全網：body 永遠不准橫向滾動（個別寬內容自帶 overflow-x-auto 容器） */
+    overflow-x: hidden;
+  }
   body {
     @apply bg-slate-50 text-slate-900;
+  }
+  /* 觸控裝置：消除 300ms 點擊延遲與誤觸雙擊縮放 */
+  button,
+  [role='button'],
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+}
+
+/* iOS 網址列伸縮會讓 100vh 失真：支援 dvh 的瀏覽器一律升級（舊瀏覽器維持 100vh 不受影響） */
+@supports (height: 100dvh) {
+  .min-h-screen { min-height: 100dvh; }
+  .h-screen { height: 100dvh; }
+  .max-h-screen { max-height: 100dvh; }
+}
+
+/* 手機（<768px）：被標成小字的表單控件一律升回 16px，
+   否則 iOS 聚焦輸入框時會強制放大整頁 */
+@media (max-width: 767px) {
+  input.text-sm,
+  input.text-xs,
+  select.text-sm,
+  select.text-xs,
+  textarea.text-sm,
+  textarea.text-xs {
+    font-size: 16px;
   }
 }
 

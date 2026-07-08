@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Trophy } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Trophy, Timer } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ProfileCompleteGate from './ProfileCompleteGate';
 
@@ -105,6 +105,12 @@ const Layout = ({ children }) => {
                                         排行榜
                                     </Link>
                                 )}
+                                {profile && profile.role !== 'pending' && (
+                                    <Link to="/cube" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                        <Timer className="w-4 h-4" />
+                                        方塊競速
+                                    </Link>
+                                )}
                                 <Link to="/profile" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
                                     <UserCircle className="w-4 h-4" />
                                     個人資料
@@ -170,7 +176,7 @@ const Layout = ({ children }) => {
                         )}
                         <button
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                            className="p-2 text-slate-600 hover:text-blue-600"
+                            className="p-3 text-slate-600 hover:text-blue-600"
                         >
                             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                         </button>
@@ -207,37 +213,43 @@ const Layout = ({ children }) => {
 
                                     {/* 導航連結 */}
                                     {profile && profile.role !== 'pending' ? (
-                                        <Link to="/courses" className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/courses" className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
                                             <BookOpen className="w-5 h-5" />
                                             我的課程
                                         </Link>
                                     ) : (
                                         <button
                                             onClick={() => { alert('權限尚未開啟，如資料已填寫完，請通知夢想一號管理員協助開啟權限'); setMobileMenuOpen(false); }}
-                                            className="flex items-center gap-3 px-3 py-3 text-slate-400 rounded-xl font-medium text-sm w-full text-left"
+                                            className="flex items-center gap-3 px-3 py-3.5 text-slate-400 rounded-xl font-medium text-sm w-full text-left"
                                         >
                                             <BookOpen className="w-5 h-5" />
                                             我的課程
                                         </button>
                                     )}
                                     {profile && profile.role !== 'pending' && (
-                                        <Link to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
                                             <Trophy className="w-5 h-5" />
                                             排行榜
                                         </Link>
                                     )}
-                                    <Link to="/profile" className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                    {profile && profile.role !== 'pending' && (
+                                        <Link to="/cube" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                            <Timer className="w-5 h-5" />
+                                            方塊競速
+                                        </Link>
+                                    )}
+                                    <Link to="/profile" className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
                                         <UserCircle className="w-5 h-5" />
                                         個人資料
                                     </Link>
                                     {profile && profile.role !== 'pending' && (
-                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
                                             <Wallet className="w-5 h-5" />
                                             我的薪資
                                         </Link>
                                     )}
                                     {(profile?.role === 'admin' || profile?.role === 'mentor') && (
-                                        <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
                                             <LayoutDashboard className="w-5 h-5" />
                                             後台管理
                                         </Link>
@@ -246,7 +258,7 @@ const Layout = ({ children }) => {
                                     <div className="border-t border-slate-100 pt-2 mt-2">
                                         <button
                                             onClick={() => { signOut(); setMobileMenuOpen(false); }}
-                                            className="flex items-center gap-3 px-3 py-3 text-red-500 hover:bg-red-50 rounded-xl font-medium text-sm w-full"
+                                            className="flex items-center gap-3 px-3 py-3.5 text-red-500 hover:bg-red-50 rounded-xl font-medium text-sm w-full"
                                         >
                                             <LogOut className="w-5 h-5" />
                                             登出
@@ -359,7 +371,7 @@ const NotificationBell = ({ userId }) => {
         <div className="relative" ref={panelRef}>
             <button
                 onClick={() => setOpen(!open)}
-                className="relative p-2 text-slate-500 hover:text-blue-600 transition-colors"
+                className="relative p-3 md:p-2 text-slate-500 hover:text-blue-600 transition-colors"
             >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
@@ -370,7 +382,7 @@ const NotificationBell = ({ userId }) => {
             </button>
 
             {open && (
-                <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden max-w-[calc(100vw-2rem)]">
+                <div className="fixed left-3 right-3 top-[4.5rem] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden">
                     <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="font-bold text-slate-900">通知</h3>
                         {unreadCount > 0 && (

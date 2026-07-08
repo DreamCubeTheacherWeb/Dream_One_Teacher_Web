@@ -1,7 +1,113 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-08（交接整理 + 遊戲化改版 session，Fable 5）。
+> 最後更新：2026-07-08 晚（全站手機版優化 session，Fable 5）。
+
+---
+
+## ✅ 2026-07-08 晚：全站手機版優化（27 檔改動，未 commit，等使用者點頭）
+
+**做了什麼**（全部桌面版行為不變，手機用 md: 斷點分流）：
+- 全域基本盤：viewport-fit=cover；html/body 禁橫向滾動；互動元件 touch-action 消 300ms 延遲；
+  <768px 小字輸入框自動升 16px（防 iOS 聚焦強制放大）；100vh 全域映射成 100dvh（防網址列伸縮跳版）。
+- 觸控可用性：漢堡/鈴鐺/選單項/tab/審核鈕等熱區補到 ≥44px；hover 才出現的刪除鈕改手機常駐
+  （ProfilePage 證件刪除、EditorComponent 圖片刪除、HomePage 團隊照說明）。
+- 版面修復：通知面板 375px 溢出修正（Layout.jsx）；PendingApproval 按鈕列 flex-wrap（原本會裁切）；
+  InstructorList「新增講師」與 ClaimRequests「拒絕」modal 補 max-h+捲動（原本矮螢幕送出鈕被吃掉）；
+  SignaturePad 簽名 modal 高度防護＋手機縮小 canvas；MySalary 表格加手機卡片版；
+  無響應式前綴的多欄 grid 補 sm: 斷點；公告內文圖片/表格防溢出。
+- 畫布課程（LessonDetail）：手機新增「放大檢視⇄適合寬度」切換（縮到 <0.6 倍才出現，桌面零改變）。
+- OTP/表單輸入：inputMode/autoComplete/pattern 補齊（數字鍵盤、驗證碼自動填入）。
+- CanvasEditor/FieldPositionEditor：手機顯示「桌面工具」提示條（不擋操作；觸控拖曳明確不做，工程過大）。
+- **順手修掉 6 處會白屏的舊 crash**（已在 main 上）：MySalary BigStat、ProfilePage Section＋文件上傳、
+  admin Dashboard NavCard、ContractAdmin StatCard、CanvasEditor 圖形選單、ContractView InfoRow——
+  全是「元件沒接 icon prop 卻 render `<Icon />`」的未定義變數錯誤（= 地雷 6 的真相，該地雷可銷）。
+
+**證據**：
+- build 綠燈 `✓ built in 6.19s`；lint 25 問題與 HEAD 基線完全一致（worktree 快照對照，零新增）。
+- 主對話親跑 `node scripts/mobile-verify/verify.mjs`：**69/69 PASS**（11 頁 × 375/390 寬 ×
+  無橫向溢出/無白屏/無 pageerror ＋ 漢堡/選單/鈴鐺互動量測）。
+- 24 張截圖由 fresh agent 逐張判讀全數合格（scratchpad/mobile-shots/，admin 導覽卡 icon 修復
+  在截圖上肉眼確認）。
+- 新增長期資產：`scripts/mobile-verify/`（手機回歸驗證腳本，偽造 session＋mock Supabase，
+  不碰線上資料，跑法見該目錄 README）。
+
+**已知限制**：mock 全空資料，寫入類互動（簽名實劃、檔案上傳、表單送出）未實測；
+真帳號的端到端手機實測建議在 Email provider 開通後做一次。
+
+---
+
+## ✅ 2026-07-08 深夜：方塊競速（老師間競速計時＋排名，8 檔，未 commit）
+
+**做了什麼**：新頁 `/cube`「方塊競速」——自製 CSS 3D 魔術方塊（`src/lib/cubeEngine.js`，
+純六色、零套件）、比賽式流程（15 步打亂顯示轉法譜 → 按住空白鍵 0.3 秒放開起錶 →
+鍵盤 U/D/L/R/F/B（Shift 反轉）或按鈕轉面 → 解開自動停錶）、成績送出 `cube_solves` 表、
+頁內 Top10＋我的最佳/最近 5 次；導覽列桌機/手機各加入口（Timer icon）；排行榜頁加
+「教學排行｜方塊競速」分頁（LeaderboardView 改成 metric 可注入，預設行為不變）。
+
+**證據**（主對話親跑/親讀）：
+- 引擎數學 Node 測試 `node 培訓web/scripts/cube-engine.test.mjs`：7/7 PASS
+  （含 100 輪隨機打亂→反走→還原）。
+- 真瀏覽器 Playwright（dev server＋`scripts/cube-harness.html`）：6/6 PASS
+  （27 cubie／54 貼紙／打亂非還原態／反走復原／零 JS error）；截圖 2 張由 fresh agent
+  判讀合格（純六色、無圖示、立體正常）。
+- `npm run build` 綠燈 ✓ built in 6.30s；eslint 新檔 0 新增錯誤。
+- SQL 檔主對話逐行親讀：RLS 三件（insert/select 只限本人）、SECURITY DEFINER 函式含
+  auth 守衛＋REVOKE/GRANT，符合本專案權限慣例。
+
+**等使用者**：
+1. ~~跑 `2026-07-08_cube_speed.sql`~~ ✅ 使用者已於 2026-07-08 貼入 Supabase 執行成功（v2 版）。
+2. 上線後用真帳號實測一輪：打亂→計時→解開→送出→排行榜出現（OAuth 擋自動化，只能人測）。
+
+**已知限制**（檔頭註解也有寫）：計時在前端，技術上可偽造成績——內部娛樂功能，可接受；
+CHECK 約束只擋離譜值（<3 秒、<10 步）。
+
+**2026-07-08 深夜 v2 改版（使用者試玩後追加需求）**：
+- **雙模式**：「鍵盤模式」（虛擬方塊，解開自動停錶）／「實體計時」（csTimer 式：
+  給打亂譜、老師拿真方塊、手動起停錶，不打亂也能純計時）。成績表加 `mode` 欄分榜。
+- **暫停／繼續**（預設 P 鍵）與**放棄**（Esc）；計時改分段累計。
+- **15 個按鍵全部可自訂**（12 轉面＋起停／暫停／放棄，localStorage 記憶，含衝突檢查
+  與恢復預設）；Ao5／Ao12 統計（csTimer 算法：去頭尾取平均）。
+- SQL 檔同步改版（v1→v2 冪等補救：move_count 改 nullable、加 mode 欄、
+  函式改 `get_cube_leaderboard(p_mode)`）——**已跑過 v1 的話直接重跑整份即可**。
+- 證據：真頁面 E2E `培訓web/scripts/cube-verify.mjs`（長期資產）**24/24 PASS**
+  （主對話親跑；含鍵盤解題自動停錶、暫停凍結、改鍵→reload 持久化、實體流程、
+  雙模式分榜寫入），引擎測試 7/7、build 綠燈、eslint 0、截圖 agent 判讀可交付。
+
+**2026-07-08 深夜 v4 改版（UX 重構，使用者授權主導）**：
+- 一張主遊戲卡整合「打亂列→3D 舞台（狀態 pill）→計時器 hero」；**單一主行動按鈕
+  隨狀態變**（打亂→按住準備→暫停/停錶→送出/再來一場），永遠提示下一步。
+- **自訂打亂改按鈕排譜**（9 字母鍵＋'/2/⌫/清空，移除文字輸入框）。
+- 螢幕按鈕區可收合（觸控裝置預設展開、桌機預設收合）；排行榜＋個人紀錄桌機併排，
+  stat tiles（最佳/Ao5/Ao12/次數）。
+- 手機達標（mobile-ux 準則）：全按鈕熱區 ≥44px（boundingBox 實測）、375/390 無橫向
+  溢出、:active 回饋、無 modal 無 hover-only。
+- 主對話依 UX 評審回饋追修 3 處：**螢幕轉面鍵在自由玩狀態被誤鎖**（disabled 條件與
+  鍵盤閘門統一，手機自由玩本來根本按不了）、翻面列虛線誤讀為停用（改實線＋說明字）、
+  手機分頁文字換行（sm 以下縮短）。
+- 證據（主對話親跑）：E2E **56/56**（原 38 行為＋按鈕排譜＋主鈕四態＋手機量測）、
+  引擎 32/32、build 綠燈、eslint 0；三張截圖（桌機/390/375）UX 評審判「可交付」。
+
+**2026-07-08 深夜 v3 改版（國際代號＋進階轉向＋品牌 logo）**：
+- 轉面按鈕改國際代號成對格子（R｜R'…），排列照使用者指定 R F L／U D B／M，
+  另有「翻面」列 x｜x'、y｜y'；**7 個格子順序可由老師自訂**（localStorage）。
+- 新增 **M 中層**與 **x/y 整顆翻面**（引擎支援 layer 0 與 'all'；x/y 不計步數）；
+  按鍵設定同步新增 6 個動作（keymap 升 v2、v1 自動遷移）。
+- **轉向物理校正**：建立 MOVE_TABLE 單一事實來源，9 個代號的方向用 5 條
+  「行為鐵證測試」釘死（如「R 後前面右排=黃」），測試當場抓到 2 處符號錯誤。
+- **打亂可手動輸入**轉法譜（含全形字元正規化：Ｒ’→R'），非法代號報錯不套用。
+- **白面中心貼紙印公司 logo**（public/logo.png，4x 特寫截圖確認置中不變形）。
+- 證據（主對話親跑）：引擎測試 **32/32**、真頁面 E2E **38/38**、build 綠燈、
+  eslint 0；截圖 agent 判讀通過。SQL 無變動（v2 已由使用者套用）。
+
+**2026-07-08 深夜補修 2 個 bug**（使用者實測回報方塊看不見）：
+1. 方塊舞台高度歸零——引擎注入的 `.dc-stage{height:100%}` 蓋掉 Tailwind `h-72`，
+   auto 高父層下塌成 0。修法：引擎不再指定容器尺寸（`cubeEngine.js`），尺寸交還呼叫端。
+2. 鍵盤/按鈕在未計時狀態完全沒反應（原設計只允許計時中轉面）。改為：閒置與成績出爐後
+   可自由玩；打亂動畫中→起錶前維持鎖定（防偷解，`CubeTimer.jsx` handleFaceTurn）。
+   證據：借 `scripts/mobile-verify` 的假 session 手法直開 `/cube` 真頁面，互動測試
+   **7/7 PASS**（鍵盤轉面／反轉復原／打亂譜顯示／打亂後鎖定／降級提示／零 pageerror，
+   dev 與 build 後 preview 雙環境），全頁截圖 agent 判讀「修復成功」。
 
 ---
 
@@ -55,6 +161,14 @@
 - **等使用者**：8 個課次已設為發布，但**課程總開關 `is_published` 仍是 false**——
   請用 admin 帳號逐課過目，沒問題就在後台把課程發布（一鍵）。
 
+**2026-07-08 改版（現行）**：使用者指定改回「與原始頁一模一樣」的**畫布模式復刻**。
+已用 Playwright 量測原始頁 323 個元素幾何（座標/字級/顏色/按鈕底色/清單編號），
+等比縮放重建為 **353 個畫布區塊**（含課首深灰標題帶、頂部照片橫幅、16 個虛線佔位框），
+已寫入線上 DB。證據：線上回讀零遺漏驗證通過（含兩句通關密語）＋ 8 課復刻截圖 vs
+原頁截圖由 agent 三輪比對通過。07-07 的直排卡片版備份在
+`scripts/course-first-station/backup-flow-41-blocks.json` 可回滾；重建管線與注意事項
+（橫幅直連 Google 圖床、L2 圖 data URI 內嵌）見同目錄 README。課程總開關仍等使用者開。
+
 ### ✅ 第三條線：遊戲化 + 電子簽名本人驗證（2026-07-07，交接 session 續作）
 
 - **成就徽章**：8 個徽章（初次啟程／勤學不倦／學而不厭／作業達人／人氣王／熱心交流／
@@ -94,8 +208,10 @@
 4. **法律確認（黃燈）**：「email 驗證＋手寫簽名」屬台灣《電子簽章法》一般電子簽章，有效力但
    **不推定本人親簽**（只有政府核可憑證的數位簽章才推定）。一般師資合約通常足夠，
    高價值合約建議諮詢律師。詳見 `scratchpad/esign-research.md`。
-5. **本次程式碼改動要不要 commit＋部署**：一批改檔＋多個新檔已在工作區。要我 commit
-   請說一聲；部署到 Zeabur 前也要你點頭。
+5. **手機版優化這批（2026-07-08 晚，27 檔）要不要 commit＋push**：全部已驗證（build/lint/
+   Playwright 69 斷言），但 push 上 main 會觸發 Zeabur 部署（＝動線上），等你點頭。
+   **注意：這批包含 6 處白屏 crash 修復，越早上線越好**——現在線上的版本（昨天 push 的）
+   `/my/salary`、`/profile`、後台儀表板等頁都可能白屏。
 6. **`.env` 是否從版控移除**：目前被 git 追蹤，內容只有 anon key（非機密，資安查證過），
    不急。要清的話 `git rm --cached 培訓web/.env`（檔案留著、只是不再追蹤）。
 7. **第一站課程發布**：內容已重建並驗證完畢（見上），課程總開關留給你確認後自己開。
@@ -133,8 +249,9 @@
 4. **`MySalary.jsx` vs `MySalaryNew.jsx`**：疑似遷移未收尾，兩個都掛路由，何者淘汰待確認。
 5. **前端建立 notifications 可被偽造**：過渡 RLS 已加固（見資安 SQL），長期要改 server 端
    trigger／SECURITY DEFINER 產生、前端禁止 INSERT。
-6. **展示元件的 icon prop 從未 render**（BigStat/StatCard/NavCard/Section/InfoRow）：
-   可能是圖示本該顯示卻靜默沒畫。工程師只清了未用綁定、未改行為，待確認是否為 UI bug。
+6. ~~展示元件的 icon prop 從未 render~~ **已於 2026-07-08 查明並修復**：真相是這些元件
+   render 了 `<Icon />` 但沒接 icon prop（未定義變數），會讓整頁白屏 crash，不是「靜默沒畫」。
+   6 處全修（見上方手機優化段），Playwright 已驗證頁面正常渲染且 icon 顯示。
 7. **後台編輯器會吃掉第一站的自訂 HTML**：第一站課程的團隊卡片牆／按鈕群／作業框
    是手寫 HTML（flex＋inline style），用後台 quill 文字編輯器打開重存會把結構簡化掉。
    要改字直接改資料庫或交給 AI，詳見 `scripts/course-first-station/README.md`。

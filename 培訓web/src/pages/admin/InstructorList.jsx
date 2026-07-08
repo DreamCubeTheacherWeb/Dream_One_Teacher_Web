@@ -402,7 +402,7 @@ const InstructorExpandedContent = ({ inst, urls }) => (
 
         <div>
             <h3 className="font-bold text-slate-900 text-sm mb-3">上傳文件</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {DOC_KEYS.map(({ key, label }) => {
                     const externalUrl = inst[`${key}_external_url`];
                     const storageUrl = urls[key];
@@ -650,7 +650,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[85dvh] overflow-y-auto">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <h2 className="font-bold text-lg text-slate-900">新增講師</h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
@@ -679,7 +679,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
                             className={inputCls} placeholder="0912345678"
                         />
                     </Field>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <Field label="業務狀態">
                             <select
                                 value={form.employment_status}

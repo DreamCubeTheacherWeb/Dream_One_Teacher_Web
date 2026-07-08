@@ -147,7 +147,7 @@ const AnnouncementManager = () => {
                             <Megaphone className="w-5 h-5 text-blue-600" />
                             {editing === 'new' ? '新增公告' : '編輯公告'}
                         </h3>
-                        <button onClick={cancelEdit} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100">
+                        <button onClick={cancelEdit} className="relative p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 before:absolute before:-inset-2 before:content-['']">
                             <X className="w-5 h-5" />
                         </button>
                     </div>

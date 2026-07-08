@@ -497,7 +497,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                                                     />
                                                     <button
                                                         onClick={() => handleRemoveContentImage(block.id)}
-                                                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-lg"
+                                                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-lg before:absolute before:-inset-2 before:content-['']"
                                                     >
                                                         <X className="w-4 h-4" />
                                                     </button>

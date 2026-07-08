@@ -1,15 +1,11 @@
-import { useState, useMemo } from 'react';
-import { Trophy, Crown, Medal, Sparkles, Clock } from 'lucide-react';
-import { computePoints, toHours, highestMilestone, rankTitle } from '../lib/leaderboard';
+import { useMemo } from 'react';
+import { Trophy, Crown, Medal } from 'lucide-react';
+import { toHours, highestMilestone, rankTitle } from '../lib/leaderboard';
 
-// 兩個排行維度：點數總榜（時數+里程碑）與 純接課時數
-const TABS = [
-    { key: 'points', label: '點數總榜', icon: Sparkles, unit: '點', accent: 'violet', getValue: (r) => computePoints(r.total_hours) },
-    { key: 'hours', label: '接課時數', icon: Clock, unit: '小時', accent: 'blue', getValue: (r) => toHours(r.total_hours) },
-];
+// 單一排行維度：接課時數
+const METRIC = { label: '接課時數', unit: '小時', accent: 'blue', getValue: (r) => toHours(r.total_hours) };
 
 const ACCENT = {
-    violet: 'from-violet-500 to-fuchsia-500',
     blue: 'from-blue-500 to-indigo-500',
 };
 
@@ -51,24 +47,48 @@ const subLine = (r) => {
 };
 
 /**
- * 講師榮譽榜純呈現元件（不含資料抓取）。
+ * 排行榜純呈現元件（不含資料抓取）。預設呈現「講師榮譽榜」（接課時數），
+ * 也可透過 metric 等 prop 重用於其他排行榜（例如方塊競速——見 Leaderboard.jsx）。
  * props:
- *   - rows：get_teaching_leaderboard 回傳陣列（含 total_hours / session_count / student_reach）
+ *   - rows：資料列陣列。預設情境（講師榮譽榜）含 total_hours / session_count /
+ *     student_reach；重用於其他榜單時，至少要有 instructor_id（識別用）、
+ *     user_id（用於高亮「你」）、display_name。
  *   - avatarMap：{ instructor_id: signedUrl }
  *   - currentUserId：目前登入者 id（用於高亮「你」）
- *   - years：有資料的年份陣列（新到舊）
+ *   - years：有資料的年份陣列（新到舊）；空陣列則不顯示年份切換列
  *   - selectedYear：目前選的年份（null＝歷屆總榜）
  *   - onYearChange：(yearOrNull) => void
+ *   - metric：排行維度設定，預設＝原本寫死的 METRIC（接課時數）。欄位：
+ *     label / unit / accent（'blue'）/ getValue(r) / 可選 format(value) /
+ *     可選 higherIsBetter（預設 true＝數值越大名次越前；方塊計時要設 false）
+ *   - title / subtitlePrefix / showYearLabel / icon / emptyTitle / emptyDesc：
+ *     頁首與空狀態文案，皆有預設值＝目前寫死的講師榮譽榜文案，不傳則行為不變。
  */
-const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [], selectedYear = null, onYearChange }) => {
-    const [tab, setTab] = useState('points');
-    const activeTab = TABS.find((t) => t.key === tab) || TABS[0];
+const LeaderboardView = ({
+    rows = [],
+    avatarMap = {},
+    currentUserId,
+    years = [],
+    selectedYear = null,
+    onYearChange,
+    metric = METRIC,
+    title = '講師榮譽榜',
+    subtitlePrefix = '看看誰在講台上發光發熱',
+    showYearLabel = true,
+    icon,
+    emptyTitle = '這個區間還沒有接課紀錄',
+    emptyDesc = '接課登記後就會出現在這裡！',
+}) => {
+    const HeaderIcon = icon || Trophy;
+    const activeTab = metric;
+    const fmt = activeTab.format || ((v) => v);
+    const sortDir = activeTab.higherIsBetter === false ? 1 : -1;
 
     const sorted = useMemo(() => {
         return [...rows]
             .map((r) => ({ ...r, value: activeTab.getValue(r) }))
-            .sort((a, b) => b.value - a.value || (a.display_name || '').localeCompare(b.display_name || ''));
-    }, [rows, activeTab]);
+            .sort((a, b) => (a.value - b.value) * sortDir || (a.display_name || '').localeCompare(b.display_name || ''));
+    }, [rows, activeTab, sortDir]);
 
     const myRankIndex = sorted.findIndex((r) => r.user_id && r.user_id === currentUserId);
     const myRow = myRankIndex >= 0 ? sorted[myRankIndex] : null;
@@ -87,11 +107,11 @@ const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [],
                 <div className="pointer-events-none absolute right-16 bottom-0 w-24 h-24 rounded-full bg-white/10 blur-xl" />
                 <div className="relative flex items-center gap-3">
                     <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0">
-                        <Trophy className="w-6 h-6 sm:w-7 sm:h-7" />
+                        <HeaderIcon className="w-6 h-6 sm:w-7 sm:h-7" />
                     </div>
                     <div>
-                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">講師榮譽榜</h1>
-                        <p className="text-white/80 text-sm mt-0.5">看看誰在講台上發光發熱 · {yearLabel}</p>
+                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{title}</h1>
+                        <p className="text-white/80 text-sm mt-0.5">{subtitlePrefix}{showYearLabel ? ` · ${yearLabel}` : ''}</p>
                     </div>
                 </div>
                 {myRow && (
@@ -99,7 +119,7 @@ const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [],
                         <span className="text-sm font-medium text-white/90 whitespace-nowrap">你目前的名次</span>
                         <span className="text-2xl font-black tabular-nums leading-none">#{myRankIndex + 1}</span>
                         <span className="w-full sm:w-auto sm:ml-auto text-sm text-white/80 whitespace-nowrap">
-                            {activeTab.label} <b className="font-black text-white">{myRow.value}</b> {activeTab.unit}
+                            {activeTab.label} <b className="font-black text-white">{fmt(myRow.value)}</b> {activeTab.unit}
                         </span>
                     </div>
                 )}
@@ -107,7 +127,7 @@ const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [],
 
             {/* 年份切換 */}
             {years.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex flex-wrap gap-2 mb-6">
                     <YearPill active={selectedYear === null} onClick={() => onYearChange?.(null)}>歷屆總榜</YearPill>
                     {years.map((y) => (
                         <YearPill key={y} active={selectedYear === y} onClick={() => onYearChange?.(y)}>{y}</YearPill>
@@ -115,40 +135,19 @@ const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [],
                 </div>
             )}
 
-            {/* 維度切換 */}
-            <div className="flex flex-wrap gap-2 mb-6">
-                {TABS.map((t) => {
-                    const Icon = t.icon;
-                    const active = t.key === tab;
-                    return (
-                        <button
-                            key={t.key}
-                            onClick={() => setTab(t.key)}
-                            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all ${
-                                active
-                                    ? `text-white bg-gradient-to-r ${ACCENT[t.accent]} shadow-md scale-[1.02]`
-                                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700'
-                            }`}
-                        >
-                            <Icon className="w-4 h-4" /> {t.label}
-                        </button>
-                    );
-                })}
-            </div>
-
             {sorted.length === 0 ? (
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-sm py-16 text-center">
                     <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Trophy className="w-8 h-8 text-slate-300" />
+                        <HeaderIcon className="w-8 h-8 text-slate-300" />
                     </div>
-                    <h2 className="text-xl font-black text-slate-900">這個區間還沒有接課紀錄</h2>
-                    <p className="text-slate-500 mt-2 text-sm">接課登記後就會出現在這裡！</p>
+                    <h2 className="text-xl font-black text-slate-900">{emptyTitle}</h2>
+                    <p className="text-slate-500 mt-2 text-sm">{emptyDesc}</p>
                 </div>
             ) : (
                 <>
                     {/* Podium 前三名 */}
                     {top3.length > 0 && (
-                        <div key={`${tab}-${selectedYear}`} className="grid grid-cols-3 gap-1.5 sm:gap-4 mb-6 items-end">
+                        <div key={selectedYear ?? 'all'} className="grid grid-cols-3 gap-1.5 sm:gap-4 mb-6 items-end">
                             {podiumOrder.map((r, i) => {
                                 const rank = sorted.findIndex((x) => x.instructor_id === r.instructor_id) + 1;
                                 const p = PODIUM[rank] || PODIUM[3];
@@ -182,8 +181,10 @@ const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [],
                                                 {r.display_name || '匿名講師'}
                                                 {isMe && <span className="hidden sm:inline ml-1.5 text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full align-middle">你</span>}
                                             </div>
-                                            <div className={`text-lg sm:text-2xl font-black tabular-nums ${p.value}`}>{r.value}</div>
-                                            <div className="text-[10px] sm:text-[11px] text-slate-400 font-medium -mt-0.5">{activeTab.unit}</div>
+                                            <div className={`text-lg sm:text-2xl font-black tabular-nums ${p.value}`}>{fmt(r.value)}</div>
+                                            {activeTab.unit && (
+                                                <div className="text-[10px] sm:text-[11px] text-slate-400 font-medium -mt-0.5">{activeTab.unit}</div>
+                                            )}
                                         </div>
                                         <div className="mt-1.5 h-5 flex items-center justify-center">
                                             <MilestoneChip hours={r.total_hours} small />
@@ -229,8 +230,8 @@ const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [],
                                             )}
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <span className={`text-lg font-black tabular-nums ${isMe ? 'text-blue-700' : 'text-slate-800'}`}>{r.value}</span>
-                                            <span className="text-xs text-slate-500 ml-1">{activeTab.unit}</span>
+                                            <span className={`text-lg font-black tabular-nums ${isMe ? 'text-blue-700' : 'text-slate-800'}`}>{fmt(r.value)}</span>
+                                            {activeTab.unit && <span className="text-xs text-slate-500 ml-1">{activeTab.unit}</span>}
                                         </div>
                                     </div>
                                 );
@@ -246,7 +247,7 @@ const LeaderboardView = ({ rows = [], avatarMap = {}, currentUserId, years = [],
 const YearPill = ({ active, onClick, children }) => (
     <button
         onClick={onClick}
-        className={`px-3.5 py-1.5 rounded-full text-sm font-bold transition-all ${
+        className={`px-3.5 py-3 md:py-1.5 rounded-full text-sm font-bold transition-all ${
             active
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700'

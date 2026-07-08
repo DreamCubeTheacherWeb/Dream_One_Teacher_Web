@@ -66,23 +66,23 @@ const PendingApproval = () => {
                     </div>
                 </div>
 
-                <div className="flex gap-3 justify-center">
+                <div className="flex flex-wrap gap-3 justify-center">
                     <button
                         onClick={handleRefresh}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                        className="flex items-center gap-2 px-5 py-3 md:py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
                     >
                         <RefreshCw className="w-4 h-4" />
                         重新檢查狀態
                     </button>
                     <button
                         onClick={() => navigate('/profile')}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
+                        className="flex items-center gap-2 px-5 py-3 md:py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
                     >
                         編輯個人資料
                     </button>
                     <button
                         onClick={signOut}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
+                        className="flex items-center gap-2 px-5 py-3 md:py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
                     >
                         <LogOut className="w-4 h-4" />
                         登出

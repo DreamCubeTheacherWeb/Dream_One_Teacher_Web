@@ -492,7 +492,7 @@ const AssignmentReview = () => {
                                                                             {(isAdmin || fb.user_id === user.id) && (
                                                                                 <button
                                                                                     onClick={() => deleteFeedback(fb.id, a.id)}
-                                                                                    className="text-amber-400 hover:text-red-500 transition-colors"
+                                                                                    className="relative text-amber-400 hover:text-red-500 transition-colors before:absolute before:-inset-2 before:content-['']"
                                                                                     title="刪除此回饋"
                                                                                 >
                                                                                     <Trash2 className="w-3.5 h-3.5" />

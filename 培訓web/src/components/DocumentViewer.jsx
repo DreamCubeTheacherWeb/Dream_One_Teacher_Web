@@ -68,7 +68,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
         <button
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage <= 1}
-          className="absolute left-0 z-10 p-2 rounded-full bg-white/90 shadow-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          className="absolute left-0 z-10 p-3 md:p-2 rounded-full bg-white/90 shadow-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
         >
           <ChevronLeft className="w-5 h-5 text-slate-600" />
         </button>
@@ -102,7 +102,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
         <button
           onClick={() => goToPage(currentPage + 1)}
           disabled={!numPages || currentPage >= numPages}
-          className="absolute right-0 z-10 p-2 rounded-full bg-white/90 shadow-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          className="absolute right-0 z-10 p-3 md:p-2 rounded-full bg-white/90 shadow-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
         >
           <ChevronRight className="w-5 h-5 text-slate-600" />
         </button>
@@ -130,7 +130,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
         <button
           onClick={onFinishReading}
           disabled={!hasReachedEnd}
-          className={`mt-6 px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${
+          className={`mt-6 w-full md:w-auto max-w-full text-center px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${
             hasReachedEnd
               ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30 hover:-translate-y-0.5'
               : 'bg-slate-100 text-slate-400 cursor-not-allowed'
@@ -146,11 +146,11 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
           <div className="relative max-w-full max-h-full overflow-auto bg-white rounded-2xl" onClick={e => e.stopPropagation()}>
             <button
               onClick={() => setZoomPage(null)}
-              className="absolute top-3 right-3 z-10 p-2 bg-white/90 rounded-full shadow-lg hover:bg-slate-100 transition-all"
+              className="absolute top-3 right-3 z-10 p-3 md:p-2 bg-white/90 rounded-full shadow-lg hover:bg-slate-100 transition-all"
             >
               <X className="w-5 h-5" />
             </button>
-            <div className="p-2 overflow-auto max-h-[90vh]">
+            <div className="p-2 overflow-auto max-h-[90dvh]">
               <Document file={fileUrl}>
                 <Page
                   pageNumber={zoomPage}
@@ -164,7 +164,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
               <button
                 onClick={() => setZoomPage(Math.max(1, zoomPage - 1))}
                 disabled={zoomPage <= 1}
-                className="p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30"
+                className="p-3 md:p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -172,7 +172,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
               <button
                 onClick={() => setZoomPage(Math.min(numPages, zoomPage + 1))}
                 disabled={zoomPage >= numPages}
-                className="p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30"
+                className="p-3 md:p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>

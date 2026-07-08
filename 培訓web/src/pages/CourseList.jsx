@@ -92,7 +92,7 @@ const CourseList = () => {
                                     </span>
                                 )}
                             </div>
-                            <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors">
+                            <h3 className="text-xl font-bold text-slate-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">
                                 {course.title}
                             </h3>
                             <p className="text-slate-500 text-sm line-clamp-2 mb-6">

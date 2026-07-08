@@ -159,7 +159,7 @@ const ClaimCard = ({ claim, expanded, onToggle, onApprove, onReject }) => {
                         <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(claim.created_at).toLocaleString('zh-TW')}</span>
                     </div>
                 </div>
-                <button className="shrink-0 text-slate-400 hover:text-blue-600 transition-colors p-1">
+                <button className="relative shrink-0 text-slate-400 hover:text-blue-600 transition-colors p-1 before:absolute before:-inset-2 before:content-['']">
                     {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </button>
             </div>
@@ -267,7 +267,7 @@ const RejectModal = ({ claimId, onClose, onDone }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[85dvh] overflow-y-auto">
                 <h2 className="font-bold text-lg text-slate-900 mb-2">拒絕認領申請</h2>
                 <p className="text-sm text-slate-500 mb-4">可選填理由,會記錄在審核紀錄裡(申請人目前不會看到)。</p>
                 <textarea

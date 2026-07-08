@@ -43,3 +43,6 @@ yarn-error.log*
 scripts/*.json
 scripts/*.txt
 scripts/__pycache__/
+# 培訓web 底下的驗證截圖殘渣（非專案資產，.mjs 測試腳本本身保留）
+培訓web/scripts/shots/
+培訓web/scripts/*.png

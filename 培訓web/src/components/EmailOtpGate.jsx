@@ -79,6 +79,7 @@ const OtpInput = ({ value, onChange, onComplete, disabled, invalid }) => {
                     ref={(el) => (refs.current[i] = el)}
                     type="text"
                     inputMode="numeric"
+                    pattern="[0-9]*"
                     autoComplete={i === 0 ? 'one-time-code' : 'off'}
                     maxLength={i === 0 ? 6 : 1}
                     value={d}
@@ -246,7 +247,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
                     type="button"
                     onClick={handleSend}
                     disabled={sending || cooldown > 0}
-                    className={`w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-bold rounded-xl transition-all ${
+                    className={`w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 md:py-2.5 text-sm font-bold rounded-xl transition-all ${
                         sending || cooldown > 0
                             ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                             : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/25'
@@ -283,7 +284,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
                             type="button"
                             onClick={() => handleVerify(code)}
                             disabled={verifying || code.length !== 6}
-                            className={`flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold rounded-xl transition-all ${
+                            className={`flex items-center justify-center gap-2 px-6 py-3 md:py-2.5 text-sm font-bold rounded-xl transition-all ${
                                 verifying || code.length !== 6
                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                     : 'bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-500/25'
@@ -299,7 +300,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
                             type="button"
                             onClick={handleSend}
                             disabled={sending || cooldown > 0}
-                            className="text-xs font-bold text-slate-500 hover:text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors px-2 py-2 self-start sm:self-auto"
+                            className="text-xs font-bold text-slate-500 hover:text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors px-2 py-3.5 md:py-2 self-start sm:self-auto"
                         >
                             {cooldown > 0 ? `重新寄送（${cooldown}s）` : '沒收到？重新寄送'}
                         </button>

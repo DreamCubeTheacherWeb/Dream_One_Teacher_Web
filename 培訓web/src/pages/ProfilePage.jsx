@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle, Trophy, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { computePoints, nextMilestone, toHours, MILESTONES } from '../lib/leaderboard';
+import { nextMilestone, toHours, MILESTONES } from '../lib/leaderboard';
 import { downloadCertificate } from '../lib/certificate';
 
 const TW_REGIONS = {
@@ -345,7 +345,7 @@ const ProfilePage = () => {
                         <button
                             type="button"
                             onClick={() => setShowClaimModal(true)}
-                            className="mt-3 inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-lg text-sm transition-colors"
+                            className="mt-3 inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-3 md:py-2 rounded-lg text-sm transition-colors w-full sm:w-auto justify-center"
                         >
                             <UserSearch className="w-4 h-4" /> 認領我的講師資料
                         </button>
@@ -623,7 +623,9 @@ const ProfilePage = () => {
             <Section icon={Upload} title="文件上傳">
                 <p className="text-sm text-slate-500 mb-4">以下文件皆為必填，支援 JPEG、PNG、GIF、WebP 格式，單檔上限 20MB</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {DOC_TYPES.map(({ key, label }) => (
+                    {DOC_TYPES.map(({ key, label, Icon: docIcon }) => {
+                        const Icon = docIcon;
+                        return (
                         <div key={key} className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-300 transition-colors">
                             <div className="text-sm font-medium text-slate-700 mb-3 flex items-center justify-center gap-1.5">
                                 <Icon className="w-4 h-4 text-slate-400" /> {label} <span className="text-red-500">*</span>
@@ -634,7 +636,7 @@ const ProfilePage = () => {
                                     <img src={filePreviews[key]} alt={label} className="w-full h-32 object-cover rounded-lg" />
                                     <button
                                         onClick={() => handleRemoveFile(key)}
-                                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-3 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-red-600 flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
                                     >
                                         <X className="w-3 h-3" />
                                     </button>
@@ -676,7 +678,8 @@ const ProfilePage = () => {
                                 }}
                             />
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </Section>
 
@@ -685,7 +688,7 @@ const ProfilePage = () => {
                 <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
                 >
                     <Save className="w-5 h-5" />
                     {saving ? '儲存中⋯' : isFirstTime ? '送出資料' : '儲存個人資料'}
@@ -848,7 +851,6 @@ const AchievementsSection = ({ userId, certName }) => {
         return () => { cancelled = true; };
     }, [userId]);
 
-    const points = computePoints(hours);
     const earnedCount = MILESTONES.filter((m) => hours >= m.hours).length;
     const next = nextMilestone(hours);
     const canDownloadCert = completedCourses >= 1;
@@ -892,11 +894,10 @@ const AchievementsSection = ({ userId, certName }) => {
             ) : (
                 <>
                     {/* 教學數據摘要 */}
-                    <div className="grid grid-cols-3 gap-3 mb-5">
+                    <div className="grid grid-cols-2 gap-3 mb-5">
                         {[
                             { label: '接課時數', value: toHours(hours), unit: '小時' },
                             { label: '接課場次', value: sessions, unit: '場' },
-                            { label: '教學點數', value: points, unit: '點' },
                         ].map((s) => (
                             <div key={s.label} className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-center">
                                 <div className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{s.value}</div>
@@ -955,7 +956,7 @@ const AchievementsSection = ({ userId, certName }) => {
                             <button
                                 onClick={handleDownloadCert}
                                 disabled={downloading}
-                                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
                             >
                                 <Download className="w-4 h-4" />
                                 {downloading ? '產生中⋯' : '下載完成培訓證明'}
@@ -968,14 +969,17 @@ const AchievementsSection = ({ userId, certName }) => {
     );
 };
 
-const Section = ({ title, children }) => (
+const Section = ({ icon, title, children }) => {
+    const Icon = icon;
+    return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
             <Icon className="w-5 h-5 text-blue-600" /> {title}
         </h2>
         {children}
     </div>
-);
+    );
+};
 
 const Field = ({ label, required, children }) => (
     <div>
@@ -1061,7 +1065,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                             請輸入您過去填寫資料時使用的姓名,我們會在歷史記錄中比對。
                         </p>
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700 shrink-0">
+                    <button onClick={onClose} className="relative text-slate-400 hover:text-slate-700 shrink-0 before:absolute before:-inset-2 before:content-['']">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -1132,7 +1136,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                                     {selected.phone_masked && <span>📱 {selected.phone_masked}</span>}
                                 </div>
                                 <button onClick={() => setSelected(null)}
-                                    className="text-xs text-purple-600 hover:underline mt-2">
+                                    className="relative text-xs text-purple-600 hover:underline mt-2 before:absolute before:-inset-2 before:content-['']">
                                     ← 重新選擇
                                 </button>
                             </div>
@@ -1167,11 +1171,11 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                 {selected && (
                     <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
                         <button onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold text-sm">
+                            className="px-4 py-3 md:py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold text-sm">
                             取消
                         </button>
                         <button onClick={doSubmit} disabled={submitting}
-                            className="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm disabled:opacity-50 inline-flex items-center gap-1.5">
+                            className="px-5 py-3 md:py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm disabled:opacity-50 inline-flex items-center gap-1.5">
                             <Send className="w-4 h-4" />
                             {submitting ? '送出⋯' : '送出認領申請'}
                         </button>

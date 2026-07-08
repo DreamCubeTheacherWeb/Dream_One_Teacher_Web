@@ -72,7 +72,7 @@ const MySalaryNew = () => {
 
     return (
         <div className="p-4 sm:p-8 max-w-3xl mx-auto">
-            <Link to="/my/salary" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-blue-600 mb-4">
+            <Link to="/my/salary" className="relative inline-flex items-center gap-1 text-sm text-slate-500 hover:text-blue-600 mb-4 before:absolute before:-inset-2 before:content-['']">
                 <ArrowLeft className="w-4 h-4" /> 回我的薪資
             </Link>
 

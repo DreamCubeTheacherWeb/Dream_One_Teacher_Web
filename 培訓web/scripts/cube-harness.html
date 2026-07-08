@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>cubeEngine 瀏覽器測試 harness（僅 dev server 用，不進 build）</title>
+</head>
+<body style="margin:0;background:#f3f4f6">
+  <div id="stage" style="width:480px;height:420px;margin:20px auto"></div>
+  <pre id="log" style="text-align:center;font:13px/1.6 monospace"></pre>
+  <script type="module">
+    import { CubeRenderer, genScramble, invertMoves, isSolvedState } from '/src/lib/cubeEngine.js';
+    const stage = document.getElementById('stage');
+    let solvedFlag = true;
+    const renderer = new CubeRenderer(stage, {
+      size: 56,
+      onSolvedChange: (s) => { solvedFlag = s; }
+    });
+    renderer.setView(-26, -34);
+    window.__harness = {
+      renderer, genScramble, invertMoves,
+      solved: () => solvedFlag,
+      cubieCount: () => stage.querySelectorAll('.dc-cubie').length,
+      stickerCount: () => stage.querySelectorAll('.dc-sticker').length,
+      log: (m) => { document.getElementById('log').textContent += m + '\n'; }
+    };
+    window.__harnessReady = true;
+  </script>
+</body>
+</html>

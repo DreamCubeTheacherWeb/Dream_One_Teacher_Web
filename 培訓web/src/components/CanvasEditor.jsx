@@ -729,6 +729,10 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
 
   return (
     <div className="min-h-screen bg-slate-100 pb-20">
+      {/* 手機版提示：此編輯器不適合觸控操作 */}
+      <div className="md:hidden bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs font-bold text-amber-700 text-center">
+        🖥️ 此編輯器為桌面工具，建議使用電腦操作
+      </div>
       {/* ── Top bar ── */}
       <div className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3">
         <div className="max-w-[1100px] mx-auto flex items-center justify-between">
@@ -766,13 +770,16 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
               </button>
               {shapeMenuOpen && (
                 <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-slate-200 p-2 grid grid-cols-3 gap-1 w-[210px] z-50">
-                  {SHAPE_TYPES.map(({ key, label }) => (
+                  {SHAPE_TYPES.map(({ key, label, Icon: shapeIcon }) => {
+                    const Icon = shapeIcon;
+                    return (
                     <button key={key} onClick={() => handleAddShape(key)}
                       className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-slate-50 transition text-slate-600 hover:text-slate-900">
                       <Icon className="w-5 h-5" />
                       <span className="text-[10px] font-medium">{label}</span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

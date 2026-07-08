@@ -191,6 +191,10 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
   return (
     <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center">
       <div className="bg-white w-full h-full flex flex-col">
+        {/* 手機版提示：此編輯器不適合觸控操作 */}
+        <div className="md:hidden bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs font-bold text-amber-700 text-center shrink-0">
+          🖥️ 此編輯器為桌面工具，建議使用電腦操作
+        </div>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
           <div className="flex items-center gap-3">

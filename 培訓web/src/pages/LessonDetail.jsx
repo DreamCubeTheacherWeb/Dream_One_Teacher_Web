@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { ChevronLeft, ChevronRight, Play, FileText, CheckCircle, Circle, Image as ImageIcon, MessageSquare, Send, Clock, Star, ThumbsUp, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, FileText, CheckCircle, Circle, Image as ImageIcon, MessageSquare, Send, Clock, Star, ThumbsUp, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
 const CANVAS_WIDTH = 960;
 
@@ -743,12 +743,13 @@ const ViewerShapeSVG = ({ shapeType, fill, stroke, strokeWidth, borderRadius }) 
 
 const CanvasViewer = ({ contents }) => {
     const containerRef = useRef(null);
-    const [scale, setScale] = useState(1);
+    const [fitScale, setFitScale] = useState(1);
+    const [zoomed, setZoomed] = useState(false);
 
     const updateScale = useCallback(() => {
         if (!containerRef.current) return;
         const availableWidth = containerRef.current.clientWidth || CANVAS_WIDTH;
-        setScale(Math.min(1, availableWidth / CANVAS_WIDTH));
+        setFitScale(Math.min(1, availableWidth / CANVAS_WIDTH));
     }, []);
 
     useEffect(() => {
@@ -765,13 +766,14 @@ const CanvasViewer = ({ contents }) => {
         }
     }
 
-    return (
-        <div ref={containerRef} className="w-full overflow-hidden">
-            <div style={{
-                width: CANVAS_WIDTH * scale,
-                height: canvasHeight * scale,
-                margin: '0 auto',
-            }}>
+    // 手機窄螢幕「適合寬度」會把畫布縮太小（scale<0.6 時文字幾乎不可讀）。
+    // 提供只在手機出現的「放大檢視」切換：固定 0.85 倍 + 可捲動容器瀏覽。
+    // 桌面（scale >= 0.6）canZoom 恆為 false，行為與外觀完全不變。
+    const ZOOM_SCALE = 0.85;
+    const canZoom = fitScale < 0.6;
+    const scale = canZoom && zoomed ? ZOOM_SCALE : fitScale;
+
+    const canvasBox = (
             <div
                 className="relative bg-white rounded-2xl shadow-lg"
                 style={{
@@ -835,7 +837,49 @@ const CanvasViewer = ({ contents }) => {
                     );
                 })}
             </div>
-            </div>
+    );
+
+    return (
+        <div ref={containerRef} className="w-full overflow-hidden">
+            {canZoom && (
+                <div className="md:hidden mb-2">
+                    <div className="flex items-center justify-end">
+                        <button
+                            type="button"
+                            onClick={() => setZoomed((z) => !z)}
+                            className="min-h-[44px] inline-flex items-center gap-1.5 px-4 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold active:bg-slate-200 transition-colors"
+                        >
+                            {zoomed ? (
+                                <>
+                                    <ZoomOut className="w-3.5 h-3.5" /> 適合寬度
+                                </>
+                            ) : (
+                                <>
+                                    <ZoomIn className="w-3.5 h-3.5" /> 放大檢視
+                                </>
+                            )}
+                        </button>
+                    </div>
+                    {zoomed && (
+                        <p className="text-[10px] text-slate-400 text-right mt-1">可上下左右滑動查看完整內容</p>
+                    )}
+                </div>
+            )}
+            {canZoom && zoomed ? (
+                <div className="overflow-auto max-h-[70dvh] rounded-2xl border border-slate-200/80 bg-slate-50/60">
+                    <div style={{ width: CANVAS_WIDTH * scale, height: canvasHeight * scale }}>
+                        {canvasBox}
+                    </div>
+                </div>
+            ) : (
+                <div style={{
+                    width: CANVAS_WIDTH * scale,
+                    height: canvasHeight * scale,
+                    margin: '0 auto',
+                }}>
+                    {canvasBox}
+                </div>
+            )}
             <style dangerouslySetInnerHTML={{ __html: `
                 .canvas-text-view h1 { font-size: 2em; font-weight: 800; margin: 0.3em 0; }
                 .canvas-text-view h2 { font-size: 1.5em; font-weight: 700; margin: 0.3em 0; }

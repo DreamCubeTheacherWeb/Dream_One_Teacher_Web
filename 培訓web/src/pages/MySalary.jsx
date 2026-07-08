@@ -74,7 +74,7 @@ const MySalary = () => {
                     <p className="text-slate-500 mt-1 text-sm">{summary.full_name}</p>
                 </div>
                 <Link to="/my/salary/new"
-                    className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl transition-colors shadow-sm">
+                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl transition-colors shadow-sm w-full sm:w-auto">
                     <Plus className="w-4 h-4" /> 登記課程回報
                 </Link>
             </div>
@@ -142,7 +142,36 @@ const MySalary = () => {
 
                 {/* 課程紀錄列表 */}
                 <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* 手機版：卡片列表 */}
+                    <div className="md:hidden divide-y divide-slate-100">
+                        {filtered.slice(0, 100).map(s => (
+                            <div key={s.id} className="p-4">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                        <div className="text-sm font-bold text-slate-800">{s.session_date}</div>
+                                        <div className="text-sm text-slate-700 mt-0.5">{COURSE_LABELS[s.course_type] || s.course_type}</div>
+                                        {s.course_name && <div className="text-xs text-slate-500 mt-0.5">{s.course_name}</div>}
+                                    </div>
+                                    <span className={`shrink-0 inline-flex text-xs font-bold px-2 py-1 rounded-full ${STATUS_COLORS[s.status] || ''}`}>
+                                        {STATUS_LABELS[s.status] || s.status}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-50">
+                                    <span className="text-xs text-slate-500">
+                                        {s.duration_hours ? `${s.duration_hours}h` : '–'}
+                                        {s.student_count ? ` / ${s.student_count}人` : ''}
+                                    </span>
+                                    <span className="text-base font-bold text-slate-900">{fmt(s.total_salary)}</span>
+                                </div>
+                            </div>
+                        ))}
+                        {filtered.length === 0 && (
+                            <div className="px-4 py-12 text-center text-slate-400">這個月還沒有薪資紀錄</div>
+                        )}
+                    </div>
+
+                    {/* 桌面版：表格 */}
+                    <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead className="bg-slate-50 text-slate-400 text-xs uppercase tracking-wider">
                                 <tr>
@@ -194,7 +223,9 @@ const MySalary = () => {
 };
 
 
-const BigStat = ({ label, value, sub, color }) => (
+const BigStat = ({ icon, label, value, sub, color }) => {
+    const Icon = icon;
+    return (
     <div className={`bg-gradient-to-br ${color} rounded-2xl p-5 text-white shadow-sm`}>
         <div className="flex items-center gap-2 text-white/80 text-sm font-medium">
             <Icon className="w-4 h-4" /> {label}
@@ -202,7 +233,8 @@ const BigStat = ({ label, value, sub, color }) => (
         <div className="text-3xl font-black mt-2">{value}</div>
         {sub && <div className="text-xs text-white/80 mt-1">{sub}</div>}
     </div>
-);
+    );
+};
 
 const MiniStat = ({ label, value, sub, color = 'text-slate-900' }) => (
     <div className="bg-white rounded-xl border border-slate-200 p-3">

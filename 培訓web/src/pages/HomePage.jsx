@@ -189,7 +189,7 @@ const HomePage = () => {
                                         </span>
                                     </div>
 
-                                    <h3 className="font-bold text-slate-900 mb-2 leading-snug">{a.title}</h3>
+                                    <h3 className="font-bold text-slate-900 mb-2 leading-snug line-clamp-2 md:line-clamp-none">{a.title}</h3>
                                     <div className="text-sm text-slate-500 leading-relaxed line-clamp-3 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
                                     <span className="inline-block mt-3 text-xs font-bold text-blue-500">閱讀更多 →</span>
                                 </Link>
@@ -223,7 +223,7 @@ const HomePage = () => {
                     <div className="flex justify-center gap-4 mb-10">
                         <button
                             onClick={() => setActiveTab('ideal')}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                            className={`px-6 py-3 md:py-2.5 rounded-xl text-sm font-bold transition-all ${
                                 activeTab === 'ideal'
                                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
                                     : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -234,7 +234,7 @@ const HomePage = () => {
                         </button>
                         <button
                             onClick={() => setActiveTab('real')}
-                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                            className={`px-6 py-3 md:py-2.5 rounded-xl text-sm font-bold transition-all ${
                                 activeTab === 'real'
                                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
                                     : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -295,8 +295,8 @@ const HomePage = () => {
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                     />
                                 </div>
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                                <div className="absolute bottom-0 left-0 right-0 p-5 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300" />
+                                <div className="absolute bottom-0 left-0 right-0 p-5 translate-y-0 opacity-100 md:translate-y-4 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 transition-all duration-300">
                                     <p className="text-white font-bold text-sm">{photo.alt}</p>
                                 </div>
                             </div>

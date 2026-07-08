@@ -163,7 +163,7 @@ const LessonView = () => {
                                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">
                                         章節 {idx + 1}
                                     </div>
-                                    <div className={`text-base font-bold mb-1.5 transition-colors ${isCompleted ? 'text-slate-400' : 'text-slate-800 group-hover:text-blue-600'}`}>
+                                    <div className={`text-base font-bold mb-1.5 line-clamp-2 transition-colors ${isCompleted ? 'text-slate-400' : 'text-slate-800 group-hover:text-blue-600'}`}>
                                         {lesson.title}
                                     </div>
                                     {preview && (
