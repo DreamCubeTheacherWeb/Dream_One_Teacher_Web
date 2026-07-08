@@ -1,11 +1,22 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-08 晚（全站手機版優化 session，Fable 5）。
+> 最後更新：2026-07-08 晚（手機優化＋方塊競速已 commit＋push，Opus 4.8）。
 
 ---
 
-## ✅ 2026-07-08 晚：全站手機版優化（27 檔改動，未 commit，等使用者點頭）
+## 🚀 2026-07-08：手機優化＋方塊競速已 commit＋push 上線（commit 7c28766、2d1b226）
+
+已推上 GitHub main，Zeabur 應自動部署。**這批帶了 6 處白屏 crash 修復，是上線的主要理由。**
+截圖／驗證殘渣已補進 .gitignore（`培訓web/scripts/shots/`、`*.png`）不再進版控。
+**上線後仍待使用者手動處理（沿用前一批的兩件，非本次新增）**：
+1. Supabase 開 Email provider（否則合約簽署 OTP 寄不出）。
+2. 跑 `培訓web/supabase/2026-07-08_teaching_leaderboard.sql`（否則榮譽榜載入失敗）。
+方塊競速的 `2026-07-08_cube_speed.sql` v2 已於稍早由使用者套用線上，無新增 SQL。
+
+---
+
+## ✅ 2026-07-08 晚：全站手機版優化（27 檔，已 commit＋push＝上方 7c28766）
 
 **做了什麼**（全部桌面版行為不變，手機用 md: 斷點分流）：
 - 全域基本盤：viewport-fit=cover；html/body 禁橫向滾動；互動元件 touch-action 消 300ms 延遲；
@@ -37,7 +48,7 @@
 
 ---
 
-## ✅ 2026-07-08 深夜：方塊競速（老師間競速計時＋排名，8 檔，未 commit）
+## ✅ 2026-07-08 深夜：方塊競速（老師間競速計時＋排名，已 commit＋push＝上方 7c28766）
 
 **做了什麼**：新頁 `/cube`「方塊競速」——自製 CSS 3D 魔術方塊（`src/lib/cubeEngine.js`，
 純六色、零套件）、比賽式流程（15 步打亂顯示轉法譜 → 按住空白鍵 0.3 秒放開起錶 →
@@ -208,10 +219,9 @@ CHECK 約束只擋離譜值（<3 秒、<10 步）。
 4. **法律確認（黃燈）**：「email 驗證＋手寫簽名」屬台灣《電子簽章法》一般電子簽章，有效力但
    **不推定本人親簽**（只有政府核可憑證的數位簽章才推定）。一般師資合約通常足夠，
    高價值合約建議諮詢律師。詳見 `scratchpad/esign-research.md`。
-5. **手機版優化這批（2026-07-08 晚，27 檔）要不要 commit＋push**：全部已驗證（build/lint/
-   Playwright 69 斷言），但 push 上 main 會觸發 Zeabur 部署（＝動線上），等你點頭。
-   **注意：這批包含 6 處白屏 crash 修復，越早上線越好**——現在線上的版本（昨天 push 的）
-   `/my/salary`、`/profile`、後台儀表板等頁都可能白屏。
+5. ~~**手機版優化這批要不要 commit＋push**~~ ✅ **2026-07-08 晚已 commit＋push（7c28766、
+   2d1b226）**，含 6 處白屏 crash 修復。剩「開 Email provider＋跑 teaching_leaderboard.sql」
+   兩件見最上方 🚀 段。
 6. **`.env` 是否從版控移除**：目前被 git 追蹤，內容只有 anon key（非機密，資安查證過），
    不急。要清的話 `git rm --cached 培訓web/.env`（檔案留著、只是不再追蹤）。
 7. **第一站課程發布**：內容已重建並驗證完畢（見上），課程總開關留給你確認後自己開。
