@@ -258,7 +258,7 @@ const ContractAdmin = () => {
           </h2>
           <button
             onClick={() => setShowAddDoc(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 min-h-[44px]"
           >
             <Plus className="w-4 h-4" /> 新增文件
           </button>

@@ -104,7 +104,7 @@ const LessonView = () => {
             {/* Back link */}
             <Link
                 to="/courses"
-                className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 mb-6 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 mb-6 transition-colors min-h-[44px]"
             >
                 <ChevronLeft className="w-3.5 h-3.5" /> 返回課程列表
             </Link>

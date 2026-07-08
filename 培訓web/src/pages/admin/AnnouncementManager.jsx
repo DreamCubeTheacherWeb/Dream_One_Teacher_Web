@@ -256,16 +256,16 @@ const AnnouncementManager = () => {
                                 <div className="text-sm text-slate-500 leading-relaxed line-clamp-2 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                                <button onClick={() => togglePinned(a)} className="p-2 text-slate-300 hover:text-red-500 transition-colors" title={a.pinned ? '取消置頂' : '置頂'}>
+                                <button onClick={() => togglePinned(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors" title={a.pinned ? '取消置頂' : '置頂'}>
                                     {a.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
                                 </button>
-                                <button onClick={() => togglePublished(a)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors" title={a.published ? '取消發佈' : '發佈'}>
+                                <button onClick={() => togglePublished(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-blue-600 transition-colors" title={a.published ? '取消發佈' : '發佈'}>
                                     {a.published ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
-                                <button onClick={() => openEdit(a)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors">
+                                <button onClick={() => openEdit(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-blue-600 transition-colors">
                                     <Edit2 className="w-4 h-4" />
                                 </button>
-                                <button onClick={() => handleDelete(a.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+                                <button onClick={() => handleDelete(a.id)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             </div>

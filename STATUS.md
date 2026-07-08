@@ -1,7 +1,42 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（認領講師故障診斷＋講師名單通盤查核，Fable 5）。
+> 最後更新：2026-07-09（手機版體驗總檢＋觸控熱區全站修復，Opus 4.8）。
+
+---
+
+## 📱 2026-07-09：手機版體驗總檢＋觸控熱區全站修復（本次，已 commit＋push）
+
+**背景**：使用者要求以「總管」身分，趁多個並行 session 執行時檢查其成果，並通盤檢視
+手機版操作、直接規劃執行調整後上線。**實情**：整個 session（約 30 分鐘）其他並行
+session **從未落任何檔案**（HEAD 未動、工作區無他人變更）→ 無他人成果可整合；本次
+交付的是手機版總檢與修復。
+
+**做了什麼（15 個 .jsx，桌面版行為不變）**：
+- 建手機稽核長期資產 `培訓web/scripts/mobile-audit.mjs`（沿用 cube-verify 的假 session＋
+  mock Supabase 手法，跨 22 路由 × 375/390 寬自動查橫向溢出／pageerror／熱區 <44px＋全頁截圖）。
+- **老師端 6 處熱區**：全站 logo 連結（Layout）、課程返回連結（LessonView）、薪資返回
+  連結（MySalaryNew）、榮譽榜/方塊競速分頁鈕（Leaderboard TabButton）、方塊競速模式鈕
+  （CubeTimer ModeButton）、個人頁換照片圓鈕（ProfilePage 36→44px）皆補足 ≥44px。
+- **MySalary 空狀態**改精緻卡片（圖示＋標題＋說明＋「登記課程回報」CTA），與 contract 頁一致。
+- **admin 8 頁熱區**（TeacherManager／InstructorList／AnnouncementManager／SalaryRegister／
+  CMSManager／ContractAdmin／DownloadCenter／ClaimRequests）：分頁鈕、篩選 chip、列動作
+  圖示鈕、返回鈕、勾選框皆補 `min-h-[44px]`／放大熱區。
+
+**證據（主對話親跑 + 兩輪 fresh agent 判圖）**：
+- `node scripts/mobile-audit.mjs` 前後對照：熱區旗標 **44→6**，且 **0 橫向溢出／0 白屏
+  crash／0 空白頁**（44 檢查）；剩 6 旗標經查全屬非問題（leaderboard 3 顆空白 YearPill＝
+  mock 年份沒帶值的假象、admin-salary/admin-cms 的 20px 勾選框＝務實上限）。
+- 視覺 agent 兩輪判讀截圖：第一輪確認「完成度高、無破版」；修復後第二輪（11 張重點圖）
+  確認「視覺乾淨、可上線、無回歸，所有 min-h 按鈕文字垂直置中」。
+- `npm run build` 綠燈 `✓ built in ~5s`；`npm run lint` **25 problems＝基線、零新增**。
+
+**mock 假象已查證、非 bug（不需改）**：手機日期框顯示 mm/dd/yyyy＝測試 Chrome 是 en-US 語系，
+真台灣用戶手機 zh-TW 會顯示本地格式；/pending 截圖＝home＝mock 用 admin 角色被 PendingApproval
+守衛導離（真 pending 用戶會看到等待頁）。
+
+**未做 / 留給後續**：admin 統計卡「全寬過高」的密度收斂（次要視覺、動 Dashboard 會與功能
+session 撞檔，刻意略過）；admin-instructors 彩色 chip 加 min-h 後略偏胖（觀感偏好，非缺陷）。
 
 ---
 

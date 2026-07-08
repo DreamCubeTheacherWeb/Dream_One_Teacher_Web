@@ -19,7 +19,7 @@ const TabButton = ({ active, onClick, children }) => (
     <button
         type="button"
         onClick={onClick}
-        className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all ${
+        className={`px-4 py-2.5 min-h-[44px] rounded-full text-sm font-bold transition-all ${
             active ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700'
         }`}
     >

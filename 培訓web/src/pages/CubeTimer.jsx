@@ -173,7 +173,7 @@ const ModeButton = ({ active, onClick, testId, children }) => (
         type="button"
         onClick={onClick}
         data-testid={testId}
-        className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+        className={`flex-1 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-bold transition-all ${
             active ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700'
         }`}
     >

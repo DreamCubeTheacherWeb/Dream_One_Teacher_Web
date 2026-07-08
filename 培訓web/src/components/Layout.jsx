@@ -76,7 +76,7 @@ const Layout = ({ children }) => {
         <div className="min-h-screen flex flex-col overflow-x-hidden">
             <header className="bg-white border-b border-slate-200 relative z-50">
                 <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-                    <Link to="/" className="flex items-center gap-2 font-bold text-xl text-blue-600 shrink-0">
+                    <Link to="/" className="flex items-center gap-2 font-bold text-xl text-blue-600 shrink-0 p-1 -m-1 min-h-[44px]">
                         <img src="/logo.png" alt="夢想一號 Logo" className="w-9 h-9 object-contain" />
                         <span className="hidden sm:inline">講師資源站</span>
                     </Link>

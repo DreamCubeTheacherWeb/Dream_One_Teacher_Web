@@ -286,7 +286,7 @@ const TeacherManager = () => {
                 </div>
                 <button
                     onClick={() => setShowForm(!showForm)}
-                    className="bg-blue-600 text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 text-sm sm:text-base"
+                    className="bg-blue-600 text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 text-sm sm:text-base min-h-[44px]"
                 >
                     <UserPlus className="w-5 h-5" /> 新增講師
                 </button>
@@ -368,7 +368,7 @@ const TeacherManager = () => {
                         { key: 'inactive', label: '未啟用講師', count: inactiveInstructors.length, activeColor: 'bg-slate-500' },
                     ].map(t => (
                         <button key={t.key} onClick={() => { setTab(t.key); setExpandedId(null); }}
-                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all min-h-[44px] ${
                                 tab === t.key ? `${t.activeColor} text-white shadow-md` : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'
                             }`}>
                             {t.label} ({t.count})

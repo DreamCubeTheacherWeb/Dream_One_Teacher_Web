@@ -55,9 +55,19 @@ const MySalary = () => {
 
     if (!summary) {
         return (
-            <div className="p-12 text-center">
-                <div className="inline-flex items-center gap-2 text-slate-500 bg-slate-100 px-4 py-2 rounded-lg">
-                    <AlertCircle className="w-4 h-4" /> 還沒有薪資紀錄
+            <div className="p-4 sm:p-8 max-w-3xl mx-auto">
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm py-16 px-6 text-center">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Wallet className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <h2 className="text-xl font-black text-slate-900">還沒有薪資紀錄</h2>
+                    <p className="text-slate-500 mt-2 text-sm">完成接課後登記課程回報，你的鐘點與獎金就會顯示在這裡。</p>
+                    <Link
+                        to="/my/salary/new"
+                        className="inline-flex items-center justify-center gap-2 mt-6 min-h-[44px] px-6 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                    >
+                        <Plus className="w-4 h-4" /> 登記課程回報
+                    </Link>
                 </div>
             </div>
         );

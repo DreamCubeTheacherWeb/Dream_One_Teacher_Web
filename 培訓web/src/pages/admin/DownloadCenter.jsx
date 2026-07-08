@@ -222,7 +222,7 @@ const DownloadCenter = () => {
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <Link to="/admin" className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1 mb-3">
+        <Link to="/admin" className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1 mb-3 min-h-[44px]">
           <ArrowLeft className="w-4 h-4" /> 返回後台首頁
         </Link>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 flex items-center gap-2">
@@ -239,7 +239,7 @@ const DownloadCenter = () => {
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <FileText className="w-4 h-4 text-blue-600" /> 選擇表單模板
           </h2>
-          <Link to="/admin/contracts" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+          <Link to="/admin/contracts" className="text-xs text-blue-600 hover:underline flex items-center gap-1 min-h-[44px]">
             <Settings className="w-3 h-3" /> 管理模板
           </Link>
         </div>
@@ -299,14 +299,14 @@ const DownloadCenter = () => {
         </div>
         <button
           onClick={toggleAllVisible}
-          className="px-3 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+          className="px-3 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors min-h-[44px]"
         >
           {allVisibleSelected ? '取消全選' : '全選此頁'}
         </button>
         <button
           onClick={downloadBatch}
           disabled={generating || !selectedForm || selectedIds.size === 0}
-          className="ml-auto flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-blue-500/20"
+          className="ml-auto flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-blue-500/20 min-h-[44px]"
         >
           {generating ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> 產生中... ({progress.done}/{progress.total})</>
@@ -358,7 +358,7 @@ const DownloadCenter = () => {
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleOne(inst.user_id)}
-                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

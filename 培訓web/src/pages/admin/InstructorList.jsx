@@ -150,7 +150,7 @@ const InstructorList = () => {
                     <div className="flex items-center gap-2 flex-wrap">
                         <Link
                             to="/admin/claims"
-                            className={`inline-flex items-center gap-2 font-bold px-3 py-2.5 rounded-xl transition-colors text-sm ${
+                            className={`inline-flex items-center gap-2 font-bold px-3 py-2.5 rounded-xl transition-colors text-sm min-h-[44px] ${
                                 pendingClaimCount > 0
                                     ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                                     : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
@@ -193,7 +193,7 @@ const InstructorList = () => {
                         <button
                             key={f.key || 'all'}
                             onClick={() => setLinkFilter(f.key)}
-                            className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors ${
+                            className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors min-h-[44px] ${
                                 active ? f.color + ' ring-2 ring-offset-1 ring-slate-300' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
                             }`}
                         >
@@ -206,7 +206,7 @@ const InstructorList = () => {
             <div className="flex flex-wrap gap-2 mb-6">
                 <button
                     onClick={() => setStatusFilter('')}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors ${
+                    className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors min-h-[44px] ${
                         !statusFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
                     }`}
                 >
@@ -216,7 +216,7 @@ const InstructorList = () => {
                     <button
                         key={s.key}
                         onClick={() => setStatusFilter(statusFilter === s.key ? '' : s.key)}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors ${
+                        className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors min-h-[44px] ${
                             statusFilter === s.key
                                 ? `${s.color} ring-2 ring-offset-1 ring-slate-300`
                                 : `${s.color} opacity-60 hover:opacity-100`

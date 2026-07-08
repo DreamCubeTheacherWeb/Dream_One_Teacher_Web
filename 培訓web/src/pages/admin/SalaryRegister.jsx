@@ -119,7 +119,7 @@ const SalaryRegister = () => {
                     <option value="paid">已付款</option>
                 </select>
                 <label className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
-                    <input type="checkbox" checked={anomalyOnly} onChange={e => setAnomalyOnly(e.target.checked)} />
+                    <input type="checkbox" checked={anomalyOnly} onChange={e => setAnomalyOnly(e.target.checked)} className="w-5 h-5" />
                     僅看異常
                 </label>
             </div>

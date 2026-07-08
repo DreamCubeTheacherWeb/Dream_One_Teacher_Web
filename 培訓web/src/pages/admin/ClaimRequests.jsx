@@ -68,7 +68,7 @@ const ClaimRequests = () => {
 
     return (
         <div className="p-4 sm:p-8">
-            <Link to="/admin" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-blue-600 mb-4">
+            <Link to="/admin" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-blue-600 mb-4 min-h-[44px]">
                 <ArrowLeft className="w-4 h-4" /> 返回後台
             </Link>
 

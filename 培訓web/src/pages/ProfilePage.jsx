@@ -384,7 +384,7 @@ const ProfilePage = () => {
                         <button
                             type="button"
                             onClick={() => fileRefs.current.photo?.click()}
-                            className="absolute bottom-0 right-0 w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md transition-colors border-2 border-white"
+                            className="absolute bottom-0 right-0 w-11 h-11 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md transition-colors border-2 border-white"
                         >
                             <Pencil className="w-4 h-4" />
                         </button>
