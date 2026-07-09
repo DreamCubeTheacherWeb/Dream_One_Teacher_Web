@@ -22,8 +22,16 @@ scrollY 345→0（完全復現）；修後 345→345、容器 top 33px；桌機 
   (a) 沒收到＝內建 SMTP 送達問題；(b) 收到但只有連結沒 6 碼＝**Email 模板缺 {{ .Token }}**
   （Supabase 預設 Magic Link 模板只放連結，前端卻要求輸 6 碼——最可疑）；
   (c) 收到含 6 碼＝功能正常，先前可能撞每小時 2 封的內建量限。
-- 既有已知風險：內建 SMTP 每小時約 2 封，多位老師同日簽約必爆，正式用要接自有 SMTP
-  （Resend，STATUS 舊待辦 3(b)）。
+- **✅ 裁決＝(b)**（業主 2026-07-09 晚證實：收到信但只有連結沒 6 碼）→ 修法＝Supabase
+  Dashboard → Authentication → Email Templates → Magic Link 模板把 `{{ .ConfirmationURL }}`
+  換成 `{{ .Token }}`（官方文件證實，本專案僅 Google 登入、magic link 無他用，安全）。
+  已給業主逐步操作指南＋繁中模板範本，等他改完重測。
+- 額度問題（業主證實會常用）：內建 email 官方明定 **2 封/小時、非 production 用**。
+  解法＝接 Resend SMTP（host smtp.resend.com / user `resend` / password=API key / port 465），
+  接上後 Supabase 預設限速升 30/hr 且可在 Rate Limits 頁再調高。Resend 免費方案
+  100 封/日、3000 封/月、**限 1 個驗證網域**——九豆帳號的網域名額若已被占用，
+  夢想一號要另開免費帳號驗 dreamcube.tw（SPF＋DKIM DNS 記錄）。
+  來源：supabase.com/docs/guides/auth/auth-smtp、resend.com/docs/send-with-smtp（2026-07-09 查）。
 
 ---
 
