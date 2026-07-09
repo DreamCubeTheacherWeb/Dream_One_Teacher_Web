@@ -5,6 +5,19 @@
 
 ---
 
+## 🧪 2026-07-09 晚：簽約暫免 Email 驗證（測試期開關，業主指示開放老師測流程）
+
+**做了什麼**（只動 `src/pages/ContractSigningFlow.jsx`）：檔頂 `OTP_BYPASS_FOR_TESTING = true`
+開關——開著時隱藏 EmailOtpGate、顯示黃色「測試模式」提示、簽名只需勾兩個同意框；
+送出的合約 `verify_method` 誠實記 `'none'`（verified_at null），與正式驗證的 `'email_otp'`
+可區分。**恢復驗證＝把開關改回 false（一個字），等 Email 模板＋Resend 設好後做。**
+**證據**：mock Playwright 6/6 PASS（提示出現、OTP 元件消失、勾兩框即解鎖簽名、零錯誤，
+腳本 scratchpad/verify-otp-bypass.mjs）；build 綠燈、eslint 0。
+**⚠️ 提醒**：免驗證期間的簽署缺「本人驗證」證據，法律效力較弱——測試期資料建議
+之後清掉或標記，正式簽約等驗證恢復。
+
+---
+
 ## 📄 2026-07-09 晚：簽約頁兩件事（翻頁跳頂已修未 commit；OTP 寄送診斷中）
 
 **1. 合約翻頁跳回頂部（✅ 已修，未 commit）**：根因＝react-pdf 換頁空窗期 PDF 容器高度

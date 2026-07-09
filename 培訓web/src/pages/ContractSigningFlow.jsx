@@ -12,6 +12,11 @@ import {
   MapPin, Phone, CreditCard, ArrowLeft, BookOpen
 } from 'lucide-react';
 
+// ⚠️ 測試期開關（業主 2026-07-09 指示）：true＝簽約暫免 Email 驗證，讓老師先測流程。
+// Email 模板（{{ .Token }}）與 Resend SMTP 設定完成後，改回 false 恢復驗證。
+// 免驗證期間簽的合約 verify_method 記 'none'、verified_at 為 null，資料可辨識、不冒充已驗證。
+const OTP_BYPASS_FOR_TESTING = true;
+
 const ContractSigningFlow = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -38,6 +43,8 @@ const ContractSigningFlow = () => {
   // 本人身分驗證（簽名前的 email OTP gate）
   const [verified, setVerified] = useState(false);
   const [verifiedAt, setVerifiedAt] = useState(null);
+  // 測試期免驗證：開關開著就視同已驗證（送出資料仍誠實記錄 verify_method）
+  const effectiveVerified = OTP_BYPASS_FOR_TESTING || verified;
   // 缺簽名欄位座標的文件（admin 未設定 → 會產出無效合約，須擋下）
   const [missingSigTitles, setMissingSigTitles] = useState([]);
 
@@ -164,7 +171,7 @@ const ContractSigningFlow = () => {
       formData.idNumber.trim().length === 10 &&
       formData.address.trim() &&
       formData.phone.trim() &&
-      agreedTerms && agreedElectronic && verified && signatureDataUrl &&
+      agreedTerms && agreedElectronic && effectiveVerified && signatureDataUrl &&
       missingSigTitles.length === 0
     );
   };
@@ -351,7 +358,7 @@ const ContractSigningFlow = () => {
         ip_address: null,
         user_agent: navigator.userAgent,
         verified_at: verifiedAt,
-        verify_method: 'email_otp',
+        verify_method: verified ? 'email_otp' : 'none',
       };
 
       try {
@@ -631,11 +638,18 @@ const ContractSigningFlow = () => {
                 </label>
               </div>
 
-              <EmailOtpGate
-                email={user?.email}
-                verified={verified}
-                onVerified={(ts) => { setVerified(true); setVerifiedAt(ts); }}
-              />
+              {OTP_BYPASS_FOR_TESTING ? (
+                <div className="mb-6 flex items-start gap-2 bg-bauhaus-yellow/20 border-2 border-bauhaus-black rounded-xl p-3 text-sm font-medium text-bauhaus-black">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  測試模式：目前暫免 Email 身分驗證即可簽名（正式啟用前會恢復驗證）。
+                </div>
+              ) : (
+                <EmailOtpGate
+                  email={user?.email}
+                  verified={verified}
+                  onVerified={(ts) => { setVerified(true); setVerifiedAt(ts); }}
+                />
+              )}
 
               <div className="mb-6">
                 <h4 className="text-sm font-bold text-bauhaus-black mb-3">甲方簽名</h4>
@@ -654,9 +668,9 @@ const ContractSigningFlow = () => {
                   </div>
                 ) : (
                   <button onClick={() => setShowSignaturePad(true)}
-                    disabled={!agreedTerms || !agreedElectronic || !verified}
+                    disabled={!agreedTerms || !agreedElectronic || !effectiveVerified}
                     className={`w-full py-8 border-2 border-dashed rounded-xl transition-all flex flex-col items-center gap-2 ${
-                      agreedTerms && agreedElectronic && verified
+                      agreedTerms && agreedElectronic && effectiveVerified
                         ? 'border-bauhaus-blue bg-white hover:bg-bauhaus-cream cursor-pointer text-bauhaus-blue'
                         : 'border-bauhaus-black/20 bg-bauhaus-muted text-bauhaus-black/40 cursor-not-allowed'
                     }`}>
@@ -664,7 +678,7 @@ const ContractSigningFlow = () => {
                     <span className="font-bold">
                       {!agreedTerms || !agreedElectronic
                         ? '請先勾選上方兩個同意項目'
-                        : !verified
+                        : !effectiveVerified
                           ? '請先完成上方 Email 身分驗證'
                           : '點擊此處進行簽名'}
                     </span>
