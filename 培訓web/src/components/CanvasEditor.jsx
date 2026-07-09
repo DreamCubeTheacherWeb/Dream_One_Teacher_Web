@@ -48,7 +48,7 @@ const loadRecentColors = () => {
   catch { return []; }
 };
 
-const ColorPalette = ({ title, icon, onApply, onOpen, recentColors }) => {
+const ColorPalette = ({ title, icon, onApply, onOpen, recentColors, dropUp = false }) => {
   const [open, setOpen] = useState(false);
   const [lastColor, setLastColor] = useState('#000000');
   const panelRef = useRef(null);
@@ -88,7 +88,7 @@ const ColorPalette = ({ title, icon, onApply, onOpen, recentColors }) => {
         <span className="text-[7px] text-bauhaus-black/40 leading-none">▼</span>
       </button>
       {open && (
-        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-white border-2 border-bauhaus-black shadow-hard p-3 z-[60]" style={{ width: 216 }}>
+        <div className={`absolute ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'} left-1/2 -translate-x-1/2 bg-white border-2 border-bauhaus-black shadow-hard p-3 z-[60]`} style={{ width: 216 }}>
           <div className="text-[10px] text-bauhaus-black/60 font-bold mb-2">{title}</div>
           <div className="grid grid-cols-6 gap-1.5 mb-2">
             {PRESET_COLORS.map(c => (
@@ -372,6 +372,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const [lessonTitle, setLessonTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fontPxInput, setFontPxInput] = useState('16');
   const [canvasHeight, setCanvasHeight] = useState(MIN_CANVAS_HEIGHT);
   const [showGrid, setShowGrid] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
@@ -408,6 +409,27 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const exitEditing = useCallback(() => {
     if (!editingId) return;
     setEditingId(null);
+  }, [editingId]);
+
+  // 編輯文字時，游標/選取移動即時顯示目前字級
+  useEffect(() => {
+    if (!editingId) return;
+    const handler = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      let node = range.startContainer;
+      if (node.nodeType === 1) {
+        node = node.childNodes[range.startOffset] || node.firstChild || node;
+        while (node && node.nodeType === 1 && node.firstChild) node = node.firstChild;
+      }
+      const el = node?.nodeType === 1 ? node : node?.parentElement;
+      if (!el?.closest?.('.canvas-text-content')) return;
+      const px = String(Math.round(parseFloat(getComputedStyle(el).fontSize) || 16));
+      setFontPxInput(prev => (prev === px ? prev : px));
+    };
+    document.addEventListener('selectionchange', handler);
+    return () => document.removeEventListener('selectionchange', handler);
   }, [editingId]);
 
   // Derive minimum canvas height directly from elements (always in sync, no stale closures)
@@ -633,6 +655,57 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
 
   const execCommand = (cmd, value = null) => document.execCommand(cmd, false, value);
 
+  // ── 任意 px 字級 ──────────────────────────────────────────────
+  // execCommand('fontSize') 只支援 1-7 檔，改用「先套 7 再換成 span px」的手法
+  const getEditingRoot = () => {
+    const sel = window.getSelection();
+    const node = sel?.anchorNode;
+    if (!node) return null;
+    const el = node.nodeType === 1 ? node : node.parentElement;
+    return el?.closest('.canvas-text-content') || null;
+  };
+
+  const getSelectionFontPx = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return 16;
+    const range = sel.getRangeAt(0);
+    let node = range.startContainer;
+    if (node.nodeType === 1) {
+      // 錨在容器上（如全選）→ 鑽到範圍內第一個文字節點，才能讀到實際字級
+      node = node.childNodes[range.startOffset] || node.firstChild || node;
+      while (node && node.nodeType === 1 && node.firstChild) node = node.firstChild;
+    }
+    const el = node?.nodeType === 1 ? node : node?.parentElement;
+    if (!el?.closest) return 16;
+    return Math.round(parseFloat(getComputedStyle(el).fontSize) || 16);
+  };
+
+  const applyPxToSelection = (root, px) => {
+    const v = Math.max(8, Math.min(200, Math.round(Number(px))));
+    if (!v) return;
+    // 標記既有的 size=7，避免被誤換
+    root.querySelectorAll('font[size="7"]').forEach(f => f.setAttribute('data-orig', '1'));
+    execCommand('fontSize', '7');
+    root.querySelectorAll('font[size="7"]:not([data-orig])').forEach(f => {
+      const span = document.createElement('span');
+      span.style.fontSize = `${v}px`;
+      span.innerHTML = f.innerHTML;
+      f.replaceWith(span);
+    });
+    root.querySelectorAll('font[data-orig]').forEach(f => f.removeAttribute('data-orig'));
+    root.focus();   // 焦點還給編輯框，之後 blur 才會回存內容
+    setFontPxInput(String(v));
+  };
+
+  const withTextSelection = (fn) => {
+    let root = getEditingRoot();
+    if (!root) { restoreSelection(); root = getEditingRoot(); }
+    if (root) fn(root);
+  };
+
+  const applyFontSizePx = (px) => withTextSelection((root) => applyPxToSelection(root, px));
+  const applyFontSizeDelta = (d) => withTextSelection((root) => applyPxToSelection(root, getSelectionFontPx() + d));
+
   const handleCreateLink = () => {
     saveSelection();
     const url = window.prompt('請輸入連結網址：', 'https://');
@@ -790,9 +863,9 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
         </div>
       </div>
 
-      {/* ── Text format toolbar ── */}
+      {/* ── Text format toolbar（固定在畫面底部）── */}
       {editingId && selected?.type === 'text_box' && (
-        <div className="sticky top-[60px] z-40 bg-white border-b-2 border-bauhaus-black px-4 py-2">
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t-2 border-bauhaus-black px-4 py-2">
           <div className="max-w-[1100px] mx-auto flex items-center gap-1 flex-wrap">
             <button onMouseDown={(e) => { e.preventDefault(); execCommand('bold'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="粗體"><Bold className="w-4 h-4" /></button>
             <button onMouseDown={(e) => { e.preventDefault(); execCommand('italic'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="斜體"><Italic className="w-4 h-4" /></button>
@@ -836,23 +909,28 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             </button>
             <div className="w-px h-5 bg-bauhaus-black/20 mx-1" />
 
-            {/* Font size */}
+            {/* Font size：任意 px（A−／A＋、直接輸入、常用尺寸） */}
+            <div className="flex items-center border-2 border-bauhaus-black bg-white">
+              <button onMouseDown={(e) => { e.preventDefault(); applyFontSizeDelta(-2); }}
+                className="px-2 py-1 text-xs font-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200" title="縮小字級 −2px">A−</button>
+              <input type="number" min="8" max="200" value={fontPxInput}
+                onMouseDown={() => saveSelection()}
+                onChange={(e) => setFontPxInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyFontSizePx(fontPxInput); } }}
+                className="w-12 px-1 py-1 text-sm text-center text-bauhaus-black outline-none border-x-2 border-bauhaus-black/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                title="字級 px（輸入後按 Enter 套用）" />
+              <span className="text-[10px] text-bauhaus-black/40 px-0.5">px</span>
+              <button onMouseDown={(e) => { e.preventDefault(); applyFontSizeDelta(2); }}
+                className="px-2 py-1 text-xs font-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200" title="放大字級 +2px">A＋</button>
+            </div>
             <select
               onMouseDown={() => saveSelection()}
-              onChange={(e) => {
-                restoreSelection();
-                execCommand('fontSize', e.target.value);
-                e.target.value = '';
-              }}
-              className="px-2 py-1 text-sm border-2 border-bauhaus-black text-bauhaus-black" defaultValue="">
-              <option value="" disabled>字級</option>
-              <option value="1">極小</option>
-              <option value="2">小</option>
-              <option value="3">正常</option>
-              <option value="4">中</option>
-              <option value="5">大</option>
-              <option value="6">特大</option>
-              <option value="7">超大</option>
+              onChange={(e) => { applyFontSizePx(e.target.value); e.target.value = ''; }}
+              className="px-1.5 py-1 text-sm border-2 border-bauhaus-black text-bauhaus-black w-[4.5rem]" defaultValue="" title="常用字級">
+              <option value="" disabled>常用</option>
+              {[12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 84, 96].map(px => (
+                <option key={px} value={px}>{px}px</option>
+              ))}
             </select>
 
             {/* Text color with palette */}
@@ -862,6 +940,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
               onApply={(c) => { restoreSelection(); execCommand('foreColor', c); addRecentColor(c); }}
               onOpen={saveSelection}
               recentColors={recentColors}
+              dropUp
             />
 
             {/* Background highlight color with palette */}
@@ -871,14 +950,15 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
               onApply={(c) => { restoreSelection(); execCommand('hiliteColor', c); addRecentColor(c); }}
               onOpen={saveSelection}
               recentColors={recentColors}
+              dropUp
             />
           </div>
         </div>
       )}
 
-      {/* ── Selected element controls ── */}
+      {/* ── Selected element controls（固定在畫面底部）── */}
       {selected && !editingId && (
-        <div className="sticky top-[60px] z-40 bg-white border-b-2 border-bauhaus-black px-4 py-2">
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t-2 border-bauhaus-black px-4 py-2">
           <div className="max-w-[1100px] mx-auto flex items-center gap-2 text-sm flex-wrap">
             <span className="text-bauhaus-black font-bold">{isButton ? '按鈕' : elLabel(selected.type)}</span>
             <div className="w-px h-5 bg-bauhaus-black/20" />
