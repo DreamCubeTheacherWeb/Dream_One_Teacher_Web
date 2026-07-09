@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Wallet, TrendingUp, Calendar, Clock, AlertCircle, Plus } from 'lucide-react';
+import { Wallet, TrendingUp, Calendar, Clock, AlertCircle, Plus, ExternalLink } from 'lucide-react';
 import { COURSE_LABELS } from '../lib/constants';
 
 const STATUS_LABELS = { pending: '待核准', approved: '已核准', paid: '已付款' };
@@ -10,6 +10,105 @@ const STATUS_COLORS = {
     pending:  'bg-bauhaus-yellow text-bauhaus-black',
     approved: 'bg-bauhaus-muted text-bauhaus-black',
     paid:     'bg-bauhaus-blue text-white',
+};
+
+// 薪資頁暫停開關(2026-07-09)：公司暫停用網站登記薪資,改用兩份 Google 表單收單。
+// 開著時只顯示 SalaryFormLinks 兩顆表單按鈕；下方原本的統計/表格內容完整保留不刪,
+// 只是變成 unreachable——日後要恢復,把這個常數改回 false 即可。
+const SALARY_PAGE_PAUSED = true;
+
+// 表單連結預設值(對應 supabase/2026-07-09_site_links.sql 的 seed)：
+// 若 site_links 資料表還沒建好、或讀取失敗,SalaryFormLinks 會 fallback 用這組,頁面仍可用。
+const DEFAULT_SALARY_LINKS = [
+    {
+        key: 'salary_direct',
+        label: '直營課程',
+        description: '營隊、體驗課、到府課、速解課',
+        url: 'https://docs.google.com/forms/d/e/1FAIpQLScKSEUXDctk1cqB7UqDc7CwY9I0g8e6T1XBaX-52c6C5GdTjg/viewform',
+    },
+    {
+        key: 'salary_partner',
+        label: '合作單位',
+        description: '補習班、學校社團、講座課程',
+        url: 'https://forms.gle/CBfwjZv34vT35nZTA',
+    },
+    {
+        key: 'salary_points',
+        label: '報酬 / 點數確認區',
+        description: '查看每月報酬與點數結算結果',
+        url: 'https://docs.google.com/spreadsheets/d/1RQP_7NZFeEQTKcGJPjkoRe758LeADSpDIkY2-s2Q8NI/edit?gid=450117981#gid=450117981',
+    },
+];
+
+const SALARY_LINK_TONES = [
+    { bg: 'bg-bauhaus-red',    text: 'text-white', sub: 'text-white/80' },
+    { bg: 'bg-bauhaus-blue',   text: 'text-white', sub: 'text-white/80' },
+    { bg: 'bg-bauhaus-yellow', text: 'text-bauhaus-black', sub: 'text-bauhaus-black/70' },
+];
+
+// 課程回報改用外連 Google 表單收單,這個頁面只顯示兩顆大按鈕。
+// 連結內容從 site_links 表讀,讀不到(表未建立/查詢失敗)就用 DEFAULT_SALARY_LINKS。
+const SalaryFormLinks = () => {
+    const [links, setLinks] = useState(DEFAULT_SALARY_LINKS);
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            const { data, error } = await supabase
+                .from('site_links')
+                .select('key, label, description, url')
+                .in('key', DEFAULT_SALARY_LINKS.map(d => d.key));
+            if (error) {
+                console.error('讀取薪資表單連結失敗,使用預設值：', error.message);
+                return;
+            }
+            if (!active || !data || data.length === 0) return;
+            setLinks(DEFAULT_SALARY_LINKS.map(d => data.find(row => row.key === d.key) || d));
+        })();
+        return () => { active = false; };
+    }, []);
+
+    return (
+        <div className="p-4 sm:p-8 max-w-3xl mx-auto">
+            <div className="mb-8">
+                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的薪資</h1>
+                <p className="text-bauhaus-black/60 mt-2 text-sm font-medium">課程回報改用以下表單填寫；報酬與點數結算結果請至確認區查看。</p>
+            </div>
+            <div className="flex flex-col gap-4">
+                {links.map((link, idx) => {
+                    const tone = SALARY_LINK_TONES[idx % SALARY_LINK_TONES.length];
+                    return (
+                        <a
+                            key={link.key}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`${tone.bg} border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg
+                                p-6 min-h-[44px] flex items-center justify-between gap-4
+                                transition-all duration-200 ease-out
+                                active:translate-x-[2px] active:translate-y-[2px] active:shadow-none`}
+                        >
+                            <div>
+                                <div className={`text-xl sm:text-2xl font-black ${tone.text}`}>{link.label}</div>
+                                {link.description && (
+                                    <div className={`text-sm font-medium mt-1 ${tone.sub}`}>{link.description}</div>
+                                )}
+                            </div>
+                            <ExternalLink className={`w-6 h-6 shrink-0 ${tone.text}`} aria-hidden="true" />
+                        </a>
+                    );
+                })}
+            </div>
+            <div className="mt-6 bg-bauhaus-yellow border-2 lg:border-4 border-bauhaus-black shadow-hard p-4 sm:p-5 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-bauhaus-black" aria-hidden="true" />
+                <div className="text-sm font-medium text-bauhaus-black leading-relaxed">
+                    <p>每月 25 號結算（計算區間：上月 26 日～本月 25 日），逾期回報將併入下月。</p>
+                    <p className="mt-1">如果匯款帳戶有更新者，改完資料請及時和芳儒告知。</p>
+                    <p className="mt-1">正式報酬數字皆以 <a href="mailto:hi@dreamcube.tw" className="font-black underline">hi@dreamcube.tw</a> 信件為準。</p>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const MySalary = () => {
@@ -50,6 +149,8 @@ const MySalary = () => {
         }
         return Object.entries(map).map(([m, v]) => ({ month: m, ...v })).sort((a, b) => b.month.localeCompare(a.month));
     }, [sessions]);
+
+    if (SALARY_PAGE_PAUSED) return <SalaryFormLinks />;
 
     if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 

@@ -1,7 +1,77 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（全站 Bauhaus 視覺改版完成，未 commit，Fable 5）。
+> 最後更新：2026-07-09（薪資頁三按鈕＋後台連結管理＋薪資提醒排程 已 commit＋push 上線、SQL 已套用；徽章線與通知中心線仍未收尾，Fable 5）。
+
+---
+
+## 🔔 2026-07-09：廣播通知中心（admin 隨時發＋排程發小鈴鐺通知，程式完成、SQL 待使用者跑）
+
+**做了什麼**：新 admin 頁 `/admin/notifications`（Dashboard 系統管理區有入口卡）——
+① 立即發送：標題/內文/連結/對象（全體講師 teacher+mentor／全站非 pending），confirm 後
+呼叫 `admin_broadcast_notification` RPC（含 admin 守衛）；② 排程發送：指定時間＋可選
+每天/每週/每月重複，存 `scheduled_notifications` 表（RLS 只限 admin），pg_cron 每分鐘輪詢
+`process_scheduled_notifications()` 到期發送；排程清單可取消。通知 type 沿用
+'announcement'，小鈴鐺前端零改動。
+
+**改動檔案**：新 `培訓web/supabase/2026-07-09_notification_center.sql`（表＋RLS＋3 函式＋
+cron，全含守衛，冪等）、新 `src/pages/admin/NotificationManager.jsx`、`App.jsx`（route）、
+`admin/Dashboard.jsx`（NavCard）——後兩檔為純增量（diff 已核）。
+
+**證據（主對話親跑/親查）**：eslint 三檔 0 問題、`npm run build` ✓ built in 5.66s、
+Playwright 假 session 實開頁 10/10 過（1280/375 無白屏無溢出、按鈕 48px、降級提示與
+空狀態正常、border-radius 0），截圖 scratchpad/notif-shots/ 兩張親手 ls 核實。
+
+**等使用者**：① 把 `2026-07-09_notification_center.sql` 整份貼進 Supabase SQL Editor 執行
+（檔尾有驗證查詢）；② 上線後真帳號實測一輪（發一則給自己看小鈴鐺、排 2 分鐘後的排程）。
+
+**地雷**：pg_cron 用 UTC 但 send_at 是 timestamptz 前端已轉，無時差問題；排程送達最多晚
+1 分鐘；App.jsx／Dashboard.jsx 同檔還有並行線（徽章/薪資連結）未提交改動，commit 要分開或
+確認並行線已收尾。SQL 未跑前頁面會顯示黃色「後端 SQL 尚未套用」提示（刻意設計，非 bug）。
+
+---
+
+## 💰 2026-07-09：薪資頁改三顆按鈕＋後台連結管理＋每月薪資提醒排程（✅ 已 commit＋push 上線；SQL 已套用）
+
+**背景**：公司暫停用網站登記薪資，改用兩份 Google 表單收單（直營課程／合作單位）。
+每月 25 號結算（計算區間＝上月 26 日～本月 25 日），逾期併入下月。
+
+**做了什麼**：
+- `src/pages/MySalary.jsx`：加 `SALARY_PAGE_PAUSED = true` 開關＋新元件 `SalaryFormLinks`
+  ——頁面只剩**三顆** Bauhaus 大按鈕（紅=直營課程表單、藍=合作單位表單、
+  黃=報酬/點數確認區→使用者指定的 Google 試算表）＋黃底備註卡
+  （結算規則／匯款帳戶更新告知芳儒／報酬以 hi@dreamcube.tw 信件為準）。
+  **原統計/表格程式碼一行未刪**（unreachable 保留），開關改回 false 即恢復。
+  連結從 `site_links` 表讀，讀不到自動 fallback 檔內預設值（SQL 沒上線頁面照樣能用）。
+- 新後台頁 `/admin/salary-links`（`admin/SalaryLinksManager.jsx`）：編輯三顆按鈕的
+  標題/說明/網址（存檔用 upsert，缺列也存得進去）；表未建時顯示明確提示。
+  App.jsx＋Dashboard.jsx 純加行掛路由與入口卡。
+- 新 SQL `2026-07-09_site_links.sql`：site_links 表＋RLS（登入可讀、admin 可寫）＋seed 三列。
+- 新 SQL `2026-07-09_salary_reminder_cron.sql`：pg_cron 每月 18、22 號台北 09:00 對全體
+  teacher/mentor 發站內通知「薪資登記提醒」（連 /my/salary；同日防重複；函式有 REVOKE 守衛）。
+  使用者 2026-07-09 確認「提醒還是要」。
+
+**✅ 證據（主對話親跑）**：build 綠燈；lint 25=基線零新增；確定性腳本 **29/29 PASS**
+（三顆按鈕 href/target、舊 UI 隱藏、375 無溢出、熱區 104px、備註卡三行＋mailto、
+admin 頁 fallback 提示），截圖 4 張經 fresh agent 判讀（scratchpad/salary-links-shots/）。
+並行徽章線檔案以 git diff 核實零誤動（Dashboard.jsx 唯一既有行修改是徽章線自己的 Award import）。
+
+**✅ SQL 已套用（2026-07-09 使用者親跑，主對話 anon 探測核實）**：site_links 表存在且
+RLS 擋 anon（回 `[]`）；send_salary_reminder 函式存在且守衛生效（anon 呼叫回 42501
+permission denied，非 PGRST202）。cron.job 兩列無法用 anon 查，屬未驗（低風險）。
+
+**⚠️ 等使用者做**：
+1. **確認報酬試算表的共用設定**＝「知道連結的使用者：檢視者」，否則講師點「報酬/點數確認區」會卡在要求存取權。
+2. 部署後開 /my/salary 與 /admin/salary-links 各看一眼（OAuth 擋自動化，真帳號只能人測）。
+
+**上線方式備註**：工作區當時有三條並行線（本線＋徽章＋通知中心）共用 App.jsx/Dashboard.jsx，
+本次 commit 用 git index 手術只納入本線的行（兩檔中徽章/通知中心的 import、route、NavCard
+未進 commit，避免引用未 commit 檔案炸 build）；那兩條線的工作區改動原封未動。
+
+**💣 注意**：提醒是「站內鈴鐺通知」，講師要開網站才看得到；要 email/LINE 主動推播需另外接。
+`/my/salary/new`（登記課程回報頁）路由保留但已無 UI 入口。備註卡與按鈕說明文案屬新文案初稿，待使用者過目。
+Google Sheet 資料直接呈現到官網的研究已完成（方案 A 發布 CSV／方案 D 同步進 Supabase 兩條路），
+使用者 2026-07-09 決定先不做，改為直接外連試算表。
 
 ---
 
@@ -225,6 +295,23 @@ CHECK 約束只擋離譜值（<3 秒、<10 步）。
 - 證據：真頁面 E2E `培訓web/scripts/cube-verify.mjs`（長期資產）**24/24 PASS**
   （主對話親跑；含鍵盤解題自動停錶、暫停凍結、改鍵→reload 持久化、實體流程、
   雙模式分榜寫入），引擎測試 7/7、build 綠燈、eslint 0、截圖 agent 判讀可交付。
+
+**2026-07-09 v5 改版（完整國際代號＋鍵帽重設計）——✅ 已上線（commit e993dcb）**
+業主同日說「ok 上線」：只 commit 方塊線 4 檔（CubeTimer.jsx／cubeEngine.js／兩支測試
+腳本），薪資線／徽章線的未 commit 檔案完全未動；push 前在隔離 worktree 以該 commit
+原樣建置綠燈才推（91080de..e993dcb，Zeabur 自動部署）。**待業主人測**：部署完成後
+開 /cube 玩一輪（OAuth 擋自動化）。SQL 無新增需求（cube_speed v2 早已在線上）。
+- 補齊 3x3 完整代號：新增 **E、S、z、六個寬層 Rw/Lw/Uw/Dw/Fw/Bw**（共 18 種轉法）。
+  先派研究員查 WCA 官方規則＋3 個社群來源交叉確認（M/E/S 為社群標準：M→L、E→D、S→F；
+  x/y/z 為 WCA 官方 12a4a）。方向由**九條等價式測試**鎖死（x≡R M' L'、Rw≡R M' 等），
+  引擎測試 32→**44 全綠**。parseNotation 大小寫有語義（小寫 r＝寬層 Rw）。
+- 螢幕按鈕重設計：**鍵帽風格、遵循全站新 Bauhaus 設計系統**（黑框直角硬陰影，agent
+  正確以 DESIGN.md 否決了我開的通用樣式）；四組分區（轉面/中層藍/翻面黃/寬層收合進階）；
+  E/S/寬層計步、z 不計；keymap 升 v3（+18 動作，寬層預設未綁定）、排序改 6 面字母 v2、
+  排譜鍵盤同步分組。評審回饋「寬層虛線框」與上輪同型問題，主對話已改實線＋去透明度。
+- 證據（主對話親跑）：引擎 44/44、E2E **76/76**（36 顆鍵帽逐顆 ≥44px、375/390 無溢出、
+  Rw 計步 z 不計步、builder 排 Rw' 可套用）、build 綠燈、eslint 0；截圖評審「可交付、
+  較舊版明顯升級」。
 
 **2026-07-08 深夜 v4 改版（UX 重構，使用者授權主導）**：
 - 一張主遊戲卡整合「打亂列→3D 舞台（狀態 pill）→計時器 hero」；**單一主行動按鈕

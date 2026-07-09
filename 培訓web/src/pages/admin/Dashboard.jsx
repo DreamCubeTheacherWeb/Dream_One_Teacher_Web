@@ -6,6 +6,7 @@ import {
     ClipboardCheck, UserCog, BarChart3, Megaphone, ChevronRight,
     ContactRound, BookOpen, GraduationCap, Settings, Shield, FileSignature, Wallet, Download
 } from 'lucide-react';
+import { Link2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const CORNER_DECOS = [
@@ -139,6 +140,7 @@ const AdminDashboard = () => {
                         <NavCard to="/admin/teachers" icon={UserCog} title="講師名單管理" desc="新增、管理講師與權限設定" color="blue" />
                         <NavCard to="/admin/announcements" icon={Megaphone} title="佈告欄管理" desc="新增、編輯首頁公告內容" color="red" />
                         <NavCard to="/admin/contracts" icon={FileSignature} title="合約文件管理" desc="管理合約文件與查看簽約狀態" color="violet" />
+                        <NavCard to="/admin/salary-links" icon={Link2} title="薪資頁連結" desc="編輯我的薪資頁三顆按鈕的連結" color="emerald" />
                     </div>
                 </div>
             )}
