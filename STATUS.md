@@ -5,7 +5,7 @@
 
 ---
 
-## 🔔 2026-07-09：廣播通知中心（admin 隨時發＋排程發小鈴鐺通知，程式完成、SQL 待使用者跑）
+## 🔔 2026-07-09：廣播通知中心（admin 隨時發＋排程發小鈴鐺通知）— ✅ SQL 已套用＋已上線
 
 **做了什麼**：新 admin 頁 `/admin/notifications`（Dashboard 系統管理區有入口卡）——
 ① 立即發送：標題/內文/連結/對象（全體講師 teacher+mentor／全站非 pending），confirm 後
@@ -22,8 +22,10 @@ cron，全含守衛，冪等）、新 `src/pages/admin/NotificationManager.jsx`�
 Playwright 假 session 實開頁 10/10 過（1280/375 無白屏無溢出、按鈕 48px、降級提示與
 空狀態正常、border-radius 0），截圖 scratchpad/notif-shots/ 兩張親手 ls 核實。
 
-**等使用者**：① 把 `2026-07-09_notification_center.sql` 整份貼進 Supabase SQL Editor 執行
-（檔尾有驗證查詢）；② 上線後真帳號實測一輪（發一則給自己看小鈴鐺、排 2 分鐘後的排程）。
+**進度**：SQL ✅ 使用者 2026-07-09 已貼入正式 Supabase 執行、回報無錯誤；前端 ✅ 已單獨
+commit＋push（index 手術分線，只含通知中心 4 檔，不含徽章線）。**剩最後一步（人測）**：
+部署完成後用 admin 帳號開 /admin/notifications 發一則通知看小鈴鐺是否出現、再排一筆
+2 分鐘後的排程確認 pg_cron 自動送達（cron.job_run_details 可查執行紀錄）。
 
 **地雷**：pg_cron 用 UTC 但 send_at 是 timestamptz 前端已轉，無時差問題；排程送達最多晚
 1 分鐘；App.jsx／Dashboard.jsx 同檔還有並行線（徽章/薪資連結）未提交改動，commit 要分開或

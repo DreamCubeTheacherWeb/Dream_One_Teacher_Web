@@ -141,6 +141,7 @@ const AdminDashboard = () => {
                         <NavCard to="/admin/announcements" icon={Megaphone} title="佈告欄管理" desc="新增、編輯首頁公告內容" color="red" />
                         <NavCard to="/admin/contracts" icon={FileSignature} title="合約文件管理" desc="管理合約文件與查看簽約狀態" color="violet" />
                         <NavCard to="/admin/salary-links" icon={Link2} title="薪資頁連結" desc="編輯我的薪資頁三顆按鈕的連結" color="emerald" />
+                        <NavCard to="/admin/notifications" icon={Megaphone} title="廣播通知" desc="立即或排程發送小鈴鐺通知給講師" color="purple" />
                     </div>
                 </div>
             )}

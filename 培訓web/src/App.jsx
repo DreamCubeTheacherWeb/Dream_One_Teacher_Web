@@ -27,6 +27,7 @@ import DownloadCenter from './pages/admin/DownloadCenter';
 import Leaderboard from './pages/Leaderboard';
 import CubeTimer from './pages/CubeTimer';
 import SalaryLinksManager from './pages/admin/SalaryLinksManager';
+import NotificationManager from './pages/admin/NotificationManager';
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false }) => {
   const { user, profile, loading } = useAuth();
@@ -209,6 +210,14 @@ function App() {
             element={
               <ProtectedRoute adminOnly={true}>
                 <Layout><SalaryLinksManager /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/notifications"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <Layout><NotificationManager /></Layout>
               </ProtectedRoute>
             }
           />
