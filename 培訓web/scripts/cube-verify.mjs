@@ -189,15 +189,35 @@ async function main() {
         const readScrambleTokens = () => page.evaluate(
             () => Array.from(document.querySelectorAll('[data-testid="cube-scramble-tokens"] span')).map((s) => s.textContent)
         );
-        const getTileOrder = (containerTestId) => page.evaluate(
-            (sel) => Array.from(document.querySelectorAll(`[data-testid="${sel}"] > div`)).map((el) => el.getAttribute('data-testid').replace('cube-tile-', '')),
-            containerTestId
-        );
+        // 2026-07-09 鍵帽重新設計：格子包兩顆小鈕的舊 wrapper div 已移除，改成
+        // 兩排獨立鍵帽（第一排順轉、第二排逆轉，DOM 順序＝先整排 CW 再整排 CCW）。
+        // 讀某個鍵帽容器的字母順序：回傳 { cw, ccw }（去掉 cube-btn- 前綴與 -prime 字尾）。
+        const getKeycapLetters = async (containerTestId) => {
+            const ids = await page.evaluate(
+                (sel) => Array.from(document.querySelectorAll(`[data-testid="${sel}"] button`)).map((b) => b.getAttribute('data-testid')),
+                containerTestId
+            );
+            const half = ids.length / 2;
+            const cw = ids.slice(0, half).map((id) => id.replace('cube-btn-', ''));
+            const ccw = ids.slice(half).map((id) => id.replace('cube-btn-', '').replace(/-prime$/, ''));
+            return { ids, cw, ccw };
+        };
         const ensureFaceOpen = async () => {
-            if (await page.locator('[data-testid="cube-face-buttons"]').count() === 0) {
+            if (await page.locator('[data-testid="cube-face-keycaps"]').count() === 0) {
                 await page.locator('[data-testid="cube-face-toggle"]').click();
-                await page.waitForSelector('[data-testid="cube-face-buttons"]', { timeout: 3000 });
+                await page.waitForSelector('[data-testid="cube-face-keycaps"]', { timeout: 3000 });
             }
+        };
+        const ensureWideOpen = async () => {
+            if (await page.locator('[data-testid="cube-wide-keycaps"]').count() === 0) {
+                await page.locator('[data-testid="cube-wide-toggle"]').click();
+                await page.waitForSelector('[data-testid="cube-wide-keycaps"]', { timeout: 3000 });
+            }
+        };
+        const readMoveCount = async () => {
+            const t = await page.locator('[data-testid="cube-status-text"]').textContent();
+            const m = (t || '').match(/步數\s*(\d+)/);
+            return m ? parseInt(m[1], 10) : null;
         };
         const holdSpaceToStart = async () => {
             await page.keyboard.down('Space');
@@ -243,28 +263,42 @@ async function main() {
         );
         check('F7 白面中心貼紙 style 含 logo.png', hasLogoSticker);
 
-        // F1 格子按代號顯示且預設順序 R F L U D B M；翻面列有 x x' y y'
+        // F1/H1 轉面鍵帽：預設順序 R F L U D B（6 字母，M 已移入中層）、兩排（CW/CCW）
+        // 同欄同字母；H2 中層 M E S 與翻面 x y z 鍵帽存在
         await ensureFaceOpen();
-        const defaultTileOrder = await getTileOrder('cube-face-buttons');
-        check('F1a 格子預設順序 R F L U D B M', defaultTileOrder.join(',') === 'R,F,L,U,D,B,M', defaultTileOrder.join(','));
-        const twistOrder = await getTileOrder('cube-twist-buttons');
-        check('F1b 翻面列有 x y（固定順序）', twistOrder.join(',') === 'x,y', twistOrder.join(','));
-        const hasXYPrimeButtons = await page.locator('[data-testid="cube-btn-x-prime"]').count() === 1
-            && await page.locator('[data-testid="cube-btn-y-prime"]').count() === 1;
-        check('F1c 翻面列有 x\' y\' 按鈕', hasXYPrimeButtons);
+        const face1 = await getKeycapLetters('cube-face-keycaps');
+        check('H1a 轉面鍵帽共 12 顆（6 順轉+6 逆轉）', face1.ids.length === 12, String(face1.ids.length));
+        check('H1b 轉面兩排同欄同字母', face1.cw.every((l, i) => l === face1.ccw[i]), JSON.stringify(face1));
+        check('F1a 轉面預設順序 R F L U D B', face1.cw.join(',') === 'R,F,L,U,D,B', face1.cw.join(','));
+
+        const mid1 = await getKeycapLetters('cube-mid-keycaps');
+        check('H2a 中層鍵帽 M E S 存在（固定順序）', mid1.cw.join(',') === 'M,E,S' && mid1.ccw.join(',') === 'M,E,S', JSON.stringify(mid1));
+
+        const twist1 = await getKeycapLetters('cube-twist-keycaps');
+        check('F1b/H2b 翻面鍵帽 x y z 存在（固定順序）', twist1.cw.join(',') === 'x,y,z' && twist1.ccw.join(',') === 'x,y,z', JSON.stringify(twist1));
+
+        // H2c 中層/翻面鍵帽可按（running 之外、自由玩狀態下 M 仍可轉，這裡先驗 M；
+        // x/y/z 的可按性由後面 F3/H3 用 transform 變化驗證）
+        const beforeMFree = await snapshotTransforms();
+        await page.locator('[data-testid="cube-btn-M"]').click();
+        await page.waitForTimeout(250);
+        const afterMFree = await snapshotTransforms();
+        check('H2c 自由玩狀態按中層鍵帽 M 有效', beforeMFree !== afterMFree);
+        await page.locator('[data-testid="cube-btn-M-prime"]').click(); // 轉回去，避免影響後續
+        await page.waitForTimeout(250);
 
         // F6 排序：把 R 往右移一格 → reload → 順序仍在（localStorage 持久化）
         await page.locator('[data-testid="cube-key-settings-toggle"]').click();
         await page.locator('[data-testid="cube-tile-move-right-R"]').click();
-        const orderAfterMove = await getTileOrder('cube-face-buttons');
-        check('F6a 把 R 往右移一格後順序變為 F R L U D B M', orderAfterMove.join(',') === 'F,R,L,U,D,B,M', orderAfterMove.join(','));
+        const faceAfterMove = await getKeycapLetters('cube-face-keycaps');
+        check('F6a 把 R 往右移一格後順序變為 F R L U D B', faceAfterMove.cw.join(',') === 'F,R,L,U,D,B', faceAfterMove.cw.join(','));
 
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForSelector('.dc-cubie', { timeout: 15000 });
         await page.waitForTimeout(500);
         await ensureFaceOpen();
-        const orderAfterReload = await getTileOrder('cube-face-buttons');
-        check('F6b reload 後排序仍持久化', orderAfterReload.join(',') === 'F,R,L,U,D,B,M', orderAfterReload.join(','));
+        const faceAfterReload = await getKeycapLetters('cube-face-keycaps');
+        check('F6b reload 後排序仍持久化', faceAfterReload.cw.join(',') === 'F,R,L,U,D,B', faceAfterReload.cw.join(','));
 
         // F3 自由玩狀態（尚未打亂，phase=idle，cube 仍 solved）按 x 綁定鍵：
         // 全部 cubie transform 改變、且不會跳出成績面板
@@ -275,6 +309,37 @@ async function main() {
         const afterX = await snapshotTransforms();
         check('F3a 自由玩按 x 綁定鍵，全部 cubie transform 改變', beforeX !== afterX);
         check('F3b 原本 solved、自由玩按 x 不會跳出成績面板', await page.locator('[data-testid="cube-result-panel"]').count() === 0);
+
+        // ══════════════════════════════════════════════════════════════
+        // H3. 寬層預設收合／展開見 12 顆／running 中按 Rw 步數 +1、按 z 步數不變
+        // （z 跟 x/y 一樣是整顆換視角，不計步；獨立打一輪打亂＋放棄，不影響後面流程）
+        // ══════════════════════════════════════════════════════════════
+        check('H3a 寬層預設收合（cube-wide-keycaps 不存在）', await page.locator('[data-testid="cube-wide-keycaps"]').count() === 0);
+
+        await page.locator('[data-testid="cube-scramble-random"]').click();
+        await waitScrambleDone();
+        await holdSpaceToStart();
+
+        await ensureWideOpen();
+        const wide1 = await getKeycapLetters('cube-wide-keycaps');
+        check('H3b 寬層展開後可見 12 顆鍵帽', wide1.ids.length === 12, String(wide1.ids.length));
+        check('H3c 寬層順序跟隨轉面自訂順序（F R L U D B → Fw Rw Lw Uw Dw Bw）', wide1.cw.join(',') === 'Fw,Rw,Lw,Uw,Dw,Bw', wide1.cw.join(','));
+
+        const moveBeforeRw = await readMoveCount();
+        await page.locator('[data-testid="cube-btn-Rw"]').click();
+        await page.waitForTimeout(250);
+        const moveAfterRw = await readMoveCount();
+        check('H3d running 中按 Rw 步數 +1', moveBeforeRw != null && moveAfterRw === moveBeforeRw + 1, `${moveBeforeRw}->${moveAfterRw}`);
+
+        const transformBeforeZ = await snapshotTransforms();
+        await page.locator('[data-testid="cube-btn-z"]').click();
+        await page.waitForTimeout(250);
+        const transformAfterZ = await snapshotTransforms();
+        const moveAfterZ = await readMoveCount();
+        check('H3e running 中按 z 方塊有動但步數不變（換視角不計步）', transformBeforeZ !== transformAfterZ && moveAfterZ === moveAfterRw, `count ${moveAfterRw}->${moveAfterZ}`);
+
+        await page.keyboard.press('Escape'); // 放棄本次，不影響後面的 A. 流程
+        await waitForPhase('idle');
 
         // ══════════════════════════════════════════════════════════════
         // A. 鍵盤模式：新打亂 → 讀打亂譜 → 起錶 → 反演打回去（含暫停/繼續）→ 自動停錶
@@ -400,6 +465,30 @@ async function main() {
         check('B6 恢復預設後按 U 又有效', before !== after);
 
         // ══════════════════════════════════════════════════════════════
+        // H5. 按鍵設定：寬層分組存在且預設顯示「未設定」；綁定後生效
+        // （設定面板此時仍是開著的，延續 B 系列的狀態）
+        // ══════════════════════════════════════════════════════════════
+        const rwKbdTextBefore = (await page.locator('[data-testid="cube-keyrow-Rw_CW"] kbd').textContent() || '').trim();
+        check('H5a 寬層分組 Rw 順轉預設顯示「未設定」', rwKbdTextBefore === '未設定', rwKbdTextBefore);
+
+        await page.locator('[data-testid="cube-keyrow-Rw_CW"]').click();
+        await page.keyboard.press('KeyI');
+        const rwKbdTextAfter = (await page.locator('[data-testid="cube-keyrow-Rw_CW"] kbd').textContent() || '').trim();
+        check('H5b 綁定未使用的 I 鍵後顯示 I', rwKbdTextAfter === 'I', rwKbdTextAfter);
+
+        await page.locator('[data-testid="cube-key-settings-toggle"]').click(); // 收合設定面板
+        const beforeI = await snapshotTransforms();
+        await page.keyboard.press('KeyI');
+        await page.waitForTimeout(250);
+        const afterI = await snapshotTransforms();
+        check('H5c 綁定 I 鍵後按 I 可轉動 Rw', beforeI !== afterI);
+
+        // 收尾：恢復預設鍵位，避免寬層綁定污染後面的測試環境
+        await page.locator('[data-testid="cube-key-settings-toggle"]').click();
+        await page.locator('[data-testid="cube-keymap-reset"]').click();
+        await page.locator('[data-testid="cube-key-settings-toggle"]').click();
+
+        // ══════════════════════════════════════════════════════════════
         // G1/G2. 打亂編排器（按鈕排出打亂，取代文字輸入框）
         // ══════════════════════════════════════════════════════════════
         await page.locator('[data-testid="cube-scramble-custom-toggle"]').click();
@@ -446,11 +535,37 @@ async function main() {
         await waitForPhase('idle');
 
         // ══════════════════════════════════════════════════════════════
+        // H4. 打亂編排器支援寬層：加入 Rw 再按 ' 變 Rw'，套用成功進 ready
+        // （'/2/⌫ 修飾邏輯對 Rw 這種兩字元代號也要生效）
+        // ══════════════════════════════════════════════════════════════
+        await page.locator('[data-testid="cube-builder-mod-clear"]').click();
+        check('H4 前置：清空 token strip', await builderText() === '', await builderText());
+
+        await page.locator('[data-testid="cube-builder-wide-toggle"]').click();
+        await page.waitForSelector('[data-testid="cube-builder-wide-keys"]', { timeout: 3000 });
+        await page.locator('[data-testid="cube-builder-key-Rw"]').click();
+        check('H4a 按 Rw 後 token strip 顯示 Rw', await builderText() === 'Rw', await builderText());
+
+        await page.locator('[data-testid="cube-builder-mod-apostrophe"]').click();
+        check("H4b 按 ' 後變成 Rw'", await builderText() === "Rw'", await builderText());
+
+        await page.locator('[data-testid="cube-builder-key-U"]').click();
+        check("H4c 再排一步後變成「Rw' U」", await builderText() === "Rw' U", await builderText());
+
+        await page.locator('[data-testid="cube-builder-apply"]').click();
+        await waitBuilderApplyDone();
+        await page.waitForFunction(() => (document.querySelector('[data-testid="cube-primary-action"]')?.textContent || '').includes('按住準備'), { timeout: 8000 });
+        check('H4d 套用含 Rw 的打亂後主鈕變成「按住準備」（成功進 ready）', (await primaryText()).includes('按住準備'), await primaryText());
+
+        await page.keyboard.press('Escape');
+        await waitForPhase('idle');
+
+        // ══════════════════════════════════════════════════════════════
         // C. 實體計時：轉面按鈕隱藏、不打亂直接計時、手動停錶、Esc 放棄
         // ══════════════════════════════════════════════════════════════
         await page.locator('[data-testid="cube-mode-physical"]').click();
         await page.waitForTimeout(200);
-        check('C0 切到實體模式後轉面按鈕消失', await page.locator('[data-testid="cube-face-buttons"]').count() === 0);
+        check('C0 切到實體模式後轉面按鈕消失', await page.locator('[data-testid="cube-face-keycaps"]').count() === 0);
 
         await holdSpaceToStart();
         check('C1 實體模式不打亂直接起錶成功', await getPhase() === 'running');
@@ -492,7 +607,7 @@ async function main() {
         // ══════════════════════════════════════════════════════════════
         check('E1 全程無 JS pageerror', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300));
 
-        // 最終截圖要求鍵盤模式，且展開「自己排」面板
+        // 最終截圖要求鍵盤模式，且展開「自己排」面板與螢幕按鈕的寬層
         await page.locator('[data-testid="cube-mode-virtual"]').click();
         await page.waitForTimeout(300);
         if (await page.locator('[data-testid="cube-builder-panel"]').count() === 0) {
@@ -500,6 +615,13 @@ async function main() {
         }
         await page.locator('[data-testid="cube-builder-key-R"]').click().catch(() => {});
         await page.locator('[data-testid="cube-builder-key-F"]').click().catch(() => {});
+        if (await page.locator('[data-testid="cube-face-keycaps"]').count() === 0) {
+            await page.locator('[data-testid="cube-face-toggle"]').click().catch(() => {});
+        }
+        if (await page.locator('[data-testid="cube-wide-keycaps"]').count() === 0) {
+            await page.locator('[data-testid="cube-wide-toggle"]').click().catch(() => {});
+        }
+        await page.waitForTimeout(200);
         await page.screenshot({ path: path.join(__dirname, 'cube-verify-final.png'), fullPage: true }).catch(() => {});
 
         // ══════════════════════════════════════════════════════════════
@@ -522,14 +644,34 @@ async function main() {
             const primaryBox = await mPage.locator('[data-testid="cube-primary-action"]').boundingBox();
             check(`M${width} 主行動鈕熱區 ≥44x44`, !!primaryBox && primaryBox.width >= 44 && primaryBox.height >= 44, JSON.stringify(primaryBox));
 
+            // H6：展開螢幕按鈕區＋寬層，確認全部可見鍵帽（轉面/中層/翻面/寬層）
+            // boundingBox ≥44×44，且展開後頁面仍無橫向溢出。
+            if (await mPage.locator('[data-testid="cube-face-keycaps"]').count() === 0) {
+                await mPage.locator('[data-testid="cube-face-toggle"]').click();
+                await mPage.waitForSelector('[data-testid="cube-face-keycaps"]', { timeout: 3000 });
+            }
+            if (await mPage.locator('[data-testid="cube-wide-keycaps"]').count() === 0) {
+                await mPage.locator('[data-testid="cube-wide-toggle"]').click();
+                await mPage.waitForSelector('[data-testid="cube-wide-keycaps"]', { timeout: 3000 });
+            }
+            const keycapBoxes = await mPage.evaluate(() => Array.from(document.querySelectorAll('[data-testid^="cube-btn-"]')).map((b) => {
+                const r = b.getBoundingClientRect();
+                return { id: b.getAttribute('data-testid'), w: r.width, h: r.height };
+            }));
+            const smallKeycaps = keycapBoxes.filter((b) => b.w < 44 || b.h < 44);
+            check(`M${width} H6 全部可見鍵帽（共${keycapBoxes.length}顆）皆 ≥44x44`, keycapBoxes.length > 0 && smallKeycaps.length === 0, JSON.stringify(smallKeycaps));
+
+            const overflowAfterExpand = await mPage.evaluate(() => ({ scrollWidth: document.body.scrollWidth, innerWidth: window.innerWidth }));
+            check(`M${width} 展開寬層後仍無橫向溢出`, overflowAfterExpand.scrollWidth <= overflowAfterExpand.innerWidth, JSON.stringify(overflowAfterExpand));
+
             await mPage.locator('[data-testid="cube-scramble-custom-toggle"]').click();
             await mPage.waitForSelector('[data-testid="cube-builder-keys"]', { timeout: 3000 });
             const letterBoxes = await mPage.evaluate(() => Array.from(document.querySelectorAll('[data-testid="cube-builder-keys"] button')).map((b) => {
                 const r = b.getBoundingClientRect();
                 return { w: r.width, h: r.height };
             }));
-            const allBig = letterBoxes.length === 9 && letterBoxes.every((b) => b.w >= 44 && b.h >= 44);
-            check(`M${width} 字母鍵盤按鈕（共${letterBoxes.length}顆）皆 ≥44x44`, allBig, JSON.stringify(letterBoxes));
+            const allBig = letterBoxes.length === 12 && letterBoxes.every((b) => b.w >= 44 && b.h >= 44);
+            check(`M${width} 打亂編排器字母鍵盤按鈕（共${letterBoxes.length}顆）皆 ≥44x44`, allBig, JSON.stringify(letterBoxes));
 
             await mPage.screenshot({ path: path.join(__dirname, screenshotName), fullPage: true }).catch(() => {});
             await mCtx.close();

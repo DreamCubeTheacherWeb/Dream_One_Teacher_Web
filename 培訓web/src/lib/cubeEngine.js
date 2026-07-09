@@ -55,13 +55,23 @@ export function createCubeState() {
   return cubies;
 }
 
+// 判斷某顆 cubie 目前在 axis 軸上的層數（value）是否屬於這個動作要轉的層。
+// layer 可以是：-1|0|1（單層）、'all'（整顆，x/y/z 翻面用）、或陣列（寬層轉，
+// 外層＋中層兩層一起轉，例如 Rw 的 layer=[1,0]）。
+function layerMatches(layer, value) {
+  if (layer === 'all') return true;
+  if (Array.isArray(layer)) return layer.includes(value);
+  return layer === value;
+}
+
 // 把一個轉層動作套用到 state（就地修改），回傳同一個 state 方便鏈式呼叫。
-// move: { axis: 0|1|2, layer: -1|0|1|'all', dir: 1|-1 }
-// layer==='all' 用於 x/y 整顆翻面（三層一起轉，見 MOVE_TABLE 的 x/y 定義）。
+// move: { axis: 0|1|2, layer: -1|0|1|'all'|number[], dir: 1|-1 }
+// layer==='all' 用於 x/y/z 整顆翻面（三層一起轉）；layer 為陣列用於寬層轉
+// （Rw/Lw/Uw/Dw/Fw/Bw：外層＋中層兩層一起轉，見 MOVE_TABLE 對應定義）。
 export function applyTurnToState(state, { axis, layer, dir }) {
   const R = rotMat(axis, dir * (Math.PI / 2));
   for (const c of state) {
-    if (layer !== 'all' && Math.round(c.M[12 + axis]) !== layer) continue;
+    if (!layerMatches(layer, Math.round(c.M[12 + axis]))) continue;
     c.M = snap(mul(R, c.M));
   }
   return state;
@@ -96,7 +106,13 @@ export function isSolvedState(state) {
 // scripts/cube-engine.test.mjs 的行為鐵證測試（比對貼紙顏色跑到哪裡）反推校正過，
 // 不是憑座標軸符號直接假設。CubeTimer.jsx 的按鈕／鍵盤／手動輸入解析全部
 // 查這張表，不得另外硬寫 dir。
-// M 方向跟隨 L（同軸同 dir）；x 跟隨 R；y 跟隨 U（WCA 慣例：x~R、y~U、z~F）。
+// M 方向跟隨 L；E 方向跟隨 D；S 方向跟隨 F（同軸同 dir）。
+// x 跟隨 R；y 跟隨 U；z 跟隨 F（WCA 慣例：x~R、y~U、z~F）。
+// 寬層（Rw/Lw/Uw/Dw/Fw/Bw）＝外層＋中層兩層一起轉，dir 跟隨對應外層面；
+// layer 用陣列表示「這幾層一起轉」（例如 Rw 轉 layer=1 的 R 與 layer=0 的 M）。
+// 以上九條方向關係全部由 scripts/cube-engine.test.mjs 的等價式測試鎖住
+// （x≡R M' L'、y≡U E' D'、z≡F S B'、Rw≡R M'、Lw≡L M、Uw≡U E'、Dw≡D E、
+// Fw≡F S、Bw≡B S'），任何一條不綠都代表方向定義錯了。
 export const MOVE_TABLE = {
   U: { letter: 'U', axis: 1, layer: -1, dir: -1 },
   D: { letter: 'D', axis: 1, layer: 1, dir: 1 },
@@ -105,19 +121,33 @@ export const MOVE_TABLE = {
   F: { letter: 'F', axis: 2, layer: 1, dir: 1 },
   B: { letter: 'B', axis: 2, layer: -1, dir: -1 },
   M: { letter: 'M', axis: 0, layer: 0, dir: -1 },
+  E: { letter: 'E', axis: 1, layer: 0, dir: 1 },
+  S: { letter: 'S', axis: 2, layer: 0, dir: 1 },
   x: { letter: 'x', axis: 0, layer: 'all', dir: 1 },
   y: { letter: 'y', axis: 1, layer: 'all', dir: -1 },
+  z: { letter: 'z', axis: 2, layer: 'all', dir: 1 },
+  Rw: { letter: 'Rw', axis: 0, layer: [1, 0], dir: 1 },
+  Lw: { letter: 'Lw', axis: 0, layer: [-1, 0], dir: -1 },
+  Uw: { letter: 'Uw', axis: 1, layer: [-1, 0], dir: -1 },
+  Dw: { letter: 'Dw', axis: 1, layer: [1, 0], dir: 1 },
+  Fw: { letter: 'Fw', axis: 2, layer: [1, 0], dir: 1 },
+  Bw: { letter: 'Bw', axis: 2, layer: [-1, 0], dir: -1 },
 };
 
-// U/D/L/R/F/B → {letter, axis, layer, dir}。CubeTimer.jsx 的鍵盤/按鈕與 genScramble 共用。
+// U/D/L/R/F/B → {letter, axis, layer, dir}。genScramble 專用（WCA 比賽打亂只用外層）。
 export const FACE_MOVES = ['U', 'D', 'L', 'R', 'F', 'B'].map((l) => MOVE_TABLE[l]);
 
-// 可自訂排列的 7 個轉面格子（含 M，不含 x/y 翻面列）。
-export const TILE_LETTERS = ['U', 'D', 'L', 'R', 'F', 'B', 'M'];
-// 翻面（整顆換視角）：固定順序，不參與格子排序。
-export const TWIST_LETTERS = ['x', 'y'];
-// 給 CubeTimer 建立按鍵設定表用：9 個代號的完整定義。
-export const ALL_MOVES = [...TILE_LETTERS, ...TWIST_LETTERS].map((l) => MOVE_TABLE[l]);
+// 可自訂排列的 6 個轉面字母（不含 M；M 已移入中層固定組）。
+export const TILE_LETTERS = ['U', 'D', 'L', 'R', 'F', 'B'];
+// 中層：固定順序，不參與格子排序。
+export const MID_LETTERS = ['M', 'E', 'S'];
+// 翻面（整顆換視角）：固定順序，不參與格子排序。z 不計步數（跟 x/y 一樣是換視角）。
+export const TWIST_LETTERS = ['x', 'y', 'z'];
+// 寬層：基礎定義順序（畫面顯示時 CubeTimer 會依使用者的轉面自訂順序重新排列）。
+export const WIDE_LETTERS = ['Rw', 'Lw', 'Uw', 'Dw', 'Fw', 'Bw'];
+// 給 CubeTimer 建立按鍵設定表用：18 個代號的完整定義，順序固定為
+// 轉面(6) → 中層(3) → 翻面(3) → 寬層(6)，CubeTimer 依這個固定順序切片分組。
+export const ALL_MOVES = [...TILE_LETTERS, ...MID_LETTERS, ...TWIST_LETTERS, ...WIDE_LETTERS].map((l) => MOVE_TABLE[l]);
 
 // 比賽式打亂：n 步 notation（一個 X2 算一步，但對應兩筆 quarter turn）。
 // 規則：同一面不連續出現；1/3 機率正轉、1/3 逆轉（'）、1/3 雙轉（2）。只用六個基本面
@@ -175,9 +205,36 @@ function normalizeNotationChars(input) {
   return out;
 }
 
+// 大小寫有語義（2026-07-09 升級）：
+// - 大寫 U D L R F B＝外層；小寫 u d l r f b＝寬層（等同 Uw 等的社群速寫）。
+// - "Rw"／"RW"／"rw"／"rW" 這種「字母+w」兩字元寫法都收，一律正規化成 Rw 這種
+//   「大寫字母+小寫 w」形式，跟字母本身的大小寫、w 的大小寫無關。
+// - M/E/S 大小寫都收，正規化為大寫；x/y/z 大小寫都收，正規化為小寫。
+const WIDE_BASE_LOWER = new Set(['u', 'd', 'l', 'r', 'f', 'b']);
+const OUTER_UPPER = new Set(['U', 'D', 'L', 'R', 'F', 'B']);
+const MID_ANYCASE = new Set(['m', 'e', 's', 'M', 'E', 'S']);
+const TWIST_ANYCASE = new Set(['x', 'y', 'z', 'X', 'Y', 'Z']);
+
+// 把去掉 '/2 字尾後的 token 主體解析成 MOVE_TABLE 的 key；解析不出來回傳 null。
+function resolveMoveKey(base) {
+  if (base.length === 2) {
+    const [c0, c1] = base;
+    if ((c1 === 'w' || c1 === 'W') && WIDE_BASE_LOWER.has(c0.toLowerCase())) {
+      return `${c0.toUpperCase()}w`;
+    }
+    return null;
+  }
+  if (base.length === 1) {
+    if (OUTER_UPPER.has(base)) return base;
+    if (WIDE_BASE_LOWER.has(base)) return `${base.toUpperCase()}w`;
+    if (MID_ANYCASE.has(base)) return base.toUpperCase();
+    if (TWIST_ANYCASE.has(base)) return base.toLowerCase();
+  }
+  return null;
+}
+
 // 把使用者輸入的轉法譜文字轉成 moves + 正規化 tokens。
 // 規則：token = 代號 + 可選 "'"（逆轉）或 "2"（雙轉，算一個顯示 token 但對應兩筆 quarter turn）。
-// 大小寫都收：U/D/L/R/F/B/M 正規化為大寫，x/y 正規化為小寫。
 // 成功回傳 { moves, tokens }；失敗回傳 { error: true, badToken }（badToken 為看不懂的原始 token）。
 export function parseNotation(input) {
   const normalized = normalizeNotationChars(input == null ? '' : input);
@@ -187,12 +244,19 @@ export function parseNotation(input) {
   const moves = [];
   const tokens = [];
   for (const raw of rawTokens) {
-    const letterChar = raw[0] || '';
-    const isTwist = letterChar === 'x' || letterChar === 'X' || letterChar === 'y' || letterChar === 'Y';
-    const canonical = isTwist ? letterChar.toLowerCase() : letterChar.toUpperCase();
-    const def = MOVE_TABLE[canonical];
-    const suffix = raw.slice(1);
-    if (!def || !['', "'", '2'].includes(suffix)) {
+    let base = raw;
+    let suffix = '';
+    if (base.endsWith("'")) {
+      suffix = "'";
+      base = base.slice(0, -1);
+    } else if (base.endsWith('2')) {
+      suffix = '2';
+      base = base.slice(0, -1);
+    }
+
+    const canonical = resolveMoveKey(base);
+    const def = canonical ? MOVE_TABLE[canonical] : null;
+    if (!def) {
       return { error: true, badToken: raw };
     }
     if (suffix === '') {
@@ -451,7 +515,7 @@ export class CubeRenderer {
     const { axis, layer, dir } = move;
     const targets = [];
     this.state.forEach((c, i) => {
-      if (layer === 'all' || Math.round(c.M[12 + axis]) === layer) targets.push(i);
+      if (layerMatches(layer, Math.round(c.M[12 + axis]))) targets.push(i);
     });
     const total = dir * (Math.PI / 2);
 

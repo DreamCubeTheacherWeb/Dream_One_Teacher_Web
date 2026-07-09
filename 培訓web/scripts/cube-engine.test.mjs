@@ -198,12 +198,15 @@ for (const letter of ['M', 'x', 'y']) {
 // ═══════════════════════════════════════════════════════════════════
 
 // 13) 基本解析：大小寫、'、2、M/x/y
+// 2026-07-09 升級：大小寫變得有語義（大寫 UDLRFB=外層／小寫 udlrfb=寬層），
+// 這條原本斷言「r2 → R2」的舊行為已隨新規格改變——r2 現在正確應解析成 Rw2
+// （小寫 r＝寬層），此為規格要求的刻意改動，非回歸。
 {
   const r = parseNotation("r2 x X' m U");
   assert('parseNotation 基本解析成功', !r.error);
   if (!r.error) {
-    assert('parseNotation tokens 正規化正確', r.tokens.join(' ') === "R2 x x' M U");
-    assert('parseNotation moves 數量正確（R2 佔 2 筆）', r.moves.length === 6);
+    assert('parseNotation tokens 正規化正確（小寫 r＝寬層 Rw）', r.tokens.join(' ') === "Rw2 x x' M U");
+    assert('parseNotation moves 數量正確（Rw2 佔 2 筆）', r.moves.length === 6);
   }
 }
 
@@ -221,6 +224,56 @@ for (const letter of ['M', 'x', 'y']) {
   const r = parseNotation('R Q');
   assert('parseNotation 遇到非法代號回傳 error', r.error === true);
   assert('parseNotation badToken 含 Q', r.badToken === 'Q');
+}
+
+// 16) 寬層寫法都收，一律正規化為 Rw 這種「大寫字母+小寫 w」形式
+{
+  const variants = ["Rw", "RW", "rw", "rW"];
+  const allOk = variants.every((t) => {
+    const r = parseNotation(t);
+    return !r.error && r.tokens.join(' ') === 'Rw';
+  });
+  assert('parseNotation：Rw/RW/rw/rW 都正規化為 Rw', allOk);
+}
+
+// 17) M/E/S、x/y/z 大小寫都收，各自正規化為大寫/小寫
+{
+  const r1 = parseNotation('e S m');
+  assert('parseNotation：e S m 正規化為 E S M', !r1.error && r1.tokens.join(' ') === 'E S M');
+  const r2 = parseNotation("Z y' X");
+  assert("parseNotation：Z y' X 正規化為 z y' x", !r2.error && r2.tokens.join(' ') === "z y' x");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 等價式測試（2026-07-09 新增）：新代號的方向唯一權威。用「兩序列分別從
+// 還原態套用後全部 cubie 矩陣相等」比對，不信任何 dir 假設。九條全綠才算
+// 方向正確；任何一條變紅代表 E/S/z/寬層的 MOVE_TABLE 方向定義錯了。
+// ═══════════════════════════════════════════════════════════════════
+function applySeq(defs) {
+  // defs: [[letter, prime], ...]
+  const state = createCubeState();
+  for (const [letter, prime] of defs) {
+    const def = MOVE_TABLE[letter];
+    applyTurnToState(state, { axis: def.axis, layer: def.layer, dir: prime ? -def.dir : def.dir });
+  }
+  return state;
+}
+function statesEqual(a, b) {
+  return a.length === b.length && a.every((c, i) => c.M.every((v, k) => v === b[i].M[k]));
+}
+const EQUIV_CASES = [
+  ["x ≡ R M' L'", [['x', false]], [['R', false], ['M', true], ['L', true]]],
+  ["y ≡ U E' D'", [['y', false]], [['U', false], ['E', true], ['D', true]]],
+  ["z ≡ F S B'", [['z', false]], [['F', false], ['S', false], ['B', true]]],
+  ["Rw ≡ R M'", [['Rw', false]], [['R', false], ['M', true]]],
+  ['Lw ≡ L M', [['Lw', false]], [['L', false], ['M', false]]],
+  ["Uw ≡ U E'", [['Uw', false]], [['U', false], ['E', true]]],
+  ['Dw ≡ D E', [['Dw', false]], [['D', false], ['E', false]]],
+  ['Fw ≡ F S', [['Fw', false]], [['F', false], ['S', false]]],
+  ["Bw ≡ B S'", [['Bw', false]], [['B', false], ['S', true]]],
+];
+for (const [name, seqA, seqB] of EQUIV_CASES) {
+  assert(name, statesEqual(applySeq(seqA), applySeq(seqB)));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

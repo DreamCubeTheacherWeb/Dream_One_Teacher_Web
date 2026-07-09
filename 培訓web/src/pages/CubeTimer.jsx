@@ -4,26 +4,33 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import {
     CubeRenderer, genScramble, formatCubeTime, isSolvedState, parseNotation,
-    MOVE_TABLE, ALL_MOVES, TWIST_LETTERS,
+    MOVE_TABLE, ALL_MOVES, TILE_LETTERS, MID_LETTERS, TWIST_LETTERS, WIDE_LETTERS,
 } from '../lib/cubeEngine';
 
 const HOLD_MS = 300;
 
 const MODE_STORAGE_KEY = 'cube_mode';
-const KEYMAP_STORAGE_KEY = 'cube_keymap_v2';
-const OLD_KEYMAP_STORAGE_KEY = 'cube_keymap_v1';
-const TILE_ORDER_STORAGE_KEY = 'cube_tile_order_v1';
+// keymap v3（2026-07-09）：新增 E/S/z 與 12 個寬層動作。v3 缺鍵時往下遷移
+// 補齊（v2→v3、v1→v3），不遺失使用者原本的自訂鍵位。
+const KEYMAP_STORAGE_KEY = 'cube_keymap_v3';
+const OLD_KEYMAP_STORAGE_KEY = 'cube_keymap_v2';
+const OLDER_KEYMAP_STORAGE_KEY = 'cube_keymap_v1';
+// 按鈕排列 v2（2026-07-09）：從「7 格」改為「6 個轉面字母」（M 移入中層固定組，
+// 不再參與排序）。v1 讀到時只取其中 6 個面字母的相對順序遷移。
+const TILE_ORDER_STORAGE_KEY = 'cube_tile_order_v2';
+const OLD_TILE_ORDER_STORAGE_KEY = 'cube_tile_order_v1';
 
-// 預設格子排列（使用者拍板）：第一列 R F L、第二列 U D B、第三列 M。
-// x/y 翻面固定另起一列，不參與排序。
-const DEFAULT_TILE_ORDER = ['R', 'F', 'L', 'U', 'D', 'B', 'M'];
+// 預設轉面排列（使用者拍板）：R F L U D B。
+const DEFAULT_TILE_ORDER = ['R', 'F', 'L', 'U', 'D', 'B'];
 
 // 打亂編排器：token 上限（避免無限累加）。
 const BUILDER_TOKEN_LIMIT = 40;
 
-// 18 個轉面/翻面動作（U/D/L/R/F/B/M/x/y × 順轉/逆轉），衍生自 cubeEngine 的
-// ALL_MOVES，保證與 3D 引擎的 axis/layer/dir 對照永遠一致（單一事實來源）。
-// x/y 是整顆換視角（layer==='all'），不計步數；其餘（含 M）計步數。
+// 36 個轉面/中層/翻面/寬層動作（U/D/L/R/F/B/M/E/S/x/y/z/Rw/Lw/Uw/Dw/Fw/Bw ×
+// 順轉/逆轉），衍生自 cubeEngine 的 ALL_MOVES，保證與 3D 引擎的 axis/layer/dir
+// 對照永遠一致（單一事實來源）。ALL_MOVES 的固定順序＝轉面(6)→中層(3)→
+// 翻面(3)→寬層(6)，故可直接切片分組，不必另外過濾。
+// x/y/z 是整顆換視角（layer==='all'），不計步數；其餘（含 M/E/S/寬層）計步數。
 const FACE_ACTIONS = ALL_MOVES.flatMap((m) => {
     const countsAsMove = m.layer !== 'all';
     return [
@@ -31,6 +38,13 @@ const FACE_ACTIONS = ALL_MOVES.flatMap((m) => {
         { id: `${m.letter}_CCW`, axis: m.axis, layer: m.layer, dir: -m.dir, label: `${m.letter}'`, countsAsMove },
     ];
 });
+const FACE_TURN_ACTIONS = FACE_ACTIONS.slice(0, TILE_LETTERS.length * 2);
+const MID_ACTIONS = FACE_ACTIONS.slice(TILE_LETTERS.length * 2, (TILE_LETTERS.length + MID_LETTERS.length) * 2);
+const TWIST_ACTIONS = FACE_ACTIONS.slice(
+    (TILE_LETTERS.length + MID_LETTERS.length) * 2,
+    (TILE_LETTERS.length + MID_LETTERS.length + TWIST_LETTERS.length) * 2
+);
+const WIDE_ACTIONS = FACE_ACTIONS.slice((TILE_LETTERS.length + MID_LETTERS.length + TWIST_LETTERS.length) * 2);
 
 const CONTROL_ACTIONS = ['startStop', 'pause', 'discard'];
 
@@ -41,8 +55,9 @@ const ACTION_LABELS = {
     discard: '放棄',
 };
 
-// 預設鍵位（csTimer 精神）：轉面＝代號字母鍵，Shift＝反轉；
-// 起錶／停錶＝Space；暫停＝P；放棄＝Esc。
+// 預設鍵位（csTimer 精神）：轉面／中層＝代號字母鍵，Shift＝反轉；
+// 起錶／停錶＝Space；暫停＝P；放棄＝Esc。寬層 12 個動作預設不綁定（null）——
+// 鍵盤字母不夠用，使用者可在設定面板自行擷取綁定；null 代表「未設定」。
 const DEFAULT_KEYMAP = {
     U_CW: { code: 'KeyU', shift: false }, U_CCW: { code: 'KeyU', shift: true },
     D_CW: { code: 'KeyD', shift: false }, D_CCW: { code: 'KeyD', shift: true },
@@ -51,8 +66,17 @@ const DEFAULT_KEYMAP = {
     F_CW: { code: 'KeyF', shift: false }, F_CCW: { code: 'KeyF', shift: true },
     B_CW: { code: 'KeyB', shift: false }, B_CCW: { code: 'KeyB', shift: true },
     M_CW: { code: 'KeyM', shift: false }, M_CCW: { code: 'KeyM', shift: true },
+    E_CW: { code: 'KeyE', shift: false }, E_CCW: { code: 'KeyE', shift: true },
+    S_CW: { code: 'KeyS', shift: false }, S_CCW: { code: 'KeyS', shift: true },
     x_CW: { code: 'KeyX', shift: false }, x_CCW: { code: 'KeyX', shift: true },
     y_CW: { code: 'KeyY', shift: false }, y_CCW: { code: 'KeyY', shift: true },
+    z_CW: { code: 'KeyZ', shift: false }, z_CCW: { code: 'KeyZ', shift: true },
+    Rw_CW: null, Rw_CCW: null,
+    Lw_CW: null, Lw_CCW: null,
+    Uw_CW: null, Uw_CCW: null,
+    Dw_CW: null, Dw_CCW: null,
+    Fw_CW: null, Fw_CCW: null,
+    Bw_CW: null, Bw_CCW: null,
     startStop: { code: 'Space', shift: false },
     pause: { code: 'KeyP', shift: false },
     discard: { code: 'Escape', shift: false },
@@ -73,43 +97,67 @@ function isValidBinding(v) {
     return !!v && typeof v.code === 'string' && typeof v.shift === 'boolean';
 }
 
-// 讀鍵位設定：v2 存在且完整就直接用；否則嘗試從 v1 遷移（保留舊有綁定、新動作
-// 補預設）；都沒有或資料壞掉就回全預設。存檔一律寫回 v2。
+// 寬層動作允許明確的「未設定」（null）；其餘動作仍要求是合法的按鍵綁定。
+function isValidBindingOrNull(v) {
+    return v === null || isValidBinding(v);
+}
+
+// 用某一份舊 keymap 資料疊上預設值：舊資料裡每個 id 若合法（含明確 null）就採用，
+// 否則補預設。用於 v1/v2 → v3 遷移，也用於 v3 資料不完整時的自我修復。
+function mergeKeymapFrom(oldParsed) {
+    const merged = { ...DEFAULT_KEYMAP };
+    if (oldParsed && typeof oldParsed === 'object') {
+        for (const id of ALL_KEYMAP_IDS) {
+            if (isValidBindingOrNull(oldParsed[id])) merged[id] = oldParsed[id];
+        }
+    }
+    return merged;
+}
+
+// 讀鍵位設定：v3 存在且完整就直接用；否則依序嘗試從 v2、v1 遷移（保留舊有
+// 綁定、新動作補預設）；都沒有或資料壞掉就回全預設。存檔一律寫回 v3。
 function loadKeymapFromStorage() {
     try {
         const raw = localStorage.getItem(KEYMAP_STORAGE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (ALL_KEYMAP_IDS.every((id) => isValidBinding(parsed?.[id]))) return parsed;
-            return { ...DEFAULT_KEYMAP };
+            if (ALL_KEYMAP_IDS.every((id) => isValidBindingOrNull(parsed?.[id]))) return parsed;
+            return mergeKeymapFrom(parsed);
         }
-        const oldRaw = localStorage.getItem(OLD_KEYMAP_STORAGE_KEY);
-        if (oldRaw) {
-            const oldParsed = JSON.parse(oldRaw);
-            const merged = {};
-            for (const id of ALL_KEYMAP_IDS) {
-                merged[id] = isValidBinding(oldParsed?.[id]) ? oldParsed[id] : DEFAULT_KEYMAP[id];
-            }
-            return merged;
-        }
+        const v2Raw = localStorage.getItem(OLD_KEYMAP_STORAGE_KEY);
+        if (v2Raw) return mergeKeymapFrom(JSON.parse(v2Raw));
+        const v1Raw = localStorage.getItem(OLDER_KEYMAP_STORAGE_KEY);
+        if (v1Raw) return mergeKeymapFrom(JSON.parse(v1Raw));
         return { ...DEFAULT_KEYMAP };
     } catch {
         return { ...DEFAULT_KEYMAP };
     }
 }
 
-// 讀格子排列：驗證元素齊全（7 個代號各恰好一次），不齊就回預設。
+function isValidTileOrder(arr) {
+    if (!Array.isArray(arr) || arr.length !== DEFAULT_TILE_ORDER.length) return false;
+    const set = new Set(arr);
+    return set.size === DEFAULT_TILE_ORDER.length && DEFAULT_TILE_ORDER.every((l) => set.has(l));
+}
+
+// 讀轉面排列：v2 驗證元素齊全（6 個面字母各恰好一次）就直接用；否則嘗試從舊版
+// v1（7 格含 M）遷移，取其中 6 個面字母的相對順序；都不齊就回預設。
 function loadTileOrderFromStorage() {
     try {
         const raw = localStorage.getItem(TILE_ORDER_STORAGE_KEY);
-        if (!raw) return [...DEFAULT_TILE_ORDER];
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed) || parsed.length !== DEFAULT_TILE_ORDER.length) return [...DEFAULT_TILE_ORDER];
-        const set = new Set(parsed);
-        if (set.size !== DEFAULT_TILE_ORDER.length || !DEFAULT_TILE_ORDER.every((l) => set.has(l))) {
-            return [...DEFAULT_TILE_ORDER];
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            return isValidTileOrder(parsed) ? parsed : [...DEFAULT_TILE_ORDER];
         }
-        return parsed;
+        const oldRaw = localStorage.getItem(OLD_TILE_ORDER_STORAGE_KEY);
+        if (oldRaw) {
+            const oldParsed = JSON.parse(oldRaw);
+            if (Array.isArray(oldParsed)) {
+                const migrated = oldParsed.filter((l) => DEFAULT_TILE_ORDER.includes(l));
+                if (isValidTileOrder(migrated)) return migrated;
+            }
+        }
+        return [...DEFAULT_TILE_ORDER];
     } catch {
         return [...DEFAULT_TILE_ORDER];
     }
@@ -204,6 +252,33 @@ const StatTile = ({ label, value, testId }) => (
     </div>
 );
 
+// ── 螢幕轉面鍵帽（keycap）：2026-07-09 重新設計 ─────────────────────────
+// 取代舊版「格子包兩顆小鈕」；每顆鍵帽獨立顯示完整代號（R、R'、Rw、M、x'…），
+// 遵循站內 Bauhaus 形狀鐵律（rounded-none、border-bauhaus-*、shadow-hard-sm，
+// 不用柔陰影／圓角），按下用位移+去陰影模擬鍵帽下沉。各組用邊框色/底色微調
+// 區分語意（轉面＝黑；中層＝藍；翻面＝黃；寬層＝虛線灰，Bauhaus 沒有綠色，
+// 見 DESIGN.md，改用虛線邊框表達「進階/次要」而非另開色系）。
+const KEYCAP_BASE = 'min-w-[44px] min-h-[44px] w-full flex items-center justify-center rounded-none border-2 font-mono font-bold text-sm shadow-hard-sm transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-hard-sm disabled:active:translate-x-0 disabled:active:translate-y-0 [-webkit-tap-highlight-color:transparent]';
+const KEYCAP_TINTS = {
+    face: 'bg-white border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted',
+    mid: 'bg-bauhaus-blue/5 border-bauhaus-blue text-bauhaus-blue hover:bg-bauhaus-blue/10',
+    twist: 'bg-bauhaus-yellow/10 border-bauhaus-yellow text-bauhaus-black hover:bg-bauhaus-yellow/20',
+    wide: 'bg-white border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted',
+};
+
+const Keycap = ({ label, onClick, disabled, ariaLabel, testId, tint }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        data-testid={testId}
+        className={`${KEYCAP_BASE} ${KEYCAP_TINTS[tint]}`}
+    >
+        {label}
+    </button>
+);
+
 const CubeTimer = () => {
     const { user } = useAuth();
 
@@ -232,6 +307,7 @@ const CubeTimer = () => {
     const [customPanelOpen, setCustomPanelOpen] = useState(false);
     const [builderTokens, setBuilderTokens] = useState([]);
     const [builderError, setBuilderError] = useState('');
+    const [builderWideOpen, setBuilderWideOpen] = useState(false);
 
     const [mode, setMode] = useState(() => loadModeFromStorage());
     const modeRef = useRef(mode);
@@ -245,6 +321,7 @@ const CubeTimer = () => {
 
     const [tileOrder, setTileOrder] = useState(() => loadTileOrderFromStorage());
     const [faceSectionOpen, setFaceSectionOpen] = useState(() => loadFaceSectionDefault());
+    const [wideSectionOpen, setWideSectionOpen] = useState(false);
 
     const [lastResult, setLastResult] = useState(null);
     const [submitting, setSubmitting] = useState(false);
@@ -608,8 +685,9 @@ const CubeTimer = () => {
 
     // ── 按鍵設定：綁定 / 衝突檢查 / 恢復預設 ──────────────────────────
     const rebindAction = useCallback((actionId, binding) => {
+        // 寬層動作預設 null（未設定），不參與衝突檢查，找衝突時先濾掉 null。
         const conflictEntry = Object.entries(keymapRef.current).find(
-            ([id, b]) => id !== actionId && b.code === binding.code && b.shift === binding.shift
+            ([id, b]) => id !== actionId && b && b.code === binding.code && b.shift === binding.shift
         );
         if (conflictEntry) {
             setConflictMsg(`此鍵已被「${ACTION_LABELS[conflictEntry[0]]}」使用`);
@@ -745,9 +823,12 @@ const CubeTimer = () => {
     const turnButtonsDisabled = scrambling || ready || phase === 'armed' || phase === 'paused';
     const ao5 = computeAoN(myRecent, 5);
     const ao12 = computeAoN(myRecent, 12);
-    const legendMoveKeys = [...tileOrder, ...TWIST_LETTERS].map((l) => keyLabel(keymap[`${l}_CW`])).join(' ');
+    // 寬層畫面顯示順序跟隨使用者的轉面自訂順序（tileOrder），例如 R 排第一就
+    // Rw 也排第一；螢幕按鈕、打亂編排器的「＋寬層」列、按鍵設定的寬層分組皆共用。
+    const wideOrder = tileOrder.map((l) => `${l}w`);
+    // 圖例行避免爆長：固定列出預設字母＋提示語，不逐一展開目前的自訂鍵位。
     const legendText = `起錶／停錶 ${keyLabel(keymap.startStop)}・暫停 ${keyLabel(keymap.pause)}・放棄 ${keyLabel(keymap.discard)}`
-        + (isVirtual ? `・轉面 ${legendMoveKeys}（Shift 反轉）` : '');
+        + (isVirtual ? '・轉面 U D L R F B（Shift 反轉）・更多鍵位見設定' : '');
 
     // ── 狀態 pill（整齊／已打亂／計時中／已暫停）────────────────────────
     const cubeStatusLabel = phase === 'running' ? '計時中' : phase === 'paused' ? '已暫停' : cubeSolved ? '整齊' : '已打亂';
@@ -927,8 +1008,9 @@ const CubeTimer = () => {
                                     ))
                                 )}
                             </div>
+                            {/* 轉面（自訂順序）＋ M E S ＋ x y z 常駐；寬層鍵藏在「＋寬層」小切換內 */}
                             <div className="flex flex-wrap gap-2" data-testid="cube-builder-keys">
-                                {[...tileOrder, ...TWIST_LETTERS].map((letter) => (
+                                {[...tileOrder, ...MID_LETTERS, ...TWIST_LETTERS].map((letter) => (
                                     <button
                                         key={letter}
                                         type="button"
@@ -940,6 +1022,32 @@ const CubeTimer = () => {
                                         {letter}
                                     </button>
                                 ))}
+                            </div>
+                            <div>
+                                <button
+                                    type="button"
+                                    onClick={() => setBuilderWideOpen((v) => !v)}
+                                    data-testid="cube-builder-wide-toggle"
+                                    className="text-xs font-bold text-bauhaus-black/50 underline underline-offset-2 [-webkit-tap-highlight-color:transparent]"
+                                >
+                                    {builderWideOpen ? '收合寬層 ▲' : '＋ 寬層'}
+                                </button>
+                                {builderWideOpen && (
+                                    <div className="flex flex-wrap gap-2 mt-2" data-testid="cube-builder-wide-keys">
+                                        {wideOrder.map((letter) => (
+                                            <button
+                                                key={letter}
+                                                type="button"
+                                                data-testid={`cube-builder-key-${letter}`}
+                                                onClick={() => appendBuilderToken(letter)}
+                                                disabled={scrambleBusy || builderTokens.length >= BUILDER_TOKEN_LIMIT}
+                                                className="min-w-[44px] min-h-[44px] px-2 rounded-none bg-white border-2 border-bauhaus-black font-mono font-bold text-sm text-bauhaus-black hover:bg-bauhaus-muted disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
+                                            >
+                                                {letter}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex flex-wrap gap-2" data-testid="cube-builder-mods">
                                 <button
@@ -1083,7 +1191,8 @@ const CubeTimer = () => {
                 </div>
             </section>
 
-            {/* 螢幕轉面按鈕區（僅鍵盤模式，可收合） */}
+            {/* 螢幕轉面按鈕區（僅鍵盤模式，可收合）── 2026-07-09 鍵帽（keycap）重新設計：
+                獨立鍵帽取代舊版「格子包兩顆小鈕」，各組用邊框/底色微調區分語意。 */}
             {isVirtual && (
                 <section className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6 mb-6">
                     <button
@@ -1097,76 +1206,162 @@ const CubeTimer = () => {
                     </button>
 
                     {faceSectionOpen && (
-                        <div className="mt-4">
-                            <p className="hidden md:block text-center text-xs text-bauhaus-black/50 mb-3" data-testid="cube-key-legend">
+                        <div className="mt-4 space-y-5">
+                            <p className="hidden md:block text-center text-xs text-bauhaus-black/50" data-testid="cube-key-legend">
                                 {legendText}
                             </p>
-                            <div className="grid grid-cols-3 gap-2" data-testid="cube-face-buttons">
-                                {tileOrder.map((letter) => {
-                                    const def = MOVE_TABLE[letter];
-                                    return (
-                                        <div
-                                            key={letter}
-                                            className="flex items-center justify-center gap-1 border-2 border-bauhaus-black rounded-none px-2 py-2"
-                                            data-testid={`cube-tile-${letter}`}
-                                        >
-                                            <button
-                                                type="button"
+
+                            {/* 轉面：第一排順轉、第二排逆轉，同欄同字母；375px 下自動改 3 欄 4 排 */}
+                            <div>
+                                <p className="text-xs font-bold text-bauhaus-black/40 mb-2">轉面</p>
+                                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2" data-testid="cube-face-keycaps">
+                                    {tileOrder.map((letter) => {
+                                        const def = MOVE_TABLE[letter];
+                                        return (
+                                            <Keycap
+                                                key={`${letter}-cw`}
+                                                label={letter}
+                                                tint="face"
                                                 onClick={() => handleFaceTurn(def.axis, def.layer, def.dir)}
                                                 disabled={turnButtonsDisabled}
-                                                aria-label={`${letter} 順轉`}
-                                                data-testid={`cube-btn-${letter}`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-muted hover:bg-bauhaus-black/10 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
-                                            >
-                                                {letter}
-                                            </button>
-                                            <button
-                                                type="button"
+                                                ariaLabel={`${letter} 順轉`}
+                                                testId={`cube-btn-${letter}`}
+                                            />
+                                        );
+                                    })}
+                                    {tileOrder.map((letter) => {
+                                        const def = MOVE_TABLE[letter];
+                                        return (
+                                            <Keycap
+                                                key={`${letter}-ccw`}
+                                                label={`${letter}'`}
+                                                tint="face"
                                                 onClick={() => handleFaceTurn(def.axis, def.layer, -def.dir)}
                                                 disabled={turnButtonsDisabled}
-                                                aria-label={`${letter} 逆轉`}
-                                                data-testid={`cube-btn-${letter}-prime`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-muted hover:bg-bauhaus-black/10 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
-                                            >
-                                                {letter}&apos;
-                                            </button>
-                                        </div>
-                                    );
-                                })}
+                                                ariaLabel={`${letter} 逆轉`}
+                                                testId={`cube-btn-${letter}-prime`}
+                                            />
+                                        );
+                                    })}
+                                </div>
                             </div>
-                            <p className="mt-3 mb-1 text-xs text-bauhaus-black/50 font-bold">翻面（整顆換視角，不計步數）</p>
-                            <div className="grid grid-cols-4 gap-2" data-testid="cube-twist-buttons">
-                                {TWIST_LETTERS.map((letter) => {
-                                    const def = MOVE_TABLE[letter];
-                                    return (
-                                        <div
-                                            key={letter}
-                                            className="col-span-2 flex items-center justify-center gap-1 border-2 border-bauhaus-yellow rounded-none px-2 py-2"
-                                            data-testid={`cube-tile-${letter}`}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => handleFaceTurn(def.axis, def.layer, def.dir, false)}
-                                                disabled={turnButtonsDisabled}
-                                                aria-label={`整顆換視角 ${letter}`}
-                                                data-testid={`cube-btn-${letter}`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-yellow/20 hover:bg-bauhaus-yellow/40 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
-                                            >
-                                                {letter}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleFaceTurn(def.axis, def.layer, -def.dir, false)}
-                                                disabled={turnButtonsDisabled}
-                                                aria-label={`整顆換視角 ${letter} 反向`}
-                                                data-testid={`cube-btn-${letter}-prime`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-yellow/20 hover:bg-bauhaus-yellow/40 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
-                                            >
-                                                {letter}&apos;
-                                            </button>
+
+                            {/* 中層 + 翻面 並排 */}
+                            <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                                <div>
+                                    <p className="text-xs font-bold text-bauhaus-blue mb-2">中層</p>
+                                    <div className="grid grid-cols-3 gap-1 sm:gap-1.5" data-testid="cube-mid-keycaps">
+                                        {MID_LETTERS.map((letter) => {
+                                            const def = MOVE_TABLE[letter];
+                                            return (
+                                                <Keycap
+                                                    key={`${letter}-cw`}
+                                                    label={letter}
+                                                    tint="mid"
+                                                    onClick={() => handleFaceTurn(def.axis, def.layer, def.dir)}
+                                                    disabled={turnButtonsDisabled}
+                                                    ariaLabel={`${letter} 順轉`}
+                                                    testId={`cube-btn-${letter}`}
+                                                />
+                                            );
+                                        })}
+                                        {MID_LETTERS.map((letter) => {
+                                            const def = MOVE_TABLE[letter];
+                                            return (
+                                                <Keycap
+                                                    key={`${letter}-ccw`}
+                                                    label={`${letter}'`}
+                                                    tint="mid"
+                                                    onClick={() => handleFaceTurn(def.axis, def.layer, -def.dir)}
+                                                    disabled={turnButtonsDisabled}
+                                                    ariaLabel={`${letter} 逆轉`}
+                                                    testId={`cube-btn-${letter}-prime`}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold text-bauhaus-black/60 mb-2">翻面（換視角，不計步）</p>
+                                    <div className="grid grid-cols-3 gap-1 sm:gap-1.5" data-testid="cube-twist-keycaps">
+                                        {TWIST_LETTERS.map((letter) => {
+                                            const def = MOVE_TABLE[letter];
+                                            return (
+                                                <Keycap
+                                                    key={`${letter}-cw`}
+                                                    label={letter}
+                                                    tint="twist"
+                                                    onClick={() => handleFaceTurn(def.axis, def.layer, def.dir, false)}
+                                                    disabled={turnButtonsDisabled}
+                                                    ariaLabel={`整顆換視角 ${letter}`}
+                                                    testId={`cube-btn-${letter}`}
+                                                />
+                                            );
+                                        })}
+                                        {TWIST_LETTERS.map((letter) => {
+                                            const def = MOVE_TABLE[letter];
+                                            return (
+                                                <Keycap
+                                                    key={`${letter}-ccw`}
+                                                    label={`${letter}'`}
+                                                    tint="twist"
+                                                    onClick={() => handleFaceTurn(def.axis, def.layer, -def.dir, false)}
+                                                    disabled={turnButtonsDisabled}
+                                                    ariaLabel={`整顆換視角 ${letter} 反向`}
+                                                    testId={`cube-btn-${letter}-prime`}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 寬層：預設收合，展開後跟隨轉面自訂順序（R 排第一，Rw 也排第一） */}
+                            <div>
+                                <button
+                                    type="button"
+                                    onClick={() => setWideSectionOpen((v) => !v)}
+                                    data-testid="cube-wide-toggle"
+                                    className="w-full flex items-center justify-between gap-3 text-xs font-bold text-bauhaus-black/50 [-webkit-tap-highlight-color:transparent]"
+                                >
+                                    <span>進階・寬層轉</span>
+                                    <span>{wideSectionOpen ? '收合 ▲' : '展開 ▼'}</span>
+                                </button>
+                                {wideSectionOpen && (
+                                    <div className="mt-2">
+                                        <p className="text-[11px] text-bauhaus-black/40 mb-2">寬層＝外層＋中層一起轉</p>
+                                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2" data-testid="cube-wide-keycaps">
+                                            {wideOrder.map((letter) => {
+                                                const def = MOVE_TABLE[letter];
+                                                return (
+                                                    <Keycap
+                                                        key={`${letter}-cw`}
+                                                        label={letter}
+                                                        tint="wide"
+                                                        onClick={() => handleFaceTurn(def.axis, def.layer, def.dir)}
+                                                        disabled={turnButtonsDisabled}
+                                                        ariaLabel={`${letter} 順轉`}
+                                                        testId={`cube-btn-${letter}`}
+                                                    />
+                                                );
+                                            })}
+                                            {wideOrder.map((letter) => {
+                                                const def = MOVE_TABLE[letter];
+                                                return (
+                                                    <Keycap
+                                                        key={`${letter}-ccw`}
+                                                        label={`${letter}'`}
+                                                        tint="wide"
+                                                        onClick={() => handleFaceTurn(def.axis, def.layer, -def.dir)}
+                                                        disabled={turnButtonsDisabled}
+                                                        ariaLabel={`${letter} 逆轉`}
+                                                        testId={`cube-btn-${letter}-prime`}
+                                                    />
+                                                );
+                                            })}
                                         </div>
-                                    );
-                                })}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1274,7 +1469,52 @@ const CubeTimer = () => {
                         <div>
                             <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">轉面（僅鍵盤模式作用，代號＝國際標準轉法記號）</h3>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {FACE_ACTIONS.map((a) => (
+                                {FACE_TURN_ACTIONS.map((a) => (
+                                    <KeyRow
+                                        key={a.id}
+                                        label={a.label}
+                                        binding={keymap[a.id]}
+                                        capturing={capturingAction === a.id}
+                                        onStart={() => startCapture(a.id)}
+                                        testId={`cube-keyrow-${a.id}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">中層</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {MID_ACTIONS.map((a) => (
+                                    <KeyRow
+                                        key={a.id}
+                                        label={a.label}
+                                        binding={keymap[a.id]}
+                                        capturing={capturingAction === a.id}
+                                        onStart={() => startCapture(a.id)}
+                                        testId={`cube-keyrow-${a.id}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">翻面（換視角，不計步）</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {TWIST_ACTIONS.map((a) => (
+                                    <KeyRow
+                                        key={a.id}
+                                        label={a.label}
+                                        binding={keymap[a.id]}
+                                        capturing={capturingAction === a.id}
+                                        onStart={() => startCapture(a.id)}
+                                        testId={`cube-keyrow-${a.id}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">寬層（外層＋中層一起轉；預設未設定，可自行綁定）</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {WIDE_ACTIONS.map((a) => (
                                     <KeyRow
                                         key={a.id}
                                         label={a.label}
@@ -1302,7 +1542,9 @@ const CubeTimer = () => {
                             </div>
                         </div>
                         <div>
-                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">按鈕排列（轉面格子順序，x/y 翻面固定不排序）</h3>
+                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">
+                                按鈕排列（轉面 6 字母順序；M/E/S 中層固定、x/y/z 翻面固定、寬層跟隨此順序，皆不參與排序）
+                            </h3>
                             <div className="space-y-1.5 max-w-xs">
                                 {tileOrder.map((letter, idx) => (
                                     <div
