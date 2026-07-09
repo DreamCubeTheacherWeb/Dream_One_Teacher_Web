@@ -1,7 +1,37 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（手機版體驗總檢＋觸控熱區全站修復，Opus 4.8）。
+> 最後更新：2026-07-09（排行榜擴充：大班/小班分類＋WCA 世界賽成績，已上線，Opus 4.8）。
+
+---
+
+## 🏆 2026-07-09：排行榜擴充—課程分類 + WCA 世界賽成績（已 commit＋push＋SQL 上線＝commit 4655b4b）
+
+**做了什麼**：排行榜從單一維度擴充成「上層分類 tab＋次選」——
+① 教學時數細分：**總時數 / 大班課(合作機構) / 小班課(自家教學)**；
+② 新增 **WCA 賽事榜**：117 位講師、15 個項目最佳成績，可依項目＋單次/平均排行。
+
+**✅ 已上線（附證據）**
+- **SQL 已套正式 Supabase**（業主 2026-07-09 親跑，驗證 A 無異常、可上線）：
+  `2026-07-09_leaderboard_expansion.sql`（`get_teaching_leaderboard_v2(year,category)`、
+  instructors 加 `wca_id/wca_name`、`wca_results` 表＋RLS 只讀、`get_wca_events()`／
+  `get_wca_leaderboard(event,type)`；冪等、含權限守衛）＋ `2026-07-09_wca_results_import.sql`
+  （117 位、900 筆成績，中文名對 full_name、ON CONFLICT 可重跑）。
+- **前端已 push**（Zeabur 自動部署）：`src/pages/Leaderboard.jsx` 重寫（三頂層 tab）、
+  新 `src/lib/wca.js`（15 項中文＋centiseconds 格式化）、`LeaderboardView.jsx` 加
+  `showRankTitle` 旗標修「歷屆教學王稱號誤植到方塊/WCA 榜」bug。
+  證據：build 綠燈、lint 25=25 零新增、mock Playwright 全通過（含確定性斷言：稱號僅教學榜
+  第1名 count=1、cube/WCA count=0）、9 張截圖獨立 agent 判讀通過。
+- **WCA 比對方法**：下載官方匯出(v2_190) 用中文名對 242 位老師 → 單一命中 110(台)、
+  多候選 8、查無 122；業主逐一核對確認清單(Artifact)，剔除外國撞名(林庭安/朱柏宇)、
+  王浩宇跳過、紅色 7 位指定 wca_id。scratchpad 有 wca-match-review.csv／detail.json。
+
+**⚠️ 未驗 / 待辦**
+- **線上實測未做**：Google OAuth 擋 Playwright，最終「開頁面看排行對不對」需業主人工走一次
+  （部署完成後開 /leaderboard，切三分類＋WCA 項目）。
+- 課程分類 camp_director/special_lecture 歸屬屬判斷題，映射寫在 expansion SQL 檔頭可一行調整。
+- WCA 排除了 333fm/333mbf(非時間編碼)＋magic/mmagic/333ft(已停辦)；查無 122 位需老師自填
+  WCA ID 才補得齊（本次未做自填欄位，長期可加）。
 
 ---
 
