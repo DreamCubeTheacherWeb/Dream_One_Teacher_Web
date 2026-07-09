@@ -31,7 +31,9 @@ checkbox。共用配方（index.css `.bh-*`）改一次全站生效＋9 路 agen
 **上線紀錄**：業主 2026-07-09 說「上」→ index 手術 commit `5d417fe`（只含本任務 12 個
 hunk，同檔並行圓角線的 8 個 hunk 留在工作區未動）→ push，Zeabur 自動部署。
 commit 前以 `git checkout-index` 隔離拷貝實測 staged 版本 build 綠燈＋bundle 含新字串。
-線上 bundle 未 grep 驗證（文件沒記正式站網址，已向業主要，拿到後補進 CLAUDE.md）。
+✅ 線上 bundle 已驗證（業主提供網址 https://dream-one-teacher.zeabur.app，
+index-BOLDJDfk.js 含「已登入講師/講師名冊/其他狀態/未填狀態」四字串各 1 處；
+網址與驗部署慣例已補進 CLAUDE.md 部署節）。
 同日：`2026-07-09_lesson_tags.sql` 業主已貼線上，anon 探測 lessons.tags 欄位存在 ✓
 （hashtag 線＝commit 9e48b4f 的後端半邊補齊）。
 

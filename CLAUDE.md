@@ -44,6 +44,9 @@
 格式（如 `2026-07-07_security_hardening.sql`），別再用會誤導的數字前綴。
 
 ## 部署（Zeabur）
+**正式站網址：https://dream-one-teacher.zeabur.app**（2026-07-09 業主提供）。
+push main → Zeabur 自動部署，約 40–60 秒換版；驗部署慣例＝curl 首頁抓
+`assets/index-*.js` 檔名，grep 新功能字串是否在 bundle 內。
 存在**三份可能打架的設定**：根 `Dockerfile`（nginx 靜態伺服）、根 `zbpack.json`
 （`cd 培訓web` 後 build）、`培訓web/zbpack.json`（不含 cd）。實際生效哪份取決於
 Zeabur 專案的 Root Directory 設定，需登入後台確認（見 STATUS 地雷／待辦）。
