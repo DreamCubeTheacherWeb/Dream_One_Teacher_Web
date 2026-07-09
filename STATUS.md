@@ -5,6 +5,28 @@
 
 ---
 
+## 📄 2026-07-09 晚：簽約頁兩件事（翻頁跳頂已修未 commit；OTP 寄送診斷中）
+
+**1. 合約翻頁跳回頂部（✅ 已修，未 commit）**：根因＝react-pdf 換頁空窗期 PDF 容器高度
+塌陷、瀏覽器把 scrollY 夾回上方。修法（只動 `src/components/DocumentViewer.jsx`）：
+onRenderSuccess 記錄頁高、換頁用 minHeight 撐住；goToPage 後平滑捲到新頁頂端
+（初始載入與 zoom modal 不受影響）。證據（主對話親跑腳本）：修前手機翻頁
+scrollY 345→0（完全復現）；修後 345→345、容器 top 33px；桌機 860→370、top 16px；
+0 pageerror；build 綠燈、eslint 0。腳本 scratchpad/verify-docviewer-scroll.mjs。
+**⚠️ commit 時注意**：ProfilePage.jsx 有並行線（WCA 自填）未收尾改動，只挑 DocumentViewer。
+
+**2. 簽約 OTP「不會寄驗證碼」診斷（2026-07-09 晚，主對話 anon 探測）**：
+- `/auth/v1/otp` 對 info@dropout.tw 實測 **HTTP 200**＝Email provider 其實已開、寄送管道通
+  （STATUS 舊待辦「開 Email provider」可能已被業主完成，或早已開）。
+- 已真寄一封測試信到 info@dropout.tw，等業主查收裁決三種可能：
+  (a) 沒收到＝內建 SMTP 送達問題；(b) 收到但只有連結沒 6 碼＝**Email 模板缺 {{ .Token }}**
+  （Supabase 預設 Magic Link 模板只放連結，前端卻要求輸 6 碼——最可疑）；
+  (c) 收到含 6 碼＝功能正常，先前可能撞每小時 2 封的內建量限。
+- 既有已知風險：內建 SMTP 每小時約 2 封，多位老師同日簽約必爆，正式用要接自有 SMTP
+  （Resend，STATUS 舊待辦 3(b)）。
+
+---
+
 ## 🚑 2026-07-09 晚：部署失敗搶修（✅ 已修＝cc4a2a7）
 
 **事故**：16901c7 把 ProfilePage/BadgeManager 改為 import `BadgeVisual`／`imageCompress`，
