@@ -5,6 +5,27 @@
 
 ---
 
+## 🎚️ 2026-07-09 深夜：後台切講師等級「立刻彈回」修復（✅ 已修＋回歸測試；業主回報的 bug）
+
+**業主症狀**：/admin/teachers 講師名單管理切等級切不動（無錯誤訊息）。
+**根因（非 trigger、非權限）**：5d417fe 數字消歧義改版把 instructorMap 改成雙 key
+（`inst.id`＋`user:<user_id>`）、畫面讀 `user:` 前綴 key，但兩處等級切換的 optimistic
+更新仍寫回**無前綴的舊 key**（TeacherManager.jsx 原 :549/:694）→ 寫進去的值畫面讀不到，
+下拉當場彈回舊值。**DB 的 PATCH 其實有送出**＝業主先前切的等級很可能已存進資料庫，只是畫面騙人。
+**修法**：optimistic 更新寫回 `user:` 前綴＋`id` 兩把 key（含 id，去重邏輯不受影響）。
+**證據（主對話親跑）**：新回歸腳本 `scripts/verify-level-switch.mjs`（假 admin＋mock）
+修復版 **2/2 PASS**（PATCH body 含新等級＋下拉維持不彈回）；**換回舊版程式同測試 A2 失敗
+（B→彈回 B）＝症狀復現、測試有效**；build 綠燈、eslint 0。
+**⚠️ 未驗**：guard_instructor_role trigger 對真 admin 的放行（mock 攔下 PATCH 測不到 DB 層）
+——業主部署後在頁面實切一次＋重新整理，若仍彈回才需查 trigger（診斷 SQL 已給過）。
+**📌 順帶觀察（另一問題，未處理）**：業主截圖中刪除鈕 `delete_user_completely` 回 409
+Conflict——疑 FK 擋刪除，待另行診斷。
+**同場澄清**：「填完資料才能看其他頁」關卡（ProfileCompleteGate）健在——線上 bundle 字串
+＋本機 3 情境重演（`scripts/verify-complete-gate.mjs` 3/3）皆證實；業主測不到是因為
+admin/mentor 依設計免檢查。
+
+---
+
 ## 🪪 2026-07-09 晚：認領自動核准（手機＋身分證末四碼）＋等級自動帶入（✅ 已 commit＋push；SQL 已套用）
 
 **業主需求三連**：① 名冊上的老師認領後不必人工審核；② 登入後「已是夢想一號老師」用

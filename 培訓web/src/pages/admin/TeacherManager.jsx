@@ -546,7 +546,12 @@ const TeacherManager = () => {
                                                     }, { onConflict: 'user_id' }));
                                                 }
                                                 if (error) { alert('講師等級變更失敗：' + error.message); return; }
-                                                setInstructorMap(prev => ({ ...prev, [item.id]: { ...(prev[item.id] || {}), user_id: item.id, instructor_role: newRole } }));
+                                                setInstructorMap(prev => {
+                                                    // 寫回畫面讀取用的 user: 前綴 key（修：原寫進無前綴 key，畫面讀不到、下拉立刻彈回舊值）
+                                                    const cur = prev[`user:${item.id}`] || { id: `temp-${item.id}`, user_id: item.id };
+                                                    const next = { ...cur, instructor_role: newRole };
+                                                    return { ...prev, [next.id]: next, [`user:${item.id}`]: next };
+                                                });
                                             }}
                                             className={`bh-chip border-0 outline-none cursor-pointer ${
                                                 inst?.instructor_role ? 'bg-bauhaus-black text-white' : 'bg-bauhaus-muted text-bauhaus-black'
@@ -691,7 +696,12 @@ const TeacherManager = () => {
                                                             }, { onConflict: 'user_id' }));
                                                         }
                                                         if (error) { alert('講師等級變更失敗：' + error.message); return; }
-                                                        setInstructorMap(prev => ({ ...prev, [item.id]: { ...(prev[item.id] || {}), user_id: item.id, instructor_role: newRole } }));
+                                                        setInstructorMap(prev => {
+                                                    // 寫回畫面讀取用的 user: 前綴 key（修：原寫進無前綴 key，畫面讀不到、下拉立刻彈回舊值）
+                                                    const cur = prev[`user:${item.id}`] || { id: `temp-${item.id}`, user_id: item.id };
+                                                    const next = { ...cur, instructor_role: newRole };
+                                                    return { ...prev, [next.id]: next, [`user:${item.id}`]: next };
+                                                });
                                                     }}
                                                     className={`bh-chip border-0 outline-none cursor-pointer ${
                                                         inst?.instructor_role ? 'bg-bauhaus-black text-white' : 'bg-bauhaus-muted text-bauhaus-black'
