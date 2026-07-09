@@ -9,6 +9,11 @@ import {
 
 const HOLD_MS = 300;
 
+// 送出成績時「公開到排行榜／只存自己的紀錄」的偏好，記住上次選擇；首次預設公開。
+const SUBMIT_PUBLIC_STORAGE_KEY = 'cube_submit_public';
+// 完整歷史：每頁筆數（依 created_at desc 分頁）。
+const HISTORY_PAGE_SIZE = 20;
+
 const MODE_STORAGE_KEY = 'cube_mode';
 // keymap v3（2026-07-09）：新增 E/S/z 與 12 個寬層動作。v3 缺鍵時往下遷移
 // 補齊（v2→v3、v1→v3），不遺失使用者原本的自訂鍵位。
@@ -90,6 +95,31 @@ function loadModeFromStorage() {
         return raw === 'physical' ? 'physical' : 'virtual';
     } catch {
         return 'virtual';
+    }
+}
+
+// 讀「送出成績時是否公開」偏好：沒存過視為第一次，預設公開；存過就照存的值。
+function loadSubmitPublicFromStorage() {
+    try {
+        const raw = localStorage.getItem(SUBMIT_PUBLIC_STORAGE_KEY);
+        return raw === null ? true : raw === 'true';
+    } catch {
+        return true;
+    }
+}
+
+// 完整歷史列的時間顯示：台灣習慣 M/D HH:mm（24 小時制，Asia/Taipei 時區，
+// 用 hourCycle:'h23' 明確指定，避免 hour12:false 在部分 locale 對午夜輸出 24:00 的已知怪癖）。
+function formatHistoryDateTime(iso) {
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Taipei',
+            month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+        }).formatToParts(new Date(iso));
+        const get = (type) => parts.find((p) => p.type === type)?.value || '';
+        return `${get('month')}/${get('day')} ${get('hour')}:${get('minute')}`;
+    } catch {
+        return '';
     }
 }
 
@@ -234,19 +264,19 @@ const KeyRow = ({ label, binding, capturing, onStart, testId }) => (
         type="button"
         onClick={onStart}
         data-testid={testId}
-        className={`flex items-center justify-between gap-2 px-3 py-2 rounded-none border-2 text-sm font-bold font-mono transition-colors duration-200 ${
+        className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 text-sm font-bold font-mono transition-colors duration-200 ${
             capturing ? 'border-bauhaus-blue bg-bauhaus-blue/10 text-bauhaus-blue' : 'border-bauhaus-black bg-white text-bauhaus-black hover:bg-bauhaus-muted'
         }`}
     >
         <span>{label}</span>
-        <kbd className="px-2 py-0.5 rounded-none bg-white border-2 border-bauhaus-black text-xs font-mono text-bauhaus-black/60">
+        <kbd className="px-2 py-0.5 rounded-lg bg-white border-2 border-bauhaus-black text-xs font-mono text-bauhaus-black/60">
             {capturing ? '請按新按鍵…' : keyLabel(binding)}
         </kbd>
     </button>
 );
 
 const StatTile = ({ label, value, testId }) => (
-    <div className="text-center px-2 py-3 rounded-none border-2 border-bauhaus-black bg-white" data-testid={testId}>
+    <div className="text-center px-2 py-3 rounded-lg border-2 border-bauhaus-black bg-white" data-testid={testId}>
         <div className="text-[11px] text-bauhaus-black/40 font-bold mb-1">{label}</div>
         <div className="text-base sm:text-lg font-mono font-black tabular-nums text-bauhaus-black truncate">{value}</div>
     </div>
@@ -254,11 +284,11 @@ const StatTile = ({ label, value, testId }) => (
 
 // ── 螢幕轉面鍵帽（keycap）：2026-07-09 重新設計 ─────────────────────────
 // 取代舊版「格子包兩顆小鈕」；每顆鍵帽獨立顯示完整代號（R、R'、Rw、M、x'…），
-// 遵循站內 Bauhaus 形狀鐵律（rounded-none、border-bauhaus-*、shadow-hard-sm，
-// 不用柔陰影／圓角），按下用位移+去陰影模擬鍵帽下沉。各組用邊框色/底色微調
+// 遵循站內 Bauhaus 形狀鐵律（圓角依 DESIGN.md §4 刻度取 rounded-xl、border-bauhaus-*、
+// shadow-hard-sm，不用柔陰影），按下用位移+去陰影模擬鍵帽下沉。各組用邊框色/底色微調
 // 區分語意（轉面＝黑；中層＝藍；翻面＝黃；寬層＝虛線灰，Bauhaus 沒有綠色，
 // 見 DESIGN.md，改用虛線邊框表達「進階/次要」而非另開色系）。
-const KEYCAP_BASE = 'min-w-[44px] min-h-[44px] w-full flex items-center justify-center rounded-none border-2 font-mono font-bold text-sm shadow-hard-sm transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-hard-sm disabled:active:translate-x-0 disabled:active:translate-y-0 [-webkit-tap-highlight-color:transparent]';
+const KEYCAP_BASE = 'min-w-[44px] min-h-[44px] w-full flex items-center justify-center rounded-xl border-2 font-mono font-bold text-sm shadow-hard-sm transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-hard-sm disabled:active:translate-x-0 disabled:active:translate-y-0 [-webkit-tap-highlight-color:transparent]';
 const KEYCAP_TINTS = {
     face: 'bg-white border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted',
     mid: 'bg-bauhaus-blue/5 border-bauhaus-blue text-bauhaus-blue hover:bg-bauhaus-blue/10',
@@ -327,6 +357,10 @@ const CubeTimer = () => {
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [submitted, setSubmitted] = useState(false);
+    // 送出成績時「公開／私人」偏好與送出結果（給成功訊息用字區分）。
+    const [submitPublic, setSubmitPublic] = useState(() => loadSubmitPublicFromStorage());
+    const [lastSubmitWasPublic, setLastSubmitWasPublic] = useState(true);
+    const [submitDowngradeNotice, setSubmitDowngradeNotice] = useState('');
 
     const [leaderboard, setLeaderboard] = useState([]);
     const [leaderboardState, setLeaderboardState] = useState('loading'); // loading | ok | unavailable | error
@@ -334,6 +368,13 @@ const CubeTimer = () => {
     const [myRecent, setMyRecent] = useState([]);
     const [myCount, setMyCount] = useState(null);
     const [myStatsState, setMyStatsState] = useState('loading');
+
+    // 完整歷史（依模式過濾、依 created_at desc 分頁載入）。
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const [historyRows, setHistoryRows] = useState([]);
+    const [historyOffset, setHistoryOffset] = useState(0);
+    const [historyHasMore, setHistoryHasMore] = useState(true);
+    const [historyState, setHistoryState] = useState('idle'); // idle | loading | ok | error
 
     const setPhaseBoth = useCallback((next) => {
         phaseRef.current = next;
@@ -368,6 +409,10 @@ const CubeTimer = () => {
     useEffect(() => {
         try { localStorage.setItem(TILE_ORDER_STORAGE_KEY, JSON.stringify(tileOrder)); } catch { /* 忽略 */ }
     }, [tileOrder]);
+
+    useEffect(() => {
+        try { localStorage.setItem(SUBMIT_PUBLIC_STORAGE_KEY, submitPublic ? 'true' : 'false'); } catch { /* 忽略 */ }
+    }, [submitPublic]);
 
     // ── 計時流程（分段累計，支援暫停/繼續）────────────────────────────
     const startTick = useCallback(() => {
@@ -526,6 +571,38 @@ const CubeTimer = () => {
         }
     }, [user]);
 
+    // 完整歷史：依模式過濾、依 created_at desc 分頁載入一頁（offsetArg===0 視為重新載入，
+    // 取代既有列表；否則附加在後面，供「載入更多」使用）。
+    const loadHistoryPage = useCallback(async (modeArg, offsetArg) => {
+        if (!user) return;
+        setHistoryState('loading');
+        try {
+            const { data, error } = await supabase
+                .from('cube_solves')
+                .select('id,time_ms,move_count,created_at,is_public')
+                .eq('mode', modeArg)
+                .order('created_at', { ascending: false })
+                .range(offsetArg, offsetArg + HISTORY_PAGE_SIZE - 1);
+            if (error) throw error;
+            const rows = data || [];
+            setHistoryRows((prev) => (offsetArg === 0 ? rows : [...prev, ...rows]));
+            setHistoryHasMore(rows.length === HISTORY_PAGE_SIZE);
+            setHistoryOffset(offsetArg + rows.length);
+            setHistoryState('ok');
+        } catch (err) {
+            console.error('Cube history load failed:', err);
+            setHistoryState('error');
+        }
+    }, [user]);
+
+    const toggleHistory = useCallback(() => {
+        setHistoryOpen((prevOpen) => {
+            const next = !prevOpen;
+            if (next && historyRows.length === 0) loadHistoryPage(modeRef.current, 0);
+            return next;
+        });
+    }, [historyRows.length, loadHistoryPage]);
+
     // ── 打亂（隨機 / 打亂編排器）/ 送出 / 放棄 / 模式切換 ────────────────
     const resetForNewScramble = useCallback(() => {
         scramblingRef.current = true;
@@ -660,14 +737,29 @@ const CubeTimer = () => {
         if (!lastResult) return;
         setSubmitting(true);
         setSubmitError('');
+        setSubmitDowngradeNotice('');
+        const basePayload = {
+            time_ms: lastResult.timeMs,
+            move_count: lastResult.moveCount,
+            scramble: lastResult.scramble || null,
+            mode: lastResult.mode,
+        };
+        const wantsPublic = submitPublic;
         try {
-            const { error } = await supabase.from('cube_solves').insert({
-                time_ms: lastResult.timeMs,
-                move_count: lastResult.moveCount,
-                scramble: lastResult.scramble || null,
-                mode: lastResult.mode,
-            });
-            if (error) throw error;
+            const first = await supabase.from('cube_solves').insert({ ...basePayload, is_public: wantsPublic });
+            if (first.error) {
+                // 防呆降級：資料庫尚未跑過新增 is_public 欄位的遷移時，改用不含該欄位的
+                // payload 重試一次（沿用資料庫預設值＝公開），成功後在訊息旁註明待補。
+                const msg = `${first.error.message || ''} ${first.error.code || ''}`.toLowerCase();
+                if (msg.includes('is_public') || msg.includes('column')) {
+                    const retry = await supabase.from('cube_solves').insert(basePayload);
+                    if (retry.error) throw retry.error;
+                    setSubmitDowngradeNotice('公開設定待資料庫更新後生效');
+                } else {
+                    throw first.error;
+                }
+            }
+            setLastSubmitWasPublic(wantsPublic);
             setSubmitted(true);
             loadLeaderboard(lastResult.mode);
             loadMyStats(lastResult.mode);
@@ -681,7 +773,7 @@ const CubeTimer = () => {
         } finally {
             setSubmitting(false);
         }
-    }, [lastResult, loadLeaderboard, loadMyStats]);
+    }, [lastResult, submitPublic, loadLeaderboard, loadMyStats]);
 
     // ── 按鍵設定：綁定 / 衝突檢查 / 恢復預設 ──────────────────────────
     const rebindAction = useCallback((actionId, binding) => {
@@ -816,6 +908,16 @@ const CubeTimer = () => {
         loadMyStats(mode);
     }, [mode, loadLeaderboard, loadMyStats]);
 
+    // ── 完整歷史：模式切換時清空舊列表；若面板本來是展開的，直接重新載入第一頁 ──
+    useEffect(() => {
+        setHistoryRows([]);
+        setHistoryOffset(0);
+        setHistoryHasMore(true);
+        setHistoryState('idle');
+        if (historyOpen) loadHistoryPage(mode, 0);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode]);
+
     const isVirtual = mode === 'virtual';
     const scrambleBusy = scrambling || phase === 'running' || phase === 'armed' || phase === 'paused';
     // 螢幕轉面鍵的鎖定條件：與 handleFaceTurn 的鍵盤閘門一致——
@@ -934,7 +1036,7 @@ const CubeTimer = () => {
 
             {/* 模式切換 */}
             <section className="mb-5">
-                <div className="flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
+                <div className="flex rounded-xl overflow-hidden border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
                     <ModeButton active={isVirtual} onClick={() => handleModeChange('virtual')} testId="cube-mode-virtual">
                         鍵盤模式<span className="hidden sm:inline">・虛擬方塊</span>
                     </ModeButton>
@@ -943,7 +1045,7 @@ const CubeTimer = () => {
                     </ModeButton>
                 </div>
                 {modeSwitchWarning && (
-                    <p className="text-sm font-bold text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 mt-2 flex items-center gap-1.5">
+                    <p className="text-sm font-bold text-bauhaus-black bg-bauhaus-yellow rounded-lg border-2 border-bauhaus-black px-3 py-2 mt-2 flex items-center gap-1.5">
                         <AlertTriangle className="w-4 h-4 shrink-0" />
                         {modeSwitchWarning}
                     </p>
@@ -954,7 +1056,7 @@ const CubeTimer = () => {
             </section>
 
             {/* 主遊戲卡：打亂列＋3D 舞台＋計時器 hero 整合成一張卡 */}
-            <section className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-4 sm:p-6 mb-6" data-testid="cube-game-card">
+            <section className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-4 sm:p-6 mb-6" data-testid="cube-game-card">
                 {/* A. 打亂列 */}
                 <div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -963,7 +1065,7 @@ const CubeTimer = () => {
                             data-testid="cube-scramble-random"
                             onClick={handleNewScramble}
                             disabled={scrambleBusy}
-                            className="px-4 py-2.5 min-h-[44px] rounded-none border-2 border-bauhaus-black shadow-hard-sm bg-bauhaus-black text-white text-sm font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:bg-bauhaus-black/90 transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent]"
+                            className="px-4 py-2.5 min-h-[44px] rounded-xl border-2 border-bauhaus-black shadow-hard-sm bg-bauhaus-black text-white text-sm font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:bg-bauhaus-black/90 transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent]"
                         >
                             {scrambling ? '打亂中…' : '🎲 隨機打亂'}
                         </button>
@@ -972,7 +1074,7 @@ const CubeTimer = () => {
                             data-testid="cube-scramble-custom-toggle"
                             onClick={() => setCustomPanelOpen((v) => !v)}
                             aria-pressed={customPanelOpen}
-                            className={`px-4 py-2.5 min-h-[44px] rounded-none text-sm font-bold uppercase tracking-wide transition-colors duration-200 [-webkit-tap-highlight-color:transparent] border-2 ${
+                            className={`px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-bold uppercase tracking-wide transition-colors duration-200 [-webkit-tap-highlight-color:transparent] border-2 ${
                                 customPanelOpen ? 'bg-bauhaus-blue/10 text-bauhaus-blue border-bauhaus-blue' : 'bg-white text-bauhaus-black border-bauhaus-black hover:bg-bauhaus-muted'
                             }`}
                         >
@@ -986,7 +1088,7 @@ const CubeTimer = () => {
                             data-testid="cube-scramble-tokens"
                         >
                             {scrambleTokens.map((t, i) => (
-                                <span key={`${i}-${t}`} className="px-2 py-1 rounded-none border-2 border-bauhaus-black/10 bg-bauhaus-muted text-bauhaus-black">{t}</span>
+                                <span key={`${i}-${t}`} className="px-2 py-1 rounded-lg border-2 border-bauhaus-black/10 bg-bauhaus-muted text-bauhaus-black">{t}</span>
                             ))}
                         </div>
                     ) : (
@@ -998,13 +1100,13 @@ const CubeTimer = () => {
                     )}
 
                     {customPanelOpen && (
-                        <div className="mt-4 p-4 rounded-none bg-bauhaus-cream border-2 border-bauhaus-black space-y-3" data-testid="cube-builder-panel">
+                        <div className="mt-4 p-4 rounded-2xl bg-bauhaus-cream border-2 border-bauhaus-black space-y-3" data-testid="cube-builder-panel">
                             <div className="flex flex-wrap gap-1.5 font-mono text-sm min-h-[2rem] items-center" data-testid="cube-builder-tokens">
                                 {builderTokens.length === 0 ? (
                                     <span className="cube-builder-hint text-bauhaus-black/40 text-sm font-sans">按下面的按鈕排出打亂</span>
                                 ) : (
                                     builderTokens.map((t, i) => (
-                                        <span key={`${i}-${t}`} className="cube-builder-chip px-2 py-1 rounded-none bg-white border-2 border-bauhaus-black font-bold">{t}</span>
+                                        <span key={`${i}-${t}`} className="cube-builder-chip px-2 py-1 rounded-lg bg-white border-2 border-bauhaus-black font-bold">{t}</span>
                                     ))
                                 )}
                             </div>
@@ -1017,7 +1119,7 @@ const CubeTimer = () => {
                                         data-testid={`cube-builder-key-${letter}`}
                                         onClick={() => appendBuilderToken(letter)}
                                         disabled={scrambleBusy || builderTokens.length >= BUILDER_TOKEN_LIMIT}
-                                        className="min-w-[44px] min-h-[44px] px-2 rounded-none bg-white border-2 border-bauhaus-black font-mono font-bold text-sm hover:bg-bauhaus-muted disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
+                                        className="min-w-[44px] min-h-[44px] px-2 rounded-xl bg-white border-2 border-bauhaus-black font-mono font-bold text-sm hover:bg-bauhaus-muted disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                     >
                                         {letter}
                                     </button>
@@ -1041,7 +1143,7 @@ const CubeTimer = () => {
                                                 data-testid={`cube-builder-key-${letter}`}
                                                 onClick={() => appendBuilderToken(letter)}
                                                 disabled={scrambleBusy || builderTokens.length >= BUILDER_TOKEN_LIMIT}
-                                                className="min-w-[44px] min-h-[44px] px-2 rounded-none bg-white border-2 border-bauhaus-black font-mono font-bold text-sm text-bauhaus-black hover:bg-bauhaus-muted disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
+                                                className="min-w-[44px] min-h-[44px] px-2 rounded-xl bg-white border-2 border-bauhaus-black font-mono font-bold text-sm text-bauhaus-black hover:bg-bauhaus-muted disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                             >
                                                 {letter}
                                             </button>
@@ -1055,7 +1157,7 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-apostrophe"
                                     onClick={applyApostrophe}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-w-[44px] min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black font-mono font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
+                                    className="min-w-[44px] min-h-[44px] px-3 rounded-xl bg-bauhaus-muted text-bauhaus-black font-mono font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     &apos;
                                 </button>
@@ -1064,7 +1166,7 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-two"
                                     onClick={applyTwo}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-w-[44px] min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black font-mono font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
+                                    className="min-w-[44px] min-h-[44px] px-3 rounded-xl bg-bauhaus-muted text-bauhaus-black font-mono font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     2
                                 </button>
@@ -1073,7 +1175,7 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-backspace"
                                     onClick={backspaceToken}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-w-[44px] min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
+                                    className="min-w-[44px] min-h-[44px] px-3 rounded-xl bg-bauhaus-muted text-bauhaus-black font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     ⌫
                                 </button>
@@ -1082,7 +1184,7 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-clear"
                                     onClick={clearBuilderTokens}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black text-sm font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
+                                    className="min-h-[44px] px-3 rounded-xl bg-bauhaus-muted text-bauhaus-black text-sm font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     清空
                                 </button>
@@ -1098,7 +1200,7 @@ const CubeTimer = () => {
                                 data-testid="cube-builder-apply"
                                 onClick={handleBuilderApply}
                                 disabled={scrambleBusy || builderTokens.length === 0}
-                                className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-none border-2 border-bauhaus-black shadow-hard-sm bg-bauhaus-black text-white text-sm font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:bg-bauhaus-black/90 transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent]"
+                                className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl border-2 border-bauhaus-black shadow-hard-sm bg-bauhaus-black text-white text-sm font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:bg-bauhaus-black/90 transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent]"
                             >
                                 {scrambling ? '套用中…' : '套用此打亂'}
                             </button>
@@ -1109,7 +1211,7 @@ const CubeTimer = () => {
                 {/* B. 3D 舞台 */}
                 <div className="mt-5 pt-5 border-t-2 border-bauhaus-black/10">
                     <div className="relative">
-                        <div ref={stageRef} className="w-full h-72 sm:h-80 rounded-none border-2 border-bauhaus-black bg-bauhaus-muted select-none" />
+                        <div ref={stageRef} className="w-full h-72 sm:h-80 rounded-2xl border-2 border-bauhaus-black bg-bauhaus-muted select-none" />
                         <span
                             data-testid="cube-status-pill"
                             className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold ${cubeStatusClasses}`}
@@ -1143,6 +1245,39 @@ const CubeTimer = () => {
                                     {lastResult.mode === 'physical' ? '實體計時' : '鍵盤模式'}
                                 </span>
                             </div>
+                            {!submitted && (
+                                <div className="mt-3 max-w-xs mx-auto" data-testid="cube-submit-visibility">
+                                    <div className="flex border-2 border-bauhaus-black divide-x-2 divide-bauhaus-black">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSubmitPublic(true)}
+                                            disabled={submitting}
+                                            data-testid="cube-submit-public-btn"
+                                            aria-pressed={submitPublic}
+                                            className={`flex-1 px-3 py-2 min-h-[44px] text-xs font-bold uppercase tracking-wide transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                submitPublic ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
+                                            }`}
+                                        >
+                                            公開到排行榜
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSubmitPublic(false)}
+                                            disabled={submitting}
+                                            data-testid="cube-submit-private-btn"
+                                            aria-pressed={!submitPublic}
+                                            className={`flex-1 px-3 py-2 min-h-[44px] text-xs font-bold uppercase tracking-wide transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                !submitPublic ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
+                                            }`}
+                                        >
+                                            只存自己的紀錄
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-bauhaus-black/50 mt-1.5" data-testid="cube-submit-visibility-hint">
+                                        {submitPublic ? '會出現在排行榜上，其他老師看得到你的名次。' : '只有你自己看得到這筆成績，不會上排行榜。'}
+                                    </p>
+                                </div>
+                            )}
                             {submitError && (
                                 <p className="text-sm text-bauhaus-red mt-2 flex items-center justify-center gap-1.5">
                                     <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -1150,9 +1285,16 @@ const CubeTimer = () => {
                                 </p>
                             )}
                             {submitted && (
-                                <p className="text-sm text-bauhaus-blue font-bold mt-2" data-testid="cube-submit-success">
-                                    已送出，排行榜已更新！
-                                </p>
+                                <div className="mt-2">
+                                    <p className="text-sm text-bauhaus-blue font-bold" data-testid="cube-submit-success">
+                                        {lastSubmitWasPublic ? '已送出，排行榜已更新！' : '已存入你的紀錄（未公開）'}
+                                    </p>
+                                    {submitDowngradeNotice && (
+                                        <p className="text-xs text-bauhaus-black/40 mt-1" data-testid="cube-submit-downgrade-notice">
+                                            {submitDowngradeNotice}
+                                        </p>
+                                    )}
+                                </div>
                             )}
                         </div>
                     )}
@@ -1163,7 +1305,7 @@ const CubeTimer = () => {
                             data-testid="cube-primary-action"
                             {...primaryHandlers}
                             disabled={primaryDisabled}
-                            className={`w-full sm:w-auto px-8 min-h-[56px] rounded-none border-2 border-bauhaus-black shadow-hard font-bold uppercase tracking-wide transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent] ${primaryColorClass}`}
+                            className={`w-full sm:w-auto px-8 min-h-[56px] rounded-xl border-2 border-bauhaus-black shadow-hard font-bold uppercase tracking-wide transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent] ${primaryColorClass}`}
                         >
                             {primaryLabel}
                         </button>
@@ -1172,7 +1314,7 @@ const CubeTimer = () => {
                                 type="button"
                                 data-testid="cube-secondary-action"
                                 {...secondaryHandlers}
-                                className={`px-5 py-3 min-h-[44px] rounded-none border-2 border-bauhaus-black font-bold uppercase tracking-wide transition-colors duration-200 [-webkit-tap-highlight-color:transparent] ${secondaryColorClass}`}
+                                className={`px-5 py-3 min-h-[44px] rounded-xl border-2 border-bauhaus-black font-bold uppercase tracking-wide transition-colors duration-200 [-webkit-tap-highlight-color:transparent] ${secondaryColorClass}`}
                             >
                                 {secondaryLabel}
                             </button>
@@ -1194,7 +1336,7 @@ const CubeTimer = () => {
             {/* 螢幕轉面按鈕區（僅鍵盤模式，可收合）── 2026-07-09 鍵帽（keycap）重新設計：
                 獨立鍵帽取代舊版「格子包兩顆小鈕」，各組用邊框/底色微調區分語意。 */}
             {isVirtual && (
-                <section className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6 mb-6">
+                <section className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6 mb-6">
                     <button
                         type="button"
                         onClick={() => setFaceSectionOpen((v) => !v)}
@@ -1370,7 +1512,7 @@ const CubeTimer = () => {
 
             {/* 成績與紀錄 */}
             <section className="grid md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
+                <div className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
                     <h2 className="font-bold text-bauhaus-black mb-3">
                         排行榜 Top 10 <span className="text-xs text-bauhaus-black/40 font-normal">・{isVirtual ? '鍵盤模式' : '實體計時'}</span>
                     </h2>
@@ -1402,7 +1544,7 @@ const CubeTimer = () => {
                     )}
                 </div>
 
-                <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
+                <div className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
                     <h2 className="font-bold text-bauhaus-black mb-3">我的紀錄</h2>
                     <div className="grid grid-cols-4 gap-2 mb-4" data-testid="cube-my-stats">
                         <StatTile
@@ -1426,22 +1568,97 @@ const CubeTimer = () => {
                             value={myStatsState === 'ok' ? (myCount != null ? String(myCount) : '—') : '…'}
                         />
                     </div>
+                    <p className="text-[11px] text-bauhaus-black/30 mb-3" data-testid="cube-stats-note">統計含未公開成績；排行榜只計公開。</p>
                     <div>
                         <div className="text-xs text-bauhaus-black/40 font-bold mb-1">我的最近 5 次</div>
                         {myStatsState === 'ok' && myRecent.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
                                 {myRecent.slice(0, 5).map((r) => (
-                                    <span key={r.id} className="px-2 py-1 rounded-none border-2 border-bauhaus-black/10 bg-bauhaus-muted text-bauhaus-black text-xs font-mono font-bold">{formatCubeTime(r.time_ms)}</span>
+                                    <span key={r.id} className="px-2 py-1 rounded-lg border-2 border-bauhaus-black/10 bg-bauhaus-muted text-bauhaus-black text-xs font-mono font-bold">{formatCubeTime(r.time_ms)}</span>
                                 ))}
                             </div>
                         )}
                         {myStatsState === 'ok' && myRecent.length === 0 && <span className="text-sm text-bauhaus-black/40">還沒有紀錄</span>}
                     </div>
+
+                    {/* 完整歷史：預設收合，展開後依模式過濾、依時間新到舊分頁載入（每頁 20 筆） */}
+                    <div className="mt-4 pt-4 border-t-2 border-bauhaus-black/10">
+                        <button
+                            type="button"
+                            onClick={toggleHistory}
+                            data-testid="cube-history-toggle"
+                            className="w-full flex items-center justify-between gap-3"
+                        >
+                            <span className="text-xs font-bold text-bauhaus-black/60">完整歷史</span>
+                            <span className="text-xs text-bauhaus-black/40 font-bold">{historyOpen ? '收合 ▲' : '展開 ▼'}</span>
+                        </button>
+
+                        {historyOpen && (
+                            <div className="mt-3" data-testid="cube-history-panel">
+                                {historyState === 'loading' && historyRows.length === 0 && (
+                                    <p className="text-sm text-bauhaus-black/40 py-2">載入中…</p>
+                                )}
+                                {historyState === 'error' && (
+                                    <p className="text-sm text-bauhaus-red py-2 flex items-center gap-1.5">
+                                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                                        載入失敗，請稍後再試。
+                                    </p>
+                                )}
+                                {historyState === 'ok' && historyRows.length === 0 && (
+                                    <p className="text-sm text-bauhaus-black/40 py-2" data-testid="cube-history-empty">還沒有紀錄，解一顆吧</p>
+                                )}
+                                {historyRows.length > 0 && (
+                                    <div data-testid="cube-history-rows">
+                                        {historyRows.map((row) => (
+                                            <div
+                                                key={row.id}
+                                                data-testid={`cube-history-row-${row.id}`}
+                                                className="flex flex-wrap items-center gap-x-3 gap-y-1 min-h-[44px] py-2 border-b border-bauhaus-black/10 last:border-b-0"
+                                            >
+                                                <span className="font-mono font-black text-sm sm:text-base tabular-nums text-bauhaus-black" data-testid="cube-history-row-time">
+                                                    {formatCubeTime(row.time_ms)}
+                                                </span>
+                                                <span className="text-xs text-bauhaus-black/50 font-mono">{formatHistoryDateTime(row.created_at)}</span>
+                                                {row.move_count != null && (
+                                                    <span className="text-xs text-bauhaus-black/40">{row.move_count} 步</span>
+                                                )}
+                                                <span
+                                                    data-testid="cube-history-row-visibility"
+                                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border-2 uppercase tracking-wide ${
+                                                        row.is_public === false
+                                                            ? 'bg-bauhaus-muted text-bauhaus-black/50 border-bauhaus-black/20'
+                                                            : 'bg-bauhaus-blue/10 text-bauhaus-blue border-bauhaus-blue'
+                                                    }`}
+                                                >
+                                                    {row.is_public === false ? '私人' : '公開'}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {historyRows.length > 0 && (
+                                    historyHasMore ? (
+                                        <button
+                                            type="button"
+                                            data-testid="cube-history-load-more"
+                                            onClick={() => loadHistoryPage(mode, historyOffset)}
+                                            disabled={historyState === 'loading'}
+                                            className="mt-2 w-full py-2 min-h-[44px] rounded-xl border-2 border-bauhaus-black bg-white text-sm font-bold text-bauhaus-black hover:bg-bauhaus-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+                                        >
+                                            {historyState === 'loading' ? '載入中…' : '載入更多'}
+                                        </button>
+                                    ) : (
+                                        <p className="text-xs text-bauhaus-black/30 text-center mt-2" data-testid="cube-history-end">到底了</p>
+                                    )
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </section>
 
             {/* 設定（按鍵設定＋按鈕排列，移到頁面最下方，可摺疊） */}
-            <section className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
+            <section className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
                 <button
                     type="button"
                     onClick={() => setKeySettingsOpen((v) => !v)}
@@ -1549,7 +1766,7 @@ const CubeTimer = () => {
                                 {tileOrder.map((letter, idx) => (
                                     <div
                                         key={letter}
-                                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-none border-2 border-bauhaus-black bg-white"
+                                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-bauhaus-black bg-white"
                                         data-testid={`cube-tile-order-row-${letter}`}
                                     >
                                         <span className="font-mono font-bold text-bauhaus-black">{letter}</span>
@@ -1560,7 +1777,7 @@ const CubeTimer = () => {
                                                 disabled={idx === 0}
                                                 aria-label={`${letter} 往左移`}
                                                 data-testid={`cube-tile-move-left-${letter}`}
-                                                className="p-1.5 rounded-none bg-white border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-muted"
+                                                className="p-1.5 rounded-xl bg-white border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-muted"
                                             >
                                                 <ChevronLeft className="w-4 h-4" />
                                             </button>
@@ -1570,7 +1787,7 @@ const CubeTimer = () => {
                                                 disabled={idx === tileOrder.length - 1}
                                                 aria-label={`${letter} 往右移`}
                                                 data-testid={`cube-tile-move-right-${letter}`}
-                                                className="p-1.5 rounded-none bg-white border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-muted"
+                                                className="p-1.5 rounded-xl bg-white border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-muted"
                                             >
                                                 <ChevronRight className="w-4 h-4" />
                                             </button>
@@ -1583,7 +1800,7 @@ const CubeTimer = () => {
                             type="button"
                             onClick={resetKeymap}
                             data-testid="cube-keymap-reset"
-                            className="px-4 py-2 rounded-none border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black text-sm font-bold hover:bg-bauhaus-black/10 transition-colors duration-200 flex items-center gap-1.5"
+                            className="px-4 py-2 rounded-xl border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black text-sm font-bold hover:bg-bauhaus-black/10 transition-colors duration-200 flex items-center gap-1.5"
                         >
                             <RotateCcw className="w-3.5 h-3.5" />
                             全部恢復預設

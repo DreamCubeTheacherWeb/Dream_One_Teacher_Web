@@ -56,6 +56,19 @@ const FAKE_USERS_ROW = { id: UID, name: '驗證測試員', email: 'cube-verify@t
 const rpcModeCalls = [];
 const insertBodies = [];
 
+// cube_solves 的 GET 假資料（給「我的紀錄」統計＋完整歷史分頁共用）：
+// 25 筆，index 0 = 最新／最快（created_at 遞減、time_ms 遞增），其中
+// i % 5 === 0 共 5 筆設為私人（is_public=false），i % 4 === 3 的 move_count
+// 給 null（模擬部分舊資料 / 實體計時沒有步數）。
+const CUBE_HISTORY_TOTAL = 25;
+const cubeMockRows = Array.from({ length: CUBE_HISTORY_TOTAL }, (_, i) => ({
+    id: `mock-solve-${i}`,
+    time_ms: 8000 + i * 350,
+    move_count: i % 4 === 3 ? null : 40 + i,
+    created_at: new Date(Date.now() - i * 3600 * 1000).toISOString(),
+    is_public: i % 5 !== 0,
+}));
+
 async function handleRoute(route) {
     const req = route.request();
     const url = new URL(req.url());
@@ -81,6 +94,31 @@ async function handleRoute(route) {
         if (table === 'cube_solves' && req.method() === 'POST') {
             insertBodies.push(req.postData() || '');
             return route.fulfill({ status: 201, headers: { 'content-type': 'application/json' }, body: '' });
+        }
+        if (table === 'cube_solves' && req.method() === 'GET') {
+            // supabase-js 的 .range(from, to) 與 .limit(n) 都是走 query string
+            // 的 offset/limit（不是 Range header），但這裡兩種都吃，保險起見。
+            let start = 0;
+            let count = cubeMockRows.length;
+            if (url.searchParams.has('offset') || url.searchParams.has('limit')) {
+                start = parseInt(url.searchParams.get('offset') || '0', 10);
+                count = url.searchParams.has('limit') ? parseInt(url.searchParams.get('limit'), 10) : (cubeMockRows.length - start);
+            } else {
+                const rangeHeader = (await req.allHeaders())['range'];
+                if (rangeHeader && /^\d+-\d+$/.test(rangeHeader)) {
+                    const [s, e] = rangeHeader.split('-').map(Number);
+                    start = s;
+                    count = e - s + 1;
+                }
+            }
+            const sliced = cubeMockRows.slice(start, start + count);
+            const total = cubeMockRows.length;
+            const end = sliced.length ? start + sliced.length - 1 : start;
+            return route.fulfill({
+                status: 200,
+                headers: { 'content-type': 'application/json', 'content-range': `${start}-${end}/${total}` },
+                body: JSON.stringify(sliced),
+            });
         }
         const accept = (await req.allHeaders()).accept || '';
         const bodyData = table === 'users' && req.method() === 'GET' ? [FAKE_USERS_ROW] : (accept.includes('vnd.pgrst.object+json') ? null : []);
@@ -607,6 +645,77 @@ async function main() {
         // ══════════════════════════════════════════════════════════════
         check('E1 全程無 JS pageerror', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300));
 
+        // ══════════════════════════════════════════════════════════════
+        // I. 送出成績可選公開／私人 ＋ 完整歷史（分頁載入）
+        // （前面 C 段最後停在實體模式，這裡先切回鍵盤模式才能用鍵盤解題）
+        // ══════════════════════════════════════════════════════════════
+        await page.locator('[data-testid="cube-mode-virtual"]').click();
+        await page.waitForTimeout(300);
+
+        // I1：解一輪，成績面板出現時公開切換要存在，且預設選中「公開」
+        await page.locator('[data-testid="cube-scramble-random"]').click();
+        await waitScrambleDone();
+        let iTokens = await readScrambleTokens();
+        await holdSpaceToStart();
+        await solveViaKeyboard(iTokens);
+        await page.waitForSelector('[data-testid="cube-result-panel"]', { timeout: 12000 });
+
+        const publicPressed1 = await page.locator('[data-testid="cube-submit-public-btn"]').getAttribute('aria-pressed');
+        const privatePressed1 = await page.locator('[data-testid="cube-submit-private-btn"]').getAttribute('aria-pressed');
+        check('I1 成績面板有公開切換且預設選中「公開」', publicPressed1 === 'true' && privatePressed1 === 'false', `public=${publicPressed1} private=${privatePressed1}`);
+
+        // I2：切成私人後送出 → POST body 含 is_public:false，成功訊息含「未公開」
+        await page.locator('[data-testid="cube-submit-private-btn"]').click();
+        const insertCountBefore = insertBodies.length;
+        await page.locator('[data-testid="cube-primary-action"]').click(); // 「送出成績」
+        await page.waitForSelector('[data-testid="cube-submit-success"]', { timeout: 5000 });
+        const lastInsertBody = insertBodies[insertBodies.length - 1] || '';
+        check('I2a 切成私人後送出，POST body 含 is_public:false',
+            insertBodies.length === insertCountBefore + 1 && lastInsertBody.includes('"is_public":false'), lastInsertBody);
+        const successText = (await page.locator('[data-testid="cube-submit-success"]').textContent() || '').trim();
+        check('I2b 私人送出成功訊息含「未公開」', successText.includes('未公開'), successText);
+
+        // I3：偏好持久化——reload 後不必重新設定，仍記得上次選的「私人」
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('.dc-cubie', { timeout: 15000 });
+        await page.waitForTimeout(500);
+        await page.locator('[data-testid="cube-scramble-random"]').click();
+        await waitScrambleDone();
+        iTokens = await readScrambleTokens();
+        await holdSpaceToStart();
+        await solveViaKeyboard(iTokens);
+        await page.waitForSelector('[data-testid="cube-result-panel"]', { timeout: 12000 });
+        const privatePressed2 = await page.locator('[data-testid="cube-submit-private-btn"]').getAttribute('aria-pressed');
+        check('I3 reload 後公開/私人偏好仍是上次選的「私人」（localStorage 持久化）', privatePressed2 === 'true', privatePressed2);
+
+        // 收尾：切回「公開」、不送出這次測試用的成績，避免弄髒後面的畫面
+        await page.locator('[data-testid="cube-submit-public-btn"]').click();
+        if (await page.locator('[data-testid="cube-discard-result"]').count() > 0) {
+            await page.locator('[data-testid="cube-discard-result"]').click();
+            await waitForPhase('idle').catch(() => {});
+        }
+
+        // I4/I5：完整歷史——展開見 20 筆＋私人 chip＋時間格式；載入更多後 25 筆全出＋到底了
+        await page.locator('[data-testid="cube-history-toggle"]').click();
+        await page.waitForSelector('[data-testid="cube-history-panel"]', { timeout: 3000 });
+        await page.waitForFunction(() => document.querySelectorAll('[data-testid="cube-history-rows"] > div').length > 0, { timeout: 5000 });
+
+        let historyRowCount = await page.locator('[data-testid="cube-history-rows"] > div').count();
+        check('I4a 展開完整歷史顯示 20 筆', historyRowCount === 20, String(historyRowCount));
+
+        const privateChipCount = await page.locator('[data-testid="cube-history-row-visibility"]', { hasText: '私人' }).count();
+        check('I4b 完整歷史至少 1 筆顯示「私人」chip', privateChipCount >= 1, String(privateChipCount));
+
+        const firstRowTime = (await page.locator('[data-testid="cube-history-rows"] > div').first()
+            .locator('[data-testid="cube-history-row-time"]').textContent() || '').trim();
+        check('I4c 每列時間格式正確（SS.cc 或 M:SS.cc）', /^\d+(:\d{2})?\.\d{2}$/.test(firstRowTime), firstRowTime);
+
+        await page.locator('[data-testid="cube-history-load-more"]').click();
+        await page.waitForFunction((n) => document.querySelectorAll('[data-testid="cube-history-rows"] > div').length === n, 25, { timeout: 5000 });
+        historyRowCount = await page.locator('[data-testid="cube-history-rows"] > div').count();
+        check('I5a 按「載入更多」後 25 筆全出', historyRowCount === 25, String(historyRowCount));
+        check('I5b 到底後顯示「到底了」', await page.locator('[data-testid="cube-history-end"]').count() === 1);
+
         // 最終截圖要求鍵盤模式，且展開「自己排」面板與螢幕按鈕的寬層
         await page.locator('[data-testid="cube-mode-virtual"]').click();
         await page.waitForTimeout(300);
@@ -672,6 +781,14 @@ async function main() {
             }));
             const allBig = letterBoxes.length === 12 && letterBoxes.every((b) => b.w >= 44 && b.h >= 44);
             check(`M${width} 打亂編排器字母鍵盤按鈕（共${letterBoxes.length}顆）皆 ≥44x44`, allBig, JSON.stringify(letterBoxes));
+
+            // I6：完整歷史列在手機寬度下無橫向溢出、列高 ≥44px
+            await mPage.locator('[data-testid="cube-history-toggle"]').click();
+            await mPage.waitForFunction(() => document.querySelectorAll('[data-testid="cube-history-rows"] > div').length > 0, { timeout: 5000 });
+            const overflowAfterHistory = await mPage.evaluate(() => ({ scrollWidth: document.body.scrollWidth, innerWidth: window.innerWidth }));
+            check(`M${width} I6 展開完整歷史後無橫向溢出`, overflowAfterHistory.scrollWidth <= overflowAfterHistory.innerWidth, JSON.stringify(overflowAfterHistory));
+            const historyRowBoxes = await mPage.evaluate(() => Array.from(document.querySelectorAll('[data-testid="cube-history-rows"] > div')).map((el) => el.getBoundingClientRect().height));
+            check(`M${width} I6 完整歷史列（共${historyRowBoxes.length}列）列高皆 ≥44px`, historyRowBoxes.length > 0 && historyRowBoxes.every((h) => h >= 44), JSON.stringify(historyRowBoxes));
 
             await mPage.screenshot({ path: path.join(__dirname, screenshotName), fullPage: true }).catch(() => {});
             await mCtx.close();
