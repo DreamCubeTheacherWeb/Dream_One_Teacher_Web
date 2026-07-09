@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { ChevronLeft, ChevronRight, CheckCircle, Circle, FileText, Play, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Circle, FileText, Play } from 'lucide-react';
 
 // Strip HTML tags and return plain text preview
 const stripHtml = (html) => {
@@ -50,11 +50,9 @@ const LessonView = () => {
                 .in('lesson_id', lessonIds)
                 .order('order', { ascending: true });
 
-            // Build preview map: 取第一段「有意義的內文」當預覽；
-            // 畫布課程改估閱讀時間（把幾百個畫布區塊算成「N 文章」沒有意義）
+            // Build preview map: 取第一段「有意義的內文」當預覽
             const previews = {};
             const counts = {};
-            const textLen = {};
             contentsData?.forEach(c => {
                 if (!counts[c.lesson_id]) counts[c.lesson_id] = { video: 0, text: 0, canvas: false };
                 const pd = c.position_data;
@@ -66,7 +64,6 @@ const LessonView = () => {
                 const isShape = pd?.shapeType != null;
                 if (c.type !== 'video' && c.type !== 'image_text' && !isShape && c.body && c.body[0] !== '{') {
                     const plain = stripHtml(c.body);
-                    textLen[c.lesson_id] = (textLen[c.lesson_id] || 0) + plain.length;
                     // 預覽：第一段夠長的內文（跳過大標題、按鈕字樣等短字串）
                     if (!previews[c.lesson_id] && plain.length >= 20) {
                         previews[c.lesson_id] = plain.length > 100 ? plain.slice(0, 100) + '...' : plain;
@@ -76,9 +73,6 @@ const LessonView = () => {
                 if (!previews[c.lesson_id] && c.type === 'video') {
                     previews[c.lesson_id] = `影片：${c.title}`;
                 }
-            });
-            Object.keys(counts).forEach(id => {
-                counts[id].minutes = Math.max(1, Math.round((textLen[id] || 0) / 400));
             });
             setContentPreviews(previews);
             setContentCounts(counts);
@@ -154,6 +148,7 @@ const LessonView = () => {
                         const isCompleted = !!progress[lesson.id];
                         const preview = contentPreviews[lesson.id];
                         const count = contentCounts[lesson.id] || { video: 0, text: 0 };
+                        const tags = lesson.tags || [];
 
                         return (
                             <Link
@@ -183,19 +178,20 @@ const LessonView = () => {
                                             {preview}
                                         </p>
                                     )}
-                                    {/* Content type badges */}
-                                    {(count.video > 0 || count.text > 0) && (
-                                        <div className="flex items-center gap-2 mt-2.5">
+                                    {/* Hashtag 標籤（後台自訂）＋影片數；傳統文章式課程仍顯示文章數 */}
+                                    {(count.video > 0 || tags.length > 0 || (!count.canvas && count.text > 0)) && (
+                                        <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                                            {tags.map(t => (
+                                                <span key={t} className="inline-flex items-center gap-0.5 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
+                                                    #{t}
+                                                </span>
+                                            ))}
                                             {count.video > 0 && (
                                                 <span className="inline-flex items-center gap-1 text-[10px] font-black text-white bg-bauhaus-blue px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
                                                     <Play className="w-2.5 h-2.5" /> {count.video} 影片
                                                 </span>
                                             )}
-                                            {count.canvas ? (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
-                                                    <Clock className="w-2.5 h-2.5" /> 閱讀約 {count.minutes} 分鐘
-                                                </span>
-                                            ) : count.text > 0 && (
+                                            {!count.canvas && count.text > 0 && (
                                                 <span className="inline-flex items-center gap-1 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
                                                     <FileText className="w-2.5 h-2.5" /> {count.text} 文章
                                                 </span>
