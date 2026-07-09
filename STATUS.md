@@ -29,6 +29,12 @@
 綠燈、ProfilePage lint 4＝基線零新增；anon 探測確認正式庫有 `household_address` 欄（並行線戶籍
 功能不會壞存檔）。SQL 兩份業主 2026-07-09 已貼入正式庫。
 
+**🔗 與既有「填完才能瀏覽」關卡的關係（2026-07-09 補課）**：本以為要新做「資料填完才放行」
+關卡，查核後發現 **`components/ProfileCompleteGate.jsx` 早就在做**（HEAD commit 095911f、
+掛在 Layout，全站硬擋未填完者導回 /profile、admin/mentor 免）——**認領自動核准的老師一樣被它擋**，
+不需另做。已撤回一版重複實作。**唯一順手修**：把 `instructor_role` 移出該關卡的必填清單
+（等級改系統指派後老師填不了它，名冊等級為空的列被認領後會永遠卡關）＝commit 見下。
+
 **⚠️ 未驗 / 待辦**：
 - 真帳號 OAuth 認領端到端（自動化擋 OAuth，需業主人測：搜名字→填手機＋身分證末四碼→立即啟用）。
 - 建議業主在 SQL Editor 跑一次體檢查詢確認 `search_masked_ok=true`（第一份搜尋遮罩是否生效）；

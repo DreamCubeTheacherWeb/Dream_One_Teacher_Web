@@ -6,7 +6,10 @@ import { supabase } from '../lib/supabaseClient';
 const REQUIRED_KEYS = [
   'full_name', 'nickname', 'gender', 'birth_date', 'id_number',
   'phone_mobile', 'line_id', 'address', 'email_primary',
-  'instructor_role', 'teaching_freq_semester', 'teaching_freq_vacation',
+  // ⚠️ instructor_role（等級）2026-07-09 起改為「系統/管理員指派、老師不可自填」
+  //   （見 guard_instructor_role trigger）。老師既然填不了它，就不能拿它當完成度門檻，
+  //   否則名冊等級為空的列被認領後會永遠卡在資料頁（老師改不了、trigger 又保留空值）。
+  'teaching_freq_semester', 'teaching_freq_vacation',
   'bio_notes',
   'bank_account_name', 'bank_name', 'bank_branch',
   'bank_account_number', 'bank_code',
