@@ -1,13 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import JSZip from 'jszip';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import {
   Download, FileText, Search, CheckCircle2, AlertCircle,
-  Loader2, Users, FileWarning, ChevronDown, Filter, ArrowLeft, Settings
+  Loader2, Users, FileWarning, ChevronDown, Filter, ArrowLeft, Settings,
+  Plus, Upload, Trash2, PenTool, X
 } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
+import FieldPositionEditor from '../../components/FieldPositionEditor';
 
 // 必填欄位（與 ProfilePage 同步，但這邊只做完整度判斷不擋人）
 const REQUIRED_KEYS = [
@@ -52,7 +54,9 @@ const DownloadCenter = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [instructors, setInstructors] = useState([]);
-  const [forms, setForms] = useState([]); // contract_documents WHERE doc_category='form'
+  const [forms, setForms] = useState([]); // contract_documents WHERE doc_category='form' (active only, for 下載選單)
+  const [formTypes, setFormTypes] = useState([]); // 全部 form 類型（含未上傳/停用版本），供管理面板
+  const [formDocs, setFormDocs] = useState({}); // doc_type -> 目前啟用版本
   const [selectedForm, setSelectedForm] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,6 +64,17 @@ const DownloadCenter = () => {
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: '' });
   const [errors, setErrors] = useState([]);
+
+  // ── 表單模板管理（獨立於合約：這裡新增的文件一律 doc_category='form'）──
+  const [showManager, setShowManager] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newSlug, setNewSlug] = useState('');
+  const [uploading, setUploading] = useState({});
+  const fileRefs = useRef({});
+  const [fieldEditorOpen, setFieldEditorOpen] = useState(false);
+  const [fieldEditorTarget, setFieldEditorTarget] = useState(null);
+  const [fieldEditorUrl, setFieldEditorUrl] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -73,20 +88,132 @@ const DownloadCenter = () => {
         .order('full_name');
       setInstructors(instData || []);
 
-      const { data: formsData } = await supabase
+      // 抓「全部」form 類型的所有版本（含未上傳 placeholder、停用舊版），一次供下載選單＋管理面板
+      const { data: formDocsData } = await supabase
         .from('contract_documents')
         .select('*')
         .eq('doc_category', 'form')
-        .eq('is_active', true)
-        .order('display_name');
-      setForms(formsData || []);
-      if (formsData?.length && !selectedForm) {
-        setSelectedForm(formsData[0].doc_type);
+        .order('sort_order')
+        .order('version', { ascending: false });
+
+      const typeMap = {};
+      const activeMap = {};
+      (formDocsData || []).forEach(d => {
+        if (!typeMap[d.doc_type]) {
+          typeMap[d.doc_type] = {
+            doc_type: d.doc_type,
+            display_name: d.display_name || d.doc_type,
+            sort_order: d.sort_order ?? 0,
+          };
+        }
+        if (!activeMap[d.doc_type] && d.is_active) activeMap[d.doc_type] = d;
+      });
+      setFormTypes(Object.values(typeMap).sort((a, b) => a.sort_order - b.sort_order));
+      setFormDocs(activeMap);
+
+      const activeForms = Object.values(activeMap)
+        .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+      setForms(activeForms);
+      if (activeForms.length && !selectedForm) {
+        setSelectedForm(activeForms[0].doc_type);
       }
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
+  };
+
+  // ── 新增表單類型（doc_category 一律 form；doc_mode 一律 fill_sign 以便定位欄位）──
+  const handleAddForm = async () => {
+    const name = newName.trim();
+    const slug = newSlug.trim() || name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    if (!name) { alert('請輸入文件名稱'); return; }
+    if (formTypes.find(d => d.doc_type === slug)) { alert('此識別碼已存在'); return; }
+
+    const maxOrder = formTypes.reduce((m, d) => Math.max(m, d.sort_order || 0), 0);
+    const { error } = await supabase.from('contract_documents').insert({
+      doc_type: slug,
+      version: 0,
+      file_path: `templates/${slug}/placeholder`,
+      file_name: '',
+      uploaded_by: user.id,
+      is_active: false,
+      display_name: name,
+      doc_mode: 'fill_sign',
+      doc_category: 'form',
+      sort_order: maxOrder + 1,
+    });
+    if (error) { alert('新增失敗：' + error.message); return; }
+    setShowAddForm(false);
+    setNewName('');
+    setNewSlug('');
+    await loadData();
+  };
+
+  const handleDeleteForm = async (docType) => {
+    if (!window.confirm(`確定要刪除表單「${docType}」嗎？所有版本與欄位定位都會被移除。`)) return;
+    await supabase.from('contract_field_positions').delete().eq('doc_type', docType);
+    await supabase.from('contract_documents').delete().eq('doc_type', docType);
+    await loadData();
+  };
+
+  // 上傳表單 PDF：新版本啟用、舊版停用。表單是後台下載用，不發講師通知。
+  const handleUploadForm = async (docType, displayName) => {
+    const file = fileRefs.current[docType]?.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') { alert('請上傳 PDF 格式的文件'); return; }
+
+    setUploading(p => ({ ...p, [docType]: true }));
+    try {
+      const currentDoc = formDocs[docType];
+      const newVersion = currentDoc ? currentDoc.version + 1 : 1;
+      const filePath = `templates/${docType}/v${newVersion}_${Date.now()}.pdf`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('contract-documents')
+        .upload(filePath, file, { contentType: 'application/pdf' });
+      if (uploadErr) throw uploadErr;
+
+      if (currentDoc) {
+        await supabase.from('contract_documents')
+          .update({ is_active: false })
+          .eq('id', currentDoc.id);
+      }
+
+      const dt = formTypes.find(d => d.doc_type === docType);
+      const { error: insertErr } = await supabase.from('contract_documents').insert({
+        doc_type: docType,
+        version: newVersion,
+        file_path: filePath,
+        file_name: file.name,
+        uploaded_by: user.id,
+        is_active: true,
+        display_name: dt?.display_name || displayName,
+        doc_mode: 'fill_sign',
+        doc_category: 'form',
+        sort_order: dt?.sort_order ?? 0,
+      });
+      if (insertErr) throw insertErr;
+
+      if (fileRefs.current[docType]) fileRefs.current[docType].value = '';
+      await loadData();
+      alert('上傳成功！');
+    } catch (err) {
+      alert('上傳失敗：' + (err.message || '未知錯誤'));
+    }
+    setUploading(p => ({ ...p, [docType]: false }));
+  };
+
+  const openFieldEditorForm = async (docType) => {
+    const doc = formDocs[docType];
+    if (!doc) { alert('請先上傳此表單的 PDF'); return; }
+    const { data } = await supabase.storage
+      .from('contract-documents')
+      .createSignedUrl(doc.file_path, 3600);
+    if (!data?.signedUrl) { alert('無法取得文件連結'); return; }
+    setFieldEditorTarget({ docType: doc.doc_type, docVersion: doc.version });
+    setFieldEditorUrl(data.signedUrl);
+    setFieldEditorOpen(true);
   };
 
   const filtered = useMemo(() => {
@@ -239,17 +366,20 @@ const DownloadCenter = () => {
           <h2 className="text-sm font-black text-bauhaus-black flex items-center gap-2">
             <FileText className="w-4 h-4 text-bauhaus-blue" /> 選擇表單模板
           </h2>
-          <Link to="/admin/contracts" className="text-xs text-bauhaus-blue hover:underline flex items-center gap-1 min-h-[44px]">
-            <Settings className="w-3 h-3" /> 管理模板
-          </Link>
+          <button
+            onClick={() => setShowManager(v => !v)}
+            className="text-xs text-bauhaus-blue hover:underline flex items-center gap-1 min-h-[44px]"
+          >
+            <Settings className="w-3 h-3" /> {showManager ? '收合管理' : '管理表單模板'}
+          </button>
         </div>
 
         {forms.length === 0 ? (
           <div className="bg-bauhaus-yellow/20 rounded-xl border-2 border-bauhaus-black p-4 text-sm text-bauhaus-black flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
-              尚未設定任何「表單」類型的模板。請至「合約管理」上傳 PDF 模板，並把
-              <strong className="mx-1">doc_category 設為 form</strong>，然後用欄位定位編輯器設定要填入的欄位位置。
+              尚未設定任何表單模板。請點右上角
+              <strong className="mx-1">「管理表單模板」</strong>新增表單、上傳 PDF，再用欄位定位編輯器設定要填入的欄位位置。
             </div>
           </div>
         ) : (
@@ -271,6 +401,121 @@ const DownloadCenter = () => {
           </div>
         )}
       </div>
+
+      {/* ── 表單模板管理（獨立於合約） ── */}
+      {showManager && (
+        <div className="bh-card p-5 mb-5 border-bauhaus-blue">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-black text-bauhaus-black flex items-center gap-2">
+                <Settings className="w-4 h-4 text-bauhaus-blue" /> 表單模板管理
+              </h2>
+              <p className="text-xs text-bauhaus-black/50 mt-0.5">
+                這裡新增的文件只會出現在表單下載中心，不會進入講師簽約流程。
+              </p>
+            </div>
+            <button onClick={() => setShowAddForm(true)} className="bh-btn bh-btn-blue px-4 py-2 text-sm min-h-[44px]">
+              <Plus className="w-4 h-4" /> 新增表單
+            </button>
+          </div>
+
+          {/* 新增表單 modal */}
+          {showAddForm && (
+            <div className="mb-4 bg-bauhaus-cream rounded-2xl border-2 lg:border-4 border-bauhaus-black p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-black text-bauhaus-black">新增表單模板</h3>
+                <button onClick={() => { setShowAddForm(false); setNewName(''); setNewSlug(''); }} className="p-1 text-bauhaus-black/50 hover:text-bauhaus-black">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="bh-label mb-1 block">文件名稱 *</label>
+                  <input
+                    type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                    placeholder="例如：勞報單、鐘點費印領清冊"
+                    className="bh-input text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="bh-label mb-1 block">識別碼（英文/數字，可留空自動產生）</label>
+                  <input
+                    type="text" value={newSlug}
+                    onChange={e => setNewSlug(e.target.value.replace(/[^a-z0-9_]/gi, '').toLowerCase())}
+                    placeholder="自動產生"
+                    className="bh-input text-sm font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleAddForm} className="bh-btn bh-btn-blue px-4 py-2 text-sm">確認新增</button>
+                <button onClick={() => { setShowAddForm(false); setNewName(''); setNewSlug(''); }} className="bh-btn bh-btn-outline px-4 py-2 text-sm">取消</button>
+              </div>
+            </div>
+          )}
+
+          {/* 表單卡片列表 */}
+          <div className="space-y-3">
+            {formTypes.map(dt => {
+              const doc = formDocs[dt.doc_type];
+              return (
+                <div key={dt.doc_type} className="rounded-2xl border-2 border-bauhaus-black/20 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-lg border-2 border-bauhaus-black flex items-center justify-center shrink-0 bg-bauhaus-blue text-white">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-bauhaus-black text-sm truncate">{dt.display_name}</h3>
+                      {doc ? (
+                        <p className="text-xs text-bauhaus-black/50 truncate">v{doc.version} · {doc.file_name}</p>
+                      ) : (
+                        <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black mt-0.5">尚未上傳 PDF</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <input
+                      ref={el => fileRefs.current[dt.doc_type] = el}
+                      type="file" accept="application/pdf" className="hidden"
+                      onChange={() => handleUploadForm(dt.doc_type, dt.display_name)}
+                    />
+                    <button
+                      onClick={() => fileRefs.current[dt.doc_type]?.click()}
+                      disabled={uploading[dt.doc_type]}
+                      className="bh-btn bh-btn-outline text-xs px-3 py-2"
+                    >
+                      {uploading[dt.doc_type] ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> 上傳中...</>
+                      ) : (
+                        <><Upload className="w-3.5 h-3.5" /> {doc ? '更新版本' : '上傳 PDF'}</>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => openFieldEditorForm(dt.doc_type)}
+                      disabled={!doc}
+                      className="bh-btn bh-btn-blue text-xs px-3 py-2 disabled:opacity-40"
+                      title={doc ? '設定要填入 PDF 的欄位位置' : '請先上傳 PDF'}
+                    >
+                      <PenTool className="w-3.5 h-3.5" /> 定位欄位
+                    </button>
+                    <button
+                      onClick={() => handleDeleteForm(dt.doc_type)}
+                      className="p-2 text-bauhaus-black/40 hover:text-bauhaus-red hover:bg-bauhaus-red/10 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {formTypes.length === 0 && (
+              <div className="text-center py-8 text-bauhaus-black/50 text-sm">
+                尚無表單模板，請點「新增表單」開始設定。
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── 工具列 ── */}
       <div className="bh-card p-4 mb-3 flex flex-wrap items-center gap-3">
@@ -399,6 +644,17 @@ const DownloadCenter = () => {
           </div>
         )}
       </div>
+
+      {/* 欄位定位編輯器 */}
+      {fieldEditorOpen && fieldEditorTarget && (
+        <FieldPositionEditor
+          isOpen={fieldEditorOpen}
+          onClose={() => { setFieldEditorOpen(false); setFieldEditorTarget(null); setFieldEditorUrl(null); }}
+          docType={fieldEditorTarget.docType}
+          docVersion={fieldEditorTarget.docVersion}
+          pdfUrl={fieldEditorUrl}
+        />
+      )}
     </div>
   );
 };
