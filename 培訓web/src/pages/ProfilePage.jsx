@@ -42,8 +42,8 @@ const REQUIRED_FIELDS = [
     { key: 'phone_mobile', label: '手機號碼' },
     { key: 'line_id', label: 'Line ID' },
     { key: 'address', label: '通訊地址' },
+    { key: 'household_address', label: '戶籍地址' },
     { key: 'email_primary', label: '主要 Email' },
-    { key: 'instructor_role', label: '講師等級' },
     { key: 'teaching_freq_semester', label: '接課頻率（學期間）' },
     { key: 'teaching_freq_vacation', label: '接課頻率（寒暑假）' },
     { key: 'bio_notes', label: '經歷 / 理念' },
@@ -56,7 +56,7 @@ const REQUIRED_FIELDS = [
 
 const INITIAL_FORM = {
     full_name: '', nickname: '', gender: '', birth_date: '', id_number: '',
-    phone_mobile: '', phone_home: '', line_id: '', address: '',
+    phone_mobile: '', phone_home: '', line_id: '', address: '', household_address: '',
     email_primary: '', email_secondary: '',
     instructor_role: '', teaching_freq_semester: '', teaching_freq_vacation: '',
     teaching_regions: [],
@@ -68,6 +68,24 @@ const INITIAL_FORM = {
     id_front_path: null, id_front_mime: null, id_front_size: null, id_front_uploaded_at: null,
     id_back_path: null, id_back_mime: null, id_back_size: null, id_back_uploaded_at: null,
     bankbook_path: null, bankbook_mime: null, bankbook_size: null, bankbook_uploaded_at: null,
+};
+
+// ── 草稿暫存（防「填一填換頁整個不見」）──
+// 只暫存文字類欄位；檔案（大頭照/證件）在選檔時已即時上傳 Storage，另循原邏輯，不進草稿。
+const FILE_FIELD_KEYS = new Set(
+    ['photo', 'id_front', 'id_back', 'bankbook'].flatMap(k => [
+        `${k}_path`, `${k}_mime`, `${k}_size`, `${k}_uploaded_at`,
+    ])
+);
+const draftKeyFor = (uid) => `profile_draft_${uid}`;
+const pickDraftFields = (form) => {
+    const out = {};
+    for (const k of Object.keys(form)) if (!FILE_FIELD_KEYS.has(k)) out[k] = form[k];
+    return out;
+};
+const readDraft = (uid) => {
+    try { return JSON.parse(localStorage.getItem(draftKeyFor(uid)) || 'null'); }
+    catch { return null; }
 };
 
 const ProfilePage = () => {
@@ -84,6 +102,10 @@ const ProfilePage = () => {
     const originalWcaId = useRef('');
     // 是否動過「WCA 各項目成績」——沒動過就不呼叫 upsert RPC，避免未跑 SQL 時誤擋一般存檔
     const wcaDirty = useRef(false);
+    // 草稿暫存：hydrated 為 true 後才寫 localStorage（避免載入中的空表覆蓋既有草稿）；
+    // savedSnapshot 記「已存進 DB 的文字欄位版本」，用來判斷是否有未儲存變更。
+    const hydrated = useRef(false);
+    const savedSnapshot = useRef('');
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [showClaimModal, setShowClaimModal] = useState(false);
@@ -163,7 +185,10 @@ const ProfilePage = () => {
             for (const key of Object.keys(INITIAL_FORM)) {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
             }
-            setForm(formData);
+            // 記下「已存進 DB 的文字欄位版本」，並套用未儲存的本機草稿（若有）
+            savedSnapshot.current = JSON.stringify(pickDraftFields(formData));
+            const draft = readDraft(user.id);
+            setForm(draft ? { ...formData, ...draft } : formData);
             originalWcaId.current = formData.wca_id || '';
             setWcaLocked(!!data.hide_from_leaderboard);
 
@@ -204,14 +229,38 @@ const ProfilePage = () => {
         } else {
             setIsFirstTime(true);
             setInstructorId(null);
-            setForm(prev => ({
-                ...prev,
+            const base = {
+                ...INITIAL_FORM,
                 full_name: profile?.name || '',
                 email_primary: user.email || '',
-            }));
+            };
+            savedSnapshot.current = JSON.stringify(pickDraftFields(base));
+            const draft = readDraft(user.id);
+            setForm(draft ? { ...base, ...draft } : base);
         }
+        hydrated.current = true; // 載入完成後才允許草稿自動寫入
         setLoading(false);
     };
+
+    // 草稿自動暫存：hydrated 後，表單一有變動就寫入 localStorage（只存文字欄位）
+    useEffect(() => {
+        if (!hydrated.current || !user) return;
+        try {
+            localStorage.setItem(draftKeyFor(user.id), JSON.stringify(pickDraftFields(form)));
+        } catch { /* localStorage 滿了或被停用就略過，不影響填寫 */ }
+    }, [form, user]);
+
+    // 關閉分頁 / 強制重整時，若有未儲存變更，跳原生確認（站內換頁靠上面的草稿還原，不會掉資料）
+    useEffect(() => {
+        const handler = (e) => {
+            if (JSON.stringify(pickDraftFields(form)) !== savedSnapshot.current) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [form]);
 
     const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -389,6 +438,10 @@ const ProfilePage = () => {
             }
         }
 
+        // 儲存成功：清掉本機草稿、更新「已存版本」快照（避免離開時誤跳未儲存警告）
+        try { localStorage.removeItem(draftKeyFor(user.id)); } catch { /* 略過 */ }
+        savedSnapshot.current = JSON.stringify(pickDraftFields(form));
+
         if (profile?.role === 'pending' && isFirstTime) {
             setShowSuccess(true);
         } else if (profile?.role === 'pending') {
@@ -427,7 +480,7 @@ const ProfilePage = () => {
                     <div className="flex-1">
                         <p className="text-bauhaus-black font-black">您是已建檔的講師嗎?</p>
                         <p className="text-bauhaus-black/70 text-sm mt-0.5 font-medium">
-                            如果您之前已經填過資料、想用這個 Google 帳號接收歷史記錄,可以提出認領申請,管理員審核通過後就會自動綁定。
+                            如果您之前已經填過資料、想用這個 Google 帳號接收歷史記錄,請點下方認領,輸入姓名並核對手機與身分證末四碼,相符即可立即啟用(不需等待審核)。
                         </p>
                         <button
                             type="button"
@@ -562,9 +615,21 @@ const ProfilePage = () => {
                         <input type="email" value={form.email_secondary} onChange={e => handleChange('email_secondary', e.target.value)} className={inputCls} />
                     </Field>
                 </div>
-                <div className="mt-4">
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="通訊地址" required>
                         <input type="text" value={form.address} onChange={e => handleChange('address', e.target.value)} className={inputCls} placeholder="請輸入通訊地址" />
+                    </Field>
+                    <Field label="戶籍地址" required>
+                        <div className="flex gap-2">
+                            <input type="text" value={form.household_address} onChange={e => handleChange('household_address', e.target.value)} className={inputCls} placeholder="請輸入戶籍地址" />
+                            <button
+                                type="button"
+                                onClick={() => handleChange('household_address', form.address)}
+                                className="shrink-0 border-2 border-bauhaus-black rounded-lg px-3 min-h-[44px] text-xs font-bold bg-white text-bauhaus-black hover:bg-bauhaus-muted whitespace-nowrap transition-colors"
+                            >
+                                同通訊地址
+                            </button>
+                        </div>
                     </Field>
                 </div>
             </Section>
@@ -572,20 +637,18 @@ const ProfilePage = () => {
             {/* ── 教學資訊 ── */}
             <Section icon={GraduationCap} title="教學資訊">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Field label="講師等級" required>
-                        {!isFirstTime && form.instructor_role ? (
-                            <div className="flex items-center gap-2">
-                                <span className="bh-chip bg-bauhaus-blue text-white text-sm px-4 py-2.5">
-                                    {ROLE_OPTIONS.find(r => r.value === form.instructor_role)?.label || form.instructor_role}
-                                </span>
-                                <span className="text-xs text-bauhaus-black/50">（如需變更請聯繫管理員）</span>
-                            </div>
-                        ) : (
-                            <select value={form.instructor_role} onChange={e => handleChange('instructor_role', e.target.value)} className={selectCls}>
-                                <option value="">請選擇</option>
-                                {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                            </select>
-                        )}
+                    <Field label="講師等級">
+                        {/* 等級一律由系統/管理員決定,老師不可自選:認領者沿用名冊原等級,
+                            全新老師預設「實習」(伺服器端 guard_instructor_role 也會強制) */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="bh-chip bg-bauhaus-blue text-white text-sm px-4 py-2.5">
+                                {ROLE_OPTIONS.find(r => r.value === form.instructor_role)?.label
+                                    || (form.instructor_role || '實習')}
+                            </span>
+                            <span className="text-xs text-bauhaus-black/50">
+                                {form.instructor_role ? '（如需變更請聯繫管理員）' : '（首次註冊預設,管理員可調整）'}
+                            </span>
+                        </div>
                     </Field>
                     <Field label="接課頻率（學期間）" required>
                         <input type="text" value={form.teaching_freq_semester} onChange={e => handleChange('teaching_freq_semester', e.target.value)} className={inputCls} placeholder="例：每週 2-3 次" />
@@ -1223,12 +1286,12 @@ const Field = ({ label, required, children }) => (
 // ═══════════════════════════════════════════════════════════════
 const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
     const [nameQuery, setNameQuery] = useState(initialName || '');
-    const [phoneLast4, setPhoneLast4] = useState('');
     const [results, setResults] = useState([]);
     const [searched, setSearched] = useState(false);
     const [searching, setSearching] = useState(false);
     const [selected, setSelected] = useState(null);
     const [phoneFull, setPhoneFull] = useState('');
+    const [idLast4, setIdLast4] = useState('');
     const [message, setMessage] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [err, setErr] = useState('');
@@ -1242,14 +1305,9 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
             setErr('請輸入姓名');
             return;
         }
-        if (phoneLast4 && phoneLast4.length !== 4) {
-            setErr('手機末四碼請填 4 位數,或留白');
-            return;
-        }
         setSearching(true);
         const { data, error } = await supabase.rpc('search_unlinked_instructors', {
             name_query: nameQuery.trim(),
-            phone_last4: phoneLast4 || null,
         });
         setSearching(false);
         setSearched(true);
@@ -1265,14 +1323,21 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
         if (!selected) return;
         setErr('');
         setSubmitting(true);
-        const { error } = await supabase.rpc('submit_claim_request', {
+        const { data, error } = await supabase.rpc('submit_claim_request', {
             target_instructor_id: selected.id,
             phone_input: phoneFull.trim() || null,
             message_input: message.trim() || null,
+            id_last4_input: idLast4.trim() || null,
         });
         setSubmitting(false);
         if (error) {
             setErr('送出失敗:' + error.message);
+            return;
+        }
+        // 手機＋身分證末四碼與名冊相符 → 後端已當場自動綁定,不必等審核
+        if (data && data.status === 'approved') {
+            alert('認領成功!資料與名冊相符,已自動綁定你的講師資料,歡迎回來。');
+            window.location.reload();
             return;
         }
         alert('已送出認領申請,請等待管理員審核。');
@@ -1307,13 +1372,6 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                                         className={inputCls} placeholder="例:王小明"
                                     />
                                 </Field>
-                                <Field label="手機末四碼(選填,用以縮小結果)">
-                                    <input
-                                        type="text" value={phoneLast4}
-                                        onChange={e => setPhoneLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                                        className={inputCls} placeholder="1234" maxLength={4}
-                                    />
-                                </Field>
                                 <button
                                     type="submit" disabled={searching}
                                     className="bh-btn bh-btn-blue w-full px-4 py-2.5 text-sm"
@@ -1337,7 +1395,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                                     {results.map(r => (
                                         <button
                                             key={r.id}
-                                            onClick={() => { setSelected(r); setPhoneFull(''); setMessage(''); }}
+                                            onClick={() => { setSelected(r); setPhoneFull(''); setIdLast4(''); setMessage(''); }}
                                             className="w-full text-left p-3 border-2 border-bauhaus-black rounded-xl hover:bg-bauhaus-muted transition-colors"
                                         >
                                             <div className="font-black text-bauhaus-black">{r.full_name}</div>
@@ -1367,12 +1425,23 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                                 </button>
                             </div>
 
-                            <Field label="您的完整手機號碼(供管理員核對)">
+                            <Field label="您的完整手機號碼(與名冊核對)">
                                 <input
                                     type="tel" value={phoneFull}
                                     onChange={e => setPhoneFull(e.target.value)}
                                     className={inputCls} placeholder="0912345678"
                                 />
+                            </Field>
+
+                            <Field label="身分證字號末四碼(與名冊核對)">
+                                <input
+                                    type="text" inputMode="numeric" value={idLast4}
+                                    onChange={e => setIdLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                                    className={inputCls} placeholder="1234" maxLength={4}
+                                />
+                                <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">
+                                    手機與身分證末四碼都與名冊相符,即可立即啟用,不需等待審核。
+                                </p>
                             </Field>
 
                             <Field label="說明(選填,協助管理員快速辨識)">

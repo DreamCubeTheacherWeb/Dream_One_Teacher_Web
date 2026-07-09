@@ -1,7 +1,71 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（薪資頁三按鈕＋後台連結管理＋薪資提醒排程 已 commit＋push 上線、SQL 已套用；徽章線與通知中心線仍未收尾，Fable 5）。
+> 最後更新：2026-07-09（認領自動核准＋身分證末四碼＋等級自動帶入 已 commit＋push、兩份 SQL 已由業主套用；Fable 5）。
+
+---
+
+## 🪪 2026-07-09 晚：認領自動核准（手機＋身分證末四碼）＋等級自動帶入（✅ 已 commit＋push；SQL 已套用）
+
+**業主需求三連**：① 名冊上的老師認領後不必人工審核；② 登入後「已是夢想一號老師」用
+姓名＋電話＋身分證末四碼比對，避免用別的信箱登入變孤兒帳號；③ 等級不讓老師自選，
+認領者沿用名冊原等級、全新老師預設「實習」。
+
+**做了什麼**：
+- **SQL①** `2026-07-09_claim_auto_approve.sql`：`submit_claim_request` 改成「手機末四碼與名冊
+  相符即當場綁定＋核准」；新增 `auto_attempts` 猜錯計數（5 次鎖死轉人工）；
+  **B2＝堵漏**：原 `search_unlinked_instructors` 把手機後四碼當 `••••1234` 公開（等於把密碼
+  展示）＋可用後四碼過濾＝對答機 → 改成只回「已登記手機」中性提示、停用後四碼過濾（向後
+  相容，保留兩參數簽章，線上舊前端不壞）。
+- **SQL②** `2026-07-09_claim_id_and_role.sql`：`submit_claim_request` 加第 4 參數
+  `id_last4_input`，改成「名冊有登記的每項祕密（手機／身分證末四碼）都要對、至少對一項」才
+  自動核准；新增 `guard_instructor_role` trigger 強制「非 admin 不能自訂/竄改自己 instructor_role」
+  （INSERT 一律實習、UPDATE 保持原值；service role 匯入與 admin 放行）＝連繞過畫面直打 API 也擋。
+- **前端** `ProfilePage.jsx`：認領 modal 加身分證末四碼欄、文案改「立即啟用（不需審核）」、
+  移除搜尋的末四碼輸入；等級欄改唯讀（新人顯示「實習」）；`instructor_role` 移出必填。
+
+**✅ 證據**：兩輪 security-auditor 複審——第一份揪出「後四碼＝公開密碼」阻斷洞（已修 B2）、
+第二份 10 項全過無阻斷（trigger 不誤傷匯入/後台、REST 繞過改等級被擋均成立）；`npm run build`
+綠燈、ProfilePage lint 4＝基線零新增；anon 探測確認正式庫有 `household_address` 欄（並行線戶籍
+功能不會壞存檔）。SQL 兩份業主 2026-07-09 已貼入正式庫。
+
+**⚠️ 未驗 / 待辦**：
+- 真帳號 OAuth 認領端到端（自動化擋 OAuth，需業主人測：搜名字→填手機＋身分證末四碼→立即啟用）。
+- 建議業主在 SQL Editor 跑一次體檢查詢確認 `search_masked_ok=true`（第一份搜尋遮罩是否生效）；
+  不確定就把 SQL① 再貼一次（冪等、可安全重跑）。
+- 低風險備註（非阻斷）：`find_unlinked_instructor_by_my_email` 仍回本人自己那筆的手機末四碼
+  （只對本人、不可被利用），末四碼升格密碼後日後值得順手也遮；auto_attempts 綁帳號，
+  多開 Google 帳號可重置計數（只對「只有手機、無身分證」的舊列有意義）。
+
+---
+
+## 📝 2026-07-09 晚：個人資料頁「換頁資料不見」修復＋新增戶籍地址（✅ 已改完＋實測；隨認領線同批 commit＋push 上線，業主授權「兩條一起上」）
+
+**業主回報**：個人頁（含匯款銀行資訊）填一填，切下一頁資料就整個不見，湊不齊一次完整送出。
+**診斷（主對話 anon 探測＋讀碼）**：不是資料庫問題——存檔會寫入的 40 欄全部在線上、
+`instructor_role`/`tw_county` enum 線上都接受表單送的值（連職員/工讀生也接受，只是 repo SQL 過期）、
+`user_id` 有 UNIQUE、自我 upsert 的 RLS 也在。真因＝`ProfilePage.jsx` **完全沒有草稿機制**，
+表單只活在 React state，一換頁/重整就蒸發。
+
+**做了什麼（只動 `src/pages/ProfilePage.jsx`＋1 支新 SQL）**：
+1. **草稿自動暫存**：hydrated 後表單一變動即寫 `localStorage['profile_draft_<uid>']`（只存文字欄位，
+   排除檔案路徑）；載入時把草稿蓋回 DB 版之上；**成功送出後清除草稿**＋更新 savedSnapshot。
+   → 站內換頁/重整資料自動還原。另加 `beforeunload` 在關分頁/強制重整時跳原生未儲存警告。
+   （站內「確定離開」自訂彈窗需 data router，本 App 是 `<BrowserRouter>` 不支援 `useBlocker`，
+   但草稿已讓站內換頁不掉資料，故不做 router 遷移。）
+2. **戶籍地址（業主指定必填）**：通訊地址旁新增欄位＋「同通訊地址」一鍵帶入鈕；
+   加進 `REQUIRED_FIELDS`、`INITIAL_FORM`。新 SQL `2026-07-09_household_address.sql`
+   （`ADD COLUMN IF NOT EXISTS household_address text`，冪等、不動 RLS）。
+
+**✅ 證據（主對話親跑）**：`node scripts/verify-profile-draft.mjs` **9/9 PASS**（假 session＋mock
+Supabase 真瀏覽器：填三欄→重整/profile→全還原、同通訊地址帶入、戶籍欄存在、既有講師載 DB 值
+不被草稿干擾、草稿確實寫入 localStorage）；`npm run build` 綠燈；ProfilePage lint 4＝改動前 4（零新增）。
+
+**⚠️ 上線順序鐵律（否則會製造出跟原本一樣的「存不了」）**：`household_address` 設為必填、
+存檔 payload 一定會送這欄——**必須先讓業主把 `2026-07-09_household_address.sql` 貼上線上執行，
+確認欄位建好，才能部署前端**；反過來會讓「column does not exist」害全體存檔失敗。
+**待業主**：(1) 跑該 SQL；(2) 同意後才 push 部署；(3) 真帳號實走一次（OAuth 擋自動化）。
+**副作用（業主已選必填）**：既有 245 位講師下次編輯任何資料時，也會被要求補填戶籍地址才存得了。
 
 ---
 
