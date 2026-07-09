@@ -5,6 +5,20 @@
 
 ---
 
+## 🚑 2026-07-09 晚：部署失敗搶修（✅ 已修＝cc4a2a7）
+
+**事故**：16901c7 把 ProfilePage/BadgeManager 改為 import `BadgeVisual`／`imageCompress`，
+但兩個**新檔案沒 git add**（留在未追蹤清單）→ push 後 Zeabur build「Could not resolve
+../components/BadgeVisual」失敗，其後所有部署（含兩個 docs commit）連環失敗。
+**線上未受害**：Zeabur 部署失敗不換版，正式站一直停在最後成功版（index-BOLDJDfk.js，
+含講師名單改版＋純圓角 34 檔）。
+**修法**：`cc4a2a7` 只補這兩個檔（隔離 build 驗證綠燈、eslint 0 才 push）；
+WcaManager.jsx＋App.jsx 路由改動屬徽章線未收尾，仍留工作區未 commit。
+**教訓（給並行各線）**：commit 前 `git status` 要看**未追蹤區**——改了既有檔引用新檔時，
+新檔忘了 add 就是「本地 build 過、線上炸」的經典型態。
+
+---
+
 ## 🔵 2026-07-09 晚：全站圓角化改版（業主指示「大多數圓角矩形、少數直角點綴」）— ✅ 業主拍板「直接全部上線」，已 commit＋push（9e4ba97 純圓角 34 檔＋16901c7 混線 2 檔搭載徽章線迭代）
 
 **做了什麼**：Bauhaus 語言保留（三原色/黑框/硬陰影），圓角從「二元直角」改為刻度制——
