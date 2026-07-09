@@ -40,8 +40,8 @@ const DevLogin = () => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-bauhaus-black px-4 py-12">
             <div className="w-full max-w-md">
-                <div className="bg-white border-2 border-bauhaus-black shadow-hard-lg p-8">
-                    <div className="flex items-center gap-2 mb-2 text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 text-xs font-bold">
+                <div className="bg-white border-2 border-bauhaus-black rounded-2xl shadow-hard-lg p-8">
+                    <div className="flex items-center gap-2 mb-2 text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black rounded-lg px-3 py-2 text-xs font-bold">
                         <AlertTriangle className="w-4 h-4" />
                         臨時登入 — Google OAuth 串接前使用
                     </div>
@@ -105,12 +105,12 @@ const DevLogin = () => {
                         </div>
 
                         {error && (
-                            <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
+                            <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-xl px-3 py-2 font-bold">
                                 {error}
                             </div>
                         )}
                         {info && (
-                            <div className="text-sm text-white bg-bauhaus-blue border-2 border-bauhaus-black px-3 py-2 font-bold">
+                            <div className="text-sm text-white bg-bauhaus-blue border-2 border-bauhaus-black rounded-xl px-3 py-2 font-bold">
                                 {info}
                             </div>
                         )}

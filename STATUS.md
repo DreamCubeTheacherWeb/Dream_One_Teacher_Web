@@ -5,6 +5,93 @@
 
 ---
 
+## 🔵 2026-07-09 晚：全站圓角化改版（業主指示「大多數圓角矩形、少數直角點綴」）— 已改完＋驗證，**未 commit 等業主拍板**
+
+**做了什麼**：Bauhaus 語言保留（三原色/黑框/硬陰影），圓角從「二元直角」改為刻度制——
+大卡 `rounded-2xl`／按鈕輸入 tab `rounded-xl`／chip `rounded-lg`；直角只留幾何裝飾、色帶、
+checkbox。共用配方（index.css `.bh-*`）改一次全站生效＋9 路 agent 掃 inline 直角與裸黑框
+（36 檔）＋跨批次分歧統一（icon 容器一律 rounded-lg、TeacherManager 手機 tab 換行破版改
+獨立框 pattern、DevLogin 小徽章降刻度）。DESIGN.md §4/§6 已同步改版。
+
+**證據（主對話親跑/親抽查）**：build ✓ 8.32s；lint 25＝基線；mobile-audit 44 檢查＝基線
+6 旗標（0 溢出/0 pageerror/0 空白頁；期間曾出現偶發 pageerror，查明是背景 dev server 與
+稽核搶資源，關掉後穩定乾淨）；視覺判讀 agent 全站掃過（需修 4 類全數處理，其中 checkbox
+屬原生元件忽略 border-radius 的假問題，已如實記入 DESIGN.md §6）；TeacherManager 修復後
+390px 複驗通過（六鈕 44px、獨立圓角框）。順手修：/my/salary email 連結熱區 18px→44px。
+
+**⚠️ 打包注意（混線檔）**：`ProfilePage.jsx`＋`admin/BadgeManager.jsx` 混有徽章線未提交
+迭代（BadgeIcon→BadgeVisual、圖示上傳）；`admin/TeacherManager.jsx` 混有「數字消歧義」線
+未提交改動（見下段）。同檔無法拆 commit——需分包如實標註，或等各線收尾。CubeTimer 的
+「成績公開度/歷史紀錄」該線已自行 commit，無衝突。
+
+---
+
+## 👥 2026-07-09：講師名單管理頁數字消歧義（方案 A，✅ 已 commit＋push 上線＝5d417fe）
+
+**上線紀錄**：業主 2026-07-09 說「上」→ index 手術 commit `5d417fe`（只含本任務 12 個
+hunk，同檔並行圓角線的 8 個 hunk 留在工作區未動）→ push，Zeabur 自動部署。
+commit 前以 `git checkout-index` 隔離拷貝實測 staged 版本 build 綠燈＋bundle 含新字串。
+線上 bundle 未 grep 驗證（文件沒記正式站網址，已向業主要，拿到後補進 CLAUDE.md）。
+同日：`2026-07-09_lesson_tags.sql` 業主已貼線上，anon 探測 lessons.tags 欄位存在 ✓
+（hashtag 線＝commit 9e48b4f 的後端半邊補齊）。
+
+**背景**：業主看 /admin/teachers 困惑——統計卡「講師 2」vs 分頁「講師 (245)」打架；
+且冷凍/工讀生/職員/助教/未填狀態的未登入講師在該頁任何分頁都看不到（另頁講師名冊看得到）。
+**改動（只動 `src/pages/admin/TeacherManager.jsx`）**：統計卡「講師」→「已登入講師」；
+分頁「講師」→「講師名冊」；新增「其他狀態」分頁（未綁定且非 active/cancelled，含 NULL，
+身份欄顯示中文狀態：冷凍/工讀生/職員/助教/未填狀態）；順修去重潛伏 bug
+（instructorMap 雙 key 讓已綁定講師被 Object.values 算兩次）。
+**證據（主對話親跑）**：build 綠燈、lint 25＝基線且本檔單跑 0 問題、確定性 Playwright
+**18/18 PASS**（假 session＋10 筆設計 mock：各分頁計數、其他狀態五標籤、去重斷言
+「已綁定 cancelled 只算一次」、375 無溢出零 pageerror；腳本
+scratchpad/verify-teacher-manager.mjs，截圖 tm-shots/ 5 張，agent 判讀「可交付」）。
+**⚠️ commit 注意**：工作區同時有另一並行線的全站圓角改版（36 檔含本檔）——
+commit 時要用 git index 手術只挑本任務的 hunk，或等圓角線收尾一起核對。
+**未結案（同題延伸）**：線上 active 243 vs 新整理資料 163 的落差待業主跑
+`SELECT employment_status, count(*) FROM public.instructors GROUP BY 1;` 裁決——
+若線上幾乎全 active，代表 7/8 六類狀態整理＋資料補全尚未推上線上（匯入工具在 scripts/）。
+
+---
+
+## 🖊️ 2026-07-09：畫布編輯器改版—工具列移到底部＋任意 px 字級（✅ 已 commit＋push 上線＝51fadb3）
+
+**做了什麼**（只動 `src/components/CanvasEditor.jsx`）：
+- 文字格式工具列與元素控制列從「頂部 sticky」改為**固定在畫面底部**（border 翻上緣、
+  調色盤改向上彈出 `dropUp`）。
+- 字級從 7 檔固定尺寸改為**任意 8–200px**：A−/A＋ 步進 ±2px、px 直接輸入（Enter 套用）、
+  常用尺寸下拉（12–96px）；游標移動即時顯示目前字級。
+  實作手法：execCommand fontSize 7 → 換成 `<span style="font-size:Npx">`（既有 size=7 內容
+  先標記保護不誤換）。
+
+**證據**：偽 session＋全量攔截 Supabase 的 Playwright 實測 **7/7 PASS**（工具列貼底 y=900、
+33px 套用、A＋ 33→35、調色盤向上開）＋ 2 張截圖 agent 判讀通過；build 綠燈、lint 25＝基線。
+測試腳本手法沿用 scripts/mobile-verify（零線上寫入）。
+
+**✅ 已上線（業主口頭核准「直接上線」）**：commit `51fadb3` 單檔提交（核對過 9 個 hunk
+無夾帶）→ push → Zeabur 自動部署，40 秒後正式站換新 bundle（index-D5als5R8.js），
+已 grep 確認新編輯器程式碼在線上 bundle 內。
+
+**追加（同日）：課程章節列表頁修復（`src/pages/LessonView.jsx`，未 commit）**——
+業主反映列表卡片顯示 `{"caption": ""}`（圖片區塊內部 JSON 外洩當預覽）與「58 文章」
+（畫布區塊誤當文章數）。修法：預覽只取第一段 ≥20 字的真內文（跳過圖片 JSON／圖形／
+按鈕／短標題）；畫布課程徽章改「閱讀約 N 分鐘」（總字數/400 估算），傳統課程維持 N 文章。
+證據：mock Playwright 6/6 PASS（無 JSON 外洩、9 課列出、預覽正常、時間徽章出現）＋
+build 綠燈。lint 33（+8 全來自並行徽章/通知線的未收尾檔案，LessonView/CanvasEditor 零問題）。
+**✅ 已上線**：commit `b10f983` 單檔 push，40 秒換新 bundle（index-BN8plal-.js），
+已 grep 確認「閱讀約」字串在線上程式包內。
+
+**再追加（同日）：章節 hashtag 功能（✅ 已 commit＋push 上線＝9e48b4f，40 秒換版
+index-CercocM5.js，已 grep 實證；SQL `2026-07-09_lesson_tags.sql` 待業主貼）**——業主不要閱讀分鐘，改要自由 hashtag。
+① 新 SQL `2026-07-09_lesson_tags.sql`：lessons 加 `tags text[]`（冪等、不碰 RLS，**待業主貼**）；
+② 後台 `/admin/cms/:courseId` 每課新增 hashtag 編輯列（chips＋輸入 Enter 加入、× 移除，
+   即存 DB；欄位未建時儲存會提示先跑 SQL）——`CMSManager.jsx`；
+③ 前台章節卡片顯示 `#標籤`（黃chip），移除「閱讀約 N 分鐘」，傳統課程維持 N 文章——
+   `LessonView.jsx`（SQL 未跑前讀不到 tags 就不顯示，不會壞）。
+證據：mock Playwright 8/8 PASS（前台三標籤顯示、分鐘已除、後台新增/刪除的 PATCH 內容
+逐一驗證 `{"tags":[...]}`）；build 綠燈；兩檔 lint 零問題。
+
+---
+
 ## 🔔 2026-07-09：廣播通知中心（admin 隨時發＋排程發小鈴鐺通知）— ✅ SQL 已套用＋已上線
 
 **做了什麼**：新 admin 頁 `/admin/notifications`（Dashboard 系統管理區有入口卡）——
@@ -298,6 +385,22 @@ CHECK 約束只擋離譜值（<3 秒、<10 步）。
   （主對話親跑；含鍵盤解題自動停錶、暫停凍結、改鍵→reload 持久化、實體流程、
   雙模式分榜寫入），引擎測試 7/7、build 綠燈、eslint 0、截圖 agent 判讀可交付。
 
+**2026-07-09 v6 改版（成績公開/私人開關＋完整歷史紀錄）——✅ 已上線（commit 05caa90）**
+業主貼完 SQL 後說「上線」：主對話 anon 探測核實 is_public 欄位已在正式庫（200，
+非 400 column not found）→ 只 commit 方塊線 3 檔（CubeTimer.jsx／cube-verify.mjs／
+新 SQL 檔）→ 隔離 worktree 以該 commit 原樣建置綠燈 → push（9e48b4f..05caa90，
+自動部署生效）。**待業主人測**：送一筆私人成績確認不上榜、歷史紀錄看得到它。
+- 送出成績可選「公開到排行榜」或「只存自己的紀錄」（偏好記 localStorage）；
+  **排行榜只計公開、個人統計含私人**（統計區有註明）。防呆：線上還沒跑新 SQL 時
+  自動降級為不帶 is_public 的送出並提示，不會炸。
+- 「我的紀錄」新增可展開**完整歷史**：分頁 20 筆＋載入更多，每列成績/日期/步數/
+  公開私人 chip，列高 ≥44px、375/390 無溢出。
+- 新 SQL `2026-07-09_cube_public_flag.sql`（冪等；is_public 欄 default true＝既有成績
+  視為公開；排行榜函式加過濾；先貼 SQL 或先部署皆安全）——**待使用者貼**。
+- 證據（主對話親跑）：E2E **89/89**、引擎 44/44、build 綠燈、eslint 0、SQL 逐行親讀。
+- 環境註記：實作期間另一並行線正將全站由直角改回圓角（DESIGN.md 同步在改），
+  本次新增 UI 已跟隨現場最新樣式。
+
 **2026-07-09 v5 改版（完整國際代號＋鍵帽重設計）——✅ 已上線（commit e993dcb）**
 業主同日說「ok 上線」：只 commit 方塊線 4 檔（CubeTimer.jsx／cubeEngine.js／兩支測試
 腳本），薪資線／徽章線的未 commit 檔案完全未動；push 前在隔離 worktree 以該 commit
@@ -409,6 +512,16 @@ CHECK 約束只擋離譜值（<3 秒、<10 步）。
 原頁截圖由 agent 三輪比對通過。07-07 的直排卡片版備份在
 `scripts/course-first-station/backup-flow-41-blocks.json` 可回滾；重建管線與注意事項
 （橫幅直連 Google 圖床、L2 圖 data URI 內嵌）見同目錄 README。課程總開關仍等使用者開。
+
+**2026-07-09 再修（現行＝v3）**：使用者反映字太小＋要求影片區獨立成課。
+① 字級放大 15%（桌機顯示≈原頁實體字大小），因字大會撐高文字框，改用兩段式重排：
+Playwright 實測 307 個文字框放大後的真實高度 → 欄位感知堆疊演算法重排 y 座標
+（同排對齊、左右欄各自下推、文字互疊檢查=0）。
+② 課程切成 **9 課**：新增第 8 課「教你怎麼教影片」（lesson id `5e65c1f2`，不設作業），
+原「下一站」內容獨立為第 9 課「下一站：正式講師培訓」（作業=學習心得）。
+③ 橫幅與 L2 總覽圖皆改 data URI 內嵌（原直連 Google 圖床載入慢且可能失效，地雷已消）。
+證據：線上回讀 352 區塊零遺漏驗證通過＋9 課復刻截圖 agent 比對通過（唯一問題＝橫幅
+載入慢，已用內嵌解決）。版本檔：`pushed-canvas-v3-352-blocks.json`＋`generate_v3.py`。
 
 ### ✅ 第三條線：遊戲化 + 電子簽名本人驗證（2026-07-07，交接 session 續作）
 

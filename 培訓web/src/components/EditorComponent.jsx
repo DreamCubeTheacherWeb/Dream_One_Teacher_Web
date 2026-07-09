@@ -383,7 +383,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onBack}
-                        className="p-2 border-2 border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200 min-h-[44px] min-w-[44px]"
+                        className="p-2 rounded-xl border-2 border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200 min-h-[44px] min-w-[44px]"
                     >
                         <ChevronLeft className="w-6 h-6" />
                     </button>
@@ -396,7 +396,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setEditorMode('canvas')}
-                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
+                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black rounded-xl text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
                         title="切換到畫布自由排版模式"
                     >
                         <LayoutGrid className="w-4 h-4" /> 畫布模式
@@ -404,19 +404,19 @@ const EditorComponent = ({ lessonId, onBack }) => {
                     <div className="w-px h-6 bg-bauhaus-black/20 mx-1" />
                     <button
                         onClick={addArticleBlock}
-                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
+                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black rounded-xl text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
                     >
                         <Plus className="w-4 h-4" /> 新增文字
                     </button>
                     <button
                         onClick={addVideoBlock}
-                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
+                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black rounded-xl text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
                     >
                         <Plus className="w-4 h-4" /> 新增影片
                     </button>
                     <button
                         onClick={addImageTextBlock}
-                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
+                        className="flex items-center gap-2 bg-white border-2 border-bauhaus-black rounded-xl text-bauhaus-black px-4 py-2 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
                     >
                         <Plus className="w-4 h-4" /> 新增圖文
                     </button>
@@ -424,7 +424,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                     <button
                         onClick={handleSaveAll}
                         disabled={saving}
-                        className="flex items-center gap-2 bg-bauhaus-blue text-white px-6 py-2 border-2 border-bauhaus-black hover:bg-bauhaus-blue/90 disabled:opacity-40 transition-colors duration-200 shadow-hard font-black text-sm min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+                        className="flex items-center gap-2 bg-bauhaus-blue text-white px-6 py-2 border-2 border-bauhaus-black rounded-xl hover:bg-bauhaus-blue/90 disabled:opacity-40 transition-colors duration-200 shadow-hard font-black text-sm min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                         <Save className="w-4 h-4" />
                         {saving ? '儲存中...' : '儲存變更'}
@@ -436,7 +436,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
             <div className="flex-1 overflow-y-auto pb-24">
                 <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
                     {blocks.length === 0 && (
-                        <div className="bg-white border-2 border-bauhaus-black p-20 text-center">
+                        <div className="bg-white border-2 border-bauhaus-black rounded-2xl p-20 text-center">
                             <div className="bg-bauhaus-paper border-2 border-bauhaus-black w-16 h-16 flex items-center justify-center mx-auto mb-4">
                                 <Edit3 className="w-8 h-8 text-bauhaus-black/40" />
                             </div>
@@ -455,7 +455,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                     {blocks.map((block, index) => (
                         <div
                             key={block.id}
-                            className={`bg-white border-2 ${block.isNew ? 'border-bauhaus-blue' : 'border-bauhaus-black'} shadow-hard overflow-hidden group transition-all duration-200`}
+                            className={`bg-white border-2 ${block.isNew ? 'border-bauhaus-blue' : 'border-bauhaus-black'} rounded-2xl shadow-hard overflow-hidden group transition-all duration-200`}
                         >
                             {/* Block Header */}
                             <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
@@ -473,7 +473,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                                         placeholder="請輸入區塊標題..."
                                         className="bg-transparent border-none outline-none font-bold text-slate-700 placeholder:text-slate-300 w-64 focus:ring-0"
                                     />
-                                    {block.isNew && <span className="text-[9px] font-black text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded uppercase">NEW</span>}
+                                    {block.isNew && <span className="text-[9px] font-black text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded-lg uppercase">NEW</span>}
                                 </div>
                                 <button
                                     onClick={() => handleDelete(block.id, block.isNew)}
@@ -612,19 +612,19 @@ const EditorComponent = ({ lessonId, onBack }) => {
                         <div className="flex justify-center gap-4 py-8 border-t-2 border-bauhaus-black">
                             <button
                                 onClick={addArticleBlock}
-                                className="flex items-center gap-2 bg-white border-2 border-bauhaus-black text-bauhaus-black px-6 py-3 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
+                                className="flex items-center gap-2 bg-white border-2 border-bauhaus-black rounded-xl text-bauhaus-black px-6 py-3 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
                             >
                                 <Plus className="w-4 h-4" /> 新增文字區塊
                             </button>
                             <button
                                 onClick={addVideoBlock}
-                                className="flex items-center gap-2 bg-white border-2 border-bauhaus-black text-bauhaus-black px-6 py-3 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
+                                className="flex items-center gap-2 bg-white border-2 border-bauhaus-black rounded-xl text-bauhaus-black px-6 py-3 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
                             >
                                 <Plus className="w-4 h-4" /> 新增影片區塊
                             </button>
                             <button
                                 onClick={addImageTextBlock}
-                                className="flex items-center gap-2 bg-white border-2 border-bauhaus-black text-bauhaus-black px-6 py-3 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
+                                className="flex items-center gap-2 bg-white border-2 border-bauhaus-black rounded-xl text-bauhaus-black px-6 py-3 hover:bg-bauhaus-muted transition-colors duration-200 font-bold text-sm min-h-[44px]"
                             >
                                 <Plus className="w-4 h-4" /> 新增圖文區塊
                             </button>

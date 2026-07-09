@@ -83,7 +83,7 @@ const SalaryFormLinks = () => {
                             href={link.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={`${tone.bg} border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg
+                            className={`${tone.bg} border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard lg:shadow-hard-lg
                                 p-6 min-h-[44px] flex items-center justify-between gap-4
                                 transition-all duration-200 ease-out
                                 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none`}
@@ -99,12 +99,12 @@ const SalaryFormLinks = () => {
                     );
                 })}
             </div>
-            <div className="mt-6 bg-bauhaus-yellow border-2 lg:border-4 border-bauhaus-black shadow-hard p-4 sm:p-5 flex items-start gap-3">
+            <div className="mt-6 bg-bauhaus-yellow border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard p-4 sm:p-5 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-bauhaus-black" aria-hidden="true" />
                 <div className="text-sm font-medium text-bauhaus-black leading-relaxed">
                     <p>每月 25 號結算（計算區間：上月 26 日～本月 25 日），逾期回報將併入下月。</p>
                     <p className="mt-1">如果匯款帳戶有更新者，改完資料請及時和芳儒告知。</p>
-                    <p className="mt-1">正式報酬數字皆以 <a href="mailto:hi@dreamcube.tw" className="font-black underline">hi@dreamcube.tw</a> 信件為準。</p>
+                    <p className="mt-1">正式報酬數字皆以 <a href="mailto:hi@dreamcube.tw" className="font-black underline inline-flex items-center min-h-[44px] py-1">hi@dreamcube.tw</a> 信件為準。</p>
                 </div>
             </div>
         </div>
@@ -227,7 +227,7 @@ const MySalary = () => {
                 <div className="flex items-center justify-between mb-3">
                     <h2 className="text-lg font-black text-bauhaus-black">月份明細</h2>
                     <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
-                        className="text-sm px-3 py-2 border-2 border-bauhaus-black bg-white font-bold outline-none focus:ring-2 focus:ring-bauhaus-blue">
+                        className="text-sm px-3 py-2 border-2 border-bauhaus-black rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-bauhaus-blue">
                         <option value="">全部月份</option>
                         {months.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
@@ -343,7 +343,7 @@ const BigStat = ({ icon, label, value, sub, tone }) => {
     const Icon = icon;
     const t = TONE_STYLES[tone] || TONE_STYLES.black;
     return (
-    <div className={`${t.bg} border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-5`}>
+    <div className={`${t.bg} border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard lg:shadow-hard-lg p-5`}>
         <div className={`flex items-center gap-2 text-sm font-bold uppercase tracking-wide ${t.sub}`}>
             <Icon className="w-4 h-4" /> {label}
         </div>

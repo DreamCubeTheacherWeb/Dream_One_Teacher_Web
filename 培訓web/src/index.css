@@ -26,7 +26,7 @@
 @layer components {
   /* 卡片：白底＋黑框＋硬陰影；hover 微升 */
   .bh-card {
-    @apply bg-white border-2 lg:border-4 border-bauhaus-black rounded-none
+    @apply bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl
            shadow-hard lg:shadow-hard-lg transition-transform duration-200 ease-out;
   }
   .bh-card-hover {
@@ -35,7 +35,7 @@
 
   /* 按鈕基底：黑框＋硬陰影＋按壓下沉；配 .bh-btn-{red|blue|yellow|outline} */
   .bh-btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-none
+    @apply inline-flex items-center justify-center gap-2 rounded-xl
            border-2 border-bauhaus-black font-bold tracking-wider uppercase
            shadow-hard transition-all duration-200 ease-out
            active:translate-x-[2px] active:translate-y-[2px] active:shadow-none
@@ -48,14 +48,14 @@
   .bh-btn-outline{ @apply bg-white text-bauhaus-black hover:bg-bauhaus-muted; }
   /* Ghost：無框無影，僅 hover 變底 */
   .bh-btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-none font-bold
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-bold
            text-bauhaus-black transition-colors duration-200 ease-out hover:bg-bauhaus-muted
            focus:outline-none focus-visible:ring-2 focus-visible:ring-bauhaus-black focus-visible:ring-offset-2;
   }
 
-  /* 表單控件：白底黑框直角 */
+  /* 表單控件：白底黑框圓角矩形 */
   .bh-input {
-    @apply w-full rounded-none border-2 border-bauhaus-black bg-white px-3 py-2 font-medium
+    @apply w-full rounded-xl border-2 border-bauhaus-black bg-white px-3 py-2 font-medium
            placeholder:text-bauhaus-black/40
            focus:outline-none focus-visible:ring-2 focus-visible:ring-bauhaus-blue focus-visible:ring-offset-2;
   }
@@ -65,9 +65,9 @@
     @apply text-xs font-bold uppercase tracking-widest text-bauhaus-black;
   }
 
-  /* 徽章／chip：方形黑框 */
+  /* 徽章／chip：圓角小矩形黑框 */
   .bh-chip {
-    @apply inline-flex items-center gap-1 rounded-none border-2 border-bauhaus-black
+    @apply inline-flex items-center gap-1 rounded-lg border-2 border-bauhaus-black
            px-2 py-0.5 text-xs font-bold uppercase tracking-wider;
   }
 }
@@ -117,18 +117,18 @@
   [style*="lb-fade-up"], [style*="lb-rise"] { animation: none !important; }
 }
 
-/* Quill editor overrides（Bauhaus：直角＋黑框） */
+/* Quill editor overrides（Bauhaus：圓角矩形＋黑框） */
 .quill-wrapper .ql-container {
   min-height: 380px;
   font-size: 15px;
   font-family: inherit;
-  border-radius: 0;
+  border-radius: 0 0 12px 12px;
   border-color: #121212;
   border-width: 2px;
   border-top-width: 0;
 }
 .quill-wrapper .ql-toolbar {
-  border-radius: 0;
+  border-radius: 12px 12px 0 0;
   border-color: #121212;
   border-width: 2px;
   background: #F0F0F0;

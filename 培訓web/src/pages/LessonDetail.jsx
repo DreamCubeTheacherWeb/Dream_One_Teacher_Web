@@ -394,7 +394,7 @@ const LessonDetail = () => {
                 </div>
                 <button
                     onClick={toggleComplete}
-                    className={`shrink-0 flex items-center gap-2.5 px-5 py-2.5 border-2 border-bauhaus-black text-sm font-black uppercase tracking-wide shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${isCompleted
+                    className={`shrink-0 flex items-center gap-2.5 px-5 py-2.5 rounded-xl border-2 border-bauhaus-black text-sm font-black uppercase tracking-wide shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${isCompleted
                         ? 'bg-bauhaus-blue text-white hover:bg-bauhaus-blue/90'
                         : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
                         }`}
@@ -477,7 +477,7 @@ const LessonDetail = () => {
                                 </div>
                                 <div className="px-6 py-5">
                                     {a.video_url ? (
-                                        <div className="aspect-video overflow-hidden bg-bauhaus-black border-2 border-bauhaus-black">
+                                        <div className="aspect-video overflow-hidden rounded-lg bg-bauhaus-black border-2 border-bauhaus-black">
                                             <iframe src={toEmbedUrl(a.video_url)} title="作業影片" className="w-full h-full" allowFullScreen />
                                         </div>
                                     ) : (
@@ -492,7 +492,7 @@ const LessonDetail = () => {
                                                 回饋紀錄（{a.feedbacks.length} 則）
                                             </h4>
                                             {a.feedbacks.map((fb) => (
-                                                <div key={fb.id} className="bg-bauhaus-cream border-2 border-bauhaus-black px-5 py-4">
+                                                <div key={fb.id} className="bg-bauhaus-cream border-2 border-bauhaus-black rounded-xl px-5 py-4">
                                                     <div className="flex items-center justify-between mb-2">
                                                         <div className="flex items-center gap-2">
                                                             <Star className="w-4 h-4 text-bauhaus-black" />
@@ -510,7 +510,7 @@ const LessonDetail = () => {
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="bg-bauhaus-paper border-2 border-bauhaus-black px-5 py-4 text-center">
+                                        <div className="bg-bauhaus-paper border-2 border-bauhaus-black rounded-xl px-5 py-4 text-center">
                                             <p className="text-bauhaus-black/50 text-sm font-medium">
                                                 請通知輔導員給予回饋，若已通知則耐心等候
                                             </p>
@@ -523,7 +523,7 @@ const LessonDetail = () => {
                 )}
 
                 {/* Submit new assignment */}
-                <div className="bg-bauhaus-black text-white border-2 lg:border-4 border-bauhaus-black p-10 shadow-hard-lg relative overflow-hidden">
+                <div className="bg-bauhaus-black text-white border-2 lg:border-4 border-bauhaus-black rounded-2xl p-10 shadow-hard-lg relative overflow-hidden">
                     <h3 className="text-2xl font-black mb-2 flex items-center gap-3">
                         <FileText className="w-7 h-7 text-bauhaus-yellow" />
                         {myAssignments.length > 0 ? '再次繳交作業' : '章節作業繳交'}
@@ -534,7 +534,7 @@ const LessonDetail = () => {
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setAssignment({ ...assignment, type: 'text' })}
-                                className={`px-5 py-2.5 border-2 border-white text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
+                                className={`px-5 py-2.5 rounded-xl border-2 border-white text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
                                     assignment.type === 'text'
                                         ? 'bg-bauhaus-yellow text-bauhaus-black'
                                         : 'bg-transparent text-white/70 hover:bg-white/10'
@@ -544,7 +544,7 @@ const LessonDetail = () => {
                             </button>
                             <button
                                 onClick={() => setAssignment({ ...assignment, type: 'youtube' })}
-                                className={`px-5 py-2.5 border-2 border-white text-sm font-bold uppercase tracking-wide transition-colors duration-200 flex items-center gap-2 min-h-[44px] ${
+                                className={`px-5 py-2.5 rounded-xl border-2 border-white text-sm font-bold uppercase tracking-wide transition-colors duration-200 flex items-center gap-2 min-h-[44px] ${
                                     assignment.type === 'youtube'
                                         ? 'bg-bauhaus-yellow text-bauhaus-black'
                                         : 'bg-transparent text-white/70 hover:bg-white/10'
@@ -559,7 +559,7 @@ const LessonDetail = () => {
                                 rows="6"
                                 value={assignment.content}
                                 onChange={(e) => setAssignment({ ...assignment, content: e.target.value })}
-                                className="w-full px-6 py-5 bg-white/10 border-2 border-white focus:ring-2 focus:ring-bauhaus-yellow outline-none resize-none text-white placeholder:text-white/40 font-medium transition-colors duration-200"
+                                className="w-full px-6 py-5 rounded-xl bg-white/10 border-2 border-white focus:ring-2 focus:ring-bauhaus-yellow outline-none resize-none text-white placeholder:text-white/40 font-medium transition-colors duration-200"
                                 placeholder="在此輸入您的心得或作業內容..."
                             />
                         ) : (
@@ -568,11 +568,11 @@ const LessonDetail = () => {
                                     type="url"
                                     value={assignment.video_url}
                                     onChange={(e) => setAssignment({ ...assignment, video_url: e.target.value })}
-                                    className="w-full px-6 py-4 bg-white/10 border-2 border-white focus:ring-2 focus:ring-bauhaus-yellow outline-none text-white placeholder:text-white/40 font-medium transition-colors duration-200"
+                                    className="w-full px-6 py-4 rounded-xl bg-white/10 border-2 border-white focus:ring-2 focus:ring-bauhaus-yellow outline-none text-white placeholder:text-white/40 font-medium transition-colors duration-200"
                                     placeholder="貼上 YouTube 影片連結，例如 https://youtu.be/..."
                                 />
                                 {assignment.video_url && toEmbedUrl(assignment.video_url) !== assignment.video_url && (
-                                    <div className="aspect-video overflow-hidden bg-black border-2 border-white">
+                                    <div className="aspect-video overflow-hidden rounded-lg bg-black border-2 border-white">
                                         <iframe src={toEmbedUrl(assignment.video_url)} title="預覽" className="w-full h-full" allowFullScreen />
                                     </div>
                                 )}
@@ -582,7 +582,7 @@ const LessonDetail = () => {
                         <button
                             onClick={submitAssignment}
                             disabled={isSubmitting || (assignment.type === 'text' ? !assignment.content : !assignment.video_url)}
-                            className="w-full py-4 bg-bauhaus-yellow text-bauhaus-black font-black uppercase tracking-wide border-2 border-white shadow-hard-white hover:bg-bauhaus-yellow/90 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none min-h-[44px]"
+                            className="w-full py-4 rounded-xl bg-bauhaus-yellow text-bauhaus-black font-black uppercase tracking-wide border-2 border-white shadow-hard-white hover:bg-bauhaus-yellow/90 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none min-h-[44px]"
                         >
                             {isSubmitting ? '繳交中...' : '確認繳交作業'}
                         </button>
@@ -598,7 +598,7 @@ const LessonDetail = () => {
                 </h3>
 
                 {comments.length === 0 ? (
-                    <div className="text-center py-12 bg-white border-2 border-bauhaus-black">
+                    <div className="text-center py-12 bg-white border-2 border-bauhaus-black rounded-2xl">
                         <MessageSquare className="w-10 h-10 text-bauhaus-black/20 mx-auto mb-3" />
                         <p className="text-bauhaus-black/50 font-medium">目前還沒有留言，成為第一個留言的人吧！</p>
                     </div>
@@ -631,7 +631,7 @@ const LessonDetail = () => {
                                         <button
                                             onClick={() => toggleLike(c.id)}
                                             disabled={!currentUser}
-                                            className={`flex items-center gap-1.5 text-xs font-medium transition-colors duration-200 px-2.5 py-1.5 border-2 ${
+                                            className={`flex items-center gap-1.5 text-xs font-medium transition-colors duration-200 px-2.5 py-1.5 rounded-lg border-2 ${
                                                 liked
                                                     ? 'text-white bg-bauhaus-blue border-bauhaus-blue'
                                                     : 'text-bauhaus-black/50 border-transparent hover:text-bauhaus-blue hover:border-bauhaus-black/20'
@@ -653,14 +653,14 @@ const LessonDetail = () => {
                             rows="3"
                             value={newComment}
                             onChange={(e) => setNewComment(e.target.value)}
-                            className="w-full px-4 py-3 bg-bauhaus-paper border-2 border-bauhaus-black focus:ring-2 focus:ring-bauhaus-blue outline-none resize-none text-bauhaus-black placeholder:text-bauhaus-black/40 text-sm font-medium transition-colors duration-200"
+                            className="w-full px-4 py-3 rounded-xl bg-bauhaus-paper border-2 border-bauhaus-black focus:ring-2 focus:ring-bauhaus-blue outline-none resize-none text-bauhaus-black placeholder:text-bauhaus-black/40 text-sm font-medium transition-colors duration-200"
                             placeholder="輸入您的留言..."
                         />
                         <div className="flex justify-end mt-3">
                             <button
                                 onClick={submitComment}
                                 disabled={commentSubmitting || !newComment.trim()}
-                                className="flex items-center gap-2 px-5 py-2.5 bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide shadow-hard hover:bg-bauhaus-blue/90 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none min-h-[44px]"
+                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide shadow-hard hover:bg-bauhaus-blue/90 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none min-h-[44px]"
                             >
                                 <Send className="w-4 h-4" />
                                 {commentSubmitting ? '送出中...' : '送出留言'}
@@ -694,7 +694,7 @@ const LessonDetail = () => {
                 {prevLesson ? (
                     <Link
                         to={`/courses/${courseId}/lessons/${prevLesson.id}`}
-                        className="flex items-center gap-2 px-5 py-3 bg-white border-2 border-bauhaus-black text-sm font-bold text-bauhaus-black hover:bg-bauhaus-muted shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+                        className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white border-2 border-bauhaus-black text-sm font-bold text-bauhaus-black hover:bg-bauhaus-muted shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                         <ChevronLeft className="w-4 h-4" />
                         上一章節
@@ -709,7 +709,7 @@ const LessonDetail = () => {
                 {nextLesson ? (
                     <Link
                         to={`/courses/${courseId}/lessons/${nextLesson.id}`}
-                        className="flex items-center gap-2 px-5 py-3 bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold hover:bg-bauhaus-blue/90 shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+                        className="flex items-center gap-2 px-5 py-3 rounded-xl bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold hover:bg-bauhaus-blue/90 shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                         下一章節
                         <ChevronRight className="w-4 h-4" />
@@ -846,7 +846,7 @@ const CanvasViewer = ({ contents }) => {
                         <button
                             type="button"
                             onClick={() => setZoomed((z) => !z)}
-                            className="min-h-[44px] inline-flex items-center gap-1.5 px-4 border-2 border-bauhaus-black bg-white text-bauhaus-black text-xs font-bold uppercase tracking-wide active:bg-bauhaus-muted transition-colors duration-200"
+                            className="min-h-[44px] inline-flex items-center gap-1.5 px-4 rounded-xl border-2 border-bauhaus-black bg-white text-bauhaus-black text-xs font-bold uppercase tracking-wide active:bg-bauhaus-muted transition-colors duration-200"
                         >
                             {zoomed ? (
                                 <>

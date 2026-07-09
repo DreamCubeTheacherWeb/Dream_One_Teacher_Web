@@ -53,11 +53,11 @@ const AnnouncementDetail = () => {
 
             <article>
                 <div className="flex flex-wrap items-center gap-3 mb-4">
-                    <span className={`text-xs font-black px-3 py-1 uppercase tracking-wider border-2 border-bauhaus-black ${tagColor}`}>
+                    <span className={`text-xs font-black px-3 py-1 uppercase tracking-wider border-2 border-bauhaus-black rounded-lg ${tagColor}`}>
                         {announcement.tag}
                     </span>
                     {announcement.pinned && (
-                        <span className="text-xs font-black text-white bg-bauhaus-red px-3 py-1 border-2 border-bauhaus-black flex items-center gap-1">
+                        <span className="text-xs font-black text-white bg-bauhaus-red px-3 py-1 border-2 border-bauhaus-black rounded-lg flex items-center gap-1">
                             <Pin className="w-3 h-3" /> 置頂
                         </span>
                     )}
@@ -74,7 +74,7 @@ const AnnouncementDetail = () => {
                 </h1>
 
                 <div
-                    className="prose prose-slate max-w-none prose-img:rounded-none prose-img:border-2 prose-img:border-bauhaus-black prose-a:text-bauhaus-blue prose-headings:font-black prose-p:leading-relaxed [&_img]:max-w-full [&_img]:h-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
+                    className="prose prose-slate max-w-none prose-img:rounded-xl prose-img:border-2 prose-img:border-bauhaus-black prose-a:text-bauhaus-blue prose-headings:font-black prose-p:leading-relaxed [&_img]:max-w-full [&_img]:h-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
                     dangerouslySetInnerHTML={{ __html: announcement.content }}
                 />
             </article>

@@ -149,7 +149,7 @@ const ContractView = () => {
       </div>
 
       {contract.status === 'voided' && (
-        <div className="mb-6 bg-bauhaus-red border-2 border-bauhaus-black p-4 flex items-center gap-3">
+        <div className="mb-6 bg-bauhaus-red border-2 border-bauhaus-black rounded-2xl p-4 flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-white shrink-0" />
           <p className="text-sm font-bold text-white">此合約已作廢（因重新簽約）</p>
         </div>
@@ -157,7 +157,7 @@ const ContractView = () => {
 
       {/* Tabs */}
       <div className="mb-6 overflow-x-auto pb-1">
-        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
+        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black rounded-xl overflow-hidden divide-x-2 divide-bauhaus-black">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)}
               className={`flex items-center gap-1.5 px-4 py-3 md:py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 shrink-0 ${
@@ -176,7 +176,7 @@ const ContractView = () => {
         {activeTab === 'overview' && (
           <div className="p-6 sm:p-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 border-2 border-bauhaus-black bg-bauhaus-blue flex items-center justify-center">
+              <div className="w-12 h-12 border-2 border-bauhaus-black bg-bauhaus-blue rounded-lg flex items-center justify-center">
                 <CheckCircle2 className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -196,7 +196,7 @@ const ContractView = () => {
               <InfoRow icon={Calendar} label="簽約日期" value={new Date(contract.signed_at).toLocaleDateString('zh-TW')} />
             </div>
 
-            <div className="bg-bauhaus-paper border-2 border-bauhaus-black/10 p-4 text-sm text-bauhaus-black/60 space-y-1 mb-6">
+            <div className="bg-bauhaus-paper border-2 border-bauhaus-black/10 rounded-xl p-4 text-sm text-bauhaus-black/60 space-y-1 mb-6">
               <p className="font-bold text-bauhaus-black mb-2">文件版本</p>
               {Object.keys(docVersions).length > 0 ? (
                 Object.entries(docVersions).map(([k, v]) => {
@@ -215,7 +215,7 @@ const ContractView = () => {
             {signatureUrl && (
               <div>
                 <h4 className="text-sm font-bold text-bauhaus-black mb-2">甲方簽名</h4>
-                <div className="border-2 border-bauhaus-black p-4 bg-white">
+                <div className="border-2 border-bauhaus-black rounded-xl p-4 bg-white">
                   <img src={signatureUrl} alt="簽名" className="max-h-20 mx-auto" />
                 </div>
               </div>
@@ -242,7 +242,7 @@ const ContractView = () => {
 const InfoRow = ({ icon, label, value }) => {
   const Icon = icon;
   return (
-    <div className="flex items-start gap-3 p-3 border-2 border-bauhaus-black/10 bg-bauhaus-paper">
+    <div className="flex items-start gap-3 p-3 border-2 border-bauhaus-black/10 rounded-xl bg-bauhaus-paper">
       <Icon className="w-4 h-4 text-bauhaus-black/40 mt-0.5 shrink-0" />
       <div>
         <div className="text-xs text-bauhaus-black/50">{label}</div>

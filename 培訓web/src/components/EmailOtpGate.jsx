@@ -88,7 +88,7 @@ const OtpInput = ({ value, onChange, onComplete, disabled, invalid }) => {
                     onKeyDown={(e) => handleKeyDown(i, e)}
                     onFocus={(e) => e.target.select()}
                     aria-label={`驗證碼第 ${i + 1} 碼`}
-                    className={`w-11 h-14 sm:w-12 sm:h-14 text-center text-2xl font-black border-2 outline-none transition-all tabular-nums
+                    className={`w-11 h-14 sm:w-12 sm:h-14 text-center text-2xl font-black border-2 rounded-xl outline-none transition-all tabular-nums
                         ${invalid
                             ? 'border-bauhaus-red bg-bauhaus-red/10 text-bauhaus-red'
                             : d
@@ -213,7 +213,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
     if (verified) {
         return (
             <div
-                className="mb-6 p-5 bg-bauhaus-blue border-2 border-bauhaus-black shadow-hard"
+                className="mb-6 p-5 bg-bauhaus-blue border-2 border-bauhaus-black rounded-2xl shadow-hard"
                 style={{ animation: 'otp-pop 0.4s cubic-bezier(0.22,1,0.36,1)' }}
             >
                 <div className="flex items-center gap-3">
@@ -232,7 +232,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
     const step = !sent ? 1 : 2;
 
     return (
-        <div className="mb-6 p-5 bg-white border-2 border-bauhaus-black shadow-hard">
+        <div className="mb-6 p-5 bg-white border-2 border-bauhaus-black rounded-2xl shadow-hard">
             <h4 className="text-sm font-black text-bauhaus-black mb-1 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-bauhaus-blue" /> 本人身分驗證
             </h4>
@@ -260,7 +260,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
             ) : (
                 <div className="space-y-4">
                     {info && (
-                        <p className="text-xs text-bauhaus-black flex items-start gap-1.5 bg-bauhaus-cream border-2 border-bauhaus-black/10 px-3 py-2">
+                        <p className="text-xs text-bauhaus-black flex items-start gap-1.5 bg-bauhaus-cream border-2 border-bauhaus-black/10 rounded-xl px-3 py-2">
                             <MailCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {info}
                         </p>
                     )}

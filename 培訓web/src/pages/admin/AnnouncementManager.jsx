@@ -273,7 +273,7 @@ const AnnouncementManager = () => {
                     </div>
                 ))}
                 {announcements.length === 0 && (
-                    <div className="py-20 text-center bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30">
+                    <div className="py-20 text-center bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30 rounded-2xl">
                         <Megaphone className="w-10 h-10 text-bauhaus-black/20 mx-auto mb-3" />
                         <p className="text-bauhaus-black/40 font-bold">尚未建立任何公告</p>
                     </div>

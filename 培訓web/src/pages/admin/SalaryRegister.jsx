@@ -118,7 +118,7 @@ const SalaryRegister = () => {
                     <option value="approved">已核准</option>
                     <option value="paid">已付款</option>
                 </select>
-                <label className="inline-flex items-center gap-2 text-sm px-3 py-2 border-2 border-bauhaus-black cursor-pointer hover:bg-bauhaus-cream">
+                <label className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-xl border-2 border-bauhaus-black cursor-pointer hover:bg-bauhaus-cream">
                     <input type="checkbox" checked={anomalyOnly} onChange={e => setAnomalyOnly(e.target.checked)} className="w-5 h-5 accent-bauhaus-red" />
                     僅看異常
                 </label>
@@ -448,7 +448,7 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
 
                 {/* 異常提示 */}
                 {session.is_anomaly && session.anomaly_reasons?.length > 0 && (
-                    <div className="mx-6 mt-4 bg-bauhaus-red/10 border-2 border-bauhaus-red p-3 flex gap-2">
+                    <div className="mx-6 mt-4 bg-bauhaus-red/10 rounded-xl border-2 border-bauhaus-red p-3 flex gap-2">
                         <AlertTriangle className="w-4 h-4 text-bauhaus-red shrink-0 mt-0.5" />
                         <div className="text-sm">
                             <div className="font-bold text-bauhaus-red">系統偵測到異常</div>
@@ -459,7 +459,7 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
 
                 {/* 講師原本填的回報 */}
                 {(session.self_review || session.progress_note || session.incident_report) && (
-                    <div className="mx-6 mt-4 bg-bauhaus-cream border-2 border-bauhaus-black p-4 space-y-2">
+                    <div className="mx-6 mt-4 bg-bauhaus-cream rounded-xl border-2 border-bauhaus-black p-4 space-y-2">
                         <div className="text-xs font-bold text-bauhaus-black/70 flex items-center gap-1">
                             <MessageSquare className="w-3.5 h-3.5" /> 講師回報
                         </div>
@@ -515,7 +515,7 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
                 </div>
 
                 {/* 薪資區塊 */}
-                <div className="mx-6 mb-4 bg-bauhaus-cream border-2 border-bauhaus-black p-4">
+                <div className="mx-6 mb-4 bg-bauhaus-cream rounded-xl border-2 border-bauhaus-black p-4">
                     <div className="text-xs font-bold text-bauhaus-black/70 mb-3 uppercase tracking-widest">薪資設定</div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <Field label="基本薪資">
@@ -527,7 +527,7 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
                                 className="bh-input" />
                         </Field>
                         <Field label="總計(自動)">
-                            <div className="w-full px-3 py-2 bg-white border-2 border-bauhaus-black font-bold text-bauhaus-blue">
+                            <div className="w-full px-3 py-2 bg-white rounded-xl border-2 border-bauhaus-black font-bold text-bauhaus-blue">
                                 ${Math.round(total).toLocaleString()}
                             </div>
                         </Field>

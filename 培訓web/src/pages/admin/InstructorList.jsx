@@ -150,7 +150,7 @@ const InstructorList = () => {
                     <div className="flex items-center gap-2 flex-wrap">
                         <Link
                             to="/admin/claims"
-                            className={`inline-flex items-center gap-2 font-bold px-3 py-2.5 border-2 border-bauhaus-black transition-colors text-sm min-h-[44px] ${
+                            className={`inline-flex items-center gap-2 font-bold px-3 py-2.5 rounded-xl border-2 border-bauhaus-black transition-colors text-sm min-h-[44px] ${
                                 pendingClaimCount > 0
                                     ? 'bg-bauhaus-yellow text-bauhaus-black hover:bg-bauhaus-yellow/80'
                                     : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
@@ -391,7 +391,7 @@ const InstructorExpandedContent = ({ inst, urls }) => (
                     <InfoRow label="匯款帳戶" value={inst.bank_info_raw} />
                     <InfoRow label="想對團隊說" value={inst.note_to_team} />
                     {inst.note_internal && (
-                        <div className="bg-bauhaus-red/10 border-2 border-bauhaus-red px-3 py-2 mt-2">
+                        <div className="bg-bauhaus-red/10 border-2 border-bauhaus-red rounded-xl px-3 py-2 mt-2">
                             <div className="text-xs font-bold text-bauhaus-red mb-0.5">內部備註</div>
                             <div className="text-xs text-bauhaus-black whitespace-pre-wrap">{inst.note_internal}</div>
                         </div>
@@ -407,7 +407,7 @@ const InstructorExpandedContent = ({ inst, urls }) => (
                     const externalUrl = inst[`${key}_external_url`];
                     const storageUrl = urls[key];
                     return (
-                        <div key={key} className="border-2 border-bauhaus-black p-3">
+                        <div key={key} className="border-2 border-bauhaus-black rounded-xl p-3">
                             <div className="text-xs font-bold text-bauhaus-black/60 mb-2">{label}</div>
                             {storageUrl ? (
                                 <a href={storageUrl} target="_blank" rel="noopener noreferrer" className="block group">
@@ -418,13 +418,13 @@ const InstructorExpandedContent = ({ inst, urls }) => (
                                 </a>
                             ) : externalUrl ? (
                                 <a href={externalUrl} target="_blank" rel="noopener noreferrer"
-                                    className="block group w-full h-24 bg-bauhaus-yellow border-2 border-bauhaus-black flex flex-col items-center justify-center gap-1 hover:bg-bauhaus-yellow/80 transition-colors">
+                                    className="block group w-full h-24 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl flex flex-col items-center justify-center gap-1 hover:bg-bauhaus-yellow/80 transition-colors">
                                     <ExternalLink className="w-5 h-5 text-bauhaus-black" />
                                     <span className="text-xs font-bold text-bauhaus-black">Google Drive</span>
                                     <span className="text-[10px] text-bauhaus-black/70 group-hover:underline">點擊開啟</span>
                                 </a>
                             ) : (
-                                <div className="w-full h-24 bg-bauhaus-muted border-2 border-bauhaus-black/20 flex items-center justify-center text-xs text-bauhaus-black/40">
+                                <div className="w-full h-24 bg-bauhaus-muted border-2 border-bauhaus-black/20 rounded-xl flex items-center justify-center text-xs text-bauhaus-black/40">
                                     未上傳
                                 </div>
                             )}
@@ -824,7 +824,7 @@ const LinkInstructorModal = ({ inst, onClose, onLinked }) => {
                         <div className="space-y-1">
                             {filtered.slice(0, 50).map(u => (
                                 <label key={u.id}
-                                    className={`flex items-center gap-3 px-3 py-2 border-2 cursor-pointer hover:bg-bauhaus-cream ${selectedUserId === u.id ? 'bg-bauhaus-cream border-bauhaus-black' : 'border-transparent'}`}>
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-xl border-2 cursor-pointer hover:bg-bauhaus-cream ${selectedUserId === u.id ? 'bg-bauhaus-cream border-bauhaus-black' : 'border-transparent'}`}>
                                     <input
                                         type="radio" name="user"
                                         checked={selectedUserId === u.id}

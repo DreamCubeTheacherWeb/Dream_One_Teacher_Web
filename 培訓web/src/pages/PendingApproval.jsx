@@ -40,7 +40,7 @@ const PendingApproval = () => {
             <div className="absolute bottom-0 right-0 w-40 h-40 sm:w-56 sm:h-56 bg-bauhaus-blue/10 rotate-45" aria-hidden="true" />
 
             <div className="max-w-md w-full text-center relative">
-                <div className="w-20 h-20 bg-bauhaus-yellow border-2 border-bauhaus-black flex items-center justify-center mx-auto mb-6 shadow-hard">
+                <div className="w-20 h-20 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl flex items-center justify-center mx-auto mb-6 shadow-hard">
                     <Clock className="w-10 h-10 text-bauhaus-black" />
                 </div>
 
@@ -52,7 +52,7 @@ const PendingApproval = () => {
                     審核通過後即可瀏覽所有培訓課程內容。
                 </p>
 
-                <div className="bg-white border-2 border-bauhaus-black p-5 mb-8 text-left shadow-hard">
+                <div className="bg-white border-2 border-bauhaus-black rounded-2xl p-5 mb-8 text-left shadow-hard">
                     <div className="bh-label mb-3">帳號資訊</div>
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between">

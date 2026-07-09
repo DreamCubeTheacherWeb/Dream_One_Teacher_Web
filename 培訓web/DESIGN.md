@@ -37,10 +37,20 @@
 - 小標籤／欄位名：`.bh-label`（12px 全大寫寬字距）。
 - 內文：`font-medium leading-relaxed`。
 
-## 4. 形狀鐵律
+## 4. 形狀鐵律（2026-07-09 業主拍板改版：圓角矩形為主、直角當點綴）
 
-- 圓角**二元**：`rounded-none`（預設）或 `rounded-full`（圓形徽章、頭像、pill 按鈕）。
-  **禁止** `rounded-sm/md/lg/xl/2xl/3xl`。
+**圓角刻度（唯一標準）**：
+| 元件 | 圓角 |
+|---|---|
+| 大卡片／面板／modal／大 CTA 色塊卡 | `rounded-2xl` |
+| 按鈕／輸入框／select／tab 容器／表格容器 | `rounded-xl` |
+| chip／徽章／小標籤／進度條 | `rounded-lg`（想要 pill 感可 `rounded-full`） |
+| 頭像／圓形幾何 | `rounded-full` |
+
+- 圓角容器內含滿版色塊（表頭列、標題色帶）→ 容器加 `overflow-hidden` 裁切，內層不用自己圓角。
+- **保留直角（點綴，別動）**：幾何裝飾圖形（卡片角落的方形、旋轉 45° 方形、logo 三形、
+  clip-path 三角）、footer 三原色色帶、full-bleed 區段色塊、區段分隔線。
+- **仍然禁止** `rounded-none` 用在卡片／按鈕／輸入框（會回到舊直角風）與 `rounded-sm/md`（太小不成刻度）。
 - 邊框：`border-2`（手機）→ `lg:border-4`（桌機），一律 `border-bauhaus-black`。
   區段分隔用 `border-b-4 border-bauhaus-black`。
 - 陰影：只准 `shadow-hard*` 系列。**禁止** `shadow-sm/md/lg/xl/2xl`（柔陰影）。
@@ -61,13 +71,17 @@
 
 ## 6. 常見元件寫法
 
-- **分頁 tab**：選中＝`bg-bauhaus-black text-white`（或區段主色底），未選＝白底黑框；容器用 `border-2 border-bauhaus-black` 包起來，格與格 `divide-x-2 divide-bauhaus-black`，全部直角。
-- **表格**：`border-2 lg:border-4 border-bauhaus-black`；表頭 `bg-bauhaus-black text-white uppercase tracking-wider text-xs`；列分隔 `divide-y-2 divide-bauhaus-black/20`；hover 列 `hover:bg-bauhaus-cream`。
-- **Modal**：面板＝`bh-card` 加大陰影 `shadow-hard-lg`；標題列底色用區段主色；遮罩 `bg-bauhaus-black/60`（不模糊）。
+- **分頁 tab**：選中＝`bg-bauhaus-black text-white`（或區段主色底），未選＝白底黑框；容器用 `border-2 border-bauhaus-black rounded-xl overflow-hidden` 包起來，格與格 `divide-x-2 divide-bauhaus-black`。
+- **表格**：容器 `border-2 lg:border-4 border-bauhaus-black rounded-xl overflow-hidden`；表頭 `bg-bauhaus-black text-white uppercase tracking-wider text-xs`（表頭列本身不用圓角，容器裁切）；列分隔 `divide-y-2 divide-bauhaus-black/20`；hover 列 `hover:bg-bauhaus-cream`。
+- **Modal**：面板＝`bh-card`（rounded-2xl）加大陰影 `shadow-hard-lg`＋`overflow-hidden`（若含滿版標題色帶）；遮罩 `bg-bauhaus-black/60`（不模糊）。
+- **icon 容器**（stat 卡圖示方塊、通知類型圖示、文件類型圖示等 w-8~12 黑框小盒）：一律 `rounded-lg`。
+- **checkbox**：用原生外觀＋`accent-color`。注意：原生 checkbox 會**忽略** `rounded-*`／`border-*`
+  class（要生效得 `appearance-none` 自繪，不值得），所以 className 寫什麼都不影響外觀，
+  全站原生樣式本來就一致，別為它糾結。
 - **空狀態**：幾何圖形（圓／方／三角一組）＋ `font-black` 標題＋一句說明＋一顆 `.bh-btn` CTA。
 - **stat 卡**：數字 `font-black text-4xl`＋`tabular-nums`；卡片角落放 8-16px 幾何裝飾（紅圓／藍方／黃三角輪替；三角用 `clip-path:polygon(50% 0%,0% 100%,100% 100%)`）。
 - **頭像／人像**：`rounded-full` ＋ `border-2 border-bauhaus-black`；裝飾性圖片可 `grayscale hover:grayscale-0`（功能性圖片如證件照、課程截圖**不要**灰階）。
-- **通知鈴鐺／icon 鈕**：方形黑框容器；未讀數＝紅底白字方形小塊。
+- **通知鈴鐺／icon 鈕**：`rounded-xl` 黑框容器；未讀數＝紅底白字 `rounded-full` 小塊。
 - **色塊區段**（行銷型頁面用）：整段 `bg-bauhaus-blue/red/yellow` 純色底；深色底上文字白色、卡片用 `shadow-hard-white`；黃底上一律黑字。admin 頁維持紙白底，靠卡片與黑框做層次。
 - **幾何 logo**（Layout 導覽列）：紅圓＋藍方＋黃三角三個 16px 圖形並排，加公司 logo 圖。
 

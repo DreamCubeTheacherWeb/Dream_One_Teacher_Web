@@ -319,28 +319,28 @@ const TeacherManager = () => {
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-8">
                 <div className="bh-card p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-yellow text-bauhaus-black flex items-center justify-center shrink-0"><Clock className="w-5 h-5" /></div>
+                    <div className="w-10 h-10 rounded-lg border-2 border-bauhaus-black bg-bauhaus-yellow text-bauhaus-black flex items-center justify-center shrink-0"><Clock className="w-5 h-5" /></div>
                     <div>
                         <div className="text-2xl font-black text-bauhaus-black tabular-nums">{pendingUsers.length}</div>
                         <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">待審核</div>
                     </div>
                 </div>
                 <div className="bh-card p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black flex items-center justify-center shrink-0"><Users className="w-5 h-5" /></div>
+                    <div className="w-10 h-10 rounded-lg border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black flex items-center justify-center shrink-0"><Users className="w-5 h-5" /></div>
                     <div>
                         <div className="text-2xl font-black text-bauhaus-black tabular-nums">{teacherUsers.length + teacherInvites.length}</div>
                         <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">已登入講師</div>
                     </div>
                 </div>
                 <div className="bh-card p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-blue text-white flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5" /></div>
+                    <div className="w-10 h-10 rounded-lg border-2 border-bauhaus-black bg-bauhaus-blue text-white flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5" /></div>
                     <div>
                         <div className="text-2xl font-black text-bauhaus-black tabular-nums">{mentorUsers.length + mentorInvites.length}</div>
                         <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">輔導員</div>
                     </div>
                 </div>
                 <div className="bh-card p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-black text-white flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5" /></div>
+                    <div className="w-10 h-10 rounded-lg border-2 border-bauhaus-black bg-bauhaus-black text-white flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5" /></div>
                     <div>
                         <div className="text-2xl font-black text-bauhaus-black tabular-nums">{adminUsers.length + adminInvites.length}</div>
                         <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">管理員</div>
@@ -383,17 +383,18 @@ const TeacherManager = () => {
 
             {/* Tabs + Search + Toggle */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
-                <div className="inline-flex flex-wrap border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black overflow-hidden">
+                {/* 6 顆 tab 手機會換行：改各自帶框＋gap，換行不會出現容器缺角 */}
+                <div className="flex flex-wrap gap-2">
                     {[
                         { key: 'pending', label: '待審核', count: pendingUsers.length },
                         { key: 'teacher', label: '講師名冊', count: teacherUsers.length + teacherInvites.length + orphanActive.length },
                         { key: 'mentor', label: '輔導員', count: mentorUsers.length + mentorInvites.length },
                         { key: 'admin', label: '管理員', count: adminUsers.length + adminInvites.length },
-                        { key: 'inactive', label: '未啟用講師', count: inactiveInstructors.length },
                         { key: 'other', label: '其他狀態', count: otherStatusInstructors.length },
+                        { key: 'inactive', label: '未啟用講師', count: inactiveInstructors.length },
                     ].map(t => (
                         <button key={t.key} onClick={() => { setTab(t.key); setExpandedId(null); }}
-                            className={`px-4 py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
+                            className={`px-4 py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] rounded-xl border-2 border-bauhaus-black ${
                                 tab === t.key ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
                             }`}>
                             {t.label} ({t.count})
@@ -423,7 +424,7 @@ const TeacherManager = () => {
             {tab === 'pending' && pendingUsers.length > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 bh-card p-4 mb-6">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 border-2 border-bauhaus-black bg-bauhaus-yellow text-bauhaus-black flex items-center justify-center shrink-0"><AlertCircle className="w-4 h-4" /></div>
+                        <div className="w-8 h-8 rounded-lg border-2 border-bauhaus-black bg-bauhaus-yellow text-bauhaus-black flex items-center justify-center shrink-0"><AlertCircle className="w-4 h-4" /></div>
                         <span className="text-sm font-bold text-bauhaus-black">有 {pendingUsers.length} 位使用者正在等待審核</span>
                     </div>
                     <button onClick={handleBatchApprove}
@@ -441,8 +442,8 @@ const TeacherManager = () => {
                          tab === 'teacher' ? '目前沒有講師' :
                          tab === 'mentor' ? '目前沒有輔導員' :
                          tab === 'admin' ? '目前沒有管理員' :
-                         '目前沒有未啟用講師'}
                          tab === 'other' ? '目前沒有其他狀態的講師' :
+                         '目前沒有未啟用講師'}
                     </div>
                 )}
                 {filteredList.map(item => {
@@ -711,7 +712,7 @@ const TeacherManager = () => {
                                                     <select
                                                         value={item.mentor_name || ''}
                                                         onChange={e => handleMentorChange(item.id, e.target.value)}
-                                                        className={`text-sm w-32 px-3 py-2 border-2 border-bauhaus-black outline-none cursor-pointer transition-colors ${
+                                                        className={`text-sm w-32 px-3 py-2 rounded-xl border-2 border-bauhaus-black outline-none cursor-pointer transition-colors ${
                                                             item.mentor_name
                                                                 ? 'bg-bauhaus-blue text-white'
                                                                 : 'bg-white text-bauhaus-black/50'

@@ -245,7 +245,7 @@ const DownloadCenter = () => {
         </div>
 
         {forms.length === 0 ? (
-          <div className="bg-bauhaus-yellow/20 border-2 border-bauhaus-black p-4 text-sm text-bauhaus-black flex items-start gap-2">
+          <div className="bg-bauhaus-yellow/20 rounded-xl border-2 border-bauhaus-black p-4 text-sm text-bauhaus-black flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
               尚未設定任何「表單」類型的模板。請至「合約管理」上傳 PDF 模板，並把
@@ -258,7 +258,7 @@ const DownloadCenter = () => {
               <button
                 key={f.doc_type}
                 onClick={() => setSelectedForm(f.doc_type)}
-                className={`px-4 py-2 text-sm font-bold transition-all border-2 border-bauhaus-black ${
+                className={`px-4 py-2 text-sm font-bold transition-all rounded-xl border-2 border-bauhaus-black ${
                   selectedForm === f.doc_type
                     ? 'bg-bauhaus-black text-white'
                     : 'bg-white text-bauhaus-black hover:bg-bauhaus-cream'
@@ -317,14 +317,14 @@ const DownloadCenter = () => {
       </div>
 
       {generating && progress.current && (
-        <div className="bg-bauhaus-blue/10 border-2 border-bauhaus-blue p-3 mb-3 text-sm text-bauhaus-blue flex items-center gap-2">
+        <div className="bg-bauhaus-blue/10 rounded-2xl border-2 border-bauhaus-blue p-3 mb-3 text-sm text-bauhaus-blue flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
           正在處理：<strong>{progress.current}</strong>
         </div>
       )}
 
       {errors.length > 0 && (
-        <div className="bg-bauhaus-red/10 border-2 border-bauhaus-red p-3 mb-3 text-sm text-bauhaus-red">
+        <div className="bg-bauhaus-red/10 rounded-2xl border-2 border-bauhaus-red p-3 mb-3 text-sm text-bauhaus-red">
           <div className="font-bold flex items-center gap-1 mb-1">
             <FileWarning className="w-4 h-4" /> 部分失敗（{errors.length} 筆）
           </div>

@@ -54,7 +54,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
           <span>閱讀進度</span>
           <span className="font-mono">{currentPage} / {numPages || '...'}</span>
         </div>
-        <div className="w-full bg-bauhaus-muted border-2 border-bauhaus-black h-2 overflow-hidden">
+        <div className="w-full bg-bauhaus-muted border-2 border-bauhaus-black rounded-lg h-2 overflow-hidden">
           <div
             className="h-full bg-bauhaus-blue transition-all duration-500 ease-out"
             style={{ width: numPages ? `${(currentPage / numPages) * 100}%` : '0%' }}
@@ -74,7 +74,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
         </button>
 
         {/* Page container with peek effect */}
-        <div className="relative overflow-hidden border-2 lg:border-4 border-bauhaus-black shadow-hard bg-white cursor-pointer group"
+        <div className="relative overflow-hidden border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard bg-white cursor-pointer group"
           onClick={() => setZoomPage(currentPage)}
         >
           <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess} loading={
@@ -139,7 +139,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
       {/* Zoom Modal */}
       {zoomPage && (
         <div className="fixed inset-0 z-50 bg-bauhaus-black/80 flex items-center justify-center p-4" onClick={() => setZoomPage(null)}>
-          <div className="relative max-w-full max-h-full overflow-auto bg-white border-2 lg:border-4 border-bauhaus-black shadow-hard-lg" onClick={e => e.stopPropagation()}>
+          <div className="relative max-w-full max-h-full overflow-auto bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard-lg" onClick={e => e.stopPropagation()}>
             <button
               onClick={() => setZoomPage(null)}
               className="absolute top-3 right-3 z-10 p-3 md:p-2 bg-white border-2 border-bauhaus-black rounded-full shadow-hard-sm hover:bg-bauhaus-muted transition-all duration-200"
@@ -160,7 +160,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
               <button
                 onClick={() => setZoomPage(Math.max(1, zoomPage - 1))}
                 disabled={zoomPage <= 1}
-                className="p-3 md:p-2 border-2 border-bauhaus-black hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200"
+                className="p-3 md:p-2 border-2 border-bauhaus-black rounded-xl hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -168,7 +168,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
               <button
                 onClick={() => setZoomPage(Math.min(numPages, zoomPage + 1))}
                 disabled={zoomPage >= numPages}
-                className="p-3 md:p-2 border-2 border-bauhaus-black hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200"
+                className="p-3 md:p-2 border-2 border-bauhaus-black rounded-xl hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>

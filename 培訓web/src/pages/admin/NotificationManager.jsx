@@ -315,7 +315,7 @@ const NotificationManager = () => {
                             </span>
                         )}
                         {sendResult?.type === 'backend-missing' && (
-                            <span className="inline-flex items-start gap-1 text-sm font-bold text-bauhaus-black bg-bauhaus-yellow px-2 py-1">
+                            <span className="inline-flex items-start gap-1 text-sm font-bold text-bauhaus-black bg-bauhaus-yellow rounded-lg px-2 py-1">
                                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {sendResult.msg}
                             </span>
                         )}
@@ -413,7 +413,7 @@ const NotificationManager = () => {
                             </span>
                         )}
                         {scheduleResult?.type === 'backend-missing' && (
-                            <span className="inline-flex items-start gap-1 text-sm font-bold text-bauhaus-black bg-bauhaus-yellow px-2 py-1">
+                            <span className="inline-flex items-start gap-1 text-sm font-bold text-bauhaus-black bg-bauhaus-yellow rounded-lg px-2 py-1">
                                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {scheduleResult.msg}
                             </span>
                         )}

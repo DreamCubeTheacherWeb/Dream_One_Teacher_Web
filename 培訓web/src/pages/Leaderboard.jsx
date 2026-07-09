@@ -102,17 +102,17 @@ const PillButton = ({ active, onClick, disabled, children }) => (
 
 const LoadingSkeleton = () => (
     <div>
-        <div className="h-40 rounded-none border-2 border-bauhaus-black/10 bg-bauhaus-muted animate-pulse mb-6" />
+        <div className="h-40 rounded-2xl border-2 border-bauhaus-black/10 bg-bauhaus-muted animate-pulse mb-6" />
         <div className="space-y-3">
             {[...Array(5)].map((_, i) => (
-                <div key={i} className="h-16 rounded-none border-2 border-bauhaus-black/10 bg-bauhaus-muted animate-pulse" />
+                <div key={i} className="h-16 rounded-xl border-2 border-bauhaus-black/10 bg-bauhaus-muted animate-pulse" />
             ))}
         </div>
     </div>
 );
 
 const ErrorState = ({ title = '排行榜載入失敗', desc = '請稍後再試，或重新整理頁面。' }) => (
-    <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard py-16 text-center">
+    <div className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard py-16 text-center">
         <div className="w-16 h-16 bg-bauhaus-red/10 border-2 border-bauhaus-red rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertTriangle className="w-8 h-8 text-bauhaus-red" />
         </div>
@@ -124,7 +124,7 @@ const ErrorState = ({ title = '排行榜載入失敗', desc = '請稍後再試�
 const EmptyState = ({ icon, title, desc }) => {
     const Icon = icon || Timer;
     return (
-        <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard py-16 text-center">
+        <div className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard py-16 text-center">
             <div className="w-16 h-16 bg-bauhaus-muted border-2 border-bauhaus-black rounded-full flex items-center justify-center mx-auto mb-4">
                 <Icon className="w-8 h-8 text-bauhaus-black/40" />
             </div>
@@ -389,14 +389,14 @@ const Leaderboard = () => {
 
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
-            <div className="mb-6 flex items-start gap-3 bg-bauhaus-yellow border-2 lg:border-4 border-bauhaus-black px-4 py-3 shadow-hard">
+            <div className="mb-6 flex items-start gap-3 bg-bauhaus-yellow rounded-2xl border-2 lg:border-4 border-bauhaus-black px-4 py-3 shadow-hard">
                 <span aria-hidden="true" className="mt-1 shrink-0 w-0 h-0 border-l-[9px] border-r-[9px] border-b-[15px] border-l-transparent border-r-transparent border-b-bauhaus-black" />
                 <p className="text-sm sm:text-base font-bold text-bauhaus-black leading-relaxed">
                     資料陸續整理中，當前數據很可能會不準，僅供參考
                 </p>
             </div>
             <div className="mb-6 overflow-x-auto">
-                <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
+                <div className="inline-flex rounded-xl overflow-hidden border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
                     <TabButton active={tab === 'teaching'} onClick={() => setTab('teaching')}>教學時數</TabButton>
                     <TabButton active={tab === 'cube'} onClick={() => setTab('cube')}>方塊競速</TabButton>
                     <TabButton active={tab === 'wca'} onClick={() => setTab('wca')}>WCA 賽事</TabButton>
@@ -442,7 +442,7 @@ const Leaderboard = () => {
             {tab === 'cube' && (
                 <div>
                     <div className="mb-6 overflow-x-auto">
-                        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
+                        <div className="inline-flex rounded-xl overflow-hidden border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
                             <TabButton active={cubeMode === 'virtual'} onClick={() => setCubeMode('virtual')}>鍵盤模式</TabButton>
                             <TabButton active={cubeMode === 'physical'} onClick={() => setCubeMode('physical')}>實體計時</TabButton>
                         </div>
@@ -473,7 +473,7 @@ const Leaderboard = () => {
             {tab === 'wca' && (
                 <div>
                     <div className="mb-6 overflow-x-auto">
-                        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
+                        <div className="inline-flex rounded-xl overflow-hidden border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
                             <TabButton active={wcaMode === 'event'} onClick={() => setWcaMode('event')}>各項目</TabButton>
                             <TabButton active={wcaMode === 'allaround'} onClick={() => setWcaMode('allaround')}>🌀 全能王</TabButton>
                         </div>
@@ -493,7 +493,7 @@ const Leaderboard = () => {
                                     <select
                                         disabled
                                         value=""
-                                        className="px-4 py-2.5 min-h-[44px] rounded-none bg-bauhaus-muted border-2 border-bauhaus-black/10 text-bauhaus-black/30 cursor-not-allowed"
+                                        className="px-4 py-2.5 min-h-[44px] rounded-xl bg-bauhaus-muted border-2 border-bauhaus-black/10 text-bauhaus-black/30 cursor-not-allowed"
                                     >
                                         <option value="">項目</option>
                                     </select>
@@ -510,7 +510,7 @@ const Leaderboard = () => {
                                     <select
                                         value={wcaEvent || ''}
                                         onChange={(e) => setWcaEvent(e.target.value)}
-                                        className="px-4 py-2.5 min-h-[44px] rounded-none bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted"
+                                        className="px-4 py-2.5 min-h-[44px] rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted"
                                     >
                                         {wcaEvents.map((ev) => (
                                             <option key={ev.event_id} value={ev.event_id}>{wcaEventName(ev.event_id)}</option>

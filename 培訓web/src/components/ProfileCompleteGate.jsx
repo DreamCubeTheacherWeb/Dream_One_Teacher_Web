@@ -87,12 +87,12 @@ const ProfileCompleteGate = () => {
   return (
     <div className="max-w-4xl mx-auto px-4 pt-4">
       <div
-        className={`p-4 sm:p-5 border-2 border-bauhaus-black flex items-start gap-3 ${
+        className={`p-4 sm:p-5 border-2 border-bauhaus-black rounded-2xl flex items-start gap-3 ${
           overdue ? 'bg-bauhaus-red/10' : 'bg-bauhaus-yellow/20'
         }`}
       >
         <div
-          className={`w-10 h-10 border-2 border-bauhaus-black flex items-center justify-center shrink-0 font-black text-lg ${
+          className={`w-10 h-10 border-2 border-bauhaus-black rounded-lg flex items-center justify-center shrink-0 font-black text-lg ${
             overdue ? 'bg-bauhaus-red text-white' : 'bg-bauhaus-yellow text-bauhaus-black'
           }`}
         >

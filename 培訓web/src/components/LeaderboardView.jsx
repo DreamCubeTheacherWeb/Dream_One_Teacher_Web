@@ -106,11 +106,11 @@ const LeaderboardView = ({
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
             {/* Header */}
-            <div className={`relative overflow-hidden ${ACCENT[activeTab.accent]} border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-6 sm:p-8 text-white mb-6`}>
+            <div className={`relative overflow-hidden rounded-2xl ${ACCENT[activeTab.accent]} border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-6 sm:p-8 text-white mb-6`}>
                 <div className="pointer-events-none absolute -right-8 -top-10 w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-white/10" />
                 <div className="pointer-events-none absolute right-10 bottom-0 w-20 h-20 sm:w-24 sm:h-24 bg-white/10 rotate-45" />
                 <div className="relative flex items-center gap-3">
-                    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-white border-2 border-bauhaus-black flex items-center justify-center shrink-0">
                         <HeaderIcon className="w-6 h-6 sm:w-7 sm:h-7 text-bauhaus-blue" />
                     </div>
                     <div>
@@ -119,7 +119,7 @@ const LeaderboardView = ({
                     </div>
                 </div>
                 {myRow && (
-                    <div className="relative mt-5 bg-white/10 border-2 border-white px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <div className="relative mt-5 bg-white/10 rounded-xl border-2 border-white px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                         <span className="text-sm font-medium text-white/90 whitespace-nowrap">你目前的名次</span>
                         <span className="text-2xl font-black tabular-nums leading-none">#{myRankIndex + 1}</span>
                         <span className="w-full sm:w-auto sm:ml-auto text-sm text-white/80 whitespace-nowrap">
@@ -140,7 +140,7 @@ const LeaderboardView = ({
             )}
 
             {sorted.length === 0 ? (
-                <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard py-16 text-center">
+                <div className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard py-16 text-center">
                     <div className="w-16 h-16 bg-bauhaus-muted border-2 border-bauhaus-black rounded-full flex items-center justify-center mx-auto mb-4">
                         <HeaderIcon className="w-8 h-8 text-bauhaus-black/40" />
                     </div>
@@ -195,7 +195,7 @@ const LeaderboardView = ({
                                             <MilestoneChip hours={r.total_hours} small />
                                         </div>
                                         <div
-                                            className={`mt-1 w-full ${p.h} border-2 lg:border-4 border-bauhaus-black border-b-0 ${p.pedestal} flex items-start justify-center pt-2 origin-bottom`}
+                                            className={`mt-1 w-full ${p.h} rounded-t-2xl border-2 lg:border-4 border-bauhaus-black border-b-0 ${p.pedestal} flex items-start justify-center pt-2 origin-bottom`}
                                             style={{ animation: 'lb-rise 0.55s cubic-bezier(0.22,1,0.36,1) both', animationDelay: `${i * 90 + 120}ms` }}
                                         >
                                             <span className={`text-3xl sm:text-5xl font-black ${p.pedestalText} tabular-nums`}>{rank}</span>
@@ -208,7 +208,7 @@ const LeaderboardView = ({
 
                     {/* 其餘名次列表 */}
                     {rest.length > 0 && (
-                        <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard overflow-hidden divide-y-2 divide-bauhaus-black/20">
+                        <div className="bg-white rounded-2xl border-2 lg:border-4 border-bauhaus-black shadow-hard overflow-hidden divide-y-2 divide-bauhaus-black/20">
                             {rest.map((r) => {
                                 const rank = sorted.findIndex((x) => x.instructor_id === r.instructor_id) + 1;
                                 const isMe = r.user_id && r.user_id === currentUserId;

@@ -69,7 +69,7 @@ const CourseList = () => {
             </div>
 
             {!instructorRole && profile?.role !== 'admin' && (
-                <div className="mb-6 bg-bauhaus-yellow/20 border-2 border-bauhaus-black p-5 flex items-center gap-3">
+                <div className="mb-6 bg-bauhaus-yellow/20 border-2 border-bauhaus-black rounded-2xl p-5 flex items-center gap-3">
                     <Lock className="w-5 h-5 text-bauhaus-black shrink-0" />
                     <p className="text-bauhaus-black text-sm font-bold">
                         您的講師等級尚未設定，目前僅能瀏覽公開課程。請先完成個人資料填寫，並通知管理員審核。
@@ -93,7 +93,7 @@ const CourseList = () => {
                                 style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
                             />
                             <div className="flex items-start justify-between mb-4">
-                                <div className="w-12 h-12 bg-bauhaus-blue/10 border-2 border-bauhaus-black flex items-center justify-center text-bauhaus-blue group-hover:bg-bauhaus-blue group-hover:text-white transition-colors duration-200">
+                                <div className="w-12 h-12 bg-bauhaus-blue/10 border-2 border-bauhaus-black rounded-lg flex items-center justify-center text-bauhaus-blue group-hover:bg-bauhaus-blue group-hover:text-white transition-colors duration-200">
                                     <Book className="w-6 h-6" />
                                 </div>
                                 {course.visibility && course.visibility !== 'all' && (
@@ -127,7 +127,7 @@ const CourseList = () => {
                         );
                     })
                 ) : (
-                    <div className="col-span-full py-20 text-center bg-white border-2 border-bauhaus-black">
+                    <div className="col-span-full py-20 text-center bg-white border-2 border-bauhaus-black rounded-2xl">
                         <div className="flex items-center justify-center gap-2 mb-4" aria-hidden="true">
                             <span className="w-4 h-4 rounded-full bg-bauhaus-red" />
                             <span className="w-4 h-4 bg-bauhaus-blue" />

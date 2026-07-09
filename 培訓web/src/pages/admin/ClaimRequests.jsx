@@ -79,7 +79,7 @@ const ClaimRequests = () => {
                 </p>
             </div>
 
-            <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black mb-6">
+            <div className="inline-flex rounded-xl border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black overflow-hidden mb-6">
                 {TABS.map(t => (
                     <button
                         key={t.key}
@@ -180,7 +180,7 @@ const ClaimCard = ({ claim, expanded, onToggle, onApprove, onReject }) => {
                     </div>
 
                     {claim.message && (
-                        <div className="mt-3 bg-bauhaus-yellow border-2 border-bauhaus-black p-3">
+                        <div className="mt-3 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl p-3">
                             <div className="text-xs font-bold text-bauhaus-black flex items-center gap-1 mb-1">
                                 <MessageSquare className="w-3 h-3" /> 申請說明
                             </div>
@@ -231,7 +231,7 @@ const Block = ({ title, tone, children }) => {
         black: 'bg-bauhaus-muted border-bauhaus-black',
     }[tone] || 'bg-white border-bauhaus-black';
     return (
-        <div className={`${toneCls} border-2 p-3`}>
+        <div className={`${toneCls} border-2 rounded-xl p-3`}>
             <div className="bh-label mb-2">{title}</div>
             <div className="space-y-1">{children}</div>
         </div>

@@ -83,7 +83,7 @@ const MySalaryNew = () => {
                 </p>
             </div>
 
-            <div className="bg-bauhaus-yellow border-2 border-bauhaus-black p-4 mb-6 flex gap-3">
+            <div className="bg-bauhaus-yellow border-2 border-bauhaus-black rounded-2xl p-4 mb-6 flex gap-3">
                 <AlertCircle className="w-5 h-5 text-bauhaus-black shrink-0 mt-0.5" />
                 <div className="text-sm text-bauhaus-black">
                     <div className="font-bold">薪資金額不需要您填寫</div>
@@ -162,7 +162,7 @@ const MySalaryNew = () => {
                         className="bh-input" />
                 </Field>
 
-                {error && <div className="text-sm font-bold text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2">{error}</div>}
+                {error && <div className="text-sm font-bold text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-xl px-3 py-2">{error}</div>}
 
                 <div className="flex justify-end gap-3 pt-2">
                     <Link to="/my/salary" className="bh-btn-ghost px-5 py-2.5">取消</Link>

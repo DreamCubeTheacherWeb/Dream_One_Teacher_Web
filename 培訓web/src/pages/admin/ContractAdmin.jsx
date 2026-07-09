@@ -266,7 +266,7 @@ const ContractAdmin = () => {
 
         {/* Add doc modal */}
         {showAddDoc && (
-          <div className="mb-4 bg-bauhaus-cream border-2 lg:border-4 border-bauhaus-black p-5">
+          <div className="mb-4 bg-bauhaus-cream rounded-2xl border-2 lg:border-4 border-bauhaus-black p-5">
             <h3 className="font-black text-bauhaus-black mb-3">新增合約文件類型</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
               <div>
@@ -308,7 +308,7 @@ const ContractAdmin = () => {
               </div>
             </div>
             {newDocCategory === 'form' && (
-              <div className="bg-white border-2 border-bauhaus-black p-3 mb-3 text-xs text-bauhaus-black/80 font-medium">
+              <div className="bg-white rounded-xl border-2 border-bauhaus-black p-3 mb-3 text-xs text-bauhaus-black/80 font-medium">
                 💡 行政表單會出現在「表單下載中心」，由管理員批次下載；不會進入講師簽約流程。
               </div>
             )}
@@ -343,7 +343,7 @@ const ContractAdmin = () => {
                         <ChevronDown className="w-4 h-4 text-bauhaus-black/50" />
                       </button>
                     </div>
-                    <div className={`w-10 h-10 border-2 border-bauhaus-black flex items-center justify-center shrink-0 ${isFillSign ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black'}`}>
+                    <div className={`w-10 h-10 rounded-lg border-2 border-bauhaus-black flex items-center justify-center shrink-0 ${isFillSign ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black'}`}>
                       {isFillSign ? <PenTool className="w-5 h-5" /> : <BookOpen className="w-5 h-5" />}
                     </div>
                     <div className="min-w-0">
@@ -557,7 +557,7 @@ const StatCard = ({ icon, label, value, idx = 0 }) => {
   return (
   <div className="bh-card bh-card-hover relative p-5 flex items-center gap-4">
     {statDeco(idx)}
-    <div className="w-11 h-11 border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+    <div className="w-11 h-11 rounded-lg border-2 border-bauhaus-black flex items-center justify-center shrink-0">
       <Icon className="w-5 h-5" />
     </div>
     <div>

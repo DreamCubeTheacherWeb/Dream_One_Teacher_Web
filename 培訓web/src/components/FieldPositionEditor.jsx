@@ -206,7 +206,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPreviewMode(!previewMode)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
                 previewMode ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
               }`}
             >
@@ -216,12 +216,12 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide hover:bg-bauhaus-blue/90 shadow-hard transition-colors duration-200 disabled:opacity-40 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-bauhaus-blue text-white border-2 border-bauhaus-black rounded-xl text-sm font-bold uppercase tracking-wide hover:bg-bauhaus-blue/90 shadow-hard transition-colors duration-200 disabled:opacity-40 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
             >
               <Save className="w-4 h-4" />
               {saving ? '儲存中...' : '儲存'}
             </button>
-            <button onClick={onClose} className="p-1.5 border-2 border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]">
+            <button onClick={onClose} className="p-1.5 rounded-xl border-2 border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]">
               <X className="w-5 h-5 text-bauhaus-black" />
             </button>
           </div>
@@ -235,7 +235,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="p-1.5 border-2 border-bauhaus-black bg-white hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200 min-h-[44px] min-w-[44px]"
+                className="p-1.5 rounded-xl border-2 border-bauhaus-black bg-white hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200 min-h-[44px] min-w-[44px]"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -245,7 +245,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
               <button
                 onClick={() => setCurrentPage(p => Math.min(numPages || p, p + 1))}
                 disabled={currentPage >= (numPages || 1)}
-                className="p-1.5 border-2 border-bauhaus-black bg-white hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200 min-h-[44px] min-w-[44px]"
+                className="p-1.5 rounded-xl border-2 border-bauhaus-black bg-white hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200 min-h-[44px] min-w-[44px]"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
@@ -380,7 +380,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
                           <button
                             key={def.type}
                             onClick={() => addField(def.type)}
-                            className="w-full flex items-center gap-2 px-2.5 py-2 border-2 border-bauhaus-black/20 hover:border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 text-left min-h-[44px]"
+                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 border-bauhaus-black/20 hover:border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 text-left min-h-[44px]"
                           >
                             <div
                               className="w-7 h-7 flex items-center justify-center shrink-0 border-2 border-bauhaus-black"
@@ -415,7 +415,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
                     const def = getFieldDef(f.fieldType);
                     if (!def) return null;
                     return (
-                      <div key={f.id} className="flex items-center justify-between px-2 py-1.5 bg-bauhaus-paper border-2 border-bauhaus-black/10">
+                      <div key={f.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-bauhaus-paper border-2 border-bauhaus-black/10">
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: def.color }} />
                           <span className="text-xs font-bold text-bauhaus-black">{def.label}</span>
@@ -444,7 +444,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
                   <button
                     key={pg}
                     onClick={() => setCurrentPage(pg)}
-                    className={`w-full flex items-center justify-between px-2 py-1.5 text-xs transition-colors duration-200 mb-1 border-2 ${
+                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-xl text-xs transition-colors duration-200 mb-1 border-2 ${
                       pg === currentPage ? 'bg-bauhaus-blue text-white border-bauhaus-black font-bold' : 'text-bauhaus-black/60 border-transparent hover:bg-bauhaus-muted'
                     }`}
                   >

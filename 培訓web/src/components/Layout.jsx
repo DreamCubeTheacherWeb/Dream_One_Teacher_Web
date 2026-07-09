@@ -75,11 +75,11 @@ const Layout = ({ children }) => {
     // Bauhaus：目前頁面色塊指示（選中＝黑底白字，未選＝hover 變灰底）
     const isActivePath = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
     const navLinkClass = (path) =>
-        `flex items-center gap-1.5 px-3 py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 ${
+        `flex items-center gap-1.5 px-3 py-2 text-sm font-bold uppercase tracking-wide rounded-lg transition-colors duration-200 ${
             isActivePath(path) ? 'bg-bauhaus-black text-white' : 'text-bauhaus-black hover:bg-bauhaus-muted'
         }`;
     const mobileNavLinkClass = (path) =>
-        `flex items-center gap-3 px-3 py-3.5 font-bold uppercase tracking-wide text-sm transition-colors duration-200 ${
+        `flex items-center gap-3 px-3 py-3.5 font-bold uppercase tracking-wide text-sm rounded-lg transition-colors duration-200 ${
             isActivePath(path) ? 'bg-bauhaus-black text-white' : 'text-bauhaus-black hover:bg-bauhaus-muted'
         }`;
     const roleChipClass = (role) => {
@@ -174,7 +174,7 @@ const Layout = ({ children }) => {
                                     </Link>
                                     <button
                                         onClick={signOut}
-                                        className="p-2 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-red hover:text-white transition-colors duration-200"
+                                        className="p-2 rounded-xl border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-red hover:text-white transition-colors duration-200"
                                         title="登出"
                                     >
                                         <LogOut className="w-5 h-5" />
@@ -193,7 +193,7 @@ const Layout = ({ children }) => {
                         )}
                         <button
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                            className="p-3 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
+                            className="p-3 rounded-xl border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
                         >
                             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                         </button>
@@ -202,12 +202,12 @@ const Layout = ({ children }) => {
 
                 {/* 手機版展開選單 */}
                 {mobileMenuOpen && (
-                    <div className="md:hidden bg-white border-t-4 border-bauhaus-black">
+                    <div className="md:hidden bg-white border-t-4 border-bauhaus-black rounded-b-2xl overflow-hidden">
                         <div className="px-4 py-4 space-y-1">
                             {user ? (
                                 <>
                                     {/* 使用者資訊 */}
-                                    <Link to="/profile" className="flex items-center gap-3 p-3 border-2 border-bauhaus-black bg-bauhaus-muted mb-3">
+                                    <Link to="/profile" className="flex items-center gap-3 p-3 rounded-xl border-2 border-bauhaus-black bg-bauhaus-muted mb-3">
                                         <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-bauhaus-black shrink-0">
                                             {avatarUrl ? (
                                                 <img src={avatarUrl} alt="大頭貼" className="w-full h-full object-cover" />
@@ -270,7 +270,7 @@ const Layout = ({ children }) => {
                                     <div className="border-t-2 border-bauhaus-black pt-2 mt-2">
                                         <button
                                             onClick={() => { signOut(); setMobileMenuOpen(false); }}
-                                            className="flex items-center gap-3 px-3 py-3.5 text-white bg-bauhaus-red hover:bg-bauhaus-red/90 font-bold uppercase tracking-wide text-sm w-full transition-colors duration-200"
+                                            className="flex items-center gap-3 px-3 py-3.5 rounded-lg text-white bg-bauhaus-red hover:bg-bauhaus-red/90 font-bold uppercase tracking-wide text-sm w-full transition-colors duration-200"
                                         >
                                             <LogOut className="w-5 h-5" />
                                             登出
@@ -390,18 +390,18 @@ const NotificationBell = ({ userId }) => {
         <div className="relative" ref={panelRef}>
             <button
                 onClick={() => setOpen(!open)}
-                className="relative p-3 md:p-2 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
+                className="relative p-3 md:p-2 rounded-xl border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
             >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 bg-bauhaus-red text-white text-[10px] font-black min-w-[18px] h-[18px] flex items-center justify-center px-1 border-2 border-white">
+                    <span className="absolute -top-1.5 -right-1.5 bg-bauhaus-red text-white text-[10px] font-black min-w-[18px] h-[18px] flex items-center justify-center px-1 rounded-full border-2 border-white">
                         {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                 )}
             </button>
 
             {open && (
-                <div className="fixed left-3 right-3 top-[4.5rem] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-2rem)] bg-white border-2 lg:border-4 border-bauhaus-black shadow-hard-lg z-50 overflow-hidden">
+                <div className="fixed left-3 right-3 top-[4.5rem] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-2rem)] bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard-lg z-50 overflow-hidden">
                     <div className="px-5 py-4 bg-bauhaus-black text-white flex items-center justify-between">
                         <h3 className="font-black uppercase tracking-wide text-sm">通知</h3>
                         {unreadCount > 0 && (
@@ -430,7 +430,7 @@ const NotificationBell = ({ userId }) => {
                                         onClick={() => markAsRead(n)}
                                         className={`w-full text-left px-5 py-3.5 flex items-start gap-3 hover:bg-bauhaus-muted transition-colors duration-200 border-b-2 border-bauhaus-black/10 last:border-0 ${!n.is_read ? 'bg-bauhaus-cream' : ''}`}
                                     >
-                                        <div className={`w-8 h-8 flex items-center justify-center shrink-0 mt-0.5 border-2 border-bauhaus-black ${colorCls}`}>
+                                        <div className={`w-8 h-8 flex items-center justify-center shrink-0 mt-0.5 rounded-lg border-2 border-bauhaus-black ${colorCls}`}>
                                             <Icon className="w-4 h-4" />
                                         </div>
                                         <div className="flex-1 min-w-0">

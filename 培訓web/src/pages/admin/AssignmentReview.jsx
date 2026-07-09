@@ -293,7 +293,7 @@ const AssignmentReview = () => {
             <div className="flex flex-col lg:flex-row gap-6">
                 <div className="w-full lg:w-80 lg:shrink-0 space-y-2 max-h-none lg:max-h-[calc(100vh-240px)] overflow-y-auto pr-1">
                     {filteredTeacherIds.length === 0 ? (
-                        <div className="text-center py-12 bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30">
+                        <div className="text-center py-12 bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30 rounded-2xl">
                             <User className="w-8 h-8 text-bauhaus-black/20 mx-auto mb-2" />
                             <p className="text-bauhaus-black/40 text-sm font-bold">沒有符合條件的講師</p>
                         </div>
@@ -313,7 +313,7 @@ const AssignmentReview = () => {
                                         setSelectedAssignment(null);
                                         setFeedbackText('');
                                     }}
-                                    className={`w-full text-left p-4 border-2 transition-all ${
+                                    className={`w-full text-left p-4 border-2 rounded-2xl transition-all ${
                                         isSelected
                                             ? 'bg-bauhaus-cream border-bauhaus-black shadow-hard'
                                             : 'bg-white border-bauhaus-black/15 hover:border-bauhaus-black'
@@ -324,19 +324,19 @@ const AssignmentReview = () => {
                                             {getTeacherName(uid)}
                                         </span>
                                         {pendingCount > 0 && (
-                                            <span className="bg-bauhaus-red text-white text-[10px] font-black px-1.5 py-0.5 shrink-0 ml-2 border-2 border-bauhaus-black">
+                                            <span className="bg-bauhaus-red text-white text-[10px] font-black px-1.5 py-0.5 shrink-0 ml-2 border-2 border-bauhaus-black rounded-lg">
                                                 {pendingCount}
                                             </span>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                         {role && (
-                                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-bauhaus-black text-white">
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-bauhaus-black text-white rounded-lg">
                                                 {ROLE_LABELS[role] || role}
                                             </span>
                                         )}
                                         {mentor && (
-                                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-bauhaus-muted text-bauhaus-black">
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-bauhaus-muted text-bauhaus-black rounded-lg">
                                                 {mentor}
                                             </span>
                                         )}
@@ -353,7 +353,7 @@ const AssignmentReview = () => {
                 {/* Right: Assignment details */}
                 <div className="flex-1 min-w-0 w-full">
                     {!selectedUserId ? (
-                        <div className="h-full flex items-center justify-center text-bauhaus-black/40 bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30 min-h-[400px]">
+                        <div className="h-full flex items-center justify-center text-bauhaus-black/40 bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30 rounded-2xl min-h-[400px]">
                             <div className="text-center">
                                 <GraduationCap className="w-12 h-12 text-bauhaus-black/20 mx-auto mb-3" />
                                 <p className="font-bold"><span className="lg:hidden">請從上方選擇一位講師</span><span className="hidden lg:inline">請從左側選擇一位講師</span></p>
@@ -396,7 +396,7 @@ const AssignmentReview = () => {
                                 return (
                                     <div
                                         key={a.id}
-                                        className={`bg-white border-2 lg:border-4 border-bauhaus-black overflow-hidden transition-all ${
+                                        className={`bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl overflow-hidden transition-all ${
                                             isActive ? 'shadow-hard-lg' : 'shadow-hard'
                                         }`}
                                     >
@@ -439,7 +439,7 @@ const AssignmentReview = () => {
                                                 {/* Assignment content */}
                                                 <div className="px-6 py-5">
                                                     {a.video_url ? (
-                                                        <div className="aspect-video border-2 border-bauhaus-black overflow-hidden bg-black">
+                                                        <div className="aspect-video border-2 border-bauhaus-black rounded-xl overflow-hidden bg-black">
                                                             <iframe
                                                                 src={toEmbedUrl(a.video_url)}
                                                                 title="作業影片"
@@ -457,7 +457,7 @@ const AssignmentReview = () => {
                                                             <Play className="w-4 h-4" /> 點此觀看影片作業
                                                         </a>
                                                     ) : (
-                                                        <div className="bg-bauhaus-paper p-5 border-2 border-bauhaus-black/15 text-bauhaus-black leading-relaxed whitespace-pre-wrap">
+                                                        <div className="bg-bauhaus-paper p-5 border-2 border-bauhaus-black/15 rounded-xl text-bauhaus-black leading-relaxed whitespace-pre-wrap">
                                                             {a.content || '（無文字內容）'}
                                                         </div>
                                                     )}
@@ -471,13 +471,13 @@ const AssignmentReview = () => {
                                                     </h4>
 
                                                     {fbs.length === 0 ? (
-                                                        <div className="bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/20 px-5 py-4 text-center">
+                                                        <div className="bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/20 rounded-xl px-5 py-4 text-center">
                                                             <p className="text-bauhaus-black/40 text-sm font-bold">尚未有任何回饋</p>
                                                         </div>
                                                     ) : (
                                                         <div className="space-y-3">
                                                             {fbs.map((fb) => (
-                                                                <div key={fb.id} className="bg-bauhaus-cream border-2 border-bauhaus-black/20 px-5 py-4">
+                                                                <div key={fb.id} className="bg-bauhaus-cream border-2 border-bauhaus-black/20 rounded-xl px-5 py-4">
                                                                     <div className="flex items-center justify-between mb-2">
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="text-sm font-black text-bauhaus-black">

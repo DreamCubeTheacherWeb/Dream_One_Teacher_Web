@@ -185,7 +185,7 @@ const ProgressOverview = () => {
                                                 <td className="px-6 py-4 text-sm text-bauhaus-black/60">{teacher.mentor_name || '—'}</td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3 min-w-[180px]">
-                                                        <div className="flex-1 h-2 bg-bauhaus-muted border border-bauhaus-black/20 overflow-hidden">
+                                                        <div className="flex-1 h-2 bg-bauhaus-muted border border-bauhaus-black/20 rounded-lg overflow-hidden">
                                                             <div
                                                                 className="h-full bg-bauhaus-blue transition-all duration-500"
                                                                 style={{ width: `${pct}%` }}
@@ -200,7 +200,7 @@ const ProgressOverview = () => {
                                                     <select
                                                         value={currentStatus}
                                                         onChange={e => handleStatusChange(teacher.id, e.target.value)}
-                                                        className={`text-xs font-bold px-3 py-1.5 border-2 border-bauhaus-black rounded-none outline-none cursor-pointer ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
+                                                        className={`text-xs font-bold px-3 py-1.5 border-2 border-bauhaus-black rounded-xl outline-none cursor-pointer ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
                                                     >
                                                         {STATUS_OPTIONS.map(opt => (
                                                             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -235,7 +235,7 @@ const ProgressOverview = () => {
                                                 </span>
                                             )}
                                             <div className="flex items-center gap-3 mt-3">
-                                                <div className="flex-1 h-2 bg-bauhaus-muted border border-bauhaus-black/20 overflow-hidden min-w-0">
+                                                <div className="flex-1 h-2 bg-bauhaus-muted border border-bauhaus-black/20 rounded-lg overflow-hidden min-w-0">
                                                     <div
                                                         className="h-full bg-bauhaus-blue transition-all duration-500"
                                                         style={{ width: `${pct}%` }}
@@ -249,7 +249,7 @@ const ProgressOverview = () => {
                                                 <select
                                                     value={currentStatus}
                                                     onChange={e => handleStatusChange(teacher.id, e.target.value)}
-                                                    className={`text-xs font-bold px-3 py-1.5 border-2 border-bauhaus-black rounded-none outline-none cursor-pointer w-full sm:w-auto ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
+                                                    className={`text-xs font-bold px-3 py-1.5 border-2 border-bauhaus-black rounded-xl outline-none cursor-pointer w-full sm:w-auto ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
                                                 >
                                                     {STATUS_OPTIONS.map(opt => (
                                                         <option key={opt.value} value={opt.value}>{opt.label}</option>

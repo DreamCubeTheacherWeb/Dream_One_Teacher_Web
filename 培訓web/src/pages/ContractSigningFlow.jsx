@@ -385,7 +385,7 @@ const ContractSigningFlow = () => {
   if (loadError) {
     return (
       <div className="max-w-2xl mx-auto p-4 sm:p-8">
-        <div className="bg-bauhaus-red border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-8 text-center text-white">
+        <div className="bg-bauhaus-red border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard lg:shadow-hard-lg p-8 text-center text-white">
           <AlertCircle className="w-12 h-12 text-white mx-auto mb-4" />
           <h2 className="text-xl font-bold mb-2">資料載入失敗</h2>
           <p className="text-white/80 mb-6">{loadError}</p>
@@ -411,7 +411,7 @@ const ContractSigningFlow = () => {
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-3">簽約完成！</h1>
           <p className="text-bauhaus-black/60 mb-8">您的電子合約已成功簽署並存檔。</p>
-          <div className="bg-bauhaus-paper border-2 border-bauhaus-black/10 p-5 mb-8 text-left space-y-2">
+          <div className="bg-bauhaus-paper border-2 border-bauhaus-black/10 rounded-xl p-5 mb-8 text-left space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-bauhaus-black/60">簽約人</span>
               <span className="font-bold text-bauhaus-black">{formData.name}</span>
@@ -539,7 +539,7 @@ const ContractSigningFlow = () => {
               </h3>
 
               {roleMissing && (
-                <div className="mb-5 border-2 border-bauhaus-black bg-bauhaus-red p-4 flex items-start gap-3">
+                <div className="mb-5 border-2 border-bauhaus-black bg-bauhaus-red rounded-2xl p-4 flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-white shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-bold text-white">尚無法簽署：您的講師等級尚未設定</p>
@@ -552,7 +552,7 @@ const ContractSigningFlow = () => {
               )}
 
               {missingSigTitles.length > 0 && (
-                <div className="mb-5 border-2 border-bauhaus-black bg-bauhaus-red p-4 flex items-start gap-3">
+                <div className="mb-5 border-2 border-bauhaus-black bg-bauhaus-red rounded-2xl p-4 flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-white shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-bold text-white">尚無法簽署：合約尚未設定簽名欄位</p>
@@ -614,7 +614,7 @@ const ContractSigningFlow = () => {
                 </div>
               </div>
 
-              <div className="space-y-3 mb-6 bg-bauhaus-yellow border-2 border-bauhaus-black p-4">
+              <div className="space-y-3 mb-6 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-2xl p-4">
                 <label className="flex items-start gap-3 cursor-pointer group">
                   <input type="checkbox" checked={agreedTerms} onChange={e => setAgreedTerms(e.target.checked)}
                     className="mt-0.5 w-5 h-5 rounded-none border-2 border-bauhaus-black accent-bauhaus-black focus:ring-bauhaus-black" />
@@ -640,7 +640,7 @@ const ContractSigningFlow = () => {
               <div className="mb-6">
                 <h4 className="text-sm font-bold text-bauhaus-black mb-3">甲方簽名</h4>
                 {signatureDataUrl ? (
-                  <div className="border-2 border-bauhaus-black bg-white p-4">
+                  <div className="border-2 border-bauhaus-black rounded-xl bg-white p-4">
                     <div className="flex items-center justify-between mb-3">
                       <span className="bh-chip bg-bauhaus-blue text-white">
                         <CheckCircle2 className="w-3.5 h-3.5" /> 已簽名
@@ -648,14 +648,14 @@ const ContractSigningFlow = () => {
                       <button onClick={() => { setSignatureDataUrl(null); setShowSignaturePad(true); }}
                         className="text-sm text-bauhaus-blue hover:text-bauhaus-black font-bold py-3 px-2 md:py-0 md:px-0">重新簽名</button>
                     </div>
-                    <div className="bg-white border-2 border-bauhaus-black/10 p-3">
+                    <div className="bg-white border-2 border-bauhaus-black/10 rounded-lg p-3">
                       <img src={signatureDataUrl} alt="簽名" className="max-h-24 mx-auto" />
                     </div>
                   </div>
                 ) : (
                   <button onClick={() => setShowSignaturePad(true)}
                     disabled={!agreedTerms || !agreedElectronic || !verified}
-                    className={`w-full py-8 border-2 border-dashed transition-all flex flex-col items-center gap-2 ${
+                    className={`w-full py-8 border-2 border-dashed rounded-xl transition-all flex flex-col items-center gap-2 ${
                       agreedTerms && agreedElectronic && verified
                         ? 'border-bauhaus-blue bg-white hover:bg-bauhaus-cream cursor-pointer text-bauhaus-blue'
                         : 'border-bauhaus-black/20 bg-bauhaus-muted text-bauhaus-black/40 cursor-not-allowed'

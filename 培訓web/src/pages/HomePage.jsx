@@ -108,7 +108,7 @@ const HomePage = () => {
                                         <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                     </Link>
                                 ) : (
-                                    <div className="text-white/70 text-sm font-bold bg-white/10 border-2 border-white/30 px-6 py-4">
+                                    <div className="text-white/70 text-sm font-bold bg-white/10 border-2 border-white/30 rounded-xl px-6 py-4">
                                         請先登入以開始您的培訓課程
                                     </div>
                                 )}
@@ -122,7 +122,7 @@ const HomePage = () => {
                                 <img
                                     src="/images/team-event.png"
                                     alt="夢想一號團隊"
-                                    className="relative w-full border-4 border-bauhaus-black shadow-hard-white"
+                                    className="relative w-full rounded-xl border-4 border-bauhaus-black shadow-hard-white"
                                 />
                             </div>
                         </div>
@@ -151,7 +151,7 @@ const HomePage = () => {
             <section className="py-20 bg-white">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="flex items-center gap-3 mb-10">
-                        <div className="p-3 bg-bauhaus-red border-2 border-bauhaus-black">
+                        <div className="p-3 rounded-lg bg-bauhaus-red border-2 border-bauhaus-black">
                             <Megaphone className="w-7 h-7 text-white" />
                         </div>
                         <div>
@@ -177,14 +177,14 @@ const HomePage = () => {
                                         />
                                         {a.pinned && (
                                             <div className="absolute -top-3 -right-3">
-                                                <div className="bg-bauhaus-red text-white p-1.5 border-2 border-bauhaus-black">
+                                                <div className="bg-bauhaus-red text-white p-1.5 rounded-lg border-2 border-bauhaus-black">
                                                     <Pin className="w-3.5 h-3.5" />
                                                 </div>
                                             </div>
                                         )}
 
                                         <div className="flex items-center gap-2 mb-3">
-                                            <span className={`text-[10px] font-black px-2.5 py-1 uppercase tracking-wider border-2 border-bauhaus-black ${
+                                            <span className={`text-[10px] font-black px-2.5 py-1 uppercase tracking-wider rounded-lg border-2 border-bauhaus-black ${
                                                 a.tag === '重要公告' ? 'bg-bauhaus-red text-white'
                                                     : a.tag === '課程更新' ? 'bg-bauhaus-blue text-white'
                                                         : a.tag === '提醒' ? 'bg-bauhaus-yellow text-bauhaus-black'
@@ -217,7 +217,7 @@ const HomePage = () => {
             <section className="py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="text-center mb-12">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-blue border-2 border-bauhaus-black">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg">
                             <Target className="w-4 h-4" />
                             願景與使命
                         </div>
@@ -231,7 +231,7 @@ const HomePage = () => {
                     </div>
 
                     <div className="flex justify-center mb-10">
-                        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 lg:divide-x-4 divide-bauhaus-black">
+                        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black rounded-xl overflow-hidden divide-x-2 lg:divide-x-4 divide-bauhaus-black">
                             <button
                                 onClick={() => setActiveTab('ideal')}
                                 className={`flex items-center gap-1.5 px-6 py-3 md:py-2.5 text-sm font-bold uppercase tracking-wide transition-colors duration-200 ${
@@ -263,7 +263,7 @@ const HomePage = () => {
                                 key={item.layer}
                                 className="bh-card bh-card-hover p-8"
                             >
-                                <div className={`inline-flex items-center justify-center w-14 h-14 border-2 border-bauhaus-black ${item.accent} ${item.accentText} font-black text-lg mb-5`}>
+                                <div className={`inline-flex items-center justify-center w-14 h-14 rounded-lg border-2 border-bauhaus-black ${item.accent} ${item.accentText} font-black text-lg mb-5`}>
                                     {item.layer}
                                 </div>
                                 <h3 className={`font-black text-lg mb-3 ${item.textAccent}`}>
@@ -282,7 +282,7 @@ const HomePage = () => {
             <section className="py-20 bg-white">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="text-center mb-12">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-lg">
                             <Users className="w-4 h-4" />
                             我們的團隊
                         </div>
@@ -300,7 +300,7 @@ const HomePage = () => {
                             return (
                                 <div
                                     key={idx}
-                                    className="group relative border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg overflow-hidden hover:-translate-y-1 transition-transform duration-200"
+                                    className="group relative border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard lg:shadow-hard-lg overflow-hidden hover:-translate-y-1 transition-transform duration-200"
                                 >
                                     <span
                                         aria-hidden="true"
@@ -327,12 +327,12 @@ const HomePage = () => {
             {/* ══════════ CTA ══════════ */}
             <section className="py-20 bg-white border-t-4 border-bauhaus-black">
                 <div className="max-w-4xl mx-auto px-6">
-                    <div className="relative bg-bauhaus-black border-4 border-bauhaus-black p-8 sm:p-12 lg:p-16 text-center overflow-hidden">
+                    <div className="relative bg-bauhaus-black border-4 border-bauhaus-black rounded-2xl p-8 sm:p-12 lg:p-16 text-center overflow-hidden">
                         <div className="absolute top-0 left-0 w-32 h-32 sm:w-48 sm:h-48 bg-bauhaus-yellow/90 rounded-full -translate-x-1/2 -translate-y-1/2" aria-hidden="true" />
                         <div className="absolute bottom-0 right-0 w-28 h-28 sm:w-40 sm:h-40 bg-bauhaus-blue/90 translate-x-1/3 translate-y-1/3 rotate-45" aria-hidden="true" />
 
                         <div className="relative">
-                            <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-xs sm:text-sm font-bold uppercase tracking-widest text-bauhaus-black bg-bauhaus-yellow border-2 border-white">
+                            <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-xs sm:text-sm font-bold uppercase tracking-widest text-bauhaus-black bg-bauhaus-yellow border-2 border-white rounded-lg">
                                 <Star className="w-4 h-4" />
                                 準備好了嗎？
                             </div>

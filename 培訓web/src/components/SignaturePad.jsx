@@ -77,14 +77,14 @@ const SignaturePadComponent = ({ onConfirm, onCancel, isOpen }) => {
               <h3 className="text-lg font-bold text-bauhaus-black">電子簽名</h3>
               <p className="text-sm text-bauhaus-black/60 mt-0.5">請在下方白色區域簽下您的姓名</p>
             </div>
-            <button onClick={onCancel} className="p-3 md:p-2 border-2 border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200">
+            <button onClick={onCancel} className="p-3 md:p-2 border-2 border-bauhaus-black rounded-xl hover:bg-bauhaus-muted transition-colors duration-200">
               <X className="w-5 h-5 text-bauhaus-black" />
             </button>
           </div>
 
           {/* Canvas area */}
           <div className="p-4 md:p-5">
-            <div className="relative border-2 border-dashed border-bauhaus-black bg-white overflow-hidden h-[220px] md:h-[280px]">
+            <div className="relative border-2 border-dashed border-bauhaus-black rounded-xl bg-white overflow-hidden h-[220px] md:h-[280px]">
               <canvas
                 ref={canvasRef}
                 className="absolute inset-0 cursor-crosshair touch-none"
