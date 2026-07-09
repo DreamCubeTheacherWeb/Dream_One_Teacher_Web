@@ -6,7 +6,7 @@ import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Came
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
-import BadgeIcon from '../components/BadgeIcon';
+import BadgeVisual from '../components/BadgeVisual';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -80,11 +80,13 @@ const ProfilePage = () => {
     const [filePreviews, setFilePreviews] = useState({});
     const [uploading, setUploading] = useState({});
     const fileRefs = useRef({});
+    const originalWcaId = useRef('');
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [showClaimModal, setShowClaimModal] = useState(false);
     const [existingClaim, setExistingClaim] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
+    const [wcaLocked, setWcaLocked] = useState(false);
 
     useEffect(() => {
         if (user) {
@@ -157,6 +159,8 @@ const ProfilePage = () => {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
             }
             setForm(formData);
+            originalWcaId.current = formData.wca_id || '';
+            setWcaLocked(!!data.hide_from_leaderboard);
 
             const previews = {};
             const allDocKeys = ['photo', ...DOC_TYPES.map(d => d.key)];
@@ -290,6 +294,15 @@ const ProfilePage = () => {
             return;
         }
 
+        // WCA 編號：新填或變更時，送出前確認照實填寫
+        const wcaVal = form.wca_id?.trim() || '';
+        if (wcaVal && wcaVal !== originalWcaId.current) {
+            const ok = window.confirm(
+                `你填寫的 WCA 選手編號：${wcaVal}\n\n送出前請再次確認這是「你本人」的真實編號。填寫不實者，管理員有權刪除；累計三次故意不實，將取消你參與排名的資格。\n\n確定照實填寫並送出嗎？`
+            );
+            if (!ok) return;
+        }
+
         setSaving(true);
         const payload = {
             user_id: user.id,
@@ -328,7 +341,7 @@ const ProfilePage = () => {
             {/* ── 首次註冊提示 ── */}
             {isFirstTime && (
                 <div className="bh-card bg-bauhaus-yellow/10 p-5 mb-6 flex items-center gap-3">
-                    <div className="w-10 h-10 bg-bauhaus-yellow border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-lg flex items-center justify-center shrink-0">
                         <Save className="w-5 h-5 text-bauhaus-black" />
                     </div>
                     <p className="text-bauhaus-black font-bold">
@@ -340,7 +353,7 @@ const ProfilePage = () => {
             {/* ── 認領歷史講師資料(僅 isFirstTime 且尚未提出 pending 申請時顯示)── */}
             {isFirstTime && (!existingClaim || existingClaim.status === 'rejected') && (
                 <div className="bh-card p-5 mb-6 flex items-start gap-3">
-                    <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg flex items-center justify-center shrink-0">
                         <UserSearch className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1">
@@ -460,25 +473,6 @@ const ProfilePage = () => {
                 </div>
             </Section>
 
-            {/* ── WCA 世界賽成績（選填）── */}
-            <Section icon={Trophy} title="WCA 世界賽成績">
-                <p className="text-sm text-bauhaus-black/60 font-medium mb-4 leading-relaxed">
-                    WCA（世界方塊協會，World Cube Association）是全球魔術方塊比賽的官方組織。
-                    填入你的 WCA 選手編號後，你在正式比賽的各項目成績就會顯示在排行榜的「WCA 賽事」榜上
-                    （成績由管理員定期更新匯入）。沒有參加過 WCA 比賽可以留空。
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Field label="WCA 選手編號（WCA ID，選填）">
-                        <input type="text" value={form.wca_id || ''} onChange={e => handleChange('wca_id', e.target.value)} className={inputCls} placeholder="例如 2012WUZH01" />
-                    </Field>
-                    <div className="flex items-end">
-                        <a href="https://www.worldcubeassociation.org/persons" target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline inline-flex items-center justify-center gap-2 text-sm w-full md:w-auto">
-                            <Trophy className="w-4 h-4" /> 到 WCA 官網查我的編號
-                        </a>
-                    </div>
-                </div>
-            </Section>
-
             {/* ── 聯絡方式 ── */}
             <Section icon={Phone} title="聯絡方式">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -547,7 +541,7 @@ const ProfilePage = () => {
                                         <button
                                             type="button"
                                             onClick={() => selectAllInArea(counties)}
-                                            className={`inline-flex items-center gap-1 border-2 border-bauhaus-black px-2 py-0.5 text-xs font-bold uppercase tracking-wide transition-colors ${allSelected ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
+                                            className={`inline-flex items-center gap-1 border-2 border-bauhaus-black rounded-lg px-2 py-0.5 text-xs font-bold uppercase tracking-wide transition-colors ${allSelected ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
                                         >
                                             {allSelected ? '✓ 全選' : '全選'}
                                         </button>
@@ -626,7 +620,7 @@ const ProfilePage = () => {
                         />
                     </Field>
                 </div>
-                <div className="mt-4 bg-bauhaus-yellow/10 border-2 border-bauhaus-black p-3 text-xs text-bauhaus-black font-bold">
+                <div className="mt-4 bg-bauhaus-yellow/10 border-2 border-bauhaus-black rounded-xl p-3 text-xs text-bauhaus-black font-bold">
                     💡 銀行帳戶為華南銀行者免扣手續費；非華南銀行將扣匯款手續費 30 元。
                 </div>
             </Section>
@@ -651,14 +645,14 @@ const ProfilePage = () => {
                     {DOC_TYPES.map(({ key, label, Icon: docIcon }) => {
                         const Icon = docIcon;
                         return (
-                        <div key={key} className="border-2 border-dashed border-bauhaus-black/30 p-4 text-center hover:border-bauhaus-blue transition-colors">
+                        <div key={key} className="border-2 border-dashed border-bauhaus-black/30 rounded-xl p-4 text-center hover:border-bauhaus-blue transition-colors">
                             <div className="text-sm font-bold text-bauhaus-black mb-3 flex items-center justify-center gap-1.5">
                                 <Icon className="w-4 h-4 text-bauhaus-black/40" /> {label} <span className="text-bauhaus-red">*</span>
                             </div>
 
                             {filePreviews[key] ? (
                                 <div className="relative group">
-                                    <img src={filePreviews[key]} alt={label} className="w-full h-32 object-cover border-2 border-bauhaus-black" />
+                                    <img src={filePreviews[key]} alt={label} className="w-full h-32 object-cover border-2 border-bauhaus-black rounded-xl" />
                                     <button
                                         onClick={() => handleRemoveFile(key)}
                                         className="absolute top-1 right-1 bg-bauhaus-red hover:bg-bauhaus-red/90 text-white rounded-full p-3 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border-2 border-bauhaus-black flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
@@ -708,6 +702,35 @@ const ProfilePage = () => {
                 </div>
             </Section>
 
+            {/* ── WCA 世界賽成績（選填，老師自填）── */}
+            <Section icon={Trophy} title="WCA 世界賽成績（選填）">
+                <p className="text-sm text-bauhaus-black/60 font-medium mb-3 leading-relaxed">
+                    WCA（世界方塊協會，World Cube Association）是全球魔術方塊比賽的官方組織。
+                    若你參加過 WCA 正式比賽，填入你的 WCA 選手編號，各項目成績就會顯示在排行榜的「WCA 賽事」榜上。
+                    沒有 WCA 比賽紀錄可以留空。
+                </p>
+                <div className="bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 mb-4 text-sm font-bold text-bauhaus-black flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>請務必照實填寫自己的編號。管理員有權刪除不實資料；累計三次故意填寫不實，將取消你送出資料與參與排名的資格。</span>
+                </div>
+                {wcaLocked && (
+                    <div data-testid="wca-locked-warning" className="bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 mb-4 text-sm font-bold text-white flex items-start gap-2">
+                        <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                        <span>你的 WCA 送出資格已被管理員停用，如有疑問請聯繫管理員。</span>
+                    </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="WCA 選手編號（WCA ID）">
+                        <input type="text" disabled={wcaLocked} value={form.wca_id || ''} onChange={e => handleChange('wca_id', e.target.value)} className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} placeholder="例如 2012WUZH01" />
+                    </Field>
+                    <div className="flex items-end">
+                        <a href="https://www.worldcubeassociation.org/" target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline inline-flex items-center justify-center gap-2 text-sm w-full md:w-auto">
+                            <Trophy className="w-4 h-4" /> WCA 網站
+                        </a>
+                    </div>
+                </div>
+            </Section>
+
             {/* ── 儲存按鈕 ── */}
             <div className="flex justify-end mt-8 mb-12">
                 <button
@@ -726,7 +749,7 @@ const ProfilePage = () => {
                     {contractInfo ? (
                         <div>
                             <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black flex items-center justify-center">
+                                <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg flex items-center justify-center">
                                     <CheckCircle2 className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
@@ -748,7 +771,7 @@ const ProfilePage = () => {
                                 );
                                 return hasUpdate;
                             })() && (
-                                <div className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black p-3 mb-4 flex items-start gap-2">
+                                <div className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black rounded-xl p-3 mb-4 flex items-start gap-2">
                                     <Clock className="w-4 h-4 text-bauhaus-black mt-0.5 shrink-0" />
                                     <p className="text-sm text-bauhaus-black font-medium">
                                         合約文件已更新為新版本，建議您<Link to="/contract" className="font-black text-bauhaus-blue hover:underline">重新簽約</Link>以確認最新內容。
@@ -804,7 +827,7 @@ const ProfilePage = () => {
             {/* ── 註冊完成彈窗 ── */}
             {showSuccess && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
-                    <div className="bg-white border-2 lg:border-4 border-bauhaus-black shadow-hard-lg max-w-md w-full p-8 text-center animate-in">
+                    <div className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard-lg max-w-md w-full p-8 text-center animate-in">
                         <div className="w-20 h-20 bg-bauhaus-blue/10 border-2 border-bauhaus-black rounded-full flex items-center justify-center mx-auto mb-5">
                             <PartyPopper className="w-10 h-10 text-bauhaus-blue" />
                         </div>
@@ -812,7 +835,7 @@ const ProfilePage = () => {
                         <p className="text-bauhaus-black/70 mb-2 font-medium">
                             你的個人資料已成功送出，目前正在等待管理員審核。
                         </p>
-                        <div className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black p-4 my-5 text-left">
+                        <div className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black rounded-xl p-4 my-5 text-left">
                             <p className="text-bauhaus-black text-sm font-bold">
                                 請在<strong>「夢想一號講師個人群組」</strong>中通知管理員您已完成註冊，以加速審核流程。
                             </p>
@@ -851,8 +874,8 @@ const BadgeCircle = ({ badge, accentClass }) => (
                 badge.earned ? `${accentClass} shadow-hard-sm` : 'bg-bauhaus-muted'
             }`}
         >
-            <BadgeIcon
-                badgeKey={badge.key}
+            <BadgeVisual
+                badge={badge}
                 size={64}
                 className={`w-full h-full ${badge.earned ? '' : 'grayscale opacity-40'}`}
             />
@@ -981,7 +1004,7 @@ const AchievementsSection = ({ userId, instructorId, certName }) => {
                             { label: '接課場次', value: stats?.session_count ?? 0, unit: '場' },
                             { label: '觸及人次', value: stats?.student_reach ?? 0, unit: '人次' },
                         ].map((s) => (
-                            <div key={s.label} className="border-2 border-bauhaus-black bg-white p-2.5 sm:p-3 text-center">
+                            <div key={s.label} className="border-2 border-bauhaus-black rounded-xl bg-white p-2.5 sm:p-3 text-center">
                                 <div className="text-lg sm:text-2xl font-black text-bauhaus-black tabular-nums">
                                     {s.value}<span className="text-[10px] sm:text-xs font-bold ml-0.5">{s.unit}</span>
                                 </div>
@@ -1018,7 +1041,7 @@ const AchievementsSection = ({ userId, instructorId, certName }) => {
                     {canDownloadCert && (
                         <div className="mt-5 pt-5 border-t-2 border-bauhaus-black flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                                <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg flex items-center justify-center shrink-0">
                                     <CheckCircle2 className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
@@ -1131,7 +1154,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
-            <div className="bg-white border-2 lg:border-4 border-bauhaus-black shadow-hard-lg max-w-lg w-full max-h-[85vh] flex flex-col">
+            <div className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl overflow-hidden shadow-hard-lg max-w-lg w-full max-h-[85vh] flex flex-col">
                 <div className="px-6 py-4 border-b-2 border-bauhaus-black flex items-start justify-between">
                     <div>
                         <h2 className="font-black uppercase tracking-tight text-lg text-bauhaus-black flex items-center gap-2">
@@ -1173,7 +1196,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                             </form>
 
                             {searched && results.length === 0 && !searching && (
-                                <div className="border-2 border-bauhaus-black bg-bauhaus-muted p-4 text-center text-bauhaus-black/60 text-sm font-medium">
+                                <div className="border-2 border-bauhaus-black rounded-xl bg-bauhaus-muted p-4 text-center text-bauhaus-black/60 text-sm font-medium">
                                     <AlertCircle className="w-5 h-5 mx-auto mb-1 text-bauhaus-black/40" />
                                     沒有找到符合的講師資料,請確認姓名,或直接填寫下方表單註冊新講師。
                                 </div>
@@ -1188,7 +1211,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                                         <button
                                             key={r.id}
                                             onClick={() => { setSelected(r); setPhoneFull(''); setMessage(''); }}
-                                            className="w-full text-left p-3 border-2 border-bauhaus-black hover:bg-bauhaus-muted transition-colors"
+                                            className="w-full text-left p-3 border-2 border-bauhaus-black rounded-xl hover:bg-bauhaus-muted transition-colors"
                                         >
                                             <div className="font-black text-bauhaus-black">{r.full_name}</div>
                                             <div className="text-xs text-bauhaus-black/60 mt-0.5 flex flex-wrap gap-x-3">
@@ -1204,7 +1227,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
 
                     {selected && (
                         <div className="space-y-4">
-                            <div className="bg-bauhaus-blue/10 border-2 border-bauhaus-black p-4">
+                            <div className="bg-bauhaus-blue/10 border-2 border-bauhaus-black rounded-xl p-4">
                                 <div className="text-xs text-bauhaus-blue font-black uppercase tracking-wide mb-1">即將認領</div>
                                 <div className="font-black text-bauhaus-black">{selected.full_name}</div>
                                 <div className="text-xs text-bauhaus-black/60 mt-0.5 flex flex-wrap gap-x-3">
@@ -1238,7 +1261,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                     )}
 
                     {err && (
-                        <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
+                        <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-xl px-3 py-2 font-bold">
                             {err}
                         </div>
                     )}

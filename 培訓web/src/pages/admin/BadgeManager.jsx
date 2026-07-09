@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { BADGE_CATEGORIES, CATEGORY_ORDER } from '../../lib/badges';
-import BadgeIcon from '../../components/BadgeIcon';
+import BadgeVisual from '../../components/BadgeVisual';
+import { compressImage } from '../../lib/imageCompress';
 import {
     Award, Plus, Edit2, Trash2, Eye, EyeOff, X, Save, Search, ChevronDown,
-    CircleCheck, CircleX, RotateCcw, Sparkles,
+    CircleCheck, CircleX, RotateCcw, Sparkles, ImageUp, ImageOff,
 } from 'lucide-react';
 
 // rule_metric 下拉：對應 get_teacher_badge_stats 欄位。lteDefault=true 代表「越小越好」，
@@ -32,7 +33,7 @@ const METRIC_MAP = Object.fromEntries(METRIC_OPTIONS.map((m) => [m.value, m]));
 const EMPTY_FORM = {
     key: '', emoji: '', name: '', category: 'teaching', description: '',
     rule_type: 'threshold', rule_metric: 'total_hours', rule_operator: 'gte', rule_threshold: '',
-    active: true,
+    active: true, image_path: null,
 };
 
 function ruleSummary(def) {
@@ -64,6 +65,38 @@ const BadgeManager = () => {
     const [form, setForm] = useState(EMPTY_FORM);
     const [formErr, setFormErr] = useState('');
     const [saving, setSaving] = useState(false);
+    const [uploadingIcon, setUploadingIcon] = useState(false);
+
+    // 上傳徽章圖示：壓縮到 256px PNG，存進公開 bucket badge_icons，成功後把
+    // image_path 寫進表單 state（真正落地 badge_definitions 要按「儲存」）。
+    // 若表單已有舊圖，換圖時順手清掉舊檔（非必要但避免孤兒檔案堆積）。
+    const handleIconUpload = async (file) => {
+        if (!file) return;
+        setFormErr('');
+        setUploadingIcon(true);
+        try {
+            const blob = await compressImage(file, 256);
+            const path = `badges/${form.key || 'new'}-${crypto.randomUUID()}.png`;
+            const { error } = await supabase.storage.from('badge_icons').upload(path, blob, {
+                upsert: true,
+                contentType: 'image/png',
+            });
+            if (error) { setFormErr('圖示上傳失敗：' + error.message); return; }
+            const oldPath = form.image_path;
+            setForm((f) => ({ ...f, image_path: path }));
+            if (oldPath) await supabase.storage.from('badge_icons').remove([oldPath]);
+        } catch (err) {
+            setFormErr('圖示處理失敗：' + err.message);
+        } finally {
+            setUploadingIcon(false);
+        }
+    };
+
+    const handleIconRemove = async () => {
+        const oldPath = form.image_path;
+        setForm((f) => ({ ...f, image_path: null }));
+        if (oldPath) await supabase.storage.from('badge_icons').remove([oldPath]);
+    };
 
     const fetchDefinitions = async () => {
         setLoading(true);
@@ -108,6 +141,7 @@ const BadgeManager = () => {
             rule_operator: def.rule_operator || 'gte',
             rule_threshold: def.rule_threshold ?? '',
             active: !!def.active,
+            image_path: def.image_path || null,
         });
         setFormErr('');
         setModalOpen(true);
@@ -144,6 +178,7 @@ const BadgeManager = () => {
             category: form.category,
             description: form.description.trim() || null,
             active: form.active,
+            image_path: form.image_path || null,
         };
 
         let payload;
@@ -276,7 +311,7 @@ const BadgeManager = () => {
             </div>
 
             {/* 分頁 tab */}
-            <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 lg:divide-x-4 divide-bauhaus-black mb-6">
+            <div className="inline-flex border-2 lg:border-4 border-bauhaus-black rounded-xl overflow-hidden divide-x-2 lg:divide-x-4 divide-bauhaus-black mb-6">
                 <button
                     data-testid="badge-tab-list"
                     onClick={() => setTab('list')}
@@ -307,7 +342,7 @@ const BadgeManager = () => {
                             {definitions.map((def) => (
                                 <div key={def.key} className="p-4">
                                     <div className="flex items-center gap-2">
-                                        <BadgeIcon badgeKey={def.key} size={36} className="shrink-0" />
+                                        <BadgeVisual badge={def} size={36} className="shrink-0" />
                                         <div className="min-w-0 flex-1">
                                             <div className="font-bold text-bauhaus-black truncate">{def.name}</div>
                                             <div className="text-xs text-bauhaus-black/40">{BADGE_CATEGORIES[def.category]?.label || def.category}</div>
@@ -359,7 +394,7 @@ const BadgeManager = () => {
                                         <tr key={def.key} className="hover:bg-bauhaus-cream transition-colors">
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center gap-2">
-                                                    <BadgeIcon badgeKey={def.key} size={36} className="shrink-0" />
+                                                    <BadgeVisual badge={def} size={36} className="shrink-0" />
                                                     <div>
                                                         <div className="font-bold text-bauhaus-black">{def.name}</div>
                                                         <div className="text-[11px] text-bauhaus-black/40">{def.key}</div>
@@ -425,7 +460,7 @@ const BadgeManager = () => {
                             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-bauhaus-black/30 pointer-events-none" />
                         </div>
                         {showDropdown && (
-                            <div data-testid="badge-instructor-dropdown" className="absolute z-20 left-0 right-0 mt-1 mx-4 sm:mx-6 bg-white border-2 border-bauhaus-black shadow-hard max-h-72 overflow-y-auto">
+                            <div data-testid="badge-instructor-dropdown" className="absolute z-20 left-0 right-0 mt-1 mx-4 sm:mx-6 bg-white border-2 border-bauhaus-black rounded-2xl shadow-hard max-h-72 overflow-y-auto">
                                 {filteredInstructors.length === 0 && (
                                     <div className="px-4 py-3 text-sm text-bauhaus-black/40 font-bold">查無符合的講師</div>
                                 )}
@@ -446,7 +481,7 @@ const BadgeManager = () => {
                     </div>
 
                     {!selectedInstructor && (
-                        <div className="py-16 text-center bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30">
+                        <div className="py-16 text-center bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30 rounded-2xl">
                             <Award className="w-10 h-10 text-bauhaus-black/20 mx-auto mb-3" />
                             <p className="text-bauhaus-black/40 font-bold">請先搜尋並選擇一位講師</p>
                         </div>
@@ -465,7 +500,7 @@ const BadgeManager = () => {
                                     const acting = actingKey === def.key;
                                     return (
                                         <div key={def.key} data-testid={`badge-grant-row-${def.key}`} className="p-4 flex flex-wrap items-center gap-3">
-                                            <BadgeIcon badgeKey={def.key} size={36} className="shrink-0" />
+                                            <BadgeVisual badge={def} size={36} className="shrink-0" />
                                             <div className="min-w-[140px]">
                                                 <div className="font-bold text-bauhaus-black text-sm">{def.name}</div>
                                                 <div className="text-[11px] text-bauhaus-black/40">{BADGE_CATEGORIES[def.category]?.label}</div>
@@ -546,6 +581,37 @@ const BadgeManager = () => {
                                         className="bh-input"
                                         placeholder="🌱"
                                     />
+                                    <p className="text-[11px] text-bauhaus-black/40 mt-1">沒上傳圖示時的備用顯示</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="bh-label block mb-1">圖示（上傳 PNG，選填）</label>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-14 h-14 shrink-0 rounded-full border-2 border-bauhaus-black bg-bauhaus-muted flex items-center justify-center overflow-hidden">
+                                        <BadgeVisual badge={{ key: form.key, image_path: form.image_path }} size={52} />
+                                    </div>
+                                    <label className="bh-btn bh-btn-outline px-4 py-2 text-sm cursor-pointer">
+                                        <ImageUp className="w-4 h-4" />
+                                        {uploadingIcon ? '上傳中...' : (form.image_path ? '更換圖示' : '上傳圖示')}
+                                        <input
+                                            type="file"
+                                            accept="image/png,image/*"
+                                            className="hidden"
+                                            disabled={uploadingIcon}
+                                            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleIconUpload(f); }}
+                                        />
+                                    </label>
+                                    {form.image_path && (
+                                        <button
+                                            type="button"
+                                            onClick={handleIconRemove}
+                                            disabled={uploadingIcon}
+                                            className="bh-btn bh-btn-outline px-4 py-2 text-sm disabled:opacity-50"
+                                        >
+                                            <ImageOff className="w-4 h-4" /> 移除圖示
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -584,7 +650,7 @@ const BadgeManager = () => {
                             </div>
 
                             {isSpecial ? (
-                                <div className="border-2 border-bauhaus-black/20 bg-bauhaus-muted p-3">
+                                <div className="border-2 border-bauhaus-black/20 bg-bauhaus-muted rounded-xl p-3">
                                     <div className="text-xs font-bold text-bauhaus-black/60 mb-1">判定類型</div>
                                     <div className="text-sm font-bold text-bauhaus-black">特殊邏輯（程式寫死，不可在後台新增或修改判定條件）</div>
                                     <div className="text-xs text-bauhaus-black/50 mt-1">rule_special：{editingDef?.rule_special}</div>
