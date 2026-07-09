@@ -1,7 +1,22 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（表單下載中心新增獨立表單模板管理，已改完＋build 綠燈、未 commit；Opus 4.8）。
+> 最後更新：2026-07-09（表單下載中心講師列排版優化＋「還缺什麼資料」顯示，已改完＋build/lint 綠燈＋mock 截圖驗證、未 commit；Opus 4.8）。
+
+---
+
+## 🎨 2026-07-09：表單下載中心講師列排版優化＋「還缺什麼資料」（✅ 已改完＋build/lint 綠燈＋桌機/手機截圖驗證；⏳ 未 commit/push，真站待業主登入看）
+
+**業主指示**：講師清單排版有點亂想優化；完成率希望能「就地看到還缺什麼資料」。
+
+**只動一支檔 `src/pages/admin/DownloadCenter.jsx`**：
+1. **每列排版重整**：右側統一成「百分比＋細進度條」（<40 紅／40–79 黃／≥80 藍）或藍底「齊全」徽章，與下方「下載」鈕垂直對齊等寬；姓名/暱稱/等級同一行、email·電話一行。
+2. **新增「還缺什麼資料」**：未齊全者在 email 下方列出「還缺 N 項」＋紅底缺項標籤（如 戶籍地址、身分證正面…），超過 6 項顯示「＋還有 N 項」可展開/收合（新增 `expandedIds` state）。標題列加「· 資料齊全 N 位」統計。
+3. **修正完整度定義（與 ProfilePage 對齊）**：原本把 `instructor_role`（講師等級）算進完成率，但等級由系統／管理員指派、講師本人填不了 → 會永遠壓低完成率且列出他填不了的欄位；已移除。並補上 ProfilePage 有要求但這裡漏掉的 `household_address`（戶籍地址）。**⚠️ 副作用**：多數講師顯示的完成率%會與舊版略不同（通常微升，因少了一格填不了的欄位）。
+
+**✅ 證據**：`npm run build` 綠燈（4.6s）；`eslint DownloadCenter.jsx` 0 error（1 warning＝既有 useEffect/loadData 基線）；還原真實 class 的 HTML mock 經 Playwright 桌機 1280＋手機 375 截圖，agent 判讀六項驗收全過、無破版無水平溢出（`scratchpad/dc-desktop.png`、`dc-mobile375.png`）。
+
+**⚠️ 未驗/待業主**：admin 頁 Google OAuth 自動化登不進，真實資料渲染需業主登入 /admin/download 看一眼（尤其確認缺項標籤對得上真人資料）。尚未 commit／部署——等業主點頭。
 
 ---
 

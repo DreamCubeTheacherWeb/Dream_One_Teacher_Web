@@ -11,44 +11,53 @@ import {
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import FieldPositionEditor from '../../components/FieldPositionEditor';
 
-// 必填欄位（與 ProfilePage 同步，但這邊只做完整度判斷不擋人）
-const REQUIRED_KEYS = [
-  'full_name', 'nickname', 'gender', 'birth_date', 'id_number',
-  'phone_mobile', 'line_id', 'address', 'email_primary',
-  'instructor_role', 'teaching_freq_semester', 'teaching_freq_vacation',
-  'bio_notes',
-  'bank_account_name', 'bank_name', 'bank_branch',
-  'bank_account_number', 'bank_code',
+// 必填欄位（與 ProfilePage 的 REQUIRED_FIELDS 對齊；只做完整度判斷不擋人下載）
+// 註：instructor_role（講師等級）由系統／管理員指派，講師本人填不了，故不列入完整度，
+//     否則所有人都會因這格永遠顯示「未完成」。household_address（戶籍地址）ProfilePage 有要求，一併納入。
+const REQUIRED_FIELDS = [
+  { key: 'full_name', label: '姓名' },
+  { key: 'nickname', label: '暱稱' },
+  { key: 'gender', label: '性別' },
+  { key: 'birth_date', label: '生日' },
+  { key: 'id_number', label: '身分證字號' },
+  { key: 'phone_mobile', label: '手機號碼' },
+  { key: 'line_id', label: 'Line ID' },
+  { key: 'address', label: '通訊地址' },
+  { key: 'household_address', label: '戶籍地址' },
+  { key: 'email_primary', label: 'Email' },
+  { key: 'teaching_freq_semester', label: '接課頻率(學期)' },
+  { key: 'teaching_freq_vacation', label: '接課頻率(寒暑假)' },
+  { key: 'bio_notes', label: '經歷／理念' },
+  { key: 'bank_account_name', label: '匯款戶名' },
+  { key: 'bank_name', label: '銀行別' },
+  { key: 'bank_branch', label: '分行別' },
+  { key: 'bank_account_number', label: '銀行帳號' },
+  { key: 'bank_code', label: '銀行代碼' },
 ];
-const REQUIRED_PATHS = ['photo_path', 'id_front_path', 'id_back_path', 'bankbook_path'];
+const REQUIRED_DOCS = [
+  { key: 'photo_path', label: '大頭照' },
+  { key: 'id_front_path', label: '身分證正面' },
+  { key: 'id_back_path', label: '身分證反面' },
+  { key: 'bankbook_path', label: '存摺封面' },
+];
+const TOTAL_REQUIRED = REQUIRED_FIELDS.length + REQUIRED_DOCS.length + 1; // +1：授課縣市
 
-const isComplete = (inst) => {
-  if (!inst) return false;
-  if (!inst.teaching_regions?.length) return false;
-  for (const k of REQUIRED_KEYS) {
-    const v = inst[k];
-    if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) return false;
+// 回傳「還缺哪些資料」的中文標籤陣列（空陣列＝資料齊全）
+const missingItems = (inst) => {
+  if (!inst) return ['（查無資料）'];
+  const missing = [];
+  for (const f of REQUIRED_FIELDS) {
+    const v = inst[f.key];
+    if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) missing.push(f.label);
   }
-  for (const p of REQUIRED_PATHS) {
-    if (!inst[p]) return false;
+  if (!inst.teaching_regions?.length) missing.push('授課縣市');
+  for (const d of REQUIRED_DOCS) {
+    if (!inst[d.key]) missing.push(d.label);
   }
-  return true;
+  return missing;
 };
 
-const completionPercent = (inst) => {
-  if (!inst) return 0;
-  const total = REQUIRED_KEYS.length + REQUIRED_PATHS.length + 1; // +1 for regions
-  let filled = 0;
-  for (const k of REQUIRED_KEYS) {
-    const v = inst[k];
-    if (v !== null && v !== undefined && (typeof v !== 'string' || v.trim())) filled++;
-  }
-  for (const p of REQUIRED_PATHS) {
-    if (inst[p]) filled++;
-  }
-  if (inst.teaching_regions?.length) filled++;
-  return Math.round((filled / total) * 100);
-};
+const isComplete = (inst) => missingItems(inst).length === 0;
 
 const DownloadCenter = () => {
   const { user } = useAuth();
@@ -61,6 +70,7 @@ const DownloadCenter = () => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all'); // all | complete | incomplete
+  const [expandedIds, setExpandedIds] = useState(new Set()); // 展開完整缺項清單的講師
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: '' });
   const [errors, setErrors] = useState([]);
@@ -247,6 +257,14 @@ const DownloadCenter = () => {
       const next = new Set(prev);
       if (allSelected) allIds.forEach(id => next.delete(id));
       else allIds.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const toggleExpand = (id) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
@@ -581,9 +599,14 @@ const DownloadCenter = () => {
 
       {/* ── 講師列表 ── */}
       <div className="bh-card overflow-hidden">
-        <div className="px-4 py-3 border-b-2 border-bauhaus-black bg-bauhaus-black text-white text-xs uppercase tracking-wider flex items-center gap-2">
+        <div className="px-4 py-3 border-b-2 border-bauhaus-black bg-bauhaus-black text-white text-xs uppercase tracking-wider flex items-center gap-2 flex-wrap">
           <Users className="w-4 h-4" />
-          顯示 {filtered.length} / {instructors.length} 位講師
+          <span>顯示 {filtered.length} / {instructors.length} 位講師</span>
+          {filtered.length > 0 && (
+            <span className="text-white/60 normal-case tracking-normal">
+              · 資料齊全 {filtered.filter(isComplete).length} 位
+            </span>
+          )}
         </div>
 
         {filtered.length === 0 ? (
@@ -592,19 +615,27 @@ const DownloadCenter = () => {
           <div className="divide-y-2 divide-bauhaus-black/20">
             {filtered.map(inst => {
               const checked = selectedIds.has(inst.user_id);
-              const complete = isComplete(inst);
-              const pct = completionPercent(inst);
+              const missing = missingItems(inst);
+              const complete = missing.length === 0;
+              const pct = Math.round(((TOTAL_REQUIRED - missing.length) / TOTAL_REQUIRED) * 100);
+              const expanded = expandedIds.has(inst.user_id);
+              const barColor = pct >= 80 ? 'bg-bauhaus-blue' : pct >= 40 ? 'bg-bauhaus-yellow' : 'bg-bauhaus-red';
+              const pctColor = pct >= 80 ? 'text-bauhaus-blue' : pct >= 40 ? 'text-bauhaus-black' : 'text-bauhaus-red';
+              const MAX_CHIPS = 6;
+              const shown = expanded ? missing : missing.slice(0, MAX_CHIPS);
               return (
                 <div
                   key={inst.user_id}
-                  className={`px-4 py-3 flex items-center gap-3 transition-colors ${checked ? 'bg-bauhaus-cream' : 'hover:bg-bauhaus-cream'}`}
+                  className={`px-4 py-3.5 flex items-start gap-3 transition-colors ${checked ? 'bg-bauhaus-cream' : 'hover:bg-bauhaus-cream'}`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleOne(inst.user_id)}
-                    className="w-5 h-5 accent-bauhaus-blue"
+                    className="w-5 h-5 accent-bauhaus-blue mt-0.5 shrink-0"
                   />
+
+                  {/* 講師資訊 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-bauhaus-black text-sm">{inst.full_name || '(未填姓名)'}</span>
@@ -616,28 +647,62 @@ const DownloadCenter = () => {
                           {inst.instructor_role}級
                         </span>
                       )}
-                      {complete ? (
-                        <span className="bh-chip bg-bauhaus-blue text-white text-[10px] px-1.5 py-0.5">
-                          <CheckCircle2 className="w-3 h-3" /> 齊全
-                        </span>
-                      ) : (
-                        <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black text-[10px] px-1.5 py-0.5">
-                          {pct}% 完成
-                        </span>
-                      )}
                     </div>
                     <div className="text-xs text-bauhaus-black/60 mt-0.5 truncate">
                       {inst.email_primary || '—'} · {inst.phone_mobile || '—'}
                     </div>
+
+                    {/* 還缺什麼資料 */}
+                    {!complete && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-bauhaus-black/45">
+                          還缺 {missing.length} 項
+                        </span>
+                        {shown.map(m => (
+                          <span
+                            key={m}
+                            className="inline-flex items-center rounded-md bg-bauhaus-red/10 text-bauhaus-red text-[11px] font-bold px-1.5 py-0.5"
+                          >
+                            {m}
+                          </span>
+                        ))}
+                        {missing.length > MAX_CHIPS && (
+                          <button
+                            onClick={() => toggleExpand(inst.user_id)}
+                            className="text-[11px] font-bold text-bauhaus-blue hover:underline px-1 min-h-[24px]"
+                          >
+                            {expanded ? '收合' : `＋ 還有 ${missing.length - MAX_CHIPS} 項`}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => downloadSingle(inst)}
-                    disabled={generating || !selectedForm}
-                    className="bh-btn bh-btn-outline text-xs px-3 py-1.5"
-                    title={selectedFormMeta ? `下載「${selectedFormMeta.display_name}」` : ''}
-                  >
-                    <Download className="w-3 h-3" /> 下載
-                  </button>
+
+                  {/* 完成度 + 下載 */}
+                  <div className="flex flex-col items-end gap-2 shrink-0 w-24 sm:w-28">
+                    {complete ? (
+                      <span className="bh-chip bg-bauhaus-blue text-white text-[10px] px-2 py-1">
+                        <CheckCircle2 className="w-3 h-3" /> 齊全
+                      </span>
+                    ) : (
+                      <div className="w-full">
+                        <div className="flex items-center justify-end mb-1">
+                          <span className={`text-xs font-black ${pctColor}`}>{pct}%</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-bauhaus-black/10 overflow-hidden border border-bauhaus-black/15">
+                          <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => downloadSingle(inst)}
+                      disabled={generating || !selectedForm}
+                      className="bh-btn bh-btn-outline text-xs px-3 py-1.5 w-full justify-center"
+                      title={selectedFormMeta ? `下載「${selectedFormMeta.display_name}」` : ''}
+                    >
+                      <Download className="w-3 h-3" /> 下載
+                    </button>
+                  </div>
                 </div>
               );
             })}
