@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle, Trophy, Lock } from 'lucide-react';
+import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle, Trophy, Lock, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
 import BadgeVisual from '../components/BadgeVisual';
+import { WCA_SELF_EVENTS, parseTimeToCs, formatWcaResult } from '../lib/wca';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -81,12 +82,16 @@ const ProfilePage = () => {
     const [uploading, setUploading] = useState({});
     const fileRefs = useRef({});
     const originalWcaId = useRef('');
+    // 是否動過「WCA 各項目成績」——沒動過就不呼叫 upsert RPC，避免未跑 SQL 時誤擋一般存檔
+    const wcaDirty = useRef(false);
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [showClaimModal, setShowClaimModal] = useState(false);
     const [existingClaim, setExistingClaim] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
     const [wcaLocked, setWcaLocked] = useState(false);
+    // WCA 各項目自填成績：[{ event_id, single, average }]，single/average 為使用者輸入的時間字串（如 '12.34'）
+    const [wcaResults, setWcaResults] = useState([]);
 
     useEffect(() => {
         if (user) {
@@ -162,6 +167,29 @@ const ProfilePage = () => {
             originalWcaId.current = formData.wca_id || '';
             setWcaLocked(!!data.hide_from_leaderboard);
 
+            // 預填「WCA 各項目成績」：讀本人 wca_results，只取可自填項目，
+            // 用 formatWcaResult 轉回可編輯的時間字串（與 parseTimeToCs 為往返組）。
+            if (data.id) {
+                const allowed = new Set(WCA_SELF_EVENTS.map((e) => e.id));
+                const { data: wr } = await supabase
+                    .from('wca_results')
+                    .select('event_id, best_single, best_average')
+                    .eq('instructor_id', data.id);
+                if (wr) {
+                    const rows = wr
+                        .filter((r) => allowed.has(r.event_id))
+                        .sort((a, b) =>
+                            WCA_SELF_EVENTS.findIndex((e) => e.id === a.event_id) -
+                            WCA_SELF_EVENTS.findIndex((e) => e.id === b.event_id))
+                        .map((r) => ({
+                            event_id: r.event_id,
+                            single: r.best_single != null ? formatWcaResult(r.event_id, r.best_single) : '',
+                            average: r.best_average != null ? formatWcaResult(r.event_id, r.best_average) : '',
+                        }));
+                    setWcaResults(rows);
+                }
+            }
+
             const previews = {};
             const allDocKeys = ['photo', ...DOC_TYPES.map(d => d.key)];
             for (const key of allDocKeys) {
@@ -186,6 +214,18 @@ const ProfilePage = () => {
     };
 
     const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+    // WCA 各項目成績列操作（任一操作都標記 dirty）
+    const addWcaRow = () => { wcaDirty.current = true; setWcaResults(prev => {
+        const used = new Set(prev.map(r => r.event_id));
+        const next = WCA_SELF_EVENTS.find(e => !used.has(e.id));
+        if (!next) return prev; // 全部項目都加過了
+        return [...prev, { event_id: next.id, single: '', average: '' }];
+    }); };
+    const updateWcaRow = (idx, field, value) => { wcaDirty.current = true;
+        setWcaResults(prev => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r))); };
+    const removeWcaRow = (idx) => { wcaDirty.current = true;
+        setWcaResults(prev => prev.filter((_, i) => i !== idx)); };
 
     const toggleRegion = (county) => {
         setForm(prev => ({
@@ -319,6 +359,34 @@ const ProfilePage = () => {
             alert('儲存失敗：' + error.message);
             setSaving(false);
             return;
+        }
+
+        // WCA 各項目成績自填（停權者、或這次沒動過 WCA 成績者略過；只送有填的項目）。
+        // 後端 upsert_my_wca_results 採 replace 語意：以此清單覆蓋本人可自填項目。
+        if (!wcaLocked && wcaDirty.current) {
+            const invalid = [];
+            const wcaPayload = [];
+            for (const row of wcaResults) {
+                if (!row.event_id) continue;
+                const evName = WCA_SELF_EVENTS.find(e => e.id === row.event_id)?.name || row.event_id;
+                const single = parseTimeToCs(row.single);
+                const average = parseTimeToCs(row.average);
+                if (Number.isNaN(single)) invalid.push(`${evName}單次`);
+                if (Number.isNaN(average)) invalid.push(`${evName}平均`);
+                if (single == null && average == null) continue; // 兩格皆空的列略過
+                wcaPayload.push({ event_id: row.event_id, best_single: single ?? null, best_average: average ?? null });
+            }
+            if (invalid.length) {
+                alert('以下 WCA 成績格式不正確（範例：12.34 或 1:23.45）：\n' + invalid.join('、'));
+                setSaving(false);
+                return;
+            }
+            const { error: wcaErr } = await supabase.rpc('upsert_my_wca_results', { p_results: wcaPayload });
+            if (wcaErr) {
+                alert('WCA 成績儲存失敗：' + wcaErr.message);
+                setSaving(false);
+                return;
+            }
         }
 
         if (profile?.role === 'pending' && isFirstTime) {
@@ -706,12 +774,12 @@ const ProfilePage = () => {
             <Section icon={Trophy} title="WCA 世界賽成績（選填）">
                 <p className="text-sm text-bauhaus-black/60 font-medium mb-3 leading-relaxed">
                     WCA（世界方塊協會，World Cube Association）是全球魔術方塊比賽的官方組織。
-                    若你參加過 WCA 正式比賽，填入你的 WCA 選手編號，各項目成績就會顯示在排行榜的「WCA 賽事」榜上。
-                    沒有 WCA 比賽紀錄可以留空。
+                    若你參加過 WCA 正式比賽，填入你的 WCA 選手編號，並自行填寫各項目的最佳成績，
+                    就會顯示在排行榜的「WCA 賽事」榜上。沒有 WCA 比賽紀錄可以留空。
                 </p>
                 <div className="bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 mb-4 text-sm font-bold text-bauhaus-black flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>請務必照實填寫自己的編號。管理員有權刪除不實資料；累計三次故意填寫不實，將取消你送出資料與參與排名的資格。</span>
+                    <span>請務必照實填寫自己的編號與成績。管理員有權刪除不實資料；累計三次故意填寫不實，將取消你送出資料與參與排名的資格。</span>
                 </div>
                 {wcaLocked && (
                     <div data-testid="wca-locked-warning" className="bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 mb-4 text-sm font-bold text-white flex items-start gap-2">
@@ -728,6 +796,53 @@ const ProfilePage = () => {
                             <Trophy className="w-4 h-4" /> WCA 網站
                         </a>
                     </div>
+                </div>
+
+                {/* 各項目成績自填 */}
+                <div className="mt-6 pt-5 border-t-2 border-bauhaus-black">
+                    <div className="bh-label mb-1">各項目成績</div>
+                    <p className="text-xs text-bauhaus-black/50 font-medium mb-3 leading-relaxed">
+                        填入你參加過的項目最佳成績，「單次」「平均」可擇一或都填。
+                        時間格式：<b>12.34</b>（秒）或 <b>1:23.45</b>（分:秒）。
+                    </p>
+                    <div className="space-y-3">
+                        {wcaResults.length === 0 && (
+                            <p className="text-sm text-bauhaus-black/40 font-bold">尚未新增任何項目，點下方「新增項目」開始填寫。</p>
+                        )}
+                        {wcaResults.map((row, idx) => {
+                            const used = new Set(wcaResults.map(r => r.event_id));
+                            return (
+                                <div key={idx} className="border-2 border-bauhaus-black rounded-lg bg-white p-3 grid grid-cols-2 sm:grid-cols-[1.3fr_1fr_1fr_auto] gap-2 sm:items-end">
+                                    <div className="col-span-2 sm:col-span-1">
+                                        <label className="bh-label text-[10px] block mb-1">項目</label>
+                                        <select disabled={wcaLocked} value={row.event_id} onChange={e => updateWcaRow(idx, 'event_id', e.target.value)} className={`${selectCls} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                                            {WCA_SELF_EVENTS.filter(e => e.id === row.event_id || !used.has(e.id)).map(e => (
+                                                <option key={e.id} value={e.id}>{e.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="bh-label text-[10px] block mb-1">單次</label>
+                                        <input inputMode="decimal" disabled={wcaLocked} value={row.single} onChange={e => updateWcaRow(idx, 'single', e.target.value)} className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} placeholder="12.34" />
+                                    </div>
+                                    <div>
+                                        <label className="bh-label text-[10px] block mb-1">平均</label>
+                                        <input inputMode="decimal" disabled={wcaLocked} value={row.average} onChange={e => updateWcaRow(idx, 'average', e.target.value)} className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} placeholder="13.50" />
+                                    </div>
+                                    <div className="col-span-2 sm:col-span-1 flex sm:block justify-end">
+                                        <button type="button" disabled={wcaLocked} onClick={() => removeWcaRow(idx)} className="bh-btn bh-btn-outline p-2.5 disabled:opacity-50 disabled:cursor-not-allowed" aria-label="移除項目" title="移除項目">
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {!wcaLocked && wcaResults.length < WCA_SELF_EVENTS.length && (
+                        <button type="button" onClick={addWcaRow} className="bh-btn bh-btn-outline text-sm mt-3">
+                            <Plus className="w-4 h-4" /> 新增項目
+                        </button>
+                    )}
                 </div>
             </Section>
 
@@ -903,6 +1018,7 @@ const AchievementsSection = ({ userId, instructorId, certName }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [downloading, setDownloading] = useState(false);
+    const [collapsed, setCollapsed] = useState(false);
 
     useEffect(() => {
         if (!instructorId) { setLoading(false); return undefined; }
@@ -954,21 +1070,32 @@ const AchievementsSection = ({ userId, instructorId, certName }) => {
 
     return (
         <div className="bh-card p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
+            <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setCollapsed(c => !c)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollapsed(c => !c); } }}
+                className={`flex items-center justify-between gap-2 cursor-pointer select-none ${collapsed ? '' : 'mb-4'}`}
+            >
                 <h2 className="text-lg font-black uppercase tracking-tight text-bauhaus-black flex items-center gap-2">
                     <span className="inline-flex items-center justify-center w-8 h-8 bg-bauhaus-yellow text-bauhaus-black shrink-0">
                         <Trophy className="w-4 h-4" />
                     </span>
                     我的教學成就
                 </h2>
-                {!loading && !error && (
-                    <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
-                        成就 {earnedCount} / {totalCount}
-                    </span>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                    {!loading && !error && (
+                        <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
+                            成就 {earnedCount} / {totalCount}
+                        </span>
+                    )}
+                    {collapsed
+                        ? <ChevronDown className="w-5 h-5 text-bauhaus-black" />
+                        : <ChevronUp className="w-5 h-5 text-bauhaus-black" />}
+                </div>
             </div>
 
-            {loading ? (
+            {!collapsed && (loading ? (
                 <div>
                     <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
                         {[...Array(3)].map((_, i) => (
@@ -1060,7 +1187,7 @@ const AchievementsSection = ({ userId, instructorId, certName }) => {
                         </div>
                     )}
                 </>
-            )}
+            ))}
         </div>
     );
 };

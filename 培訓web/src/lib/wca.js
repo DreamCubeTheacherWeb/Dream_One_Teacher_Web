@@ -29,6 +29,34 @@ export const WCA_EVENT_NAMES = {
 
 export const wcaEventName = (eventId) => WCA_EVENT_NAMES[eventId] || eventId;
 
+// 老師「自填」時可選的時間制項目（順序＝顯示順序）。
+// 刻意排除 333fm（最少步，值＝步數）與 333mbf（多顆盲解，複合編碼）──格式難自填、
+// 易亂填，與離線匯入的排除規則一致。後端 upsert_my_wca_results 的白名單須與此一致。
+export const WCA_SELF_EVENTS = [
+  '333', '222', '444', '555', '666', '777',
+  '333oh', '333bf', '444bf', '555bf',
+  'pyram', 'skewb', 'minx', 'clock', 'sq1',
+].map((id) => ({ id, name: WCA_EVENT_NAMES[id] || id }));
+
+/**
+ * 老師輸入的時間字串 → centiseconds（整數）。給 upsert_my_wca_results 用。
+ * 接受格式：'12.34'（秒.百分秒）、'1:23.45'（分:秒.百分秒）、'9'（純秒）。
+ * 空字串 → null（＝未填）；無法解析 → NaN（呼叫端據此擋下並提示）。
+ * 註：與 formatWcaResult 為一組往返函式（formatWcaResult 產出的字串可被本函式解析回原值）。
+ */
+export function parseTimeToCs(input) {
+  const s = String(input ?? '').trim();
+  if (!s) return null;
+  const m = s.match(/^(?:(\d+):)?(\d{1,2})(?:\.(\d{1,2}))?$/);
+  if (!m) return NaN;
+  const min = m[1] ? parseInt(m[1], 10) : 0;
+  const sec = parseInt(m[2], 10);
+  // 有分鐘時，秒數必須 < 60（例如 '1:75.00' 不合法）
+  if (m[1] && sec >= 60) return NaN;
+  const cs = m[3] ? parseInt(m[3].padEnd(2, '0'), 10) : 0;
+  return (min * 60 + sec) * 100 + cs;
+}
+
 /**
  * centiseconds → 顯示字串。
  * <6000 → `S.cs`（如 1234 → "12.34"）；>=6000 → `M:SS.cs`（如 8567 → "1:25.67"）。
