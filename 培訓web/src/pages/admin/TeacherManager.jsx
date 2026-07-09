@@ -17,6 +17,18 @@ const ROLE_CONFIG = {
 
 const INSTRUCTOR_ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習', '職員': '職員', '工讀生': '工讀生' };
 
+// 未登入講師（instructors 表無 user_id）的 employment_status 中文對照，
+// 供「其他狀態」分頁與既有分頁的身份標籤共用；未落在此表的狀態（含 NULL/空字串）一律顯示「未填狀態」。
+const EMPLOYMENT_STATUS_LABELS = {
+    active: '未登入講師',
+    cancelled: '已停用',
+    frozen: '冷凍',
+    part_time: '工讀生',
+    staff: '職員',
+    assistant: '助教',
+};
+const getEmploymentStatusLabel = (status) => EMPLOYMENT_STATUS_LABELS[status] || '未填狀態';
+
 const TeacherManager = () => {
     const [users, setUsers] = useState([]);
     const [invites, setInvites] = useState([]);
@@ -240,11 +252,22 @@ const TeacherManager = () => {
     const mentorInvites = invites.filter(i => i.role === 'mentor');
     const adminInvites = invites.filter(i => i.role === 'admin');
 
+    // instructorMap 對已綁定 user 的講師存了兩把 key（inst.id 與 user:user_id）方便別處查表，
+    // 但 Object.values 會把同一筆資料算兩次；這裡先去重出唯一講師清單，供以下三個推導清單使用。
+    const seenInstructorIds = new Set();
+    const uniqueInstructors = Object.values(instructorMap || {}).filter(i => {
+        if (seenInstructorIds.has(i.id)) return false;
+        seenInstructorIds.add(i.id);
+        return true;
+    });
+
     // 把 instructors 沒對應 user 的當「未登入講師」加進列表
-    const orphanInstructors = Object.values(instructorMap || {}).filter(i => !i.user_id);
-    const allInstructors = Object.values(instructorMap || {});
+    const orphanInstructors = uniqueInstructors.filter(i => !i.user_id);
+    const allInstructors = uniqueInstructors;
     const orphanActive = orphanInstructors.filter(i => i.employment_status === 'active');
     const inactiveInstructors = allInstructors.filter(i => i.employment_status === 'cancelled');
+    // 未登入且狀態不是 active/cancelled（含 NULL/空字串）：冷凍、工讀生、職員、助教、未填狀態
+    const otherStatusInstructors = orphanInstructors.filter(i => i.employment_status !== 'active' && i.employment_status !== 'cancelled');
 
     const getFilteredList = () => {
         let userList = [], inviteList = [], instructorList = [];
@@ -252,6 +275,7 @@ const TeacherManager = () => {
         else if (tab === 'teacher') { userList = teacherUsers; inviteList = teacherInvites; instructorList = orphanActive; }
         else if (tab === 'mentor') { userList = mentorUsers; inviteList = mentorInvites; }
         else if (tab === 'admin') { userList = adminUsers; inviteList = adminInvites; }
+        else if (tab === 'other') { instructorList = otherStatusInstructors; }
         else if (tab === 'inactive') { instructorList = inactiveInstructors; }
 
         const combined = [
@@ -305,7 +329,7 @@ const TeacherManager = () => {
                     <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black flex items-center justify-center shrink-0"><Users className="w-5 h-5" /></div>
                     <div>
                         <div className="text-2xl font-black text-bauhaus-black tabular-nums">{teacherUsers.length + teacherInvites.length}</div>
-                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">講師</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">已登入講師</div>
                     </div>
                 </div>
                 <div className="bh-card p-4 flex items-center gap-3">
@@ -362,10 +386,11 @@ const TeacherManager = () => {
                 <div className="inline-flex flex-wrap border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black overflow-hidden">
                     {[
                         { key: 'pending', label: '待審核', count: pendingUsers.length },
-                        { key: 'teacher', label: '講師', count: teacherUsers.length + teacherInvites.length + orphanActive.length },
+                        { key: 'teacher', label: '講師名冊', count: teacherUsers.length + teacherInvites.length + orphanActive.length },
                         { key: 'mentor', label: '輔導員', count: mentorUsers.length + mentorInvites.length },
                         { key: 'admin', label: '管理員', count: adminUsers.length + adminInvites.length },
                         { key: 'inactive', label: '未啟用講師', count: inactiveInstructors.length },
+                        { key: 'other', label: '其他狀態', count: otherStatusInstructors.length },
                     ].map(t => (
                         <button key={t.key} onClick={() => { setTab(t.key); setExpandedId(null); }}
                             className={`px-4 py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
@@ -417,6 +442,7 @@ const TeacherManager = () => {
                          tab === 'mentor' ? '目前沒有輔導員' :
                          tab === 'admin' ? '目前沒有管理員' :
                          '目前沒有未啟用講師'}
+                         tab === 'other' ? '目前沒有其他狀態的講師' :
                     </div>
                 )}
                 {filteredList.map(item => {
@@ -500,7 +526,7 @@ const TeacherManager = () => {
                                         </select>
                                     ) : (
                                         <span className={`bh-chip ${item.employment_status === 'cancelled' ? 'bg-bauhaus-red text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
-                                            {item.employment_status === 'cancelled' ? '已停用' : '未登入講師'}
+                                            {getEmploymentStatusLabel(item.employment_status)}
                                         </span>
                                     )}
                                     {/* 講師等級 */}
@@ -644,7 +670,7 @@ const TeacherManager = () => {
                                                 </select>
                                             ) : (
                                                 <span className={`bh-chip ${item.employment_status === 'cancelled' ? 'bg-bauhaus-red text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
-                                                    {item.employment_status === 'cancelled' ? '已停用' : '未登入講師'}
+                                                    {getEmploymentStatusLabel(item.employment_status)}
                                                 </span>
                                             )}
                                         </td>
@@ -797,7 +823,10 @@ const TeacherManager = () => {
                             <tr><td colSpan={showMentorCol ? 7 : 6} className="px-6 py-12 text-center text-bauhaus-black/50">
                                 {tab === 'pending' ? '目前沒有待審核的使用者' :
                                  tab === 'teacher' ? '目前沒有講師' :
-                                 tab === 'mentor' ? '目前沒有輔導員' : '目前沒有管理員'}
+                                 tab === 'mentor' ? '目前沒有輔導員' :
+                                 tab === 'admin' ? '目前沒有管理員' :
+                                 tab === 'other' ? '目前沒有其他狀態的講師' :
+                                 '目前沒有未啟用講師'}
                             </td></tr>
                         )}
                     </tbody>
