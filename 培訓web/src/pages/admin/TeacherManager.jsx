@@ -275,18 +275,18 @@ const TeacherManager = () => {
     const filteredList = getFilteredList();
     const showMentorCol = tab === 'teacher' || tab === 'pending';
 
-    if (loading) return <div className="p-12 text-center text-slate-500">載入中...</div>;
+    if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold">載入中...</div>;
 
     return (
         <div className="p-4 sm:p-8 max-w-6xl mx-auto">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900">講師名單管理</h1>
-                    <p className="text-slate-500 mt-1 text-sm">審核新註冊使用者與管理講師名單</p>
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">講師名單管理</h1>
+                    <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">審核新註冊使用者與管理講師名單</p>
                 </div>
                 <button
                     onClick={() => setShowForm(!showForm)}
-                    className="bg-blue-600 text-white px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 text-sm sm:text-base min-h-[44px]"
+                    className="bh-btn bh-btn-blue px-5 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base min-h-[44px]"
                 >
                     <UserPlus className="w-5 h-5" /> 新增講師
                 </button>
@@ -294,63 +294,63 @@ const TeacherManager = () => {
 
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-8">
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center"><Clock className="w-5 h-5" /></div>
+                <div className="bh-card p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-yellow text-bauhaus-black flex items-center justify-center shrink-0"><Clock className="w-5 h-5" /></div>
                     <div>
-                        <div className="text-2xl font-black text-slate-900">{pendingUsers.length}</div>
-                        <div className="text-xs font-medium text-slate-400">待審核</div>
+                        <div className="text-2xl font-black text-bauhaus-black tabular-nums">{pendingUsers.length}</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">待審核</div>
                     </div>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><Users className="w-5 h-5" /></div>
+                <div className="bh-card p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black flex items-center justify-center shrink-0"><Users className="w-5 h-5" /></div>
                     <div>
-                        <div className="text-2xl font-black text-slate-900">{teacherUsers.length + teacherInvites.length}</div>
-                        <div className="text-xs font-medium text-slate-400">講師</div>
+                        <div className="text-2xl font-black text-bauhaus-black tabular-nums">{teacherUsers.length + teacherInvites.length}</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">講師</div>
                     </div>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-                    <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center"><ShieldCheck className="w-5 h-5" /></div>
+                <div className="bh-card p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-blue text-white flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5" /></div>
                     <div>
-                        <div className="text-2xl font-black text-slate-900">{mentorUsers.length + mentorInvites.length}</div>
-                        <div className="text-xs font-medium text-slate-400">輔導員</div>
+                        <div className="text-2xl font-black text-bauhaus-black tabular-nums">{mentorUsers.length + mentorInvites.length}</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">輔導員</div>
                     </div>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><ShieldCheck className="w-5 h-5" /></div>
+                <div className="bh-card p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 border-2 border-bauhaus-black bg-bauhaus-black text-white flex items-center justify-center shrink-0"><ShieldCheck className="w-5 h-5" /></div>
                     <div>
-                        <div className="text-2xl font-black text-slate-900">{adminUsers.length + adminInvites.length}</div>
-                        <div className="text-xs font-medium text-slate-400">管理員</div>
+                        <div className="text-2xl font-black text-bauhaus-black tabular-nums">{adminUsers.length + adminInvites.length}</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">管理員</div>
                     </div>
                 </div>
             </div>
 
             {/* Add form */}
             {showForm && (
-                <div className="bg-white rounded-2xl border border-blue-200 shadow-lg p-6 mb-8">
-                    <h3 className="font-bold text-slate-900 mb-2 flex items-center gap-2">
-                        <UserPlus className="w-5 h-5 text-blue-600" /> 直接建立帳號
+                <div className="bh-card p-6 mb-8">
+                    <h3 className="font-black text-bauhaus-black mb-2 flex items-center gap-2 uppercase tracking-wide text-sm">
+                        <UserPlus className="w-5 h-5 text-bauhaus-blue" /> 直接建立帳號
                     </h3>
-                    <p className="text-sm text-slate-400 mb-4">
+                    <p className="text-sm text-bauhaus-black/60 mb-4 font-medium">
                         建立完成後，對方可以直接用 Email 和密碼登入，不需要自己註冊。
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
                         <input type="text" placeholder="姓名" value={form.name}
                             onChange={e => setForm({ ...form, name: e.target.value })}
-                            className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                            className="bh-input" />
                         <input type="email" placeholder="Email" value={form.email}
                             onChange={e => setForm({ ...form, email: e.target.value })}
-                            className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                            className="bh-input" />
                         <input type="text" placeholder="登入密碼（至少 6 碼）" value={form.password}
                             onChange={e => setForm({ ...form, password: e.target.value })}
-                            className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                            className="bh-input" />
                         <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
-                            className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                            className="bh-input">
                             <option value="teacher">講師</option>
                             <option value="mentor">輔導員</option>
                             <option value="admin">管理員</option>
                         </select>
                         <button onClick={handleDirectCreate} disabled={creating}
-                            className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                            className="bh-btn bh-btn-blue px-6 py-2.5">
                             {creating ? <><Loader2 className="w-4 h-4 animate-spin" /> 建立中...</> : '確認建立'}
                         </button>
                     </div>
@@ -359,17 +359,17 @@ const TeacherManager = () => {
 
             {/* Tabs + Search + Toggle */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
-                <div className="flex gap-2 flex-wrap">
+                <div className="inline-flex flex-wrap border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black overflow-hidden">
                     {[
-                        { key: 'pending', label: '待審核', count: pendingUsers.length, activeColor: 'bg-amber-500' },
-                        { key: 'teacher', label: '講師', count: teacherUsers.length + teacherInvites.length + orphanActive.length, activeColor: 'bg-blue-600' },
-                        { key: 'mentor', label: '輔導員', count: mentorUsers.length + mentorInvites.length, activeColor: 'bg-teal-600' },
-                        { key: 'admin', label: '管理員', count: adminUsers.length + adminInvites.length, activeColor: 'bg-indigo-600' },
-                        { key: 'inactive', label: '未啟用講師', count: inactiveInstructors.length, activeColor: 'bg-slate-500' },
+                        { key: 'pending', label: '待審核', count: pendingUsers.length },
+                        { key: 'teacher', label: '講師', count: teacherUsers.length + teacherInvites.length + orphanActive.length },
+                        { key: 'mentor', label: '輔導員', count: mentorUsers.length + mentorInvites.length },
+                        { key: 'admin', label: '管理員', count: adminUsers.length + adminInvites.length },
+                        { key: 'inactive', label: '未啟用講師', count: inactiveInstructors.length },
                     ].map(t => (
                         <button key={t.key} onClick={() => { setTab(t.key); setExpandedId(null); }}
-                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all min-h-[44px] ${
-                                tab === t.key ? `${t.activeColor} text-white shadow-md` : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'
+                            className={`px-4 py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
+                                tab === t.key ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
                             }`}>
                             {t.label} ({t.count})
                         </button>
@@ -378,31 +378,31 @@ const TeacherManager = () => {
 
                 <label className="flex items-center gap-2 cursor-pointer select-none shrink-0"
                     onClick={() => { setShowDetail(v => !v); setExpandedId(null); }}>
-                    <div className={`relative w-9 h-5 rounded-full transition-colors ${showDetail ? 'bg-blue-600' : 'bg-slate-300'}`}>
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${showDetail ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                    <div className={`relative w-9 h-5 rounded-full border-2 border-bauhaus-black transition-colors ${showDetail ? 'bg-bauhaus-blue' : 'bg-white'}`}>
+                        <div className={`absolute top-0 left-0 w-3.5 h-3.5 rounded-full bg-bauhaus-black transition-transform ${showDetail ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                     </div>
-                    <span className="text-sm text-slate-600 flex items-center gap-1">
+                    <span className="text-sm font-bold text-bauhaus-black flex items-center gap-1">
                         <Eye className="w-3.5 h-3.5" /> 詳細資料
                     </span>
                 </label>
 
                 <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bauhaus-black/40" />
                     <input type="text" placeholder="搜尋姓名或 Email..." value={search}
                         onChange={e => setSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                        className="bh-input pl-10 text-sm" />
                 </div>
             </div>
 
             {/* Batch approve banner */}
             {tab === 'pending' && pendingUsers.length > 0 && (
-                <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 bh-card p-4 mb-6">
                     <div className="flex items-center gap-3">
-                        <AlertCircle className="w-5 h-5 text-amber-600" />
-                        <span className="text-sm font-medium text-amber-800">有 {pendingUsers.length} 位使用者正在等待審核</span>
+                        <div className="w-8 h-8 border-2 border-bauhaus-black bg-bauhaus-yellow text-bauhaus-black flex items-center justify-center shrink-0"><AlertCircle className="w-4 h-4" /></div>
+                        <span className="text-sm font-bold text-bauhaus-black">有 {pendingUsers.length} 位使用者正在等待審核</span>
                     </div>
                     <button onClick={handleBatchApprove}
-                        className="px-4 py-2 bg-amber-600 text-white rounded-xl text-sm font-bold hover:bg-amber-700 transition-all">
+                        className="bh-btn bh-btn-yellow px-4 py-2 text-sm">
                         全部核准為講師
                     </button>
                 </div>
@@ -411,7 +411,7 @@ const TeacherManager = () => {
             {/* ===== 手機版：卡片列表 ===== */}
             <div className="md:hidden space-y-3">
                 {filteredList.length === 0 && (
-                    <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400">
+                    <div className="bh-card p-8 text-center text-bauhaus-black/50">
                         {tab === 'pending' ? '目前沒有待審核的使用者' :
                          tab === 'teacher' ? '目前沒有講師' :
                          tab === 'mentor' ? '目前沒有輔導員' :
@@ -423,25 +423,25 @@ const TeacherManager = () => {
                     const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : null;
                     const isExpanded = showDetail && expandedId === `${item._type}-${item.id}`;
                     return (
-                        <div key={`m-${item._type}-${item.id}`} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div key={`m-${item._type}-${item.id}`} className="bh-card overflow-hidden">
                             <div className="p-4 space-y-3"
                                 onClick={() => showDetail && setExpandedId(isExpanded ? null : `${item._type}-${item.id}`)}>
                                 {/* 姓名 + 操作按鈕 */}
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <span className="font-bold text-slate-900">{item.name || '—'}</span>
-                                        {item._type === 'invite' && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">尚未註冊</span>}
+                                        <span className="font-bold text-bauhaus-black">{item.name || '—'}</span>
+                                        {item._type === 'invite' && <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">尚未註冊</span>}
                                     </div>
                                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                         {showDetail && (
-                                            <button className="p-1.5 text-slate-400 hover:text-blue-600"
+                                            <button className="p-1.5 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
                                                 onClick={() => setExpandedId(isExpanded ? null : `${item._type}-${item.id}`)}>
                                                 {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                                             </button>
                                         )}
                                         {item._type === 'user' && item.role === 'pending' && (
                                             <button onClick={() => handleRoleChange(item.id, 'teacher')}
-                                                className="p-1.5 text-emerald-500 hover:text-emerald-700" title="核准為講師">
+                                                className="p-1.5 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-blue hover:text-white transition-colors duration-200" title="核准為講師">
                                                 <CheckCircle className="w-4 h-4" />
                                             </button>
                                         )}
@@ -455,7 +455,7 @@ const TeacherManager = () => {
                                                     if (error) { alert('操作失敗：' + error.message); return; }
                                                     fetchData();
                                                 }}
-                                                className={`p-1.5 ${item.employment_status === 'cancelled' ? 'text-emerald-500 hover:text-emerald-700' : 'text-slate-400 hover:text-rose-500'}`}
+                                                className={`p-1.5 border-2 border-bauhaus-black text-bauhaus-black transition-colors duration-200 ${item.employment_status === 'cancelled' ? 'hover:bg-bauhaus-blue hover:text-white' : 'hover:bg-bauhaus-red hover:text-white'}`}
                                                 title={item.employment_status === 'cancelled' ? '啟用' : '停用'}
                                             >
                                                 {item.employment_status === 'cancelled' ? <CheckCircle className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
@@ -463,24 +463,24 @@ const TeacherManager = () => {
                                         )}
                                         {item._type !== 'instructor' && (
                                             <button onClick={() => item._type === 'user' ? handleDeleteUser(item) : handleDeleteInvite(item.id)}
-                                                className="p-1.5 text-slate-400 hover:text-red-500" title="移除">
+                                                className="p-1.5 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-red hover:text-white transition-colors duration-200" title="移除">
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         )}
                                     </div>
                                 </div>
                                 {/* Email */}
-                                <div className="text-sm text-slate-500 truncate">{item.email}</div>
+                                <div className="text-sm text-bauhaus-black/60 truncate">{item.email}</div>
                                 {/* 下拉選單列 */}
                                 <div className="flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
                                     {/* 身份 */}
                                     {item._type === 'user' ? (
                                         <select value={item.role} onChange={e => handleRoleChange(item.id, e.target.value)}
-                                            className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none ${
-                                                item.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
-                                                item.role === 'mentor' ? 'bg-teal-50 text-teal-600' :
-                                                item.role === 'pending' ? 'bg-amber-50 text-amber-600' :
-                                                'bg-blue-50 text-blue-600'
+                                            className={`bh-chip border-0 outline-none cursor-pointer ${
+                                                item.role === 'admin' ? 'bg-bauhaus-black text-white' :
+                                                item.role === 'mentor' ? 'bg-bauhaus-blue text-white' :
+                                                item.role === 'pending' ? 'bg-bauhaus-yellow text-bauhaus-black' :
+                                                'bg-bauhaus-muted text-bauhaus-black'
                                             }`}>
                                             {tab === 'pending' && <option value="pending">待審核</option>}
                                             <option value="teacher">講師</option>
@@ -489,17 +489,17 @@ const TeacherManager = () => {
                                         </select>
                                     ) : item._type === 'invite' ? (
                                         <select value={item.role} onChange={e => handleInviteRoleChange(item.id, e.target.value)}
-                                            className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none ${
-                                                item.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
-                                                item.role === 'mentor' ? 'bg-teal-50 text-teal-600' :
-                                                'bg-blue-50 text-blue-600'
+                                            className={`bh-chip border-0 outline-none cursor-pointer ${
+                                                item.role === 'admin' ? 'bg-bauhaus-black text-white' :
+                                                item.role === 'mentor' ? 'bg-bauhaus-blue text-white' :
+                                                'bg-bauhaus-muted text-bauhaus-black'
                                             }`}>
                                             <option value="teacher">講師</option>
                                             <option value="mentor">輔導員</option>
                                             <option value="admin">管理員</option>
                                         </select>
                                     ) : (
-                                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${item.employment_status === 'cancelled' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+                                        <span className={`bh-chip ${item.employment_status === 'cancelled' ? 'bg-bauhaus-red text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
                                             {item.employment_status === 'cancelled' ? '已停用' : '未登入講師'}
                                         </span>
                                     )}
@@ -521,8 +521,8 @@ const TeacherManager = () => {
                                                 if (error) { alert('講師等級變更失敗：' + error.message); return; }
                                                 setInstructorMap(prev => ({ ...prev, [item.id]: { ...(prev[item.id] || {}), user_id: item.id, instructor_role: newRole } }));
                                             }}
-                                            className={`text-xs font-bold px-2.5 py-1.5 rounded-full border-0 outline-none ${
-                                                inst?.instructor_role ? 'bg-purple-50 text-purple-600' : 'bg-slate-50 text-slate-400'
+                                            className={`bh-chip border-0 outline-none cursor-pointer ${
+                                                inst?.instructor_role ? 'bg-bauhaus-black text-white' : 'bg-bauhaus-muted text-bauhaus-black'
                                             }`}
                                         >
                                             <option value="">等級未設定</option>
@@ -536,8 +536,8 @@ const TeacherManager = () => {
                                         <select
                                             value={item.mentor_name || ''}
                                             onChange={e => handleMentorChange(item.id, e.target.value)}
-                                            className={`text-xs px-2.5 py-1.5 rounded-full outline-none ${
-                                                item.mentor_name ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-400 border border-slate-200'
+                                            className={`bh-chip outline-none cursor-pointer ${
+                                                item.mentor_name ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black/50'
                                             }`}
                                         >
                                             <option value="">輔導員未指派</option>
@@ -547,13 +547,13 @@ const TeacherManager = () => {
                                     )}
                                 </div>
                                 {/* 日期 */}
-                                <div className="text-[11px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</div>
+                                <div className="text-[11px] text-bauhaus-black/40">{new Date(item.created_at).toLocaleDateString()}</div>
                             </div>
                             {/* 展開詳細 */}
                             {isExpanded && inst && (
-                                <div className="border-t border-slate-100 p-4 bg-slate-50/70 space-y-4">
+                                <div className="border-t-2 border-bauhaus-black p-4 bg-bauhaus-cream space-y-4">
                                     <div className="space-y-1.5 text-sm">
-                                        <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">基本資料</h4>
+                                        <h4 className="bh-label">基本資料</h4>
                                         <DetailRow label="性別" value={inst.gender} />
                                         <DetailRow label="生日" value={inst.birth_date} />
                                         <DetailRow label="手機" value={inst.phone_mobile} />
@@ -561,26 +561,26 @@ const TeacherManager = () => {
                                         <DetailRow label="Line" value={inst.line_id} />
                                     </div>
                                     <div className="space-y-1.5 text-sm">
-                                        <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">聯絡與教學</h4>
+                                        <h4 className="bh-label">聯絡與教學</h4>
                                         <DetailRow label="備用 Email" value={inst.email_secondary} />
                                         <DetailRow label="地址" value={inst.address} />
                                         <DetailRow label="學期接課" value={inst.teaching_freq_semester} />
                                         <DetailRow label="寒暑接課" value={inst.teaching_freq_vacation} />
                                     </div>
                                     <div className="space-y-1.5 text-sm">
-                                        <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">接課地區</h4>
+                                        <h4 className="bh-label">接課地區</h4>
                                         {inst.teaching_regions?.length > 0 ? (
                                             <div className="flex flex-wrap gap-1">
                                                 {inst.teaching_regions.map(r => (
-                                                    <span key={r} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{r}</span>
+                                                    <span key={r} className="bh-chip bg-white text-bauhaus-black">{r}</span>
                                                 ))}
                                             </div>
-                                        ) : <span className="text-xs text-slate-400">未設定</span>}
+                                        ) : <span className="text-xs text-bauhaus-black/40">未設定</span>}
                                     </div>
                                 </div>
                             )}
                             {isExpanded && !inst && (
-                                <div className="border-t border-slate-100 p-4 bg-slate-50/70 text-center text-sm text-slate-400">
+                                <div className="border-t-2 border-bauhaus-black p-4 bg-bauhaus-cream text-center text-sm text-bauhaus-black/50">
                                     此講師尚未填寫個人資料
                                 </div>
                             )}
@@ -590,9 +590,9 @@ const TeacherManager = () => {
             </div>
 
             {/* ===== 桌面版：表格 ===== */}
-            <div className="hidden md:block bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="hidden md:block bh-card overflow-hidden">
                 <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                    <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider">
                         <tr>
                             <th className="px-6 py-4">姓名</th>
                             <th className="px-6 py-4">Email</th>
@@ -603,28 +603,28 @@ const TeacherManager = () => {
                             <th className="px-6 py-4 text-right">操作</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y-2 divide-bauhaus-black/20">
                         {filteredList.map(item => {
                             const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : null;
                             const isExpanded = showDetail && expandedId === `${item._type}-${item.id}`;
                             const totalCols = 5 + (showMentorCol ? 1 : 0) + 1;
                             return (
                                 <React.Fragment key={`${item._type}-${item.id}`}>
-                                    <tr className={`hover:bg-slate-50 transition-colors ${showDetail ? 'cursor-pointer' : ''}`}
+                                    <tr className={`hover:bg-bauhaus-cream transition-colors ${showDetail ? 'cursor-pointer' : ''}`}
                                         onClick={() => showDetail && setExpandedId(isExpanded ? null : `${item._type}-${item.id}`)}>
                                         <td className="px-6 py-4">
-                                            <span className="font-semibold text-slate-900">{item.name || '—'}</span>
-                                            {item._type === 'invite' && <span className="ml-2 text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">尚未註冊</span>}
+                                            <span className="font-bold text-bauhaus-black">{item.name || '—'}</span>
+                                            {item._type === 'invite' && <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black ml-2">尚未註冊</span>}
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-slate-500">{item.email}</td>
+                                        <td className="px-6 py-4 text-sm text-bauhaus-black/60">{item.email}</td>
                                         <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                                             {item._type === 'user' ? (
                                                 <select value={item.role} onChange={e => handleRoleChange(item.id, e.target.value)}
-                                                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none cursor-pointer ${
-                                                        item.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
-                                                        item.role === 'mentor' ? 'bg-teal-50 text-teal-600' :
-                                                        item.role === 'pending' ? 'bg-amber-50 text-amber-600' :
-                                                        'bg-blue-50 text-blue-600'
+                                                    className={`bh-chip border-0 outline-none cursor-pointer ${
+                                                        item.role === 'admin' ? 'bg-bauhaus-black text-white' :
+                                                        item.role === 'mentor' ? 'bg-bauhaus-blue text-white' :
+                                                        item.role === 'pending' ? 'bg-bauhaus-yellow text-bauhaus-black' :
+                                                        'bg-bauhaus-muted text-bauhaus-black'
                                                     }`}>
                                                     {tab === 'pending' && <option value="pending">待審核</option>}
                                                     <option value="teacher">講師</option>
@@ -633,17 +633,17 @@ const TeacherManager = () => {
                                                 </select>
                                             ) : item._type === 'invite' ? (
                                                 <select value={item.role} onChange={e => handleInviteRoleChange(item.id, e.target.value)}
-                                                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none cursor-pointer ${
-                                                        item.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
-                                                        item.role === 'mentor' ? 'bg-teal-50 text-teal-600' :
-                                                        'bg-blue-50 text-blue-600'
+                                                    className={`bh-chip border-0 outline-none cursor-pointer ${
+                                                        item.role === 'admin' ? 'bg-bauhaus-black text-white' :
+                                                        item.role === 'mentor' ? 'bg-bauhaus-blue text-white' :
+                                                        'bg-bauhaus-muted text-bauhaus-black'
                                                     }`}>
                                                     <option value="teacher">講師</option>
                                                     <option value="mentor">輔導員</option>
                                                     <option value="admin">管理員</option>
                                                 </select>
                                             ) : (
-                                                <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${item.employment_status === 'cancelled' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+                                                <span className={`bh-chip ${item.employment_status === 'cancelled' ? 'bg-bauhaus-red text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
                                                     {item.employment_status === 'cancelled' ? '已停用' : '未登入講師'}
                                                 </span>
                                             )}
@@ -666,8 +666,8 @@ const TeacherManager = () => {
                                                         if (error) { alert('講師等級變更失敗：' + error.message); return; }
                                                         setInstructorMap(prev => ({ ...prev, [item.id]: { ...(prev[item.id] || {}), user_id: item.id, instructor_role: newRole } }));
                                                     }}
-                                                    className={`text-xs font-bold px-2.5 py-1.5 rounded-full border-0 outline-none cursor-pointer ${
-                                                        inst?.instructor_role ? 'bg-purple-50 text-purple-600' : 'bg-slate-50 text-slate-400'
+                                                    className={`bh-chip border-0 outline-none cursor-pointer ${
+                                                        inst?.instructor_role ? 'bg-bauhaus-black text-white' : 'bg-bauhaus-muted text-bauhaus-black'
                                                     }`}
                                                 >
                                                     <option value="">未設定</option>
@@ -676,7 +676,7 @@ const TeacherManager = () => {
                                                     ))}
                                                 </select>
                                             ) : (
-                                                <span className="text-xs text-slate-300">—</span>
+                                                <span className="text-xs text-bauhaus-black/30">—</span>
                                             )}
                                         </td>
                                         {showMentorCol && (
@@ -685,10 +685,10 @@ const TeacherManager = () => {
                                                     <select
                                                         value={item.mentor_name || ''}
                                                         onChange={e => handleMentorChange(item.id, e.target.value)}
-                                                        className={`text-sm w-32 px-3 py-2 rounded-lg outline-none cursor-pointer transition-colors ${
+                                                        className={`text-sm w-32 px-3 py-2 border-2 border-bauhaus-black outline-none cursor-pointer transition-colors ${
                                                             item.mentor_name
-                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                                : 'bg-slate-50 text-slate-400 border border-slate-200'
+                                                                ? 'bg-bauhaus-blue text-white'
+                                                                : 'bg-white text-bauhaus-black/50'
                                                         }`}
                                                     >
                                                         <option value="">未指派</option>
@@ -698,24 +698,24 @@ const TeacherManager = () => {
                                                         <option value="__add_new__">＋ 新增輔導員</option>
                                                     </select>
                                                 ) : (
-                                                    <span className="text-xs text-slate-300">—</span>
+                                                    <span className="text-xs text-bauhaus-black/30">—</span>
                                                 )}
                                             </td>
                                         )}
-                                        <td className="px-6 py-4 text-xs text-slate-400">
+                                        <td className="px-6 py-4 text-xs text-bauhaus-black/40">
                                             {new Date(item.created_at).toLocaleDateString()}
                                         </td>
                                         <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
                                             <div className="flex items-center justify-end gap-1">
                                                 {showDetail && (
-                                                    <button className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                                                    <button className="p-2 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors"
                                                         onClick={() => setExpandedId(isExpanded ? null : `${item._type}-${item.id}`)}>
                                                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                                                     </button>
                                                 )}
                                                 {item._type === 'user' && item.role === 'pending' && (
                                                     <button onClick={() => handleRoleChange(item.id, 'teacher')}
-                                                        className="p-2 text-emerald-500 hover:text-emerald-700 transition-colors" title="核准為講師">
+                                                        className="p-2 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-blue hover:text-white transition-colors" title="核准為講師">
                                                         <CheckCircle className="w-4 h-4" />
                                                     </button>
                                                 )}
@@ -729,7 +729,7 @@ const TeacherManager = () => {
                                                             if (error) { alert('操作失敗：' + error.message); return; }
                                                             fetchData();
                                                         }}
-                                                        className={`p-2 transition-colors ${item.employment_status === 'cancelled' ? 'text-emerald-500 hover:text-emerald-700' : 'text-slate-400 hover:text-rose-500'}`}
+                                                        className={`p-2 border-2 border-bauhaus-black text-bauhaus-black transition-colors ${item.employment_status === 'cancelled' ? 'hover:bg-bauhaus-blue hover:text-white' : 'hover:bg-bauhaus-red hover:text-white'}`}
                                                         title={item.employment_status === 'cancelled' ? '啟用' : '停用'}
                                                     >
                                                         {item.employment_status === 'cancelled' ? <CheckCircle className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
@@ -737,7 +737,7 @@ const TeacherManager = () => {
                                                 )}
                                                 {item._type !== 'instructor' && (
                                                     <button onClick={() => item._type === 'user' ? handleDeleteUser(item) : handleDeleteInvite(item.id)}
-                                                        className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="移除">
+                                                        className="p-2 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-red hover:text-white transition-colors" title="移除">
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 )}
@@ -746,10 +746,10 @@ const TeacherManager = () => {
                                     </tr>
                                     {isExpanded && inst && (
                                         <tr>
-                                            <td colSpan={totalCols} className="px-6 py-5 bg-slate-50/70">
+                                            <td colSpan={totalCols} className="px-6 py-5 bg-bauhaus-cream">
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
                                                     <div className="space-y-2">
-                                                        <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider mb-2">基本資料</h4>
+                                                        <h4 className="bh-label mb-2">基本資料</h4>
                                                         <DetailRow label="性別" value={inst.gender} />
                                                         <DetailRow label="出生年月日" value={inst.birth_date} />
                                                         <DetailRow label="手機" value={inst.phone_mobile} />
@@ -757,25 +757,25 @@ const TeacherManager = () => {
                                                         <DetailRow label="Line ID" value={inst.line_id} />
                                                     </div>
                                                     <div className="space-y-2">
-                                                        <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider mb-2">聯絡與教學</h4>
+                                                        <h4 className="bh-label mb-2">聯絡與教學</h4>
                                                         <DetailRow label="備用 Email" value={inst.email_secondary} />
                                                         <DetailRow label="地址" value={inst.address} />
                                                         <DetailRow label="學期接課" value={inst.teaching_freq_semester} />
                                                         <DetailRow label="寒暑接課" value={inst.teaching_freq_vacation} />
                                                     </div>
                                                     <div className="space-y-2">
-                                                        <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider mb-2">接課地區</h4>
+                                                        <h4 className="bh-label mb-2">接課地區</h4>
                                                         {inst.teaching_regions?.length > 0 ? (
                                                             <div className="flex flex-wrap gap-1">
                                                                 {inst.teaching_regions.map(r => (
-                                                                    <span key={r} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{r}</span>
+                                                                    <span key={r} className="bh-chip bg-white text-bauhaus-black">{r}</span>
                                                                 ))}
                                                             </div>
-                                                        ) : <span className="text-xs text-slate-400">未設定</span>}
+                                                        ) : <span className="text-xs text-bauhaus-black/40">未設定</span>}
                                                         {inst.bio_notes && (
                                                             <>
-                                                                <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider mt-3 mb-1">自我介紹</h4>
-                                                                <p className="text-slate-600 text-xs whitespace-pre-wrap line-clamp-4">{inst.bio_notes}</p>
+                                                                <h4 className="bh-label mt-3 mb-1">自我介紹</h4>
+                                                                <p className="text-bauhaus-black/70 text-xs whitespace-pre-wrap line-clamp-4">{inst.bio_notes}</p>
                                                             </>
                                                         )}
                                                     </div>
@@ -785,7 +785,7 @@ const TeacherManager = () => {
                                     )}
                                     {isExpanded && !inst && (
                                         <tr>
-                                            <td colSpan={totalCols} className="px-6 py-5 bg-slate-50/70 text-center text-sm text-slate-400">
+                                            <td colSpan={totalCols} className="px-6 py-5 bg-bauhaus-cream text-center text-sm text-bauhaus-black/50">
                                                 此講師尚未填寫個人資料
                                             </td>
                                         </tr>
@@ -794,7 +794,7 @@ const TeacherManager = () => {
                             );
                         })}
                         {filteredList.length === 0 && (
-                            <tr><td colSpan={showMentorCol ? 7 : 6} className="px-6 py-12 text-center text-slate-400">
+                            <tr><td colSpan={showMentorCol ? 7 : 6} className="px-6 py-12 text-center text-bauhaus-black/50">
                                 {tab === 'pending' ? '目前沒有待審核的使用者' :
                                  tab === 'teacher' ? '目前沒有講師' :
                                  tab === 'mentor' ? '目前沒有輔導員' : '目前沒有管理員'}
@@ -811,8 +811,8 @@ const DetailRow = ({ label, value }) => {
     if (!value) return null;
     return (
         <div className="flex items-start gap-2">
-            <span className="text-slate-400 whitespace-nowrap min-w-[72px]">{label}：</span>
-            <span className="text-slate-700">{value}</span>
+            <span className="text-bauhaus-black/40 whitespace-nowrap min-w-[72px]">{label}：</span>
+            <span className="text-bauhaus-black/80">{value}</span>
         </div>
     );
 };

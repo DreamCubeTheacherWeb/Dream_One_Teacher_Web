@@ -75,10 +75,9 @@ const ColorPalette = ({ title, icon, onApply, onOpen, recentColors }) => {
     <div className="relative" ref={panelRef}>
       <button
         onMouseDown={(e) => { e.preventDefault(); onOpen(); setOpen(!open); }}
-        className="flex items-center gap-0.5 p-1 rounded-lg hover:bg-slate-100"
+        className="flex items-center gap-0.5 p-1 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
         title={title}>
-        <div className="w-5 h-5 rounded flex items-center justify-center relative overflow-hidden"
-          style={{ border: isWhite(lastColor) ? '2px solid #cbd5e1' : '1px solid #cbd5e1' }}>
+        <div className="w-5 h-5 flex items-center justify-center relative overflow-hidden border-2 border-bauhaus-black">
           {isWhite(lastColor) ? (
             <><div className="absolute inset-0" style={{ background: 'repeating-conic-gradient(#e2e8f0 0% 25%, #fff 0% 50%) 0 0/6px 6px' }} /><div className="absolute inset-0 bg-white/70" /></>
           ) : (
@@ -86,16 +85,16 @@ const ColorPalette = ({ title, icon, onApply, onOpen, recentColors }) => {
           )}
         </div>
         {icon}
-        <span className="text-[7px] text-slate-400 leading-none">▼</span>
+        <span className="text-[7px] text-bauhaus-black/40 leading-none">▼</span>
       </button>
       {open && (
-        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-white rounded-xl shadow-2xl border border-slate-200 p-3 z-[60]" style={{ width: 216 }}>
-          <div className="text-[10px] text-slate-500 font-bold mb-2">{title}</div>
+        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-white border-2 border-bauhaus-black shadow-hard p-3 z-[60]" style={{ width: 216 }}>
+          <div className="text-[10px] text-bauhaus-black/60 font-bold mb-2">{title}</div>
           <div className="grid grid-cols-6 gap-1.5 mb-2">
             {PRESET_COLORS.map(c => (
               <button key={c}
                 onMouseDown={(e) => { e.preventDefault(); apply(c); }}
-                className={`w-7 h-7 rounded-md hover:scale-125 hover:z-10 transition-transform ${isWhite(c) ? 'border-2 border-slate-300' : 'border border-slate-200'}`}
+                className={`w-7 h-7 hover:scale-125 hover:z-10 transition-transform duration-200 ${isWhite(c) ? 'border-2 border-bauhaus-black' : 'border border-bauhaus-black/30'}`}
                 style={{ background: c }}
                 title={c}
               />
@@ -103,12 +102,12 @@ const ColorPalette = ({ title, icon, onApply, onOpen, recentColors }) => {
           </div>
           {recentColors.length > 0 && (
             <>
-              <div className="text-[10px] text-slate-400 mb-1">最近使用</div>
+              <div className="text-[10px] text-bauhaus-black/40 mb-1">最近使用</div>
               <div className="flex gap-1.5 mb-2 flex-wrap">
                 {recentColors.slice(0, 8).map((c, i) => (
                   <button key={`r-${i}`}
                     onMouseDown={(e) => { e.preventDefault(); apply(c); }}
-                    className={`w-7 h-7 rounded-md hover:scale-125 transition-transform ${isWhite(c) ? 'border-2 border-slate-300' : 'border border-slate-200'}`}
+                    className={`w-7 h-7 hover:scale-125 transition-transform duration-200 ${isWhite(c) ? 'border-2 border-bauhaus-black' : 'border border-bauhaus-black/30'}`}
                     style={{ background: c }}
                     title={c}
                   />
@@ -116,10 +115,10 @@ const ColorPalette = ({ title, icon, onApply, onOpen, recentColors }) => {
               </div>
             </>
           )}
-          <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center gap-2 pt-2 border-t-2 border-bauhaus-black/10">
             <button
               onMouseDown={(e) => { e.preventDefault(); nativeRef.current?.click(); }}
-              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium">
+              className="text-[11px] text-bauhaus-blue hover:text-bauhaus-black font-medium">
               自訂顏色...
             </button>
             <input ref={nativeRef} type="color" value={lastColor}
@@ -715,8 +714,8 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent" />
-        <span className="ml-3 text-slate-500">載入中...</span>
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-bauhaus-blue border-t-transparent" />
+        <span className="ml-3 text-bauhaus-black/50 font-medium">載入中...</span>
       </div>
     );
   }
@@ -728,53 +727,53 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const isButton = selected?.type === 'shape' && selected?.shapeType === 'button';
 
   return (
-    <div className="min-h-screen bg-slate-100 pb-20">
+    <div className="min-h-screen bg-bauhaus-paper pb-20">
       {/* 手機版提示：此編輯器不適合觸控操作 */}
-      <div className="md:hidden bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs font-bold text-amber-700 text-center">
+      <div className="md:hidden bg-bauhaus-yellow border-b-2 border-bauhaus-black px-4 py-2 text-xs font-bold text-bauhaus-black text-center">
         🖥️ 此編輯器為桌面工具，建議使用電腦操作
       </div>
       {/* ── Top bar ── */}
-      <div className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3">
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b-2 lg:border-b-4 border-bauhaus-black px-4 py-3">
         <div className="max-w-[1100px] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+            <button onClick={onBack} className="flex items-center gap-1 px-3 py-2 border-2 border-bauhaus-black text-sm font-bold text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
               <ChevronLeft className="w-4 h-4" /> 返回
             </button>
-            <span className="text-lg font-black text-slate-800 truncate max-w-[220px]">{lessonTitle}</span>
-            <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full font-bold">畫布模式</span>
+            <span className="text-lg font-black text-bauhaus-black truncate max-w-[220px]">{lessonTitle}</span>
+            <span className="text-xs bg-bauhaus-black text-white px-2 py-0.5 border-2 border-bauhaus-black font-bold uppercase tracking-wide">畫布模式</span>
             {onSwitchToClassic && (
-              <button onClick={onSwitchToClassic} className="text-xs text-slate-400 hover:text-slate-600 underline ml-1 transition">傳統模式</button>
+              <button onClick={onSwitchToClassic} className="text-xs text-bauhaus-black/50 hover:text-bauhaus-blue underline ml-1 transition-colors duration-200">傳統模式</button>
             )}
           </div>
           <div className="flex items-center gap-1.5">
             <button onClick={() => setShowGrid(!showGrid)}
-              className={`p-2 rounded-lg text-xs font-bold transition ${showGrid ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:bg-slate-100'}`}
+              className={`p-2 border-2 border-bauhaus-black text-xs font-bold transition-colors duration-200 min-h-[44px] min-w-[44px] ${showGrid ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
               title="12 欄格線"><Grid className="w-4 h-4" /></button>
             <button onClick={() => setShowGuides(!showGuides)}
-              className={`p-2 rounded-lg text-xs font-bold transition ${showGuides ? 'bg-pink-100 text-pink-600' : 'text-slate-400 hover:bg-slate-100'}`}
+              className={`p-2 border-2 border-bauhaus-black text-xs font-bold transition-colors duration-200 min-h-[44px] min-w-[44px] ${showGuides ? 'bg-bauhaus-red text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
               title="對齊輔助線">{showGuides ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}</button>
-            <div className="w-px h-6 bg-slate-200 mx-1" />
+            <div className="w-px h-6 bg-bauhaus-black/20 mx-1" />
             <button onClick={() => addElement('text_box')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-bold hover:bg-blue-100 transition">
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border-2 border-bauhaus-black text-bauhaus-black text-sm font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
               <Type className="w-4 h-4" /> 文字框</button>
             <button onClick={handleAddImage}
-              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-bold hover:bg-emerald-100 transition">
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border-2 border-bauhaus-black text-bauhaus-black text-sm font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
               <ImagePlus className="w-4 h-4" /> 圖片</button>
             <button onClick={handleAddVideo}
-              className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-700 rounded-xl text-sm font-bold hover:bg-purple-100 transition">
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border-2 border-bauhaus-black text-bauhaus-black text-sm font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
               <Video className="w-4 h-4" /> 影片</button>
             <div className="relative" ref={shapeMenuRef}>
               <button onClick={() => setShapeMenuOpen(!shapeMenuOpen)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold transition ${shapeMenuOpen ? 'bg-amber-100 text-amber-700' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}>
+                className={`flex items-center gap-1.5 px-3 py-2 border-2 border-bauhaus-black text-sm font-bold transition-colors duration-200 min-h-[44px] ${shapeMenuOpen ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}>
                 <Shapes className="w-4 h-4" /> 圖形
               </button>
               {shapeMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-slate-200 p-2 grid grid-cols-3 gap-1 w-[210px] z-50">
+                <div className="absolute right-0 top-full mt-2 bg-white border-2 border-bauhaus-black shadow-hard p-2 grid grid-cols-3 gap-1 w-[210px] z-50">
                   {SHAPE_TYPES.map(({ key, label, Icon: shapeIcon }) => {
                     const Icon = shapeIcon;
                     return (
                     <button key={key} onClick={() => handleAddShape(key)}
-                      className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-slate-50 transition text-slate-600 hover:text-slate-900">
+                      className="flex flex-col items-center gap-1 p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 text-bauhaus-black">
                       <Icon className="w-5 h-5" />
                       <span className="text-[10px] font-medium">{label}</span>
                     </button>
@@ -783,9 +782,9 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                 </div>
               )}
             </div>
-            <div className="w-px h-6 bg-slate-200 mx-1" />
+            <div className="w-px h-6 bg-bauhaus-black/20 mx-1" />
             <button onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition disabled:opacity-50">
+              className="flex items-center gap-1.5 px-4 py-2 bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold hover:bg-bauhaus-blue/90 shadow-hard transition-colors duration-200 disabled:opacity-40 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
               <Save className="w-4 h-4" /> {saving ? '儲存中...' : '儲存'}</button>
           </div>
         </div>
@@ -793,49 +792,49 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
 
       {/* ── Text format toolbar ── */}
       {editingId && selected?.type === 'text_box' && (
-        <div className="sticky top-[60px] z-40 bg-white border-b border-slate-200 px-4 py-2">
+        <div className="sticky top-[60px] z-40 bg-white border-b-2 border-bauhaus-black px-4 py-2">
           <div className="max-w-[1100px] mx-auto flex items-center gap-1 flex-wrap">
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('bold'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="粗體"><Bold className="w-4 h-4" /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('italic'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="斜體"><Italic className="w-4 h-4" /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('underline'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="底線"><Underline className="w-4 h-4" /></button>
-            <div className="w-px h-5 bg-slate-200 mx-1" />
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('bold'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="粗體"><Bold className="w-4 h-4" /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('italic'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="斜體"><Italic className="w-4 h-4" /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('underline'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="底線"><Underline className="w-4 h-4" /></button>
+            <div className="w-px h-5 bg-bauhaus-black/20 mx-1" />
 
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('formatBlock', '<h1>'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="標題 1"><Heading1 className="w-4 h-4" /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('formatBlock', '<h2>'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="標題 2"><Heading2 className="w-4 h-4" /></button>
-            <div className="w-px h-5 bg-slate-200 mx-1" />
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('formatBlock', '<h1>'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="標題 1"><Heading1 className="w-4 h-4" /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('formatBlock', '<h2>'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="標題 2"><Heading2 className="w-4 h-4" /></button>
+            <div className="w-px h-5 bg-bauhaus-black/20 mx-1" />
 
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('justifyLeft'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="靠左"><AlignLeft className="w-4 h-4" /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('justifyCenter'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="置中"><AlignCenter className="w-4 h-4" /></button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('justifyRight'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="靠右"><AlignRight className="w-4 h-4" /></button>
-            <div className="w-px h-5 bg-slate-200 mx-1" />
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('justifyLeft'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="靠左"><AlignLeft className="w-4 h-4" /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('justifyCenter'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="置中"><AlignCenter className="w-4 h-4" /></button>
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('justifyRight'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="靠右"><AlignRight className="w-4 h-4" /></button>
+            <div className="w-px h-5 bg-bauhaus-black/20 mx-1" />
 
             {/* Lists */}
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('insertUnorderedList'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="項目符號列表">
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('insertUnorderedList'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="項目符號列表">
               <List className="w-4 h-4" />
             </button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('insertOrderedList'); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" title="編號列表">
+            <button onMouseDown={(e) => { e.preventDefault(); execCommand('insertOrderedList'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="編號列表">
               <ListOrdered className="w-4 h-4" />
             </button>
             <button onMouseDown={(e) => { e.preventDefault(); execCommand('indent'); }}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 text-[11px] font-bold" title="增加縮排">
+              className="p-1.5 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black/70 text-[11px] font-bold transition-colors duration-200" title="增加縮排">
               →|
             </button>
             <button onMouseDown={(e) => { e.preventDefault(); execCommand('outdent'); }}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 text-[11px] font-bold" title="減少縮排">
+              className="p-1.5 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black/70 text-[11px] font-bold transition-colors duration-200" title="減少縮排">
               |←
             </button>
-            <div className="w-px h-5 bg-slate-200 mx-1" />
+            <div className="w-px h-5 bg-bauhaus-black/20 mx-1" />
 
             {/* Hyperlinks */}
             <button onMouseDown={(e) => { e.preventDefault(); handleCreateLink(); }}
-              className="p-2 rounded-lg hover:bg-blue-50 text-blue-600" title="插入超連結">
+              className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-blue transition-colors duration-200" title="插入超連結">
               <LinkIcon className="w-4 h-4" />
             </button>
             <button onMouseDown={(e) => { e.preventDefault(); execCommand('unlink'); }}
-              className="p-2 rounded-lg hover:bg-red-50 text-red-500" title="移除超連結">
+              className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-red transition-colors duration-200" title="移除超連結">
               <Unlink className="w-4 h-4" />
             </button>
-            <div className="w-px h-5 bg-slate-200 mx-1" />
+            <div className="w-px h-5 bg-bauhaus-black/20 mx-1" />
 
             {/* Font size */}
             <select
@@ -845,7 +844,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                 execCommand('fontSize', e.target.value);
                 e.target.value = '';
               }}
-              className="px-2 py-1 text-sm border rounded-lg text-slate-600" defaultValue="">
+              className="px-2 py-1 text-sm border-2 border-bauhaus-black text-bauhaus-black" defaultValue="">
               <option value="" disabled>字級</option>
               <option value="1">極小</option>
               <option value="2">小</option>
@@ -859,7 +858,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             {/* Text color with palette */}
             <ColorPalette
               title="文字顏色"
-              icon={<span className="text-[9px] font-black text-slate-500">A</span>}
+              icon={<span className="text-[9px] font-black text-bauhaus-black/60">A</span>}
               onApply={(c) => { restoreSelection(); execCommand('foreColor', c); addRecentColor(c); }}
               onOpen={saveSelection}
               recentColors={recentColors}
@@ -868,7 +867,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             {/* Background highlight color with palette */}
             <ColorPalette
               title="文字底色標記"
-              icon={<span className="text-[9px] font-black text-slate-500 bg-yellow-200 px-0.5 rounded">A</span>}
+              icon={<span className="text-[9px] font-black text-bauhaus-black/60 bg-bauhaus-yellow px-0.5">A</span>}
               onApply={(c) => { restoreSelection(); execCommand('hiliteColor', c); addRecentColor(c); }}
               onOpen={saveSelection}
               recentColors={recentColors}
@@ -879,94 +878,94 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
 
       {/* ── Selected element controls ── */}
       {selected && !editingId && (
-        <div className="sticky top-[60px] z-40 bg-slate-50 border-b border-slate-200 px-4 py-2">
+        <div className="sticky top-[60px] z-40 bg-white border-b-2 border-bauhaus-black px-4 py-2">
           <div className="max-w-[1100px] mx-auto flex items-center gap-2 text-sm flex-wrap">
-            <span className="text-slate-500 font-medium">{isButton ? '按鈕' : elLabel(selected.type)}</span>
-            <div className="w-px h-5 bg-slate-300" />
-            <span className="text-slate-400 font-mono text-xs">
+            <span className="text-bauhaus-black font-bold">{isButton ? '按鈕' : elLabel(selected.type)}</span>
+            <div className="w-px h-5 bg-bauhaus-black/20" />
+            <span className="text-bauhaus-black/50 font-mono text-xs">
               x:{Math.round(selected.x)} y:{Math.round(selected.y)} | {Math.round(selected.width)}x{Math.round(selected.height)}
             </span>
 
             {showOpacity && (
               <>
-                <div className="w-px h-5 bg-slate-300" />
-                <span className="text-slate-400 text-xs">透明度</span>
+                <div className="w-px h-5 bg-bauhaus-black/20" />
+                <span className="text-bauhaus-black/50 text-xs">透明度</span>
                 <input type="range" min="0" max="100" value={Math.round((selected.opacity ?? 1) * 100)}
                   onChange={(e) => updateElement(selected.id, { opacity: parseInt(e.target.value) / 100 })}
-                  className="w-20 h-1.5 accent-blue-500" />
-                <span className="text-slate-400 text-xs font-mono w-8">{Math.round((selected.opacity ?? 1) * 100)}%</span>
+                  className="w-20 h-1.5 accent-bauhaus-blue" />
+                <span className="text-bauhaus-black/50 text-xs font-mono w-8">{Math.round((selected.opacity ?? 1) * 100)}%</span>
               </>
             )}
 
             {showShapeProps && !isButton && (
               <>
-                <div className="w-px h-5 bg-slate-300" />
-                <label className="text-slate-400 text-xs">填色</label>
+                <div className="w-px h-5 bg-bauhaus-black/20" />
+                <label className="text-bauhaus-black/50 text-xs">填色</label>
                 <input type="color" value={selected.fillColor || '#3b82f6'}
                   onChange={(e) => updateElement(selected.id, { fillColor: e.target.value })}
-                  className="w-6 h-6 rounded border border-slate-200 cursor-pointer" />
-                <label className="text-slate-400 text-xs">邊框</label>
+                  className="w-6 h-6 border-2 border-bauhaus-black cursor-pointer" />
+                <label className="text-bauhaus-black/50 text-xs">邊框</label>
                 <input type="color" value={selected.borderColor || '#1e40af'}
                   onChange={(e) => updateElement(selected.id, { borderColor: e.target.value })}
-                  className="w-6 h-6 rounded border border-slate-200 cursor-pointer" />
+                  className="w-6 h-6 border-2 border-bauhaus-black cursor-pointer" />
                 <select value={selected.borderWidth ?? 2}
                   onChange={(e) => updateElement(selected.id, { borderWidth: parseInt(e.target.value) })}
-                  className="px-1.5 py-0.5 text-xs border rounded text-slate-600 w-14">
+                  className="px-1.5 py-0.5 text-xs border-2 border-bauhaus-black text-bauhaus-black w-14">
                   <option value="0">無邊框</option><option value="1">1px</option><option value="2">2px</option>
                   <option value="3">3px</option><option value="4">4px</option><option value="6">6px</option>
                 </select>
                 <button onClick={() => updateElement(selected.id, { fillColor: 'transparent' })}
-                  className="px-2 py-0.5 text-xs bg-slate-100 text-slate-500 rounded hover:bg-slate-200 transition">無填色</button>
+                  className="px-2 py-0.5 text-xs bg-white border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200">無填色</button>
               </>
             )}
 
             {isButton && (
               <>
-                <div className="w-px h-5 bg-slate-300" />
-                <label className="text-slate-400 text-xs">底色</label>
+                <div className="w-px h-5 bg-bauhaus-black/20" />
+                <label className="text-bauhaus-black/50 text-xs">底色</label>
                 <input type="color" value={selected.fillColor || '#3b82f6'}
                   onChange={(e) => updateElement(selected.id, { fillColor: e.target.value })}
-                  className="w-6 h-6 rounded border border-slate-200 cursor-pointer" />
-                <label className="text-slate-400 text-xs">文字色</label>
+                  className="w-6 h-6 border-2 border-bauhaus-black cursor-pointer" />
+                <label className="text-bauhaus-black/50 text-xs">文字色</label>
                 <input type="color" value={selected.textColor || '#ffffff'}
                   onChange={(e) => updateElement(selected.id, { textColor: e.target.value })}
-                  className="w-6 h-6 rounded border border-slate-200 cursor-pointer" />
-                <label className="text-slate-400 text-xs">圓角</label>
+                  className="w-6 h-6 border-2 border-bauhaus-black cursor-pointer" />
+                <label className="text-bauhaus-black/50 text-xs">圓角</label>
                 <input type="range" min="0" max="30" value={selected.borderRadius ?? 8}
                   onChange={(e) => updateElement(selected.id, { borderRadius: parseInt(e.target.value) })}
-                  className="w-14 h-1.5 accent-blue-500" />
+                  className="w-14 h-1.5 accent-bauhaus-blue" />
               </>
             )}
 
             {showShapeProps && (
               <>
-                <div className="w-px h-5 bg-slate-300" />
-                <LinkIcon className="w-3.5 h-3.5 text-slate-400" />
+                <div className="w-px h-5 bg-bauhaus-black/20" />
+                <LinkIcon className="w-3.5 h-3.5 text-bauhaus-black/50" />
                 <input type="text" placeholder="超連結網址..."
                   value={selected.linkUrl || ''}
                   onChange={(e) => updateElement(selected.id, { linkUrl: e.target.value })}
-                  className="px-2 py-0.5 text-xs border rounded text-slate-600 w-40 focus:ring-1 focus:ring-blue-300 outline-none" />
+                  className="px-2 py-0.5 text-xs border-2 border-bauhaus-black text-bauhaus-black w-40 focus:ring-1 focus:ring-bauhaus-blue outline-none" />
               </>
             )}
 
             <div className="flex-1" />
             {selected.type === 'image' && (
-              <button onClick={() => triggerImageUpload(selected.id)} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg font-bold hover:bg-emerald-100 transition">
+              <button onClick={() => triggerImageUpload(selected.id)} className="px-3 py-1.5 bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
                 <ImagePlus className="w-3.5 h-3.5 inline mr-1" />更換</button>
             )}
             {selected.type === 'video' && (
               <button onClick={() => { const u = window.prompt('YouTube 網址：', selected.videoUrl); if (u !== null) updateElement(selected.id, { videoUrl: u }); }}
-                className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg font-bold hover:bg-purple-100 transition">
+                className="px-3 py-1.5 bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
                 <Video className="w-3.5 h-3.5 inline mr-1" />網址</button>
             )}
             <button onClick={() => updateElement(selected.id, { locked: !selected.locked })}
-              className="px-2 py-1.5 bg-slate-100 text-slate-600 rounded-lg font-bold hover:bg-slate-200 transition">
+              className="px-2 py-1.5 bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]">
               {selected.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}</button>
             <button onClick={() => duplicateElement(selected.id)}
-              className="px-2 py-1.5 bg-slate-100 text-slate-600 rounded-lg font-bold hover:bg-slate-200 transition">
+              className="px-2 py-1.5 bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]">
               <Copy className="w-3.5 h-3.5" /></button>
             <button onClick={() => deleteElement(selected.id)}
-              className="px-2 py-1.5 bg-red-50 text-red-600 rounded-lg font-bold hover:bg-red-100 transition">
+              className="px-2 py-1.5 bg-white border-2 border-bauhaus-black text-bauhaus-red font-bold hover:bg-bauhaus-red hover:text-white transition-colors duration-200 min-h-[44px] min-w-[44px]">
               <Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         </div>

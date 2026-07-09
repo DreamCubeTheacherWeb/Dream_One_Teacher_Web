@@ -122,18 +122,18 @@ const AnnouncementManager = () => {
         setAnnouncements(announcements.map(x => x.id === a.id ? { ...x, published: !x.published } : x));
     };
 
-    if (loading) return <div className="p-12 text-center text-slate-500">載入中...</div>;
+    if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 
     return (
-        <div className="p-8 max-w-5xl mx-auto">
-            <div className="flex items-center justify-between mb-8">
+        <div className="p-4 sm:p-8 max-w-5xl mx-auto">
+            <div className="flex items-center justify-between mb-8 gap-3">
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900">佈告欄管理</h1>
-                    <p className="text-slate-500 mt-1">管理首頁顯示的公告內容</p>
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">佈告欄管理</h1>
+                    <p className="text-bauhaus-black/60 font-medium mt-1">管理首頁顯示的公告內容</p>
                 </div>
                 <button
                     onClick={openCreate}
-                    className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                    className="bh-btn bh-btn-blue px-6 py-3 shrink-0"
                 >
                     <Plus className="w-5 h-5" /> 新增公告
                 </button>
@@ -141,34 +141,34 @@ const AnnouncementManager = () => {
 
             {/* Edit / Create form */}
             {editing && (
-                <div className="bg-white rounded-2xl border border-blue-200 shadow-lg p-6 mb-8">
+                <div className="bh-card shadow-hard-lg p-6 mb-8">
                     <div className="flex items-center justify-between mb-5">
-                        <h3 className="font-bold text-slate-900 flex items-center gap-2">
-                            <Megaphone className="w-5 h-5 text-blue-600" />
+                        <h3 className="font-black text-bauhaus-black flex items-center gap-2 uppercase tracking-wide text-sm">
+                            <Megaphone className="w-5 h-5 text-bauhaus-black" />
                             {editing === 'new' ? '新增公告' : '編輯公告'}
                         </h3>
-                        <button onClick={cancelEdit} className="relative p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 before:absolute before:-inset-2 before:content-['']">
+                        <button onClick={cancelEdit} className="relative p-1.5 text-bauhaus-black/40 hover:text-bauhaus-black hover:bg-bauhaus-muted transition-colors before:absolute before:-inset-2 before:content-['']">
                             <X className="w-5 h-5" />
                         </button>
                     </div>
                     <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">標題</label>
+                                <label className="bh-label block mb-1">標題</label>
                                 <input
                                     type="text"
                                     value={form.title}
                                     onChange={e => setForm({ ...form, title: e.target.value })}
-                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="bh-input"
                                     placeholder="公告標題"
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">標籤分類</label>
+                                <label className="bh-label block mb-1">標籤分類</label>
                                 <select
                                     value={form.tag}
                                     onChange={e => setForm({ ...form, tag: e.target.value })}
-                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="bh-input"
                                 >
                                     <option value="重要公告">重要公告</option>
                                     <option value="課程更新">課程更新</option>
@@ -179,8 +179,8 @@ const AnnouncementManager = () => {
                             </div>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">內容</label>
-                            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden [&_.ql-toolbar]:border-0 [&_.ql-toolbar]:border-b [&_.ql-toolbar]:border-slate-200 [&_.ql-toolbar]:bg-slate-50 [&_.ql-container]:border-0 [&_.ql-editor]:min-h-[180px] [&_.ql-editor]:text-sm [&_.ql-editor]:leading-relaxed">
+                            <label className="bh-label block mb-1">內容</label>
+                            <div className="quill-wrapper bg-white border-2 border-bauhaus-black overflow-hidden">
                                 <ReactQuill
                                     theme="snow"
                                     value={form.content}
@@ -191,21 +191,21 @@ const AnnouncementManager = () => {
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
-                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+                            <label className="flex items-center gap-2 text-sm font-bold text-bauhaus-black cursor-pointer">
                                 <input
                                     type="checkbox"
                                     checked={form.pinned}
                                     onChange={e => setForm({ ...form, pinned: e.target.checked })}
-                                    className="w-4 h-4 rounded text-red-500"
+                                    className="w-4 h-4 border-2 border-bauhaus-black rounded-none text-bauhaus-red"
                                 />
                                 置頂公告
                             </label>
-                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+                            <label className="flex items-center gap-2 text-sm font-bold text-bauhaus-black cursor-pointer">
                                 <input
                                     type="checkbox"
                                     checked={form.published}
                                     onChange={e => setForm({ ...form, published: e.target.checked })}
-                                    className="w-4 h-4 rounded text-blue-600"
+                                    className="w-4 h-4 border-2 border-bauhaus-black rounded-none text-bauhaus-blue"
                                 />
                                 立即發佈
                             </label>
@@ -213,7 +213,7 @@ const AnnouncementManager = () => {
                         <div className="flex justify-end">
                             <button
                                 onClick={handleSave}
-                                className="bg-blue-600 text-white px-8 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                                className="bh-btn bh-btn-blue px-8 py-2.5"
                             >
                                 <Save className="w-4 h-4" /> 儲存
                             </button>
@@ -227,45 +227,45 @@ const AnnouncementManager = () => {
                 {announcements.map(a => (
                     <div
                         key={a.id}
-                        className={`bg-white rounded-2xl border p-6 transition-all ${a.pinned ? 'border-red-200 shadow-md' : 'border-slate-150 shadow-sm'} ${!a.published ? 'opacity-60' : ''}`}
+                        className={`bh-card p-6 ${a.pinned ? 'border-bauhaus-red' : ''} ${!a.published ? 'opacity-60' : ''}`}
                     >
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
                                     {a.pinned && (
-                                        <span className="text-[10px] font-black text-red-500 bg-red-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <span className="bh-chip bg-bauhaus-red text-white">
                                             <Pin className="w-3 h-3" /> 置頂
                                         </span>
                                     )}
-                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                                        a.tag === '重要公告' ? 'bg-red-50 text-red-600'
-                                            : a.tag === '課程更新' ? 'bg-blue-50 text-blue-600'
-                                                : a.tag === '提醒' ? 'bg-amber-50 text-amber-600'
-                                                    : 'bg-slate-100 text-slate-500'
+                                    <span className={`bh-chip ${
+                                        a.tag === '重要公告' ? 'bg-bauhaus-red text-white'
+                                            : a.tag === '課程更新' ? 'bg-bauhaus-blue text-white'
+                                                : a.tag === '提醒' ? 'bg-bauhaus-yellow text-bauhaus-black'
+                                                    : 'bg-bauhaus-muted text-bauhaus-black'
                                     }`}>
                                         {a.tag}
                                     </span>
                                     {!a.published && (
-                                        <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">未發佈</span>
+                                        <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">未發佈</span>
                                     )}
-                                    <span className="text-[11px] text-slate-400">
+                                    <span className="text-[11px] text-bauhaus-black/40 font-bold">
                                         {new Date(a.created_at).toLocaleDateString()}
                                     </span>
                                 </div>
-                                <h3 className="font-bold text-slate-900 mb-1">{a.title}</h3>
-                                <div className="text-sm text-slate-500 leading-relaxed line-clamp-2 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
+                                <h3 className="font-black text-bauhaus-black mb-1">{a.title}</h3>
+                                <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-2 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                                <button onClick={() => togglePinned(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors" title={a.pinned ? '取消置頂' : '置頂'}>
+                                <button onClick={() => togglePinned(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-bauhaus-black/30 hover:text-bauhaus-red transition-colors" title={a.pinned ? '取消置頂' : '置頂'}>
                                     {a.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
                                 </button>
-                                <button onClick={() => togglePublished(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-blue-600 transition-colors" title={a.published ? '取消發佈' : '發佈'}>
+                                <button onClick={() => togglePublished(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-bauhaus-black/30 hover:text-bauhaus-blue transition-colors" title={a.published ? '取消發佈' : '發佈'}>
                                     {a.published ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
-                                <button onClick={() => openEdit(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-blue-600 transition-colors">
+                                <button onClick={() => openEdit(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-bauhaus-black/30 hover:text-bauhaus-blue transition-colors">
                                     <Edit2 className="w-4 h-4" />
                                 </button>
-                                <button onClick={() => handleDelete(a.id)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-300 hover:text-red-500 transition-colors">
+                                <button onClick={() => handleDelete(a.id)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-bauhaus-black/30 hover:text-bauhaus-red transition-colors">
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             </div>
@@ -273,9 +273,9 @@ const AnnouncementManager = () => {
                     </div>
                 ))}
                 {announcements.length === 0 && (
-                    <div className="py-20 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-                        <Megaphone className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                        <p className="text-slate-400 font-medium">尚未建立任何公告</p>
+                    <div className="py-20 text-center bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30">
+                        <Megaphone className="w-10 h-10 text-bauhaus-black/20 mx-auto mb-3" />
+                        <p className="text-bauhaus-black/40 font-bold">尚未建立任何公告</p>
                     </div>
                 )}
             </div>

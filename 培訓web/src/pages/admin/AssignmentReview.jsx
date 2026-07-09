@@ -247,21 +247,21 @@ const AssignmentReview = () => {
             + ' ' + d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
     };
 
-    if (loading) return <div className="p-12 text-center text-slate-500">載入中...</div>;
+    if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 
     return (
         <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2">作業審核中心</h1>
-            <p className="text-slate-500 mb-8">依輔導員或講師查看並給予作業回饋</p>
+            <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight mb-2">作業審核中心</h1>
+            <p className="text-bauhaus-black/60 font-medium mb-8">依輔導員或講師查看並給予作業回饋</p>
 
             {/* Filter bar */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-6 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            <div className="bh-card p-4 mb-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
                 <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-slate-400" />
+                    <Filter className="w-4 h-4 text-bauhaus-black/40" />
                     <select
                         value={mentorFilter}
                         onChange={(e) => setMentorFilter(e.target.value)}
-                        className="text-sm px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none bg-white"
+                        className="bh-input text-sm py-2"
                     >
                         <option value="all">全部輔導員</option>
                         {mentorList.map((m) => (
@@ -272,20 +272,20 @@ const AssignmentReview = () => {
                 <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="text-sm px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none bg-white"
+                    className="bh-input text-sm py-2"
                 >
                     <option value="all">全部狀態</option>
                     <option value="pending">待審核</option>
                     <option value="reviewed">已回饋</option>
                 </select>
                 <div className="flex-1 min-w-0 sm:min-w-[200px] relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bauhaus-black/30" />
                     <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="搜尋講師姓名或 Email..."
-                        className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-300 outline-none"
+                        className="bh-input text-sm pl-9"
                     />
                 </div>
             </div>
@@ -293,9 +293,9 @@ const AssignmentReview = () => {
             <div className="flex flex-col lg:flex-row gap-6">
                 <div className="w-full lg:w-80 lg:shrink-0 space-y-2 max-h-none lg:max-h-[calc(100vh-240px)] overflow-y-auto pr-1">
                     {filteredTeacherIds.length === 0 ? (
-                        <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                            <User className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                            <p className="text-slate-400 text-sm">沒有符合條件的講師</p>
+                        <div className="text-center py-12 bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30">
+                            <User className="w-8 h-8 text-bauhaus-black/20 mx-auto mb-2" />
+                            <p className="text-bauhaus-black/40 text-sm font-bold">沒有符合條件的講師</p>
                         </div>
                     ) : (
                         filteredTeacherIds.map((uid) => {
@@ -313,34 +313,34 @@ const AssignmentReview = () => {
                                         setSelectedAssignment(null);
                                         setFeedbackText('');
                                     }}
-                                    className={`w-full text-left p-4 rounded-xl border transition-all ${
+                                    className={`w-full text-left p-4 border-2 transition-all ${
                                         isSelected
-                                            ? 'bg-blue-50 border-blue-200 shadow-md'
-                                            : 'bg-white border-slate-100 hover:border-slate-300'
+                                            ? 'bg-bauhaus-cream border-bauhaus-black shadow-hard'
+                                            : 'bg-white border-bauhaus-black/15 hover:border-bauhaus-black'
                                     }`}
                                 >
                                     <div className="flex items-start justify-between mb-1">
-                                        <span className="font-bold text-slate-800 text-sm leading-tight">
+                                        <span className="font-bold text-bauhaus-black text-sm leading-tight">
                                             {getTeacherName(uid)}
                                         </span>
                                         {pendingCount > 0 && (
-                                            <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full shrink-0 ml-2">
+                                            <span className="bg-bauhaus-red text-white text-[10px] font-black px-1.5 py-0.5 shrink-0 ml-2 border-2 border-bauhaus-black">
                                                 {pendingCount}
                                             </span>
                                         )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                         {role && (
-                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-50 text-violet-600">
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-bauhaus-black text-white">
                                                 {ROLE_LABELS[role] || role}
                                             </span>
                                         )}
                                         {mentor && (
-                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-bauhaus-muted text-bauhaus-black">
                                                 {mentor}
                                             </span>
                                         )}
-                                        <span className="text-[10px] text-slate-400">
+                                        <span className="text-[10px] text-bauhaus-black/40 font-bold">
                                             {group.length} 份作業
                                         </span>
                                     </div>
@@ -353,30 +353,30 @@ const AssignmentReview = () => {
                 {/* Right: Assignment details */}
                 <div className="flex-1 min-w-0 w-full">
                     {!selectedUserId ? (
-                        <div className="h-full flex items-center justify-center text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200 min-h-[400px]">
+                        <div className="h-full flex items-center justify-center text-bauhaus-black/40 bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/30 min-h-[400px]">
                             <div className="text-center">
-                                <GraduationCap className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-                                <p className="font-medium"><span className="lg:hidden">請從上方選擇一位講師</span><span className="hidden lg:inline">請從左側選擇一位講師</span></p>
+                                <GraduationCap className="w-12 h-12 text-bauhaus-black/20 mx-auto mb-3" />
+                                <p className="font-bold"><span className="lg:hidden">請從上方選擇一位講師</span><span className="hidden lg:inline">請從左側選擇一位講師</span></p>
                                 <p className="text-sm mt-1">查看其繳交的作業並給予回饋</p>
                             </div>
                         </div>
                     ) : (
                         <div className="space-y-4 max-h-[calc(100vh-240px)] overflow-y-auto pr-1">
                             {/* Teacher header */}
-                            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm sticky top-0 z-10">
+                            <div className="bh-card p-5 sticky top-0 z-10">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <h2 className="text-lg font-black text-slate-800">{getTeacherName(selectedUserId)}</h2>
-                                        <p className="text-xs text-slate-400 mt-0.5">{users[selectedUserId]?.email}</p>
+                                        <h2 className="text-lg font-black text-bauhaus-black">{getTeacherName(selectedUserId)}</h2>
+                                        <p className="text-xs text-bauhaus-black/40 mt-0.5">{users[selectedUserId]?.email}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         {getTeacherRole(selectedUserId) && (
-                                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-violet-50 text-violet-600">
+                                            <span className="bh-chip bg-bauhaus-black text-white">
                                                 {ROLE_LABELS[getTeacherRole(selectedUserId)] || getTeacherRole(selectedUserId)}
                                             </span>
                                         )}
                                         {getTeacherMentor(selectedUserId) && (
-                                            <span className="text-xs font-bold px-2 py-1 rounded-full bg-teal-50 text-teal-600">
+                                            <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">
                                                 輔導員：{getTeacherMentor(selectedUserId)}
                                             </span>
                                         )}
@@ -396,8 +396,8 @@ const AssignmentReview = () => {
                                 return (
                                     <div
                                         key={a.id}
-                                        className={`bg-white rounded-2xl border overflow-hidden transition-all ${
-                                            isActive ? 'border-blue-200 shadow-lg' : 'border-slate-200 shadow-sm'
+                                        className={`bg-white border-2 lg:border-4 border-bauhaus-black overflow-hidden transition-all ${
+                                            isActive ? 'shadow-hard-lg' : 'shadow-hard'
                                         }`}
                                     >
                                         {/* Card header */}
@@ -406,40 +406,40 @@ const AssignmentReview = () => {
                                                 setSelectedAssignment(isActive ? null : a);
                                                 setFeedbackText('');
                                             }}
-                                            className="w-full text-left px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                                            className="w-full text-left px-6 py-4 flex items-center justify-between hover:bg-bauhaus-muted transition-colors"
                                         >
                                             <div>
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                                    <span className="bh-chip bg-bauhaus-blue text-white">
                                                         {isYouTube ? 'YouTube 影片' : a.type === 'video' ? '影片檔案' : '文字心得'}
                                                     </span>
                                                     {hasFeedback ? (
-                                                        <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                                                        <span className="bh-chip bg-bauhaus-black text-white">
                                                             {fbs.length} 則回饋
                                                         </span>
                                                     ) : (
-                                                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">待審核</span>
+                                                        <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">待審核</span>
                                                     )}
                                                 </div>
-                                                <p className="font-bold text-slate-800 text-sm">{lessonTitle}</p>
-                                                {courseTitle && <p className="text-[11px] text-slate-400">{courseTitle}</p>}
+                                                <p className="font-bold text-bauhaus-black text-sm">{lessonTitle}</p>
+                                                {courseTitle && <p className="text-[11px] text-bauhaus-black/40">{courseTitle}</p>}
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                                                <span className="text-[11px] text-bauhaus-black/40 font-bold flex items-center gap-1">
                                                     <Calendar className="w-3 h-3" />
                                                     {new Date(a.created_at).toLocaleDateString('zh-TW')}
                                                 </span>
-                                                <ChevronDown className={`w-4 h-4 text-slate-300 transition-transform ${isActive ? 'rotate-180' : ''}`} />
+                                                <ChevronDown className={`w-4 h-4 text-bauhaus-black/30 transition-transform ${isActive ? 'rotate-180' : ''}`} />
                                             </div>
                                         </button>
 
                                         {/* Expanded content */}
                                         {isActive && (
-                                            <div className="border-t border-slate-100">
+                                            <div className="border-t-2 border-bauhaus-black">
                                                 {/* Assignment content */}
                                                 <div className="px-6 py-5">
                                                     {a.video_url ? (
-                                                        <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                                                        <div className="aspect-video border-2 border-bauhaus-black overflow-hidden bg-black">
                                                             <iframe
                                                                 src={toEmbedUrl(a.video_url)}
                                                                 title="作業影片"
@@ -452,12 +452,12 @@ const AssignmentReview = () => {
                                                             href={a.file_url}
                                                             target="_blank"
                                                             rel="noreferrer"
-                                                            className="flex items-center gap-2 text-blue-600 font-bold hover:underline"
+                                                            className="flex items-center gap-2 text-bauhaus-blue font-bold hover:underline"
                                                         >
                                                             <Play className="w-4 h-4" /> 點此觀看影片作業
                                                         </a>
                                                     ) : (
-                                                        <div className="bg-slate-50 p-5 rounded-xl border border-slate-100 text-slate-700 leading-relaxed whitespace-pre-wrap">
+                                                        <div className="bg-bauhaus-paper p-5 border-2 border-bauhaus-black/15 text-bauhaus-black leading-relaxed whitespace-pre-wrap">
                                                             {a.content || '（無文字內容）'}
                                                         </div>
                                                     )}
@@ -465,34 +465,34 @@ const AssignmentReview = () => {
 
                                                 {/* Feedback thread */}
                                                 <div className="px-6 pb-4">
-                                                    <h4 className="text-sm font-black text-slate-700 flex items-center gap-2 mb-3">
-                                                        <MessageSquare className="w-4 h-4 text-amber-500" />
-                                                        回饋紀錄 {fbs.length > 0 && <span className="text-xs font-medium text-slate-400">（{fbs.length} 則）</span>}
+                                                    <h4 className="text-sm font-black text-bauhaus-black flex items-center gap-2 mb-3">
+                                                        <MessageSquare className="w-4 h-4 text-bauhaus-black" />
+                                                        回饋紀錄 {fbs.length > 0 && <span className="text-xs font-medium text-bauhaus-black/40">（{fbs.length} 則）</span>}
                                                     </h4>
 
                                                     {fbs.length === 0 ? (
-                                                        <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl px-5 py-4 text-center">
-                                                            <p className="text-slate-400 text-sm">尚未有任何回饋</p>
+                                                        <div className="bg-bauhaus-paper border-2 border-dashed border-bauhaus-black/20 px-5 py-4 text-center">
+                                                            <p className="text-bauhaus-black/40 text-sm font-bold">尚未有任何回饋</p>
                                                         </div>
                                                     ) : (
                                                         <div className="space-y-3">
                                                             {fbs.map((fb) => (
-                                                                <div key={fb.id} className="bg-amber-50/60 border border-amber-200/60 rounded-xl px-5 py-4">
+                                                                <div key={fb.id} className="bg-bauhaus-cream border-2 border-bauhaus-black/20 px-5 py-4">
                                                                     <div className="flex items-center justify-between mb-2">
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-sm font-black text-amber-700">
+                                                                            <span className="text-sm font-black text-bauhaus-black">
                                                                                 {getFeedbackAuthorDisplay(fb.user_id)}
                                                                             </span>
                                                                         </div>
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="text-xs text-amber-500 flex items-center gap-1">
+                                                                            <span className="text-xs text-bauhaus-black/50 flex items-center gap-1">
                                                                                 <Clock className="w-3 h-3" />
                                                                                 {formatTime(fb.created_at)}
                                                                             </span>
                                                                             {(isAdmin || fb.user_id === user.id) && (
                                                                                 <button
                                                                                     onClick={() => deleteFeedback(fb.id, a.id)}
-                                                                                    className="relative text-amber-400 hover:text-red-500 transition-colors before:absolute before:-inset-2 before:content-['']"
+                                                                                    className="relative text-bauhaus-black/40 hover:text-bauhaus-red transition-colors before:absolute before:-inset-2 before:content-['']"
                                                                                     title="刪除此回饋"
                                                                                 >
                                                                                     <Trash2 className="w-3.5 h-3.5" />
@@ -500,7 +500,7 @@ const AssignmentReview = () => {
                                                                             )}
                                                                         </div>
                                                                     </div>
-                                                                    <p className="text-amber-900 text-sm leading-relaxed whitespace-pre-wrap">{fb.body}</p>
+                                                                    <p className="text-bauhaus-black text-sm leading-relaxed whitespace-pre-wrap">{fb.body}</p>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -508,22 +508,22 @@ const AssignmentReview = () => {
                                                 </div>
 
                                                 {/* New feedback input */}
-                                                <div className="px-6 py-5 bg-slate-50 border-t border-slate-100">
-                                                    <label className="flex items-center gap-2 font-bold text-slate-800 text-sm mb-3">
-                                                        <Send className="w-4 h-4 text-blue-600" />
+                                                <div className="px-6 py-5 bg-bauhaus-paper border-t-2 border-bauhaus-black/15">
+                                                    <label className="flex items-center gap-2 font-black text-bauhaus-black text-sm mb-3">
+                                                        <Send className="w-4 h-4 text-bauhaus-black" />
                                                         新增回饋
                                                     </label>
                                                     <textarea
                                                         rows="3"
                                                         value={feedbackText}
                                                         onChange={(e) => setFeedbackText(e.target.value)}
-                                                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-300 outline-none resize-none text-slate-700 text-sm"
+                                                        className="bh-input resize-none text-sm"
                                                         placeholder="在此輸入您的評語或建議..."
                                                     />
                                                     <button
                                                         onClick={submitFeedback}
                                                         disabled={!feedbackText.trim() || feedbackSubmitting}
-                                                        className="mt-3 w-full py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
+                                                        className="bh-btn bh-btn-blue w-full mt-3 py-2.5 text-sm"
                                                     >
                                                         <Send className="w-4 h-4" />
                                                         {feedbackSubmitting ? '送出中...' : '送出回饋'}

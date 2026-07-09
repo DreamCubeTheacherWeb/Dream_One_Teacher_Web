@@ -7,9 +7,9 @@ import { COURSE_LABELS } from '../lib/constants';
 
 const STATUS_LABELS = { pending: '待核准', approved: '已核准', paid: '已付款' };
 const STATUS_COLORS = {
-    pending:  'bg-amber-50 text-amber-700',
-    approved: 'bg-blue-50 text-blue-700',
-    paid:     'bg-emerald-50 text-emerald-700',
+    pending:  'bg-bauhaus-yellow text-bauhaus-black',
+    approved: 'bg-bauhaus-muted text-bauhaus-black',
+    paid:     'bg-bauhaus-blue text-white',
 };
 
 const MySalary = () => {
@@ -51,20 +51,20 @@ const MySalary = () => {
         return Object.entries(map).map(([m, v]) => ({ month: m, ...v })).sort((a, b) => b.month.localeCompare(a.month));
     }, [sessions]);
 
-    if (loading) return <div className="p-12 text-center text-slate-500">載入中...</div>;
+    if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 
     if (!summary) {
         return (
             <div className="p-4 sm:p-8 max-w-3xl mx-auto">
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm py-16 px-6 text-center">
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Wallet className="w-8 h-8 text-slate-300" />
+                <div className="bh-card py-16 px-6 text-center">
+                    <div className="w-16 h-16 border-2 border-bauhaus-black bg-bauhaus-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Wallet className="w-8 h-8 text-bauhaus-black/40" />
                     </div>
-                    <h2 className="text-xl font-black text-slate-900">還沒有薪資紀錄</h2>
-                    <p className="text-slate-500 mt-2 text-sm">完成接課後登記課程回報，你的鐘點與獎金就會顯示在這裡。</p>
+                    <h2 className="text-xl font-black text-bauhaus-black">還沒有薪資紀錄</h2>
+                    <p className="text-bauhaus-black/60 mt-2 text-sm font-medium">完成接課後登記課程回報，你的鐘點與獎金就會顯示在這裡。</p>
                     <Link
                         to="/my/salary/new"
-                        className="inline-flex items-center justify-center gap-2 mt-6 min-h-[44px] px-6 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                        className="bh-btn bh-btn-blue mt-6 min-h-[44px] px-6"
                     >
                         <Plus className="w-4 h-4" /> 登記課程回報
                     </Link>
@@ -80,11 +80,11 @@ const MySalary = () => {
         <div className="p-4 sm:p-8 max-w-6xl mx-auto">
             <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900">我的薪資</h1>
-                    <p className="text-slate-500 mt-1 text-sm">{summary.full_name}</p>
+                    <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的薪資</h1>
+                    <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">{summary.full_name}</p>
                 </div>
                 <Link to="/my/salary/new"
-                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl transition-colors shadow-sm w-full sm:w-auto">
+                    className="bh-btn bh-btn-blue px-4 py-2.5 w-full sm:w-auto">
                     <Plus className="w-4 h-4" /> 登記課程回報
                 </Link>
             </div>
@@ -96,20 +96,20 @@ const MySalary = () => {
                     label="本月薪資"
                     value={fmt(summary.this_month_salary)}
                     sub={`${summary.this_month_sessions} 場`}
-                    color="from-blue-500 to-blue-600"
+                    tone="blue"
                 />
                 <BigStat
                     icon={TrendingUp}
                     label="今年累計"
                     value={fmt(summary.this_year_salary)}
-                    color="from-emerald-500 to-emerald-600"
+                    tone="black"
                 />
                 <BigStat
                     icon={Wallet}
                     label="未領金額"
                     value={fmt(summary.total_unpaid)}
                     sub={`已領 ${fmt(summary.total_paid)}`}
-                    color="from-amber-500 to-amber-600"
+                    tone="yellow"
                 />
             </div>
 
@@ -117,33 +117,33 @@ const MySalary = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
                 <MiniStat label="累計總薪資" value={fmt(summary.total_salary)} />
                 <MiniStat label="總場次" value={summary.total_sessions} sub={fmtHr(summary.total_hours)} />
-                <MiniStat label="待核准" value={fmt(summary.pending_salary)} color="text-amber-600" />
-                <MiniStat label="已核准未付" value={fmt(summary.approved_unpaid_salary)} color="text-blue-600" />
+                <MiniStat label="待核准" value={fmt(summary.pending_salary)} accent="yellow" />
+                <MiniStat label="已核准未付" value={fmt(summary.approved_unpaid_salary)} accent="blue" />
             </div>
 
             {/* 月份明細 */}
             <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-black text-slate-900">月份明細</h2>
+                    <h2 className="text-lg font-black text-bauhaus-black">月份明細</h2>
                     <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
-                        className="text-sm px-3 py-2 rounded-lg border border-slate-200 outline-none">
+                        className="text-sm px-3 py-2 border-2 border-bauhaus-black bg-white font-bold outline-none focus:ring-2 focus:ring-bauhaus-blue">
                         <option value="">全部月份</option>
                         {months.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                 </div>
 
                 {!monthFilter && monthlyStats.length > 0 && (
-                    <div className="bg-white rounded-2xl border border-slate-200 mb-6 overflow-hidden">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-slate-100 text-center">
+                    <div className="bh-card mb-6 overflow-hidden">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x-2 divide-bauhaus-black/20 text-center">
                             {monthlyStats.slice(0, 6).map(m => (
                                 <button
                                     key={m.month}
                                     onClick={() => setMonthFilter(m.month)}
-                                    className="p-3 hover:bg-slate-50 transition-colors"
+                                    className="p-3 hover:bg-bauhaus-cream transition-colors duration-200"
                                 >
-                                    <div className="text-xs text-slate-400 font-medium">{m.month}</div>
-                                    <div className="text-lg font-black text-slate-900 mt-1">{fmt(m.total)}</div>
-                                    <div className="text-xs text-slate-400">{m.count} 場</div>
+                                    <div className="text-xs text-bauhaus-black/50 font-bold">{m.month}</div>
+                                    <div className="text-lg font-black text-bauhaus-black mt-1 tabular-nums">{fmt(m.total)}</div>
+                                    <div className="text-xs text-bauhaus-black/50">{m.count} 場</div>
                                 </button>
                             ))}
                         </div>
@@ -151,39 +151,39 @@ const MySalary = () => {
                 )}
 
                 {/* 課程紀錄列表 */}
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="bh-card overflow-hidden">
                     {/* 手機版：卡片列表 */}
-                    <div className="md:hidden divide-y divide-slate-100">
+                    <div className="md:hidden divide-y-2 divide-bauhaus-black/20">
                         {filtered.slice(0, 100).map(s => (
                             <div key={s.id} className="p-4">
                                 <div className="flex items-start justify-between gap-2">
                                     <div>
-                                        <div className="text-sm font-bold text-slate-800">{s.session_date}</div>
-                                        <div className="text-sm text-slate-700 mt-0.5">{COURSE_LABELS[s.course_type] || s.course_type}</div>
-                                        {s.course_name && <div className="text-xs text-slate-500 mt-0.5">{s.course_name}</div>}
+                                        <div className="text-sm font-bold text-bauhaus-black">{s.session_date}</div>
+                                        <div className="text-sm text-bauhaus-black/80 mt-0.5">{COURSE_LABELS[s.course_type] || s.course_type}</div>
+                                        {s.course_name && <div className="text-xs text-bauhaus-black/50 mt-0.5">{s.course_name}</div>}
                                     </div>
-                                    <span className={`shrink-0 inline-flex text-xs font-bold px-2 py-1 rounded-full ${STATUS_COLORS[s.status] || ''}`}>
+                                    <span className={`bh-chip shrink-0 ${STATUS_COLORS[s.status] || 'bg-bauhaus-muted text-bauhaus-black'}`}>
                                         {STATUS_LABELS[s.status] || s.status}
                                     </span>
                                 </div>
-                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-50">
-                                    <span className="text-xs text-slate-500">
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-bauhaus-black/10">
+                                    <span className="text-xs text-bauhaus-black/50">
                                         {s.duration_hours ? `${s.duration_hours}h` : '–'}
                                         {s.student_count ? ` / ${s.student_count}人` : ''}
                                     </span>
-                                    <span className="text-base font-bold text-slate-900">{fmt(s.total_salary)}</span>
+                                    <span className="text-base font-bold text-bauhaus-black tabular-nums">{fmt(s.total_salary)}</span>
                                 </div>
                             </div>
                         ))}
                         {filtered.length === 0 && (
-                            <div className="px-4 py-12 text-center text-slate-400">這個月還沒有薪資紀錄</div>
+                            <div className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有薪資紀錄</div>
                         )}
                     </div>
 
                     {/* 桌面版：表格 */}
                     <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-slate-400 text-xs uppercase tracking-wider">
+                            <thead className="bg-bauhaus-black text-white text-xs uppercase tracking-wider">
                                 <tr>
                                     <th className="px-4 py-3 text-left">日期</th>
                                     <th className="px-4 py-3 text-left">課程</th>
@@ -194,34 +194,34 @@ const MySalary = () => {
                                     <th className="px-4 py-3 text-left">狀態</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
+                            <tbody className="divide-y-2 divide-bauhaus-black/20">
                                 {filtered.slice(0, 100).map(s => (
-                                    <tr key={s.id} className="hover:bg-slate-50">
-                                        <td className="px-4 py-3 text-slate-700">{s.session_date}</td>
+                                    <tr key={s.id} className="hover:bg-bauhaus-cream transition-colors duration-200">
+                                        <td className="px-4 py-3 text-bauhaus-black/80">{s.session_date}</td>
                                         <td className="px-4 py-3">
-                                            <div className="text-slate-700">{COURSE_LABELS[s.course_type] || s.course_type}</div>
-                                            {s.course_name && <div className="text-xs text-slate-500">{s.course_name}</div>}
+                                            <div className="text-bauhaus-black/80">{COURSE_LABELS[s.course_type] || s.course_type}</div>
+                                            {s.course_name && <div className="text-xs text-bauhaus-black/50">{s.course_name}</div>}
                                         </td>
-                                        <td className="px-4 py-3 text-right text-slate-600 text-xs">
+                                        <td className="px-4 py-3 text-right text-bauhaus-black/60 text-xs">
                                             {s.duration_hours ? `${s.duration_hours}h` : '–'}
                                             {s.student_count ? ` / ${s.student_count}人` : ''}
                                         </td>
-                                        <td className="px-4 py-3 text-right text-slate-700">
+                                        <td className="px-4 py-3 text-right text-bauhaus-black/80">
                                             {s.base_salary > 0 ? fmt(s.base_salary) : '–'}
                                         </td>
-                                        <td className="px-4 py-3 text-right text-slate-700">
+                                        <td className="px-4 py-3 text-right text-bauhaus-black/80">
                                             {s.bonus > 0 ? fmt(s.bonus) : '–'}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-bold text-slate-900">{fmt(s.total_salary)}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-bauhaus-black tabular-nums">{fmt(s.total_salary)}</td>
                                         <td className="px-4 py-3">
-                                            <span className={`inline-flex text-xs font-bold px-2 py-1 rounded-full ${STATUS_COLORS[s.status] || ''}`}>
+                                            <span className={`bh-chip ${STATUS_COLORS[s.status] || 'bg-bauhaus-muted text-bauhaus-black'}`}>
                                                 {STATUS_LABELS[s.status] || s.status}
                                             </span>
                                         </td>
                                     </tr>
                                 ))}
                                 {filtered.length === 0 && (
-                                    <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">這個月還沒有薪資紀錄</td></tr>
+                                    <tr><td colSpan={7} className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有薪資紀錄</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -232,25 +232,34 @@ const MySalary = () => {
     );
 };
 
+const TONE_STYLES = {
+    blue:   { bg: 'bg-bauhaus-blue',   text: 'text-white',           sub: 'text-white/80' },
+    black:  { bg: 'bg-bauhaus-black',  text: 'text-white',           sub: 'text-white/60' },
+    yellow: { bg: 'bg-bauhaus-yellow', text: 'text-bauhaus-black',   sub: 'text-bauhaus-black/70' },
+};
 
-const BigStat = ({ icon, label, value, sub, color }) => {
+const BigStat = ({ icon, label, value, sub, tone }) => {
     const Icon = icon;
+    const t = TONE_STYLES[tone] || TONE_STYLES.black;
     return (
-    <div className={`bg-gradient-to-br ${color} rounded-2xl p-5 text-white shadow-sm`}>
-        <div className="flex items-center gap-2 text-white/80 text-sm font-medium">
+    <div className={`${t.bg} border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-5`}>
+        <div className={`flex items-center gap-2 text-sm font-bold uppercase tracking-wide ${t.sub}`}>
             <Icon className="w-4 h-4" /> {label}
         </div>
-        <div className="text-3xl font-black mt-2">{value}</div>
-        {sub && <div className="text-xs text-white/80 mt-1">{sub}</div>}
+        <div className={`text-3xl font-black mt-2 tabular-nums ${t.text}`}>{value}</div>
+        {sub && <div className={`text-xs mt-1 ${t.sub}`}>{sub}</div>}
     </div>
     );
 };
 
-const MiniStat = ({ label, value, sub, color = 'text-slate-900' }) => (
-    <div className="bg-white rounded-xl border border-slate-200 p-3">
-        <div className="text-xs text-slate-400 font-medium">{label}</div>
-        <div className={`text-lg font-black mt-1 ${color}`}>{value}</div>
-        {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
+const MiniStat = ({ label, value, sub, accent }) => (
+    <div className="bh-card p-3">
+        <div className="flex items-center gap-1.5">
+            {accent && <span className={`w-2 h-2 shrink-0 ${accent === 'yellow' ? 'bg-bauhaus-yellow' : 'bg-bauhaus-blue'}`} aria-hidden="true" />}
+            <div className="text-xs text-bauhaus-black/50 font-bold uppercase tracking-wide">{label}</div>
+        </div>
+        <div className="text-lg font-black mt-1 text-bauhaus-black tabular-nums">{value}</div>
+        {sub && <div className="text-xs text-bauhaus-black/40 mt-0.5">{sub}</div>}
     </div>
 );
 

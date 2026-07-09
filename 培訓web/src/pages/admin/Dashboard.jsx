@@ -8,6 +8,18 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+const CORNER_DECOS = [
+    { shape: 'circle', color: 'bg-bauhaus-red' },
+    { shape: 'square', color: 'bg-bauhaus-blue' },
+    { shape: 'triangle', color: 'bg-bauhaus-yellow' },
+];
+
+const STATS_CONFIG = [
+    { key: 'teachers', icon: Users, label: '總人數' },
+    { key: 'courses', icon: LayoutGrid, label: '上線課程' },
+    { key: 'assignments', icon: ClipboardCheck, label: '待審核作業' },
+];
+
 const AdminDashboard = () => {
     const { profile } = useAuth();
     const isAdmin = profile?.role === 'admin';
@@ -64,54 +76,47 @@ const AdminDashboard = () => {
         setStats(prev => ({ ...prev, courses: prev.courses - 1 }));
     };
 
-    if (loading) return <div className="p-12 text-center text-slate-500">載入中...</div>;
+    if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 
     return (
         <div className="p-4 sm:p-8">
             <div className="mb-8">
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900">後台管理總覽</h1>
-                <p className="text-slate-500 mt-1">
+                <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">後台管理總覽</h1>
+                <p className="text-bauhaus-black/60 font-medium mt-1">
                     {isAdmin ? '管理培訓內容、講師名單與系統設定' : '管理培訓內容與作業回饋'}
                 </p>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10">
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
-                        <Users className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-black text-slate-900">{stats.teachers}</div>
-                        <div className="text-sm font-medium text-slate-400">總人數</div>
-                    </div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-                        <LayoutGrid className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-black text-slate-900">{stats.courses}</div>
-                        <div className="text-sm font-medium text-slate-400">上線課程</div>
-                    </div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-                    <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center">
-                        <ClipboardCheck className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <div className="text-2xl font-black text-slate-900">{stats.assignments}</div>
-                        <div className="text-sm font-medium text-slate-400">待審核作業</div>
-                    </div>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-10">
+                {STATS_CONFIG.map((s, idx) => {
+                    const deco = CORNER_DECOS[idx % 3];
+                    const Icon = s.icon;
+                    return (
+                        <div key={s.key} className="bh-card relative overflow-hidden p-6 flex items-center gap-4">
+                            <span
+                                aria-hidden="true"
+                                className={`absolute -top-2 -right-2 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
+                                style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
+                            />
+                            <div className="w-12 h-12 border-2 border-bauhaus-black bg-bauhaus-black text-white flex items-center justify-center shrink-0">
+                                <Icon className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <div className="text-4xl font-black text-bauhaus-black tabular-nums">{stats[s.key]}</div>
+                                <div className="text-sm font-bold text-bauhaus-black/50 uppercase tracking-wide">{s.label}</div>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* ── 培訓管理 ── */}
             <div className="mb-10">
                 <div className="flex items-center gap-2 mb-4">
-                    <GraduationCap className="w-5 h-5 text-blue-600" />
-                    <h2 className="text-lg font-bold text-slate-900">培訓管理</h2>
-                    <span className="text-xs text-slate-400 ml-1">課程內容與作業回饋</span>
+                    <GraduationCap className="w-5 h-5 text-bauhaus-black" />
+                    <h2 className="text-lg font-black uppercase tracking-wide text-bauhaus-black">培訓管理</h2>
+                    <span className="text-xs text-bauhaus-black/40 font-bold ml-1">課程內容與作業回饋</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <NavCard to="/admin/assignments" icon={ClipboardCheck} title="作業審核中心" desc="查看與回覆講師繳交的作業" color="amber" />
@@ -126,9 +131,9 @@ const AdminDashboard = () => {
             {isAdmin && (
                 <div className="mb-10">
                     <div className="flex items-center gap-2 mb-4">
-                        <Shield className="w-5 h-5 text-indigo-600" />
-                        <h2 className="text-lg font-bold text-slate-900">系統管理</h2>
-                        <span className="text-xs text-slate-400 ml-1">僅管理員可見</span>
+                        <Shield className="w-5 h-5 text-bauhaus-black" />
+                        <h2 className="text-lg font-black uppercase tracking-wide text-bauhaus-black">系統管理</h2>
+                        <span className="text-xs text-bauhaus-black/40 font-bold ml-1">僅管理員可見</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <NavCard to="/admin/teachers" icon={UserCog} title="講師名單管理" desc="新增、管理講師與權限設定" color="blue" />
@@ -138,36 +143,36 @@ const AdminDashboard = () => {
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="font-bold text-slate-900 text-lg">課程列表</h2>
+            <div className="bh-card overflow-hidden">
+                <div className="p-6 border-b-2 lg:border-b-4 border-bauhaus-black flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="font-black text-bauhaus-black text-lg uppercase tracking-wide">課程列表</h2>
                     {isAdmin && (
-                        <Link to="/admin/cms/new" className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 text-sm shrink-0">
+                        <Link to="/admin/cms/new" className="bh-btn bh-btn-blue px-5 py-2.5 text-sm shrink-0">
                             <Plus className="w-4 h-4" /> 建立新課程
                         </Link>
                     )}
                 </div>
-                <div className="md:hidden divide-y divide-slate-100">
+                <div className="md:hidden divide-y-2 divide-bauhaus-black/20">
                     {courses.map(course => (
                         <div key={course.id} className="p-4">
-                            <div className="font-bold text-slate-900">{course.title}</div>
-                            <div className="text-xs text-slate-400 line-clamp-2 mt-1">{course.description}</div>
+                            <div className="font-bold text-bauhaus-black">{course.title}</div>
+                            <div className="text-xs text-bauhaus-black/50 line-clamp-2 mt-1">{course.description}</div>
                             <div className="flex flex-wrap gap-2 mt-3">
-                                <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                                    course.visibility === 'intern' ? 'bg-teal-50 text-teal-600' :
-                                    course.visibility === 'formal' ? 'bg-violet-50 text-violet-600' :
-                                    'bg-slate-50 text-slate-400'
+                                <span className={`bh-chip ${
+                                    course.visibility === 'intern' ? 'bg-bauhaus-blue text-white' :
+                                    course.visibility === 'formal' ? 'bg-bauhaus-black text-white' :
+                                    'bg-bauhaus-muted text-bauhaus-black'
                                 }`}>
                                     {course.visibility === 'intern' ? '實習培訓' :
                                      course.visibility === 'formal' ? '正式培訓' : '全部'}
                                 </span>
-                                <span className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded-full">排序 {course.order}</span>
+                                <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">排序 {course.order}</span>
                                 {course.is_published ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
+                                    <span className="bh-chip bg-bauhaus-blue text-white">
                                         <Eye className="w-3 h-3" /> 已發佈
                                     </span>
                                 ) : (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                                    <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">
                                         <EyeOff className="w-3 h-3" /> 草稿
                                     </span>
                                 )}
@@ -176,19 +181,19 @@ const AdminDashboard = () => {
                                 {isAdmin && (
                                     <button
                                         onClick={() => toggleCourseStatus(course)}
-                                        className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                                        className="p-2 text-bauhaus-black/40 hover:text-bauhaus-blue transition-colors"
                                         title={course.is_published ? "下架" : "發佈"}
                                     >
                                         {course.is_published ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                     </button>
                                 )}
-                                <Link to={`/admin/cms/${course.id}`} className="p-2 text-slate-400 hover:text-blue-600 transition-colors">
+                                <Link to={`/admin/cms/${course.id}`} className="p-2 text-bauhaus-black/40 hover:text-bauhaus-blue transition-colors">
                                     <Edit2 className="w-4 h-4" />
                                 </Link>
                                 {isAdmin && (
                                     <button
                                         onClick={() => deleteCourse(course)}
-                                        className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                                        className="p-2 text-bauhaus-black/40 hover:text-bauhaus-red transition-colors"
                                         title="刪除課程"
                                     >
                                         <Trash2 className="w-4 h-4" />
@@ -200,7 +205,7 @@ const AdminDashboard = () => {
                 </div>
                 <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left">
-                        <thead className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                        <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider">
                             <tr>
                                 <th className="px-6 py-4">名稱</th>
                                 <th className="px-6 py-4">可見對象</th>
@@ -209,31 +214,31 @@ const AdminDashboard = () => {
                                 <th className="px-6 py-4 text-right">操作</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y-2 divide-bauhaus-black/20">
                             {courses.map(course => (
-                                <tr key={course.id} className="hover:bg-slate-50 transition-colors">
+                                <tr key={course.id} className="hover:bg-bauhaus-cream transition-colors">
                                     <td className="px-6 py-4">
-                                        <div className="font-semibold text-slate-900">{course.title}</div>
-                                        <div className="text-xs text-slate-400 line-clamp-1">{course.description}</div>
+                                        <div className="font-bold text-bauhaus-black">{course.title}</div>
+                                        <div className="text-xs text-bauhaus-black/50 line-clamp-1">{course.description}</div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                                            course.visibility === 'intern' ? 'bg-teal-50 text-teal-600' :
-                                            course.visibility === 'formal' ? 'bg-violet-50 text-violet-600' :
-                                            'bg-slate-50 text-slate-400'
+                                        <span className={`bh-chip ${
+                                            course.visibility === 'intern' ? 'bg-bauhaus-blue text-white' :
+                                            course.visibility === 'formal' ? 'bg-bauhaus-black text-white' :
+                                            'bg-bauhaus-muted text-bauhaus-black'
                                         }`}>
                                             {course.visibility === 'intern' ? '實習培訓' :
                                              course.visibility === 'formal' ? '正式培訓' : '全部'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-slate-500 text-sm">{course.order}</td>
+                                    <td className="px-6 py-4 text-bauhaus-black/60 text-sm font-bold">{course.order}</td>
                                     <td className="px-6 py-4">
                                         {course.is_published ? (
-                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
+                                            <span className="bh-chip bg-bauhaus-blue text-white">
                                                 <Eye className="w-3 h-3" /> 已發佈
                                             </span>
                                         ) : (
-                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                                            <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">
                                                 <EyeOff className="w-3 h-3" /> 草稿
                                             </span>
                                         )}
@@ -243,19 +248,19 @@ const AdminDashboard = () => {
                                             {isAdmin && (
                                                 <button
                                                     onClick={() => toggleCourseStatus(course)}
-                                                    className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                                                    className="p-2 text-bauhaus-black/40 hover:text-bauhaus-blue transition-colors"
                                                     title={course.is_published ? "下架" : "發佈"}
                                                 >
                                                     {course.is_published ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                 </button>
                                             )}
-                                            <Link to={`/admin/cms/${course.id}`} className="p-2 text-slate-400 hover:text-blue-600 transition-colors">
+                                            <Link to={`/admin/cms/${course.id}`} className="p-2 text-bauhaus-black/40 hover:text-bauhaus-blue transition-colors">
                                                 <Edit2 className="w-4 h-4" />
                                             </Link>
                                             {isAdmin && (
                                                 <button
                                                     onClick={() => deleteCourse(course)}
-                                                    className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                                                    className="p-2 text-bauhaus-black/40 hover:text-bauhaus-red transition-colors"
                                                     title="刪除課程"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
@@ -276,26 +281,26 @@ const AdminDashboard = () => {
 const NavCard = ({ to, icon, title, desc, color }) => {
     const Icon = icon;
     const colorMap = {
-        blue: { bg: 'bg-blue-50', text: 'text-blue-600', hoverBg: 'group-hover:bg-blue-600', hoverBorder: 'hover:border-blue-300', hoverArrow: 'group-hover:text-blue-400' },
-        emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', hoverBg: 'group-hover:bg-emerald-600', hoverBorder: 'hover:border-emerald-300', hoverArrow: 'group-hover:text-emerald-400' },
-        red: { bg: 'bg-red-50', text: 'text-red-500', hoverBg: 'group-hover:bg-red-500', hoverBorder: 'hover:border-red-300', hoverArrow: 'group-hover:text-red-400' },
-        purple: { bg: 'bg-purple-50', text: 'text-purple-600', hoverBg: 'group-hover:bg-purple-600', hoverBorder: 'hover:border-purple-300', hoverArrow: 'group-hover:text-purple-400' },
-        amber: { bg: 'bg-amber-50', text: 'text-amber-600', hoverBg: 'group-hover:bg-amber-600', hoverBorder: 'hover:border-amber-300', hoverArrow: 'group-hover:text-amber-400' },
-        rose: { bg: 'bg-rose-50', text: 'text-rose-600', hoverBg: 'group-hover:bg-rose-600', hoverBorder: 'hover:border-rose-300', hoverArrow: 'group-hover:text-rose-400' },
-        violet: { bg: 'bg-violet-50', text: 'text-violet-600', hoverBg: 'group-hover:bg-violet-600', hoverBorder: 'hover:border-violet-300', hoverArrow: 'group-hover:text-violet-400' },
+        blue: { bg: 'bg-bauhaus-blue', text: 'text-white' },
+        emerald: { bg: 'bg-bauhaus-blue', text: 'text-white' },
+        red: { bg: 'bg-bauhaus-red', text: 'text-white' },
+        purple: { bg: 'bg-bauhaus-black', text: 'text-white' },
+        amber: { bg: 'bg-bauhaus-yellow', text: 'text-bauhaus-black' },
+        rose: { bg: 'bg-bauhaus-red', text: 'text-white' },
+        violet: { bg: 'bg-bauhaus-black', text: 'text-white' },
     };
     const c = colorMap[color] || colorMap.blue;
 
     return (
-        <Link to={to} className={`group bg-white p-5 rounded-2xl border border-slate-100 shadow-sm ${c.hoverBorder} hover:shadow-md transition-all flex items-center gap-4`}>
-            <div className={`w-11 h-11 ${c.bg} ${c.text} rounded-xl flex items-center justify-center ${c.hoverBg} group-hover:text-white transition-colors`}>
+        <Link to={to} className="bh-card bh-card-hover group p-5 flex items-center gap-4">
+            <div className={`w-11 h-11 border-2 border-bauhaus-black ${c.bg} ${c.text} flex items-center justify-center shrink-0`}>
                 <Icon className="w-5 h-5" />
             </div>
             <div className="flex-1">
-                <div className="font-bold text-slate-900">{title}</div>
-                <div className="text-xs text-slate-400">{desc}</div>
+                <div className="font-bold text-bauhaus-black">{title}</div>
+                <div className="text-xs text-bauhaus-black/50">{desc}</div>
             </div>
-            <ChevronRight className={`w-5 h-5 text-slate-300 ${c.hoverArrow} transition-colors`} />
+            <ChevronRight className="w-5 h-5 text-bauhaus-black/30 group-hover:text-bauhaus-black transition-colors" />
         </Link>
     );
 };

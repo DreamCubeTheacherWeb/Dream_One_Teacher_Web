@@ -38,33 +38,33 @@ const DevLogin = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 px-4 py-12">
+        <div className="min-h-screen flex items-center justify-center bg-bauhaus-black px-4 py-12">
             <div className="w-full max-w-md">
-                <div className="bg-white rounded-3xl shadow-2xl p-8">
-                    <div className="flex items-center gap-2 mb-2 text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold">
+                <div className="bg-white border-2 border-bauhaus-black shadow-hard-lg p-8">
+                    <div className="flex items-center gap-2 mb-2 text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 text-xs font-bold">
                         <AlertTriangle className="w-4 h-4" />
                         臨時登入 — Google OAuth 串接前使用
                     </div>
 
-                    <h1 className="text-2xl font-black text-slate-900 mt-5 mb-1">
+                    <h1 className="text-2xl font-black text-bauhaus-black mt-5 mb-1">
                         {mode === 'signin' ? '登入' : '註冊帳號'}
                     </h1>
-                    <p className="text-sm text-slate-500 mb-6">
+                    <p className="text-sm text-bauhaus-black/60 mb-6 font-medium">
                         使用 email 與密碼{mode === 'signin' ? '登入' : '建立帳號'}
                     </p>
 
                     <form onSubmit={onSubmit} className="space-y-4">
                         {mode === 'signup' && (
                             <div>
-                                <label className="text-xs font-bold text-slate-600 mb-1.5 block">姓名</label>
+                                <label className="bh-label mb-1.5 block">姓名</label>
                                 <div className="relative">
-                                    <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bauhaus-black/40" />
                                     <input
                                         type="text"
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
                                         required
-                                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+                                        className="bh-input pl-10 pr-4 py-3 text-sm"
                                         placeholder="王小明"
                                     />
                                 </div>
@@ -72,25 +72,25 @@ const DevLogin = () => {
                         )}
 
                         <div>
-                            <label className="text-xs font-bold text-slate-600 mb-1.5 block">Email</label>
+                            <label className="bh-label mb-1.5 block">Email</label>
                             <div className="relative">
-                                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bauhaus-black/40" />
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
                                     autoComplete="email"
-                                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+                                    className="bh-input pl-10 pr-4 py-3 text-sm"
                                     placeholder="you@example.com"
                                 />
                             </div>
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold text-slate-600 mb-1.5 block">密碼</label>
+                            <label className="bh-label mb-1.5 block">密碼</label>
                             <div className="relative">
-                                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-bauhaus-black/40" />
                                 <input
                                     type="password"
                                     value={password}
@@ -98,19 +98,19 @@ const DevLogin = () => {
                                     required
                                     minLength={6}
                                     autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+                                    className="bh-input pl-10 pr-4 py-3 text-sm"
                                     placeholder="至少 6 個字元"
                                 />
                             </div>
                         </div>
 
                         {error && (
-                            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                            <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
                                 {error}
                             </div>
                         )}
                         {info && (
-                            <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                            <div className="text-sm text-white bg-bauhaus-blue border-2 border-bauhaus-black px-3 py-2 font-bold">
                                 {info}
                             </div>
                         )}
@@ -118,20 +118,20 @@ const DevLogin = () => {
                         <button
                             type="submit"
                             disabled={busy}
-                            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50"
+                            className="bh-btn bh-btn-blue w-full py-3 text-sm"
                         >
                             {mode === 'signin' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
                             {busy ? '處理中…' : mode === 'signin' ? '登入' : '註冊'}
                         </button>
                     </form>
 
-                    <div className="mt-6 text-center text-sm text-slate-500">
+                    <div className="mt-6 text-center text-sm text-bauhaus-black/60 font-medium">
                         {mode === 'signin' ? (
                             <>還沒有帳號?
                                 <button
                                     type="button"
                                     onClick={() => { setMode('signup'); setError(''); setInfo(''); }}
-                                    className="ml-1 text-blue-600 font-bold hover:underline"
+                                    className="ml-1 text-bauhaus-blue font-bold hover:underline"
                                 >
                                     註冊一個
                                 </button>
@@ -141,7 +141,7 @@ const DevLogin = () => {
                                 <button
                                     type="button"
                                     onClick={() => { setMode('signin'); setError(''); setInfo(''); }}
-                                    className="ml-1 text-blue-600 font-bold hover:underline"
+                                    className="ml-1 text-bauhaus-blue font-bold hover:underline"
                                 >
                                     去登入
                                 </button>
@@ -150,7 +150,7 @@ const DevLogin = () => {
                     </div>
                 </div>
 
-                <p className="text-center text-xs text-blue-200/60 mt-4">
+                <p className="text-center text-xs text-white/50 mt-4 font-medium">
                     註冊後角色預設為 pending,請至 Supabase 後台或用 admin 帳號將 role 改為 admin / mentor / teacher。
                 </p>
             </div>

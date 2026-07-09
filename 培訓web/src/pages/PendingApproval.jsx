@@ -28,38 +28,41 @@ const PendingApproval = () => {
 
     if (!user) return <Navigate to="/" />;
     if (profile?.role && profile.role !== 'pending') return <Navigate to="/courses" />;
-    if (checking) return <div className="p-12 text-center text-slate-500 text-lg">載入中...</div>;
+    if (checking) return <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">載入中...</div>;
 
     const handleRefresh = async () => {
         await refreshProfile(user.id);
     };
 
     return (
-        <div className="min-h-[70vh] flex items-center justify-center p-8">
-            <div className="max-w-md w-full text-center">
-                <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Clock className="w-10 h-10 text-amber-500" />
+        <div className="min-h-[70vh] flex items-center justify-center p-8 relative overflow-hidden">
+            <div className="absolute -top-10 -left-10 w-32 h-32 sm:w-48 sm:h-48 rounded-full bg-bauhaus-yellow/20" aria-hidden="true" />
+            <div className="absolute bottom-0 right-0 w-40 h-40 sm:w-56 sm:h-56 bg-bauhaus-blue/10 rotate-45" aria-hidden="true" />
+
+            <div className="max-w-md w-full text-center relative">
+                <div className="w-20 h-20 bg-bauhaus-yellow border-2 border-bauhaus-black flex items-center justify-center mx-auto mb-6 shadow-hard">
+                    <Clock className="w-10 h-10 text-bauhaus-black" />
                 </div>
 
-                <h1 className="text-2xl font-black text-slate-900 mb-3">帳號審核中</h1>
-                <p className="text-slate-500 mb-2">
+                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-3 tracking-tight">帳號審核中</h1>
+                <p className="text-bauhaus-black/70 mb-2 font-medium">
                     你的帳號已成功註冊並完成資料填寫，目前正在等待管理員審核。
                 </p>
-                <p className="text-slate-400 text-sm mb-8">
+                <p className="text-bauhaus-black/50 text-sm mb-8 font-medium">
                     審核通過後即可瀏覽所有培訓課程內容。
                 </p>
 
-                <div className="bg-slate-50 rounded-2xl p-5 mb-8 text-left">
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">帳號資訊</div>
+                <div className="bg-white border-2 border-bauhaus-black p-5 mb-8 text-left shadow-hard">
+                    <div className="bh-label mb-3">帳號資訊</div>
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                            <span className="text-slate-500">Email</span>
-                            <span className="font-medium text-slate-700">{user.email}</span>
+                            <span className="text-bauhaus-black/50 font-medium">Email</span>
+                            <span className="font-bold text-bauhaus-black">{user.email}</span>
                         </div>
-                        <div className="flex justify-between">
-                            <span className="text-slate-500">狀態</span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">
-                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                        <div className="flex justify-between items-center">
+                            <span className="text-bauhaus-black/50 font-medium">狀態</span>
+                            <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
+                                <span className="w-1.5 h-1.5 bg-bauhaus-black rounded-full animate-pulse" />
                                 待審核
                             </span>
                         </div>
@@ -69,20 +72,20 @@ const PendingApproval = () => {
                 <div className="flex flex-wrap gap-3 justify-center">
                     <button
                         onClick={handleRefresh}
-                        className="flex items-center gap-2 px-5 py-3 md:py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                        className="bh-btn bh-btn-blue px-5 py-3 md:py-2.5 text-sm"
                     >
                         <RefreshCw className="w-4 h-4" />
                         重新檢查狀態
                     </button>
                     <button
                         onClick={() => navigate('/profile')}
-                        className="flex items-center gap-2 px-5 py-3 md:py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
+                        className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm"
                     >
                         編輯個人資料
                     </button>
                     <button
                         onClick={signOut}
-                        className="flex items-center gap-2 px-5 py-3 md:py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all"
+                        className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm"
                     >
                         <LogOut className="w-4 h-4" />
                         登出

@@ -189,25 +189,25 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center">
+    <div className="fixed inset-0 z-[9999] bg-bauhaus-black/60 flex items-center justify-center">
       <div className="bg-white w-full h-full flex flex-col">
         {/* 手機版提示：此編輯器不適合觸控操作 */}
-        <div className="md:hidden bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs font-bold text-amber-700 text-center shrink-0">
+        <div className="md:hidden bg-bauhaus-yellow border-b-2 border-bauhaus-black px-4 py-2 text-xs font-bold text-bauhaus-black text-center shrink-0">
           🖥️ 此編輯器為桌面工具，建議使用電腦操作
         </div>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b-2 lg:border-b-4 border-bauhaus-black bg-white shrink-0">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-slate-900">欄位定位編輯器</h2>
-            <span className="text-sm text-slate-500">
+            <h2 className="text-lg font-black text-bauhaus-black">欄位定位編輯器</h2>
+            <span className="text-sm text-bauhaus-black/50 font-medium">
               {docType} v{docVersion} · 第 {currentPage}/{numPages || '?'} 頁
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPreviewMode(!previewMode)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                previewMode ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              className={`flex items-center gap-1.5 px-3 py-1.5 border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
+                previewMode ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
               }`}
             >
               <Eye className="w-4 h-4" />
@@ -216,36 +216,36 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide hover:bg-bauhaus-blue/90 shadow-hard transition-colors duration-200 disabled:opacity-40 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
             >
               <Save className="w-4 h-4" />
               {saving ? '儲存中...' : '儲存'}
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200 transition-colors">
-              <X className="w-5 h-5 text-slate-500" />
+            <button onClick={onClose} className="p-1.5 border-2 border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]">
+              <X className="w-5 h-5 text-bauhaus-black" />
             </button>
           </div>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
           {/* Left: PDF area */}
-          <div className="flex-1 overflow-auto bg-slate-200 p-4 flex flex-col items-center">
+          <div className="flex-1 overflow-auto bg-bauhaus-paper p-4 flex flex-col items-center">
             {/* Page nav */}
             <div className="flex items-center gap-3 mb-3 shrink-0">
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="p-1.5 rounded-lg bg-white shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                className="p-1.5 border-2 border-bauhaus-black bg-white hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200 min-h-[44px] min-w-[44px]"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <span className="text-sm font-bold text-slate-700">
+              <span className="text-sm font-bold text-bauhaus-black">
                 {currentPage} / {numPages || '?'}
               </span>
               <button
                 onClick={() => setCurrentPage(p => Math.min(numPages || p, p + 1))}
                 disabled={currentPage >= (numPages || 1)}
-                className="p-1.5 rounded-lg bg-white shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                className="p-1.5 border-2 border-bauhaus-black bg-white hover:bg-bauhaus-muted disabled:opacity-30 transition-colors duration-200 min-h-[44px] min-w-[44px]"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
@@ -359,10 +359,10 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
           </div>
 
           {/* Right: field panel */}
-          <div className="w-64 border-l border-slate-200 bg-white flex flex-col shrink-0 overflow-y-auto">
-            <div className="p-4 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900 mb-1">可用欄位</h3>
-              <p className="text-xs text-slate-400">點擊下方按鈕新增欄位到當前頁面，然後拖拉定位</p>
+          <div className="w-64 border-l-2 border-bauhaus-black bg-white flex flex-col shrink-0 overflow-y-auto">
+            <div className="p-4 border-b-2 border-bauhaus-black">
+              <h3 className="text-sm font-black text-bauhaus-black mb-1">可用欄位</h3>
+              <p className="text-xs text-bauhaus-black/50">點擊下方按鈕新增欄位到當前頁面，然後拖拉定位</p>
             </div>
             <div className="p-3 space-y-3">
               {['合約', '匯款表單', '圖片'].map(group => {
@@ -370,7 +370,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
                 if (groupFields.length === 0) return null;
                 return (
                   <div key={group}>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 px-1">
+                    <h4 className="text-[10px] font-black text-bauhaus-black/40 uppercase tracking-widest mb-1.5 px-1">
                       {group}
                     </h4>
                     <div className="space-y-1.5">
@@ -380,19 +380,19 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
                           <button
                             key={def.type}
                             onClick={() => addField(def.type)}
-                            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all text-left"
+                            className="w-full flex items-center gap-2 px-2.5 py-2 border-2 border-bauhaus-black/20 hover:border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 text-left min-h-[44px]"
                           >
                             <div
-                              className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                              className="w-7 h-7 flex items-center justify-center shrink-0 border-2 border-bauhaus-black"
                               style={{ backgroundColor: `${def.color}15` }}
                             >
                               <FieldIcon className="w-3.5 h-3.5" style={{ color: def.color }} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="text-xs font-bold text-slate-800 truncate">{def.label}</div>
-                              <div className="text-[10px] text-slate-400 truncate">{def.type}</div>
+                              <div className="text-xs font-bold text-bauhaus-black truncate">{def.label}</div>
+                              <div className="text-[10px] text-bauhaus-black/40 truncate">{def.type}</div>
                             </div>
-                            <Plus className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                            <Plus className="w-3.5 h-3.5 text-bauhaus-black/30 shrink-0" />
                           </button>
                         );
                       })}
@@ -403,26 +403,26 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
             </div>
 
             {/* Fields on current page */}
-            <div className="p-3 border-t border-slate-100">
-              <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">
+            <div className="p-3 border-t-2 border-bauhaus-black">
+              <h4 className="text-xs font-bold text-bauhaus-black/60 mb-2 uppercase tracking-wider">
                 本頁欄位 ({pageFields.length})
               </h4>
               {pageFields.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-4">尚無欄位，請從上方新增</p>
+                <p className="text-xs text-bauhaus-black/40 text-center py-4">尚無欄位，請從上方新增</p>
               ) : (
                 <div className="space-y-1.5">
                   {pageFields.map(f => {
                     const def = getFieldDef(f.fieldType);
                     if (!def) return null;
                     return (
-                      <div key={f.id} className="flex items-center justify-between px-2 py-1.5 bg-slate-50 rounded-lg">
+                      <div key={f.id} className="flex items-center justify-between px-2 py-1.5 bg-bauhaus-paper border-2 border-bauhaus-black/10">
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: def.color }} />
-                          <span className="text-xs font-bold text-slate-700">{def.label}</span>
+                          <span className="text-xs font-bold text-bauhaus-black">{def.label}</span>
                         </div>
                         <button
                           onClick={() => removeField(f.id)}
-                          className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                          className="p-1 hover:bg-bauhaus-red/10 text-bauhaus-black/40 hover:text-bauhaus-red transition-colors duration-200"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -434,8 +434,8 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
             </div>
 
             {/* All pages summary */}
-            <div className="p-3 border-t border-slate-100 mt-auto">
-              <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">
+            <div className="p-3 border-t-2 border-bauhaus-black mt-auto">
+              <h4 className="text-xs font-bold text-bauhaus-black/60 mb-2 uppercase tracking-wider">
                 所有頁面摘要
               </h4>
               {Array.from({ length: numPages || 0 }, (_, i) => i + 1).map(pg => {
@@ -444,8 +444,8 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
                   <button
                     key={pg}
                     onClick={() => setCurrentPage(pg)}
-                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition-all mb-1 ${
-                      pg === currentPage ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-500 hover:bg-slate-50'
+                    className={`w-full flex items-center justify-between px-2 py-1.5 text-xs transition-colors duration-200 mb-1 border-2 ${
+                      pg === currentPage ? 'bg-bauhaus-blue text-white border-bauhaus-black font-bold' : 'text-bauhaus-black/60 border-transparent hover:bg-bauhaus-muted'
                     }`}
                   >
                     <span>第 {pg} 頁</span>

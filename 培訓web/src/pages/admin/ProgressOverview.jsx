@@ -3,9 +3,15 @@ import { supabase } from '../../lib/supabaseClient';
 import { BarChart3, Filter, CheckCircle, Circle, MinusCircle } from 'lucide-react';
 
 const STATUS_OPTIONS = [
-    { value: 'training', label: '培訓中', color: 'bg-blue-50 text-blue-600' },
-    { value: 'completed', label: '培訓完畢', color: 'bg-green-50 text-green-600' },
-    { value: 'exempt', label: '無需培訓', color: 'bg-slate-100 text-slate-500' },
+    { value: 'training', label: '培訓中', color: 'bg-bauhaus-blue text-white' },
+    { value: 'completed', label: '培訓完畢', color: 'bg-bauhaus-black text-white' },
+    { value: 'exempt', label: '無需培訓', color: 'bg-bauhaus-muted text-bauhaus-black' },
+];
+
+const CORNER_DECOS = [
+    { shape: 'circle', color: 'bg-bauhaus-red' },
+    { shape: 'square', color: 'bg-bauhaus-blue' },
+    { shape: 'triangle', color: 'bg-bauhaus-yellow' },
 ];
 
 const ProgressOverview = () => {
@@ -87,7 +93,7 @@ const ProgressOverview = () => {
         setStatusMap({ ...statusMap, [userId]: newStatus });
     };
 
-    if (loading && courses.length === 0) return <div className="p-12 text-center text-slate-500">載入中...</div>;
+    if (loading && courses.length === 0) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 
     const totalLessons = lessons.length;
 
@@ -95,26 +101,26 @@ const ProgressOverview = () => {
         <div className="p-4 sm:p-8 max-w-6xl mx-auto">
             <div className="flex items-center justify-between mb-6 sm:mb-8">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900">培訓進度總覽</h1>
-                    <p className="text-slate-500 mt-1 text-sm sm:text-base">檢視所有講師的課程學習進度與培訓狀態</p>
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">培訓進度總覽</h1>
+                    <p className="text-bauhaus-black/60 font-medium mt-1 text-sm sm:text-base">檢視所有講師的課程學習進度與培訓狀態</p>
                 </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 mb-6 sm:mb-8">
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
+                <div className="flex items-center gap-2 text-sm font-bold text-bauhaus-black/60">
                     <Filter className="w-4 h-4 shrink-0" /> 選擇課程：
                 </div>
                 <select
                     value={selectedCourseId}
                     onChange={e => setSelectedCourseId(e.target.value)}
-                    className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 min-w-0 sm:min-w-[240px] w-full sm:w-auto"
+                    className="bh-input text-sm font-bold min-w-0 sm:min-w-[240px] w-full sm:w-auto"
                 >
                     {courses.map(c => (
                         <option key={c.id} value={c.id}>{c.title}</option>
                     ))}
                 </select>
                 {totalLessons > 0 && (
-                    <span className="text-xs font-medium text-slate-400 bg-slate-100 px-3 py-1.5 rounded-full">
+                    <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">
                         共 {totalLessons} 個章節
                     </span>
                 )}
@@ -122,16 +128,22 @@ const ProgressOverview = () => {
 
             {/* Stats row */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-                {STATUS_OPTIONS.map(opt => {
+                {STATUS_OPTIONS.map((opt, idx) => {
                     const count = teachers.filter(t => (statusMap[t.id] || 'training') === opt.value).length;
+                    const deco = CORNER_DECOS[idx % 3];
                     return (
-                        <div key={opt.value} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
-                            {opt.value === 'training' && <Circle className="w-5 h-5 text-blue-500" />}
-                            {opt.value === 'completed' && <CheckCircle className="w-5 h-5 text-green-500" />}
-                            {opt.value === 'exempt' && <MinusCircle className="w-5 h-5 text-slate-400" />}
+                        <div key={opt.value} className="bh-card relative overflow-hidden p-4 flex items-center gap-3">
+                            <span
+                                aria-hidden="true"
+                                className={`absolute -top-2 -right-2 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
+                                style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
+                            />
+                            {opt.value === 'training' && <Circle className="w-5 h-5 text-bauhaus-blue" />}
+                            {opt.value === 'completed' && <CheckCircle className="w-5 h-5 text-bauhaus-black" />}
+                            {opt.value === 'exempt' && <MinusCircle className="w-5 h-5 text-bauhaus-black/40" />}
                             <div>
-                                <div className="text-xl font-black text-slate-900">{count}</div>
-                                <div className="text-xs font-medium text-slate-400">{opt.label}</div>
+                                <div className="text-xl font-black text-bauhaus-black tabular-nums">{count}</div>
+                                <div className="text-xs font-bold text-bauhaus-black/50 uppercase tracking-wide">{opt.label}</div>
                             </div>
                         </div>
                     );
@@ -139,19 +151,19 @@ const ProgressOverview = () => {
             </div>
 
             {/* Teacher progress table */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-slate-100 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-blue-600" />
-                    <h2 className="font-bold text-slate-900 text-lg">講師進度列表</h2>
+            <div className="bh-card overflow-hidden">
+                <div className="p-6 border-b-2 lg:border-b-4 border-bauhaus-black flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-bauhaus-black" />
+                    <h2 className="font-black text-bauhaus-black text-lg uppercase tracking-wide">講師進度列表</h2>
                 </div>
 
                 {loading ? (
-                    <div className="p-12 text-center text-slate-400">載入資料中...</div>
+                    <div className="p-12 text-center text-bauhaus-black/40 font-bold">載入資料中...</div>
                 ) : (
                     <>
                         <div className="hidden md:block">
                             <table className="w-full text-left">
-                                <thead className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider">
                                     <tr>
                                         <th className="px-6 py-4">姓名</th>
                                         <th className="px-6 py-4">Email</th>
@@ -160,26 +172,26 @@ const ProgressOverview = () => {
                                         <th className="px-6 py-4">培訓狀態</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100">
+                                <tbody className="divide-y-2 divide-bauhaus-black/20">
                                     {teachers.map(teacher => {
                                         const completed = progressMap[teacher.id] || 0;
                                         const pct = totalLessons > 0 ? Math.round((completed / totalLessons) * 100) : 0;
                                         const currentStatus = statusMap[teacher.id] || 'training';
 
                                         return (
-                                            <tr key={teacher.id} className="hover:bg-slate-50 transition-colors">
-                                                <td className="px-6 py-4 font-semibold text-slate-900">{teacher.name || '—'}</td>
-                                                <td className="px-6 py-4 text-sm text-slate-500">{teacher.email}</td>
-                                                <td className="px-6 py-4 text-sm text-slate-500">{teacher.mentor_name || '—'}</td>
+                                            <tr key={teacher.id} className="hover:bg-bauhaus-cream transition-colors">
+                                                <td className="px-6 py-4 font-bold text-bauhaus-black">{teacher.name || '—'}</td>
+                                                <td className="px-6 py-4 text-sm text-bauhaus-black/60">{teacher.email}</td>
+                                                <td className="px-6 py-4 text-sm text-bauhaus-black/60">{teacher.mentor_name || '—'}</td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3 min-w-[180px]">
-                                                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                                        <div className="flex-1 h-2 bg-bauhaus-muted border border-bauhaus-black/20 overflow-hidden">
                                                             <div
-                                                                className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                                                                className="h-full bg-bauhaus-blue transition-all duration-500"
                                                                 style={{ width: `${pct}%` }}
                                                             />
                                                         </div>
-                                                        <span className="text-xs font-bold text-slate-500 whitespace-nowrap">
+                                                        <span className="text-xs font-bold text-bauhaus-black/60 whitespace-nowrap">
                                                             {completed}/{totalLessons}
                                                         </span>
                                                     </div>
@@ -188,7 +200,7 @@ const ProgressOverview = () => {
                                                     <select
                                                         value={currentStatus}
                                                         onChange={e => handleStatusChange(teacher.id, e.target.value)}
-                                                        className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none cursor-pointer ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
+                                                        className={`text-xs font-bold px-3 py-1.5 border-2 border-bauhaus-black rounded-none outline-none cursor-pointer ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
                                                     >
                                                         {STATUS_OPTIONS.map(opt => (
                                                             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -199,14 +211,14 @@ const ProgressOverview = () => {
                                         );
                                     })}
                                     {teachers.length === 0 && (
-                                        <tr><td colSpan="5" className="px-6 py-12 text-center text-slate-400">沒有講師資料</td></tr>
+                                        <tr><td colSpan="5" className="px-6 py-12 text-center text-bauhaus-black/40 font-bold">沒有講師資料</td></tr>
                                     )}
                                 </tbody>
                             </table>
                         </div>
-                        <div className="md:hidden divide-y divide-slate-100">
+                        <div className="md:hidden divide-y-2 divide-bauhaus-black/20">
                             {teachers.length === 0 ? (
-                                <div className="px-4 py-12 text-center text-slate-400">沒有講師資料</div>
+                                <div className="px-4 py-12 text-center text-bauhaus-black/40 font-bold">沒有講師資料</div>
                             ) : (
                                 teachers.map(teacher => {
                                     const completed = progressMap[teacher.id] || 0;
@@ -215,21 +227,21 @@ const ProgressOverview = () => {
 
                                     return (
                                         <div key={teacher.id} className="p-4">
-                                            <div className="font-bold text-slate-900">{teacher.name || '—'}</div>
-                                            <div className="text-sm text-slate-500 mt-0.5">{teacher.email}</div>
+                                            <div className="font-bold text-bauhaus-black">{teacher.name || '—'}</div>
+                                            <div className="text-sm text-bauhaus-black/60 mt-0.5">{teacher.email}</div>
                                             {teacher.mentor_name && (
-                                                <span className="inline-block mt-2 px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
+                                                <span className="bh-chip bg-bauhaus-muted text-bauhaus-black mt-2 inline-flex">
                                                     {teacher.mentor_name}
                                                 </span>
                                             )}
                                             <div className="flex items-center gap-3 mt-3">
-                                                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden min-w-0">
+                                                <div className="flex-1 h-2 bg-bauhaus-muted border border-bauhaus-black/20 overflow-hidden min-w-0">
                                                     <div
-                                                        className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                                                        className="h-full bg-bauhaus-blue transition-all duration-500"
                                                         style={{ width: `${pct}%` }}
                                                     />
                                                 </div>
-                                                <span className="text-xs font-bold text-slate-500 shrink-0">
+                                                <span className="text-xs font-bold text-bauhaus-black/60 shrink-0">
                                                     {completed}/{totalLessons}
                                                 </span>
                                             </div>
@@ -237,7 +249,7 @@ const ProgressOverview = () => {
                                                 <select
                                                     value={currentStatus}
                                                     onChange={e => handleStatusChange(teacher.id, e.target.value)}
-                                                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 outline-none cursor-pointer w-full sm:w-auto ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
+                                                    className={`text-xs font-bold px-3 py-1.5 border-2 border-bauhaus-black rounded-none outline-none cursor-pointer w-full sm:w-auto ${STATUS_OPTIONS.find(o => o.value === currentStatus)?.color || ''}`}
                                                 >
                                                     {STATUS_OPTIONS.map(opt => (
                                                         <option key={opt.value} value={opt.value}>{opt.label}</option>

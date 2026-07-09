@@ -312,20 +312,20 @@ const ProfilePage = () => {
         setSaving(false);
     };
 
-    if (loading) return <div className="p-12 text-center text-slate-500 text-lg">載入中...</div>;
+    if (loading) return <div className="p-12 text-center text-bauhaus-black/60 font-bold text-lg">載入中...</div>;
 
-    const inputCls = 'w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-colors';
+    const inputCls = 'bh-input';
     const selectCls = inputCls + ' bg-white';
 
     return (
         <div className="p-6 max-w-4xl mx-auto">
             {/* ── 首次註冊提示 ── */}
             {isFirstTime && (
-                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 mb-6 flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-                        <Save className="w-5 h-5 text-blue-600" />
+                <div className="bh-card bg-bauhaus-yellow/10 p-5 mb-6 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-bauhaus-yellow border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                        <Save className="w-5 h-5 text-bauhaus-black" />
                     </div>
-                    <p className="text-blue-800 font-medium">
+                    <p className="text-bauhaus-black font-bold">
                         填寫完下方資料後才算完成註冊，請務必填寫所有必填欄位並按下「送出資料」。
                     </p>
                 </div>
@@ -333,19 +333,19 @@ const ProfilePage = () => {
 
             {/* ── 認領歷史講師資料(僅 isFirstTime 且尚未提出 pending 申請時顯示)── */}
             {isFirstTime && (!existingClaim || existingClaim.status === 'rejected') && (
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-2xl p-5 mb-6 flex items-start gap-3">
-                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shrink-0 shadow-sm">
-                        <UserSearch className="w-5 h-5 text-purple-600" />
+                <div className="bh-card p-5 mb-6 flex items-start gap-3">
+                    <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                        <UserSearch className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1">
-                        <p className="text-purple-900 font-bold">您是已建檔的講師嗎?</p>
-                        <p className="text-purple-700 text-sm mt-0.5">
+                        <p className="text-bauhaus-black font-black">您是已建檔的講師嗎?</p>
+                        <p className="text-bauhaus-black/70 text-sm mt-0.5 font-medium">
                             如果您之前已經填過資料、想用這個 Google 帳號接收歷史記錄,可以提出認領申請,管理員審核通過後就會自動綁定。
                         </p>
                         <button
                             type="button"
                             onClick={() => setShowClaimModal(true)}
-                            className="mt-3 inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-3 md:py-2 rounded-lg text-sm transition-colors w-full sm:w-auto justify-center"
+                            className="bh-btn bh-btn-blue mt-3 px-4 py-3 md:py-2 text-sm w-full sm:w-auto"
                         >
                             <UserSearch className="w-4 h-4" /> 認領我的講師資料
                         </button>
@@ -355,12 +355,12 @@ const ProfilePage = () => {
 
             {/* ── 顯示既有 claim 狀態 ── */}
             {existingClaim?.status === 'pending' && (
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-6 flex items-start gap-3">
-                    <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="bh-card bg-bauhaus-yellow/10 p-5 mb-6 flex items-start gap-3">
+                    <Clock className="w-5 h-5 text-bauhaus-black shrink-0 mt-0.5" />
                     <div>
-                        <p className="text-amber-900 font-bold">認領申請審核中</p>
-                        <p className="text-amber-700 text-sm mt-0.5">
-                            您已申請認領 <strong>{existingClaim.instructor?.full_name}</strong> 的講師資料,等候管理員審核中。通過後會自動綁定。
+                        <p className="text-bauhaus-black font-black">認領申請審核中</p>
+                        <p className="text-bauhaus-black/70 text-sm mt-0.5 font-medium">
+                            您已申請認領 <strong className="font-black">{existingClaim.instructor?.full_name}</strong> 的講師資料,等候管理員審核中。通過後會自動綁定。
                         </p>
                     </div>
                 </div>
@@ -369,22 +369,22 @@ const ProfilePage = () => {
             {/* ── Header with Avatar ── */}
             <div className="mb-8 flex items-center gap-6">
                 <div className="relative shrink-0">
-                    <div className="w-28 h-28 rounded-full bg-slate-100 border-4 border-white shadow-lg overflow-hidden flex items-center justify-center">
+                    <div className="w-28 h-28 rounded-full bg-bauhaus-muted border-2 lg:border-4 border-bauhaus-black overflow-hidden flex items-center justify-center">
                         {filePreviews.photo ? (
                             <img src={filePreviews.photo} alt="大頭照" className="w-full h-full object-cover" />
                         ) : (
-                            <Camera className="w-10 h-10 text-slate-300" />
+                            <Camera className="w-10 h-10 text-bauhaus-black/30" />
                         )}
                     </div>
                     {uploading.photo ? (
-                        <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                        <div className="absolute inset-0 rounded-full bg-bauhaus-black/50 flex items-center justify-center">
                             <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
                         </div>
                     ) : (
                         <button
                             type="button"
                             onClick={() => fileRefs.current.photo?.click()}
-                            className="absolute bottom-0 right-0 w-11 h-11 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md transition-colors border-2 border-white"
+                            className="absolute bottom-0 right-0 w-11 h-11 bg-bauhaus-blue hover:bg-bauhaus-blue/90 text-white rounded-full flex items-center justify-center transition-colors border-2 border-bauhaus-black"
                         >
                             <Pencil className="w-4 h-4" />
                         </button>
@@ -402,23 +402,23 @@ const ProfilePage = () => {
                     {filePreviews.photo && (
                         <button
                             onClick={() => handleRemoveFile('photo')}
-                            className="absolute top-0 right-0 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white"
+                            className="absolute top-0 right-0 w-6 h-6 bg-bauhaus-red hover:bg-bauhaus-red/90 text-white rounded-full flex items-center justify-center border-2 border-bauhaus-black"
                         >
                             <X className="w-3 h-3" />
                         </button>
                     )}
                 </div>
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900">
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">
                         {isFirstTime ? '歡迎加入！' : '個人資料'}
                     </h1>
-                    <p className="text-slate-500 mt-1">
+                    <p className="text-bauhaus-black/60 mt-1 font-medium">
                         {isFirstTime
                             ? '請先上傳大頭照並填寫以下完整資料，完成後即可送出審核。'
                             : '查看與編輯您的個人資料，所有欄位皆為必填。'}
                     </p>
                     {!filePreviews.photo && (
-                        <p className="text-red-500 text-sm mt-1 font-medium">← 請先上傳大頭照 / 自拍照</p>
+                        <p className="text-bauhaus-red text-sm mt-1 font-bold">← 請先上傳大頭照 / 自拍照</p>
                     )}
                 </div>
             </div>
@@ -488,10 +488,10 @@ const ProfilePage = () => {
                     <Field label="講師等級" required>
                         {!isFirstTime && form.instructor_role ? (
                             <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center text-sm font-bold bg-purple-50 text-purple-600 px-4 py-2.5 rounded-xl">
+                                <span className="bh-chip bg-bauhaus-blue text-white text-sm px-4 py-2.5">
                                     {ROLE_OPTIONS.find(r => r.value === form.instructor_role)?.label || form.instructor_role}
                                 </span>
-                                <span className="text-xs text-slate-400">（如需變更請聯繫管理員）</span>
+                                <span className="text-xs text-bauhaus-black/50">（如需變更請聯繫管理員）</span>
                             </div>
                         ) : (
                             <select value={form.instructor_role} onChange={e => handleChange('instructor_role', e.target.value)} className={selectCls}>
@@ -509,29 +509,29 @@ const ProfilePage = () => {
                 </div>
 
                 <div className="mt-6">
-                    <label className="block text-sm font-medium text-slate-700 mb-3">
-                        可接課地區 <span className="text-red-500">*</span>
-                        <span className="ml-2 text-xs text-slate-400">（已選 {form.teaching_regions.length} 個縣市）</span>
+                    <label className="bh-label block mb-3">
+                        可接課地區 <span className="text-bauhaus-red">*</span>
+                        <span className="ml-2 text-xs text-bauhaus-black/50 normal-case tracking-normal font-medium">（已選 {form.teaching_regions.length} 個縣市）</span>
                     </label>
                     <div className="space-y-4">
                         {Object.entries(TW_REGIONS).map(([area, counties]) => {
                             const allSelected = counties.every(c => form.teaching_regions.includes(c));
                             return (
-                                <div key={area} className="bg-slate-50 rounded-xl p-4">
+                                <div key={area} className="bg-bauhaus-muted p-4">
                                     <div className="flex items-center gap-2 mb-2">
                                         <button
                                             type="button"
                                             onClick={() => selectAllInArea(counties)}
-                                            className={`text-xs font-bold px-2 py-0.5 rounded-full transition-colors ${allSelected ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 border border-slate-300 hover:border-blue-400'}`}
+                                            className={`inline-flex items-center gap-1 border-2 border-bauhaus-black px-2 py-0.5 text-xs font-bold uppercase tracking-wide transition-colors ${allSelected ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
                                         >
                                             {allSelected ? '✓ 全選' : '全選'}
                                         </button>
-                                        <span className="text-sm font-bold text-slate-600">{area}</span>
+                                        <span className="text-sm font-black text-bauhaus-black uppercase tracking-wide">{area}</span>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {counties.map(county => (
                                             <label key={county}
-                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm cursor-pointer transition-colors border ${form.teaching_regions.includes(county) ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-200'}`}
+                                                className={`bh-chip cursor-pointer transition-colors ${form.teaching_regions.includes(county) ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
                                             >
                                                 <input type="checkbox" className="sr-only"
                                                     checked={form.teaching_regions.includes(county)}
@@ -549,8 +549,8 @@ const ProfilePage = () => {
 
             {/* ── 匯款銀行資訊 ── */}
             <Section icon={Landmark} title="匯款銀行資訊">
-                <p className="text-sm text-slate-500 mb-4">
-                    此區資訊將用於「廠商匯款申請書」的自動填寫，<strong className="text-amber-600">匯款戶名請務必與身分證姓名相同</strong>。
+                <p className="text-sm text-bauhaus-black/70 mb-4 font-medium">
+                    此區資訊將用於「廠商匯款申請書」的自動填寫，<strong className="font-black text-bauhaus-black">匯款戶名請務必與身分證姓名相同</strong>。
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="匯款戶名" required>
@@ -589,7 +589,7 @@ const ProfilePage = () => {
                             placeholder="0000000"
                             maxLength={7}
                         />
-                        <p className="text-xs text-slate-400 mt-1">共 7 碼數字（{form.bank_code.length}/7）</p>
+                        <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">共 7 碼數字（{form.bank_code.length}/7）</p>
                     </Field>
                     <Field label="銀行帳號（含檢查碼）" required>
                         <input
@@ -601,7 +601,7 @@ const ProfilePage = () => {
                         />
                     </Field>
                 </div>
-                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                <div className="mt-4 bg-bauhaus-yellow/10 border-2 border-bauhaus-black p-3 text-xs text-bauhaus-black font-bold">
                     💡 銀行帳戶為華南銀行者免扣手續費；非華南銀行將扣匯款手續費 30 元。
                 </div>
             </Section>
@@ -621,27 +621,27 @@ const ProfilePage = () => {
 
             {/* ── 文件上傳 ── */}
             <Section icon={Upload} title="文件上傳">
-                <p className="text-sm text-slate-500 mb-4">以下文件皆為必填，支援 JPEG、PNG、GIF、WebP 格式，單檔上限 20MB</p>
+                <p className="text-sm text-bauhaus-black/70 mb-4 font-medium">以下文件皆為必填，支援 JPEG、PNG、GIF、WebP 格式，單檔上限 20MB</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {DOC_TYPES.map(({ key, label, Icon: docIcon }) => {
                         const Icon = docIcon;
                         return (
-                        <div key={key} className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-blue-300 transition-colors">
-                            <div className="text-sm font-medium text-slate-700 mb-3 flex items-center justify-center gap-1.5">
-                                <Icon className="w-4 h-4 text-slate-400" /> {label} <span className="text-red-500">*</span>
+                        <div key={key} className="border-2 border-dashed border-bauhaus-black/30 p-4 text-center hover:border-bauhaus-blue transition-colors">
+                            <div className="text-sm font-bold text-bauhaus-black mb-3 flex items-center justify-center gap-1.5">
+                                <Icon className="w-4 h-4 text-bauhaus-black/40" /> {label} <span className="text-bauhaus-red">*</span>
                             </div>
 
                             {filePreviews[key] ? (
                                 <div className="relative group">
-                                    <img src={filePreviews[key]} alt={label} className="w-full h-32 object-cover rounded-lg" />
+                                    <img src={filePreviews[key]} alt={label} className="w-full h-32 object-cover border-2 border-bauhaus-black" />
                                     <button
                                         onClick={() => handleRemoveFile(key)}
-                                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-3 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-red-600 flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
+                                        className="absolute top-1 right-1 bg-bauhaus-red hover:bg-bauhaus-red/90 text-white rounded-full p-3 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border-2 border-bauhaus-black flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
                                     >
                                         <X className="w-3 h-3" />
                                     </button>
                                     {form[`${key}_size`] && (
-                                        <div className="text-[10px] text-slate-400 mt-1">
+                                        <div className="text-[10px] text-bauhaus-black/50 mt-1 font-bold">
                                             {(form[`${key}_size`] / 1024 / 1024).toFixed(1)} MB
                                         </div>
                                     )}
@@ -651,11 +651,11 @@ const ProfilePage = () => {
                                     type="button"
                                     onClick={() => fileRefs.current[key]?.click()}
                                     disabled={uploading[key]}
-                                    className="w-full h-32 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-blue-500 transition-colors rounded-lg"
+                                    className="w-full h-32 flex flex-col items-center justify-center gap-2 text-bauhaus-black/40 hover:text-bauhaus-blue transition-colors"
                                 >
                                     {uploading[key] ? (
                                         <div className="flex flex-col items-center gap-1">
-                                            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                                            <div className="w-6 h-6 border-2 border-bauhaus-blue border-t-transparent rounded-full animate-spin" />
                                             <span className="text-xs">上傳中⋯</span>
                                         </div>
                                     ) : (
@@ -688,7 +688,7 @@ const ProfilePage = () => {
                 <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                    className="bh-btn bh-btn-blue px-8 py-3 text-base w-full sm:w-auto"
                 >
                     <Save className="w-5 h-5" />
                     {saving ? '儲存中⋯' : isFirstTime ? '送出資料' : '儲存個人資料'}
@@ -701,12 +701,12 @@ const ProfilePage = () => {
                     {contractInfo ? (
                         <div>
                             <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
-                                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                                <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black flex items-center justify-center">
+                                    <CheckCircle2 className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
-                                    <div className="font-bold text-green-700 text-sm">已簽約</div>
-                                    <div className="text-xs text-slate-400">
+                                    <div className="font-black text-bauhaus-blue text-sm">已簽約</div>
+                                    <div className="text-xs text-bauhaus-black/50 font-bold">
                                         {new Date(contractInfo.signed_at).toLocaleDateString('zh-TW')} 簽署
                                     </div>
                                 </div>
@@ -723,10 +723,10 @@ const ProfilePage = () => {
                                 );
                                 return hasUpdate;
                             })() && (
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
-                                    <Clock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                                    <p className="text-sm text-amber-700">
-                                        合約文件已更新為新版本，建議您<Link to="/contract" className="font-bold text-blue-600 hover:underline">重新簽約</Link>以確認最新內容。
+                                <div className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black p-3 mb-4 flex items-start gap-2">
+                                    <Clock className="w-4 h-4 text-bauhaus-black mt-0.5 shrink-0" />
+                                    <p className="text-sm text-bauhaus-black font-medium">
+                                        合約文件已更新為新版本，建議您<Link to="/contract" className="font-black text-bauhaus-blue hover:underline">重新簽約</Link>以確認最新內容。
                                     </p>
                                 </div>
                             )}
@@ -734,13 +734,13 @@ const ProfilePage = () => {
                             <div className="flex flex-col sm:flex-row gap-3">
                                 <Link
                                     to={`/contract/view/${contractInfo.id}`}
-                                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all"
+                                    className="bh-btn bh-btn-outline px-5 py-2.5 text-sm"
                                 >
                                     <Eye className="w-4 h-4" /> 查看合約
                                 </Link>
                                 <Link
                                     to="/contract"
-                                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all"
+                                    className="bh-btn bh-btn-outline px-5 py-2.5 text-sm"
                                 >
                                     <FileSignature className="w-4 h-4" /> 重新簽約
                                 </Link>
@@ -748,14 +748,14 @@ const ProfilePage = () => {
                         </div>
                     ) : (
                         <div className="text-center py-6">
-                            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <FileSignature className="w-8 h-8 text-blue-500" />
+                            <div className="w-16 h-16 bg-bauhaus-blue/10 border-2 border-bauhaus-black rounded-full flex items-center justify-center mx-auto mb-4">
+                                <FileSignature className="w-8 h-8 text-bauhaus-blue" />
                             </div>
-                            <h3 className="font-bold text-slate-900 mb-1">尚未簽約</h3>
-                            <p className="text-sm text-slate-500 mb-5">請完成線上合約簽署程序</p>
+                            <h3 className="font-black text-bauhaus-black mb-1">尚未簽約</h3>
+                            <p className="text-sm text-bauhaus-black/60 mb-5 font-medium">請完成線上合約簽署程序</p>
                             <Link
                                 to="/contract"
-                                className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:-translate-y-0.5"
+                                className="bh-btn bh-btn-blue px-6 py-3 text-sm"
                             >
                                 <FileSignature className="w-4 h-4" /> 前往簽約
                             </Link>
@@ -778,26 +778,26 @@ const ProfilePage = () => {
 
             {/* ── 註冊完成彈窗 ── */}
             {showSuccess && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center animate-in">
-                        <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-5">
-                            <PartyPopper className="w-10 h-10 text-green-500" />
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
+                    <div className="bg-white border-2 lg:border-4 border-bauhaus-black shadow-hard-lg max-w-md w-full p-8 text-center animate-in">
+                        <div className="w-20 h-20 bg-bauhaus-blue/10 border-2 border-bauhaus-black rounded-full flex items-center justify-center mx-auto mb-5">
+                            <PartyPopper className="w-10 h-10 text-bauhaus-blue" />
                         </div>
-                        <h2 className="text-2xl font-black text-slate-900 mb-3">恭喜你完成註冊！</h2>
-                        <p className="text-slate-600 mb-2">
+                        <h2 className="text-2xl font-black text-bauhaus-black mb-3">恭喜你完成註冊！</h2>
+                        <p className="text-bauhaus-black/70 mb-2 font-medium">
                             你的個人資料已成功送出，目前正在等待管理員審核。
                         </p>
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 my-5 text-left">
-                            <p className="text-amber-800 text-sm font-medium">
+                        <div className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black p-4 my-5 text-left">
+                            <p className="text-bauhaus-black text-sm font-bold">
                                 請在<strong>「夢想一號講師個人群組」</strong>中通知管理員您已完成註冊，以加速審核流程。
                             </p>
                         </div>
-                        <p className="text-slate-400 text-sm mb-6">
+                        <p className="text-bauhaus-black/50 text-sm mb-6 font-medium">
                             審核通過後即可瀏覽所有培訓課程內容。
                         </p>
                         <button
                             onClick={() => { setShowSuccess(false); navigate('/pending'); }}
-                            className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+                            className="bh-btn bh-btn-blue w-full py-3"
                         >
                             我知道了
                         </button>
@@ -867,14 +867,19 @@ const AchievementsSection = ({ userId, certName }) => {
         }
     };
 
+    const BADGE_COLORS = ['bg-bauhaus-red', 'bg-bauhaus-blue', 'bg-bauhaus-yellow'];
+
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
+        <div className="bh-card p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Trophy className="w-5 h-5 text-amber-500" /> 我的教學成就
+                <h2 className="text-lg font-black uppercase tracking-tight text-bauhaus-black flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-8 h-8 bg-bauhaus-yellow text-bauhaus-black shrink-0">
+                        <Trophy className="w-4 h-4" />
+                    </span>
+                    我的教學成就
                 </h2>
                 {!loading && !error && (
-                    <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
+                    <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
                         里程碑 {earnedCount} / {MILESTONES.length}
                     </span>
                 )}
@@ -883,13 +888,13 @@ const AchievementsSection = ({ userId, certName }) => {
             {loading ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[...Array(8)].map((_, i) => (
-                        <div key={i} className="h-28 rounded-xl bg-slate-100 animate-pulse" />
+                        <div key={i} className="h-28 bg-bauhaus-muted animate-pulse" />
                     ))}
                 </div>
             ) : error ? (
                 <div className="py-8 text-center">
-                    <AlertCircle className="w-8 h-8 text-red-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500">成就載入失敗，請稍後再試。</p>
+                    <AlertCircle className="w-8 h-8 text-bauhaus-red/50 mx-auto mb-2" />
+                    <p className="text-sm text-bauhaus-black/60 font-medium">成就載入失敗，請稍後再試。</p>
                 </div>
             ) : (
                 <>
@@ -899,35 +904,35 @@ const AchievementsSection = ({ userId, certName }) => {
                             { label: '接課時數', value: toHours(hours), unit: '小時' },
                             { label: '接課場次', value: sessions, unit: '場' },
                         ].map((s) => (
-                            <div key={s.label} className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-center">
-                                <div className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{s.value}</div>
-                                <div className="text-[11px] text-slate-500 mt-0.5">{s.label}（{s.unit}）</div>
+                            <div key={s.label} className="border-2 border-bauhaus-black bg-white p-3 text-center">
+                                <div className="text-xl sm:text-2xl font-black text-bauhaus-black tabular-nums">{s.value}</div>
+                                <div className="text-[11px] text-bauhaus-black/60 mt-0.5 font-bold">{s.label}（{s.unit}）</div>
                             </div>
                         ))}
                     </div>
 
                     {/* 接課里程碑 */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {MILESTONES.map((m) => {
+                        {MILESTONES.map((m, idx) => {
                             const earned = hours >= m.hours;
                             return (
                                 <div
                                     key={m.hours}
-                                    className={`relative rounded-xl border p-3 flex flex-col items-center text-center transition-all ${
+                                    className={`relative border-2 p-3 flex flex-col items-center text-center transition-all ${
                                         earned
-                                            ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white shadow-sm'
-                                            : 'border-slate-100 bg-slate-50'
+                                            ? 'border-bauhaus-black bg-white'
+                                            : 'border-bauhaus-black/20 bg-bauhaus-muted grayscale'
                                     }`}
                                 >
-                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 text-2xl ${
-                                        earned ? 'bg-gradient-to-br from-amber-400 to-orange-500 shadow' : 'bg-slate-200'
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 text-2xl border-2 border-bauhaus-black ${
+                                        earned ? BADGE_COLORS[idx % 3] : 'bg-bauhaus-muted'
                                     }`}>
-                                        {earned ? m.emoji : <Lock className="w-5 h-5 text-slate-400" />}
+                                        {earned ? m.emoji : <Lock className="w-5 h-5 text-bauhaus-black/40" />}
                                     </div>
-                                    <div className={`text-sm font-bold ${earned ? 'text-slate-800' : 'text-slate-400'}`}>
+                                    <div className={`text-sm font-black ${earned ? 'text-bauhaus-black' : 'text-bauhaus-black/30'}`}>
                                         {m.name}
                                     </div>
-                                    <div className={`text-[11px] mt-0.5 leading-tight ${earned ? 'text-amber-600' : 'text-slate-400'}`}>
+                                    <div className={`text-[11px] mt-0.5 leading-tight font-bold ${earned ? 'text-bauhaus-black/70' : 'text-bauhaus-black/30'}`}>
                                         {earned ? '已達成' : `接課滿 ${m.hours} 小時`}
                                     </div>
                                 </div>
@@ -936,27 +941,27 @@ const AchievementsSection = ({ userId, certName }) => {
                     </div>
 
                     {next && (
-                        <p className="mt-3 text-xs text-center text-slate-500">
-                            再接課 <b className="text-amber-600 tabular-nums">{next.remain}</b> 小時，即可解鎖「{next.emoji} {next.name}」
+                        <p className="mt-3 text-xs text-center text-bauhaus-black/60 font-medium">
+                            再接課 <b className="text-bauhaus-black font-black tabular-nums">{next.remain}</b> 小時，即可解鎖「{next.emoji} {next.name}」
                         </p>
                     )}
 
                     {/* 完成培訓證明 */}
                     {canDownloadCert && (
-                        <div className="mt-5 pt-5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="mt-5 pt-5 border-t-2 border-bauhaus-black flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center shrink-0">
-                                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                                <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                                    <CheckCircle2 className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
-                                    <div className="font-bold text-slate-800 text-sm">恭喜完成培訓！</div>
-                                    <div className="text-xs text-slate-400">你已完成培訓課程，可下載完成證明</div>
+                                    <div className="font-black text-bauhaus-black text-sm">恭喜完成培訓！</div>
+                                    <div className="text-xs text-bauhaus-black/50 font-bold">你已完成培訓課程，可下載完成證明</div>
                                 </div>
                             </div>
                             <button
                                 onClick={handleDownloadCert}
                                 disabled={downloading}
-                                className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+                                className="bh-btn bh-btn-blue px-5 py-3 sm:py-2.5 text-sm w-full sm:w-auto"
                             >
                                 <Download className="w-4 h-4" />
                                 {downloading ? '產生中⋯' : '下載完成培訓證明'}
@@ -972,9 +977,12 @@ const AchievementsSection = ({ userId, certName }) => {
 const Section = ({ icon, title, children }) => {
     const Icon = icon;
     return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-6 shadow-sm">
-        <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <Icon className="w-5 h-5 text-blue-600" /> {title}
+    <div className="bh-card p-6 mb-6">
+        <h2 className="text-lg lg:text-xl font-black uppercase tracking-tight text-bauhaus-black mb-4 flex items-center gap-2">
+            <span className="inline-flex items-center justify-center w-8 h-8 bg-bauhaus-black text-white shrink-0">
+                <Icon className="w-4 h-4" />
+            </span>
+            {title}
         </h2>
         {children}
     </div>
@@ -983,8 +991,8 @@ const Section = ({ icon, title, children }) => {
 
 const Field = ({ label, required, children }) => (
     <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">
-            {label} {required && <span className="text-red-500">*</span>}
+        <label className="bh-label block mb-1">
+            {label} {required && <span className="text-bauhaus-red">*</span>}
         </label>
         {children}
     </div>
@@ -1007,7 +1015,7 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
     const [submitting, setSubmitting] = useState(false);
     const [err, setErr] = useState('');
 
-    const inputCls = 'w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none text-sm';
+    const inputCls = 'bh-input text-sm';
 
     const doSearch = async (e) => {
         e?.preventDefault();
@@ -1054,18 +1062,18 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
+            <div className="bg-white border-2 lg:border-4 border-bauhaus-black shadow-hard-lg max-w-lg w-full max-h-[85vh] flex flex-col">
+                <div className="px-6 py-4 border-b-2 border-bauhaus-black flex items-start justify-between">
                     <div>
-                        <h2 className="font-bold text-lg text-slate-900 flex items-center gap-2">
-                            <UserSearch className="w-5 h-5 text-purple-600" /> 認領講師資料
+                        <h2 className="font-black uppercase tracking-tight text-lg text-bauhaus-black flex items-center gap-2">
+                            <UserSearch className="w-5 h-5 text-bauhaus-blue" /> 認領講師資料
                         </h2>
-                        <p className="text-xs text-slate-500 mt-1">
+                        <p className="text-xs text-bauhaus-black/60 mt-1 font-medium">
                             請輸入您過去填寫資料時使用的姓名,我們會在歷史記錄中比對。
                         </p>
                     </div>
-                    <button onClick={onClose} className="relative text-slate-400 hover:text-slate-700 shrink-0 before:absolute before:-inset-2 before:content-['']">
+                    <button onClick={onClose} className="relative text-bauhaus-black/40 hover:text-bauhaus-black shrink-0 before:absolute before:-inset-2 before:content-['']">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -1090,32 +1098,32 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                                 </Field>
                                 <button
                                     type="submit" disabled={searching}
-                                    className="w-full inline-flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2.5 rounded-lg text-sm disabled:opacity-50"
+                                    className="bh-btn bh-btn-blue w-full px-4 py-2.5 text-sm"
                                 >
                                     {searching ? '搜尋中⋯' : '搜尋'}
                                 </button>
                             </form>
 
                             {searched && results.length === 0 && !searching && (
-                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center text-slate-500 text-sm">
-                                    <AlertCircle className="w-5 h-5 mx-auto mb-1 text-slate-400" />
+                                <div className="border-2 border-bauhaus-black bg-bauhaus-muted p-4 text-center text-bauhaus-black/60 text-sm font-medium">
+                                    <AlertCircle className="w-5 h-5 mx-auto mb-1 text-bauhaus-black/40" />
                                     沒有找到符合的講師資料,請確認姓名,或直接填寫下方表單註冊新講師。
                                 </div>
                             )}
 
                             {results.length > 0 && (
                                 <div className="space-y-2">
-                                    <div className="text-xs font-bold text-slate-500 px-1">
+                                    <div className="text-xs font-bold text-bauhaus-black/60 px-1">
                                         找到 {results.length} 筆,請點選您本人
                                     </div>
                                     {results.map(r => (
                                         <button
                                             key={r.id}
                                             onClick={() => { setSelected(r); setPhoneFull(''); setMessage(''); }}
-                                            className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-purple-300 hover:bg-purple-50/50 transition-colors"
+                                            className="w-full text-left p-3 border-2 border-bauhaus-black hover:bg-bauhaus-muted transition-colors"
                                         >
-                                            <div className="font-bold text-slate-800">{r.full_name}</div>
-                                            <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3">
+                                            <div className="font-black text-bauhaus-black">{r.full_name}</div>
+                                            <div className="text-xs text-bauhaus-black/60 mt-0.5 flex flex-wrap gap-x-3">
                                                 {r.email_masked && <span>📧 {r.email_masked}</span>}
                                                 {r.phone_masked && <span>📱 {r.phone_masked}</span>}
                                             </div>
@@ -1128,15 +1136,15 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
 
                     {selected && (
                         <div className="space-y-4">
-                            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                                <div className="text-xs text-purple-700 font-bold mb-1">即將認領</div>
-                                <div className="font-bold text-slate-900">{selected.full_name}</div>
-                                <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3">
+                            <div className="bg-bauhaus-blue/10 border-2 border-bauhaus-black p-4">
+                                <div className="text-xs text-bauhaus-blue font-black uppercase tracking-wide mb-1">即將認領</div>
+                                <div className="font-black text-bauhaus-black">{selected.full_name}</div>
+                                <div className="text-xs text-bauhaus-black/60 mt-0.5 flex flex-wrap gap-x-3">
                                     {selected.email_masked && <span>📧 {selected.email_masked}</span>}
                                     {selected.phone_masked && <span>📱 {selected.phone_masked}</span>}
                                 </div>
                                 <button onClick={() => setSelected(null)}
-                                    className="relative text-xs text-purple-600 hover:underline mt-2 before:absolute before:-inset-2 before:content-['']">
+                                    className="relative text-xs text-bauhaus-blue font-bold hover:underline mt-2 before:absolute before:-inset-2 before:content-['']">
                                     ← 重新選擇
                                 </button>
                             </div>
@@ -1162,20 +1170,20 @@ const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
                     )}
 
                     {err && (
-                        <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                        <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
                             {err}
                         </div>
                     )}
                 </div>
 
                 {selected && (
-                    <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+                    <div className="px-6 py-3 border-t-2 border-bauhaus-black flex justify-end gap-2">
                         <button onClick={onClose}
-                            className="px-4 py-3 md:py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold text-sm">
+                            className="bh-btn-ghost px-4 py-3 md:py-2 text-sm">
                             取消
                         </button>
                         <button onClick={doSubmit} disabled={submitting}
-                            className="px-5 py-3 md:py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm disabled:opacity-50 inline-flex items-center gap-1.5">
+                            className="bh-btn bh-btn-blue px-5 py-3 md:py-2 text-sm">
                             <Send className="w-4 h-4" />
                             {submitting ? '送出⋯' : '送出認領申請'}
                         </button>

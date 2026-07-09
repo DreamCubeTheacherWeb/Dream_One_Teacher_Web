@@ -10,28 +10,25 @@ import {
 const VISION_ITEMS = [
     {
         layer: 'WHY',
-        color: 'from-yellow-400 to-amber-500',
-        textColor: 'text-amber-600',
-        bgColor: 'bg-amber-50',
-        borderColor: 'border-amber-200',
+        accent: 'bg-bauhaus-red',
+        accentText: 'text-white',
+        textAccent: 'text-bauhaus-red',
         ideal: '讓孩子擁有改變世界的能力',
         real: '成為全球最專業及最大的魔術方塊推廣團隊，並與合作夥伴組成魔術方塊教育產業鏈中，最堅強的競爭團隊',
     },
     {
         layer: 'HOW',
-        color: 'from-blue-400 to-indigo-500',
-        textColor: 'text-blue-600',
-        bgColor: 'bg-blue-50',
-        borderColor: 'border-blue-200',
+        accent: 'bg-bauhaus-blue',
+        accentText: 'text-white',
+        textAccent: 'text-bauhaus-blue',
         ideal: '透過有趣的學習方式，培養孩子恆毅力、學習力、創新力',
         real: '透過專業的講師、有架構的課程、完整的教案與教具',
     },
     {
         layer: 'WHAT',
-        color: 'from-emerald-400 to-teal-500',
-        textColor: 'text-emerald-600',
-        bgColor: 'bg-emerald-50',
-        borderColor: 'border-emerald-200',
+        accent: 'bg-bauhaus-yellow',
+        accentText: 'text-bauhaus-black',
+        textAccent: 'text-bauhaus-black',
         ideal: '讓每個接觸魔術方塊的人都能感受到學習的樂趣',
         real: '提供教育機構、學生優質的魔術方塊學習方案',
     },
@@ -41,6 +38,13 @@ const TEAM_PHOTOS = [
     { src: '/images/team-event.png', alt: '2022 夢想一號學員認證賽' },
     { src: '/images/team-outdoor.png', alt: '團隊戶外活動' },
     { src: '/images/team-workshop.png', alt: '魔術方塊工作坊' },
+];
+
+// Bauhaus：卡片角落幾何裝飾（紅圓／藍方／黃三角輪替）
+const CORNER_DECOS = [
+    { shape: 'circle', color: 'bg-bauhaus-red' },
+    { shape: 'square', color: 'bg-bauhaus-blue' },
+    { shape: 'triangle', color: 'bg-bauhaus-yellow' },
 ];
 
 const HomePage = () => {
@@ -65,45 +69,46 @@ const HomePage = () => {
     return (
         <div className="min-h-screen overflow-x-hidden">
             {/* ══════════ HERO ══════════ */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white">
-                <div className="absolute inset-0">
-                    <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl" />
-                    <div className="absolute bottom-10 right-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/5 rounded-full blur-3xl" />
+            <section className="relative overflow-hidden bg-bauhaus-blue text-white border-b-4 border-bauhaus-black">
+                <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+                    <div className="absolute -top-10 -left-10 w-40 h-40 sm:w-64 sm:h-64 rounded-full bg-white/10" />
+                    <div className="absolute bottom-0 right-0 w-48 h-48 sm:w-80 sm:h-80 bg-bauhaus-yellow/15 rotate-45" />
+                    <div
+                        className="absolute top-1/3 right-8 w-24 h-24 sm:w-40 sm:h-40 bg-bauhaus-red/20"
+                        style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
+                    />
                 </div>
 
                 <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24 lg:py-32">
                     <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
                         <div className="flex-1 text-center lg:text-left">
-                            <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 mb-6 text-xs sm:text-sm font-bold tracking-wide text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-full">
+                            <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 mb-6 text-xs sm:text-sm font-bold uppercase tracking-widest text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black">
                                 <Sparkles className="w-4 h-4" />
                                 夢想一號魔術方塊學院
                             </div>
-                            <h1 className="text-3xl sm:text-4xl lg:text-6xl font-black leading-tight mb-6">
+                            <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black leading-[0.95] tracking-tight mb-6">
                                 提升教學專業
                                 <br />
-                                <span className="bg-gradient-to-r from-amber-300 to-yellow-400 bg-clip-text text-transparent">
-                                    啟發無限潛力
-                                </span>
+                                <span className="text-bauhaus-yellow">啟發無限潛力</span>
                             </h1>
-                            <p className="text-base sm:text-lg text-blue-100/80 mb-4 leading-relaxed max-w-xl">
+                            <p className="text-base sm:text-lg text-white/85 mb-4 leading-relaxed max-w-xl mx-auto lg:mx-0">
                                 不是為了教而教，而是我們透過魔術方塊也對教育有所貢獻。
                             </p>
-                            <p className="text-base text-blue-200/60 mb-10 max-w-xl font-medium">
+                            <p className="text-base text-white/60 mb-10 max-w-xl mx-auto lg:mx-0 font-medium">
                                 提供完整的線上培訓資源、進度追蹤與專家回饋，助您在教學領域更上一層樓。
                             </p>
                             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
                                 {user ? (
                                     <Link
                                         to="/courses"
-                                        className="group inline-flex items-center gap-2 bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-900 px-8 py-4 rounded-2xl font-black text-lg hover:shadow-xl hover:shadow-amber-500/25 transition-all active:scale-[0.98]"
+                                        className="bh-btn bh-btn-yellow group px-8 py-4 text-lg"
                                     >
                                         <BookOpen className="w-5 h-5" />
                                         開始學習
                                         <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                     </Link>
                                 ) : (
-                                    <div className="text-blue-200/60 text-sm font-medium bg-white/5 border border-white/10 px-6 py-4 rounded-2xl">
+                                    <div className="text-white/70 text-sm font-bold bg-white/10 border-2 border-white/30 px-6 py-4">
                                         請先登入以開始您的培訓課程
                                     </div>
                                 )}
@@ -112,29 +117,30 @@ const HomePage = () => {
 
                         <div className="flex-1 max-w-md lg:max-w-lg">
                             <div className="relative">
-                                <div className="absolute -inset-4 bg-gradient-to-r from-amber-400/20 to-blue-400/20 rounded-3xl blur-2xl" />
+                                <div className="absolute -top-4 -left-4 w-12 h-12 sm:w-16 sm:h-16 bg-bauhaus-yellow border-2 border-bauhaus-black hidden sm:block" aria-hidden="true" />
+                                <div className="absolute -bottom-4 -right-4 w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-bauhaus-red border-2 border-bauhaus-black hidden sm:block" aria-hidden="true" />
                                 <img
                                     src="/images/team-event.png"
                                     alt="夢想一號團隊"
-                                    className="relative w-full rounded-3xl shadow-2xl ring-1 ring-white/10"
+                                    className="relative w-full border-4 border-bauhaus-black shadow-hard-white"
                                 />
                             </div>
                         </div>
                     </div>
 
-                    <div className="mt-20 pt-12 border-t border-white/10">
+                    <div className="mt-20 pt-12 border-t-2 border-white/20">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
                             <div>
-                                <div className="text-3xl font-black text-amber-400 mb-1">100+</div>
-                                <div className="text-sm text-blue-200/60 font-medium">培訓教師人數</div>
+                                <div className="text-3xl font-black text-bauhaus-yellow mb-1 tabular-nums">100+</div>
+                                <div className="text-sm text-white/60 font-bold uppercase tracking-wide">培訓教師人數</div>
                             </div>
                             <div>
-                                <div className="text-3xl font-black text-amber-400 mb-1">300+</div>
-                                <div className="text-sm text-blue-200/60 font-medium">合作過的單位</div>
+                                <div className="text-3xl font-black text-bauhaus-yellow mb-1 tabular-nums">300+</div>
+                                <div className="text-sm text-white/60 font-bold uppercase tracking-wide">合作過的單位</div>
                             </div>
                             <div>
-                                <div className="text-3xl font-black text-amber-400 mb-1">30,000+</div>
-                                <div className="text-sm text-blue-200/60 font-medium">受惠學生人數</div>
+                                <div className="text-3xl font-black text-bauhaus-yellow mb-1 tabular-nums">30,000+</div>
+                                <div className="text-sm text-white/60 font-bold uppercase tracking-wide">受惠學生人數</div>
                             </div>
                         </div>
                     </div>
@@ -142,122 +148,128 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ BULLETIN BOARD ══════════ */}
-            <section className="py-20 bg-gradient-to-b from-slate-50 to-white">
+            <section className="py-20 bg-white">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="flex items-center gap-3 mb-10">
-                        <div className="p-3 bg-red-50 rounded-2xl">
-                            <Megaphone className="w-7 h-7 text-red-500" />
+                        <div className="p-3 bg-bauhaus-red border-2 border-bauhaus-black">
+                            <Megaphone className="w-7 h-7 text-white" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-black text-slate-900">佈告欄</h2>
-                            <p className="text-sm text-slate-400 font-medium">最新公告與重要通知</p>
+                            <h2 className="text-2xl font-black text-bauhaus-black uppercase tracking-tight">佈告欄</h2>
+                            <p className="text-sm text-bauhaus-black/50 font-bold">最新公告與重要通知</p>
                         </div>
                     </div>
 
                     {announcements.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {announcements.map((a) => (
-                                <Link
-                                    to={`/announcements/${a.id}`}
-                                    key={a.id}
-                                    className={`relative bg-white rounded-2xl border p-6 transition-all hover:shadow-lg hover:-translate-y-1 cursor-pointer block ${
-                                        a.pinned
-                                            ? 'border-red-200 shadow-md shadow-red-50 ring-1 ring-red-100'
-                                            : 'border-slate-150 shadow-sm'
-                                    }`}
-                                >
-                                    {a.pinned && (
-                                        <div className="absolute -top-3 -right-2">
-                                            <div className="bg-red-500 text-white p-1.5 rounded-full shadow-lg shadow-red-200">
-                                                <Pin className="w-3.5 h-3.5" />
+                            {announcements.map((a, idx) => {
+                                const deco = CORNER_DECOS[idx % 3];
+                                return (
+                                    <Link
+                                        to={`/announcements/${a.id}`}
+                                        key={a.id}
+                                        className="bh-card bh-card-hover relative p-6 block"
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className={`absolute -top-2 -left-2 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
+                                            style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
+                                        />
+                                        {a.pinned && (
+                                            <div className="absolute -top-3 -right-3">
+                                                <div className="bg-bauhaus-red text-white p-1.5 border-2 border-bauhaus-black">
+                                                    <Pin className="w-3.5 h-3.5" />
+                                                </div>
                                             </div>
+                                        )}
+
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <span className={`text-[10px] font-black px-2.5 py-1 uppercase tracking-wider border-2 border-bauhaus-black ${
+                                                a.tag === '重要公告' ? 'bg-bauhaus-red text-white'
+                                                    : a.tag === '課程更新' ? 'bg-bauhaus-blue text-white'
+                                                        : a.tag === '提醒' ? 'bg-bauhaus-yellow text-bauhaus-black'
+                                                            : 'bg-bauhaus-muted text-bauhaus-black'
+                                            }`}>
+                                                {a.tag}
+                                            </span>
+                                            <span className="flex items-center gap-1 text-[11px] text-bauhaus-black/50 font-bold">
+                                                <Calendar className="w-3 h-3" />
+                                                {new Date(a.created_at).toLocaleDateString()}
+                                            </span>
                                         </div>
-                                    )}
 
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
-                                            a.tag === '重要公告' ? 'bg-red-50 text-red-600'
-                                                : a.tag === '課程更新' ? 'bg-blue-50 text-blue-600'
-                                                    : a.tag === '提醒' ? 'bg-amber-50 text-amber-600'
-                                                        : 'bg-slate-100 text-slate-500'
-                                        }`}>
-                                            {a.tag}
-                                        </span>
-                                        <span className="flex items-center gap-1 text-[11px] text-slate-400 font-medium">
-                                            <Calendar className="w-3 h-3" />
-                                            {new Date(a.created_at).toLocaleDateString()}
-                                        </span>
-                                    </div>
-
-                                    <h3 className="font-bold text-slate-900 mb-2 leading-snug line-clamp-2 md:line-clamp-none">{a.title}</h3>
-                                    <div className="text-sm text-slate-500 leading-relaxed line-clamp-3 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
-                                    <span className="inline-block mt-3 text-xs font-bold text-blue-500">閱讀更多 →</span>
-                                </Link>
-                            ))}
+                                        <h3 className="font-black text-bauhaus-black mb-2 leading-snug line-clamp-2 md:line-clamp-none">{a.title}</h3>
+                                        <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-3 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
+                                        <span className="inline-block mt-3 text-xs font-bold text-bauhaus-blue">閱讀更多 →</span>
+                                    </Link>
+                                );
+                            })}
                         </div>
                     ) : (
-                        <div className="py-12 text-center bg-white rounded-2xl border border-slate-100">
-                            <p className="text-slate-400">目前沒有公告</p>
+                        <div className="bh-card py-12 text-center">
+                            <p className="text-bauhaus-black/50 font-bold">目前沒有公告</p>
                         </div>
                     )}
                 </div>
             </section>
 
             {/* ══════════ VISION & MISSION ══════════ */}
-            <section className="py-20 bg-white">
+            <section className="py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="text-center mb-12">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-sm font-bold text-indigo-600 bg-indigo-50 rounded-full">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-blue border-2 border-bauhaus-black">
                             <Target className="w-4 h-4" />
                             願景與使命
                         </div>
-                        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-4">
+                        <h2 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-4 tracking-tight">
                             你辦不到你相信不了的事情
                         </h2>
-                        <p className="text-slate-500 max-w-2xl mx-auto">
+                        <p className="text-bauhaus-black/60 max-w-2xl mx-auto font-medium">
                             大方向任務是魔術方塊教學普及，不是把所有人都變成選手。
                             我們透過魔術方塊對教育有所貢獻。
                         </p>
                     </div>
 
-                    <div className="flex justify-center gap-4 mb-10">
-                        <button
-                            onClick={() => setActiveTab('ideal')}
-                            className={`px-6 py-3 md:py-2.5 rounded-xl text-sm font-bold transition-all ${
-                                activeTab === 'ideal'
-                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                            }`}
-                        >
-                            <Heart className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-                            理想層面
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('real')}
-                            className={`px-6 py-3 md:py-2.5 rounded-xl text-sm font-bold transition-all ${
-                                activeTab === 'real'
-                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                            }`}
-                        >
-                            <Target className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-                            現實層面
-                        </button>
+                    <div className="flex justify-center mb-10">
+                        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 lg:divide-x-4 divide-bauhaus-black">
+                            <button
+                                onClick={() => setActiveTab('ideal')}
+                                className={`flex items-center gap-1.5 px-6 py-3 md:py-2.5 text-sm font-bold uppercase tracking-wide transition-colors duration-200 ${
+                                    activeTab === 'ideal'
+                                        ? 'bg-bauhaus-black text-white'
+                                        : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
+                                }`}
+                            >
+                                <Heart className="w-4 h-4" />
+                                理想層面
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('real')}
+                                className={`flex items-center gap-1.5 px-6 py-3 md:py-2.5 text-sm font-bold uppercase tracking-wide transition-colors duration-200 ${
+                                    activeTab === 'real'
+                                        ? 'bg-bauhaus-black text-white'
+                                        : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
+                                }`}
+                            >
+                                <Target className="w-4 h-4" />
+                                現實層面
+                            </button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {VISION_ITEMS.map((item) => (
                             <div
                                 key={item.layer}
-                                className={`relative rounded-2xl border ${item.borderColor} ${item.bgColor} p-8 transition-all hover:shadow-lg hover:-translate-y-1`}
+                                className="bh-card bh-card-hover p-8"
                             >
-                                <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${item.color} text-white font-black text-lg mb-5 shadow-lg`}>
+                                <div className={`inline-flex items-center justify-center w-14 h-14 border-2 border-bauhaus-black ${item.accent} ${item.accentText} font-black text-lg mb-5`}>
                                     {item.layer}
                                 </div>
-                                <h3 className={`font-black text-lg mb-3 ${item.textColor}`}>
+                                <h3 className={`font-black text-lg mb-3 ${item.textAccent}`}>
                                     {item.layer === 'WHY' ? '願景' : item.layer === 'HOW' ? '使命' : '行動'}
                                 </h3>
-                                <p className="text-slate-700 leading-relaxed font-medium">
+                                <p className="text-bauhaus-black/80 leading-relaxed font-medium">
                                     {activeTab === 'ideal' ? item.ideal : item.real}
                                 </p>
                             </div>
@@ -267,72 +279,79 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ TEAM GALLERY ══════════ */}
-            <section className="py-20 bg-gradient-to-b from-slate-50 to-white">
+            <section className="py-20 bg-white">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="text-center mb-12">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-sm font-bold text-emerald-600 bg-emerald-50 rounded-full">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black">
                             <Users className="w-4 h-4" />
                             我們的團隊
                         </div>
-                        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mb-4">
+                        <h2 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-4 tracking-tight">
                             玩的不只是魔術方塊，更是五顏六色的夢想
                         </h2>
-                        <p className="text-slate-500 max-w-2xl mx-auto">
+                        <p className="text-bauhaus-black/60 max-w-2xl mx-auto font-medium">
                             Solving Challenging Cubes, Sparking Infinite Dreams
                         </p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {TEAM_PHOTOS.map((photo, idx) => (
-                            <div
-                                key={idx}
-                                className="group relative rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all hover:-translate-y-1"
-                            >
-                                <div className="aspect-[4/3]">
-                                    <img
-                                        src={photo.src}
-                                        alt={photo.alt}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        {TEAM_PHOTOS.map((photo, idx) => {
+                            const deco = CORNER_DECOS[idx % 3];
+                            return (
+                                <div
+                                    key={idx}
+                                    className="group relative border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg overflow-hidden hover:-translate-y-1 transition-transform duration-200"
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={`absolute top-2 left-2 z-10 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
+                                        style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
                                     />
+                                    <div className="aspect-[4/3]">
+                                        <img
+                                            src={photo.src}
+                                            alt={photo.alt}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                        />
+                                    </div>
+                                    <div className="absolute inset-x-0 bottom-0 bg-bauhaus-black/85 p-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
+                                        <p className="text-white font-bold text-sm">{photo.alt}</p>
+                                    </div>
                                 </div>
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300" />
-                                <div className="absolute bottom-0 left-0 right-0 p-5 translate-y-0 opacity-100 md:translate-y-4 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 transition-all duration-300">
-                                    <p className="text-white font-bold text-sm">{photo.alt}</p>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </section>
 
             {/* ══════════ CTA ══════════ */}
-            <section className="py-20 bg-white">
+            <section className="py-20 bg-white border-t-4 border-bauhaus-black">
                 <div className="max-w-4xl mx-auto px-6">
-                    <div className="relative bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 rounded-3xl p-8 sm:p-12 lg:p-16 text-center overflow-hidden">
-                        <div className="absolute top-0 left-0 w-64 h-64 bg-amber-400/10 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl" />
-                        <div className="absolute bottom-0 right-0 w-48 h-48 bg-blue-400/10 rounded-full translate-x-1/2 translate-y-1/2 blur-3xl" />
+                    <div className="relative bg-bauhaus-black border-4 border-bauhaus-black p-8 sm:p-12 lg:p-16 text-center overflow-hidden">
+                        <div className="absolute top-0 left-0 w-32 h-32 sm:w-48 sm:h-48 bg-bauhaus-yellow/90 rounded-full -translate-x-1/2 -translate-y-1/2" aria-hidden="true" />
+                        <div className="absolute bottom-0 right-0 w-28 h-28 sm:w-40 sm:h-40 bg-bauhaus-blue/90 translate-x-1/3 translate-y-1/3 rotate-45" aria-hidden="true" />
 
                         <div className="relative">
-                            <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-sm font-bold text-amber-300 bg-amber-400/10 border border-amber-400/20 rounded-full">
+                            <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 text-xs sm:text-sm font-bold uppercase tracking-widest text-bauhaus-black bg-bauhaus-yellow border-2 border-white">
                                 <Star className="w-4 h-4" />
                                 準備好了嗎？
                             </div>
-                            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mb-4">
+                            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mb-4 tracking-tight">
                                 開始你的教師培訓之旅
                             </h2>
-                            <p className="text-blue-200/70 mb-10 max-w-lg mx-auto">
+                            <p className="text-white/70 mb-10 max-w-lg mx-auto font-medium">
                                 加入我們的培訓計劃，成為一位能夠啟發學生、傳遞魔術方塊魅力的專業教師。
                             </p>
                             {user ? (
                                 <Link
                                     to="/courses"
-                                    className="group inline-flex items-center gap-2 bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-900 px-8 py-4 rounded-2xl font-black text-lg hover:shadow-xl hover:shadow-amber-500/25 transition-all"
+                                    className="bh-btn bh-btn-yellow group border-white shadow-hard-white px-8 py-4 text-lg"
                                 >
                                     前往課程列表
                                     <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                 </Link>
                             ) : (
-                                <p className="text-blue-200/50 font-medium">
+                                <p className="text-white/50 font-bold">
                                     請先登入後即可開始學習
                                 </p>
                             )}

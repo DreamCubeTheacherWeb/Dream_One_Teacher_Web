@@ -173,8 +173,8 @@ const ModeButton = ({ active, onClick, testId, children }) => (
         type="button"
         onClick={onClick}
         data-testid={testId}
-        className={`flex-1 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-bold transition-all ${
-            active ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700'
+        className={`flex-1 px-4 py-2.5 min-h-[44px] text-sm font-bold uppercase tracking-wide transition-colors duration-200 ${
+            active ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
         }`}
     >
         {children}
@@ -186,21 +186,21 @@ const KeyRow = ({ label, binding, capturing, onStart, testId }) => (
         type="button"
         onClick={onStart}
         data-testid={testId}
-        className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-sm font-bold font-mono transition-colors ${
-            capturing ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+        className={`flex items-center justify-between gap-2 px-3 py-2 rounded-none border-2 text-sm font-bold font-mono transition-colors duration-200 ${
+            capturing ? 'border-bauhaus-blue bg-bauhaus-blue/10 text-bauhaus-blue' : 'border-bauhaus-black bg-white text-bauhaus-black hover:bg-bauhaus-muted'
         }`}
     >
         <span>{label}</span>
-        <kbd className="px-2 py-0.5 rounded-md bg-white border border-slate-300 text-xs font-mono text-slate-500">
+        <kbd className="px-2 py-0.5 rounded-none bg-white border-2 border-bauhaus-black text-xs font-mono text-bauhaus-black/60">
             {capturing ? '請按新按鍵…' : keyLabel(binding)}
         </kbd>
     </button>
 );
 
 const StatTile = ({ label, value, testId }) => (
-    <div className="text-center px-2 py-3 rounded-2xl bg-slate-50" data-testid={testId}>
-        <div className="text-[11px] text-slate-400 font-bold mb-1">{label}</div>
-        <div className="text-base sm:text-lg font-mono font-black text-slate-800 truncate">{value}</div>
+    <div className="text-center px-2 py-3 rounded-none border-2 border-bauhaus-black bg-white" data-testid={testId}>
+        <div className="text-[11px] text-bauhaus-black/40 font-bold mb-1">{label}</div>
+        <div className="text-base sm:text-lg font-mono font-black tabular-nums text-bauhaus-black truncate">{value}</div>
     </div>
 );
 
@@ -752,10 +752,10 @@ const CubeTimer = () => {
     // ── 狀態 pill（整齊／已打亂／計時中／已暫停）────────────────────────
     const cubeStatusLabel = phase === 'running' ? '計時中' : phase === 'paused' ? '已暫停' : cubeSolved ? '整齊' : '已打亂';
     const cubeStatusClasses = {
-        計時中: 'bg-blue-100 text-blue-700',
-        已暫停: 'bg-amber-100 text-amber-700',
-        已打亂: 'bg-orange-100 text-orange-700',
-        整齊: 'bg-slate-100 text-slate-500',
+        計時中: 'bg-bauhaus-blue text-white border-2 border-bauhaus-black',
+        已暫停: 'bg-bauhaus-yellow text-bauhaus-black border-2 border-bauhaus-black',
+        已打亂: 'bg-white text-bauhaus-black border-2 border-bauhaus-black',
+        整齊: 'bg-bauhaus-muted text-bauhaus-black/50 border-2 border-bauhaus-black/10',
     }[cubeStatusLabel];
 
     // ── 單一主行動按鈕：永遠告訴使用者下一步 ─────────────────────────────
@@ -769,21 +769,23 @@ const CubeTimer = () => {
                     ? 'needScramble'
                     : 'hold'; // phase idle/armed 且（虛擬已 ready 或 實體不需 ready）
 
+    // 主行動按鈕語意色：準備中（打亂／按住準備／已暫停）黃、進行中（計時中）紅、完成（停錶後送出）藍。
     let primaryLabel = '';
-    let primaryColorClass = 'bg-blue-600 hover:bg-blue-700';
+    let primaryColorClass = 'bg-bauhaus-blue text-white hover:bg-bauhaus-blue/90';
     let primaryHandlers = {};
     let primaryDisabled = false;
     let secondaryLabel = null;
-    let secondaryColorClass = 'bg-slate-100 text-slate-700 hover:bg-slate-200';
+    let secondaryColorClass = 'bg-bauhaus-muted text-bauhaus-black hover:bg-bauhaus-black/10';
     let secondaryHandlers = {};
 
     if (primaryMode === 'needScramble') {
         primaryLabel = scrambling ? '打亂中…' : '🎲 打亂';
+        primaryColorClass = 'bg-bauhaus-yellow text-bauhaus-black hover:bg-bauhaus-yellow/90';
         primaryHandlers = { onClick: handleNewScramble };
         primaryDisabled = scrambleBusy;
     } else if (primaryMode === 'hold') {
         primaryLabel = phase === 'armed' ? '放開開始！' : '按住準備・放開開始';
-        primaryColorClass = phase === 'armed' ? 'bg-emerald-500' : 'bg-blue-600 hover:bg-blue-700';
+        primaryColorClass = 'bg-bauhaus-yellow text-bauhaus-black hover:bg-bauhaus-yellow/90';
         primaryHandlers = {
             onPointerDown: (e) => { e.preventDefault(); armStart(); },
             onPointerUp: releaseStart,
@@ -792,29 +794,31 @@ const CubeTimer = () => {
         if (!isVirtual) {
             secondaryLabel = '🎲 打亂';
             secondaryHandlers = { onClick: handleNewScramble };
-            secondaryColorClass = 'bg-slate-100 text-slate-700 hover:bg-slate-200';
+            secondaryColorClass = 'bg-bauhaus-muted text-bauhaus-black hover:bg-bauhaus-black/10';
         }
     } else if (primaryMode === 'running') {
+        primaryColorClass = 'bg-bauhaus-red text-white hover:bg-bauhaus-red/90';
         if (isVirtual) {
             primaryLabel = '⏸ 暫停';
             primaryHandlers = { onClick: togglePause };
             secondaryLabel = '✕ 放棄';
             secondaryHandlers = { onClick: abortCurrent };
-            secondaryColorClass = 'bg-red-50 text-red-600 hover:bg-red-100';
+            secondaryColorClass = 'bg-bauhaus-red/10 text-bauhaus-red hover:bg-bauhaus-red/20';
         } else {
             primaryLabel = '■ 停錶';
-            primaryColorClass = 'bg-red-600 hover:bg-red-700';
             primaryHandlers = { onClick: stopTimer };
             secondaryLabel = '⏸ 暫停';
             secondaryHandlers = { onClick: togglePause };
         }
     } else if (primaryMode === 'paused') {
         primaryLabel = '▶ 繼續';
+        primaryColorClass = 'bg-bauhaus-yellow text-bauhaus-black hover:bg-bauhaus-yellow/90';
         primaryHandlers = { onClick: togglePause };
         secondaryLabel = '✕ 放棄';
         secondaryHandlers = { onClick: abortCurrent };
-        secondaryColorClass = 'bg-red-50 text-red-600 hover:bg-red-100';
+        secondaryColorClass = 'bg-bauhaus-red/10 text-bauhaus-red hover:bg-bauhaus-red/20';
     } else if (primaryMode === 'stopped') {
+        primaryColorClass = 'bg-bauhaus-blue text-white hover:bg-bauhaus-blue/90';
         if (submitted) {
             primaryLabel = '🎲 再來一場';
             primaryHandlers = { onClick: handleAgain };
@@ -840,16 +844,16 @@ const CubeTimer = () => {
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto" data-cube-phase={phase} data-cube-mode={mode}>
             <div className="mb-5">
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 flex items-center gap-2">
-                    <TimerIcon className="w-7 h-7 text-blue-600" />
+                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black flex items-center gap-2">
+                    <TimerIcon className="w-7 h-7 text-bauhaus-blue" />
                     方塊競速
                 </h1>
-                <p className="text-slate-500 text-sm mt-1">打亂、計時、解開，跟其他老師比比看。</p>
+                <p className="text-bauhaus-black/50 text-sm mt-1">打亂、計時、解開，跟其他老師比比看。</p>
             </div>
 
             {/* 模式切換 */}
             <section className="mb-5">
-                <div className="flex gap-2 bg-slate-100 rounded-2xl p-1.5">
+                <div className="flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
                     <ModeButton active={isVirtual} onClick={() => handleModeChange('virtual')} testId="cube-mode-virtual">
                         鍵盤模式<span className="hidden sm:inline">・虛擬方塊</span>
                     </ModeButton>
@@ -858,18 +862,18 @@ const CubeTimer = () => {
                     </ModeButton>
                 </div>
                 {modeSwitchWarning && (
-                    <p className="text-sm text-amber-600 mt-2 flex items-center gap-1.5">
+                    <p className="text-sm font-bold text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 mt-2 flex items-center gap-1.5">
                         <AlertTriangle className="w-4 h-4 shrink-0" />
                         {modeSwitchWarning}
                     </p>
                 )}
-                <p className="text-xs text-slate-400 mt-2">
+                <p className="text-xs text-bauhaus-black/50 mt-2">
                     {isVirtual ? '打亂虛擬方塊，用鍵盤轉面解開，自動計時。' : '拿你自己的實體方塊計時，畫面只是打亂示意，轉面請用手轉。'}
                 </p>
             </section>
 
             {/* 主遊戲卡：打亂列＋3D 舞台＋計時器 hero 整合成一張卡 */}
-            <section className="bg-white rounded-3xl border border-slate-200 shadow-sm p-4 sm:p-6 mb-6" data-testid="cube-game-card">
+            <section className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-4 sm:p-6 mb-6" data-testid="cube-game-card">
                 {/* A. 打亂列 */}
                 <div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -878,7 +882,7 @@ const CubeTimer = () => {
                             data-testid="cube-scramble-random"
                             onClick={handleNewScramble}
                             disabled={scrambleBusy}
-                            className="px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-800 transition-colors active:scale-[0.97] [-webkit-tap-highlight-color:transparent]"
+                            className="px-4 py-2.5 min-h-[44px] rounded-none border-2 border-bauhaus-black shadow-hard-sm bg-bauhaus-black text-white text-sm font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:bg-bauhaus-black/90 transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent]"
                         >
                             {scrambling ? '打亂中…' : '🎲 隨機打亂'}
                         </button>
@@ -887,8 +891,8 @@ const CubeTimer = () => {
                             data-testid="cube-scramble-custom-toggle"
                             onClick={() => setCustomPanelOpen((v) => !v)}
                             aria-pressed={customPanelOpen}
-                            className={`px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-bold transition-colors active:scale-[0.97] [-webkit-tap-highlight-color:transparent] border ${
-                                customPanelOpen ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-transparent'
+                            className={`px-4 py-2.5 min-h-[44px] rounded-none text-sm font-bold uppercase tracking-wide transition-colors duration-200 [-webkit-tap-highlight-color:transparent] border-2 ${
+                                customPanelOpen ? 'bg-bauhaus-blue/10 text-bauhaus-blue border-bauhaus-blue' : 'bg-white text-bauhaus-black border-bauhaus-black hover:bg-bauhaus-muted'
                             }`}
                         >
                             ✏️ 自己排
@@ -901,11 +905,11 @@ const CubeTimer = () => {
                             data-testid="cube-scramble-tokens"
                         >
                             {scrambleTokens.map((t, i) => (
-                                <span key={`${i}-${t}`} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700">{t}</span>
+                                <span key={`${i}-${t}`} className="px-2 py-1 rounded-none border-2 border-bauhaus-black/10 bg-bauhaus-muted text-bauhaus-black">{t}</span>
                             ))}
                         </div>
                     ) : (
-                        <p className="text-sm text-slate-400 mt-3">
+                        <p className="text-sm text-bauhaus-black/50 mt-3">
                             {isVirtual
                                 ? '按「🎲 隨機打亂」或「✏️ 自己排」，開始一次計時挑戰。'
                                 : '實體計時可直接按住主按鈕開始，不必打亂；想要打亂譜可按「🎲 隨機打亂」或「✏️ 自己排」。'}
@@ -913,13 +917,13 @@ const CubeTimer = () => {
                     )}
 
                     {customPanelOpen && (
-                        <div className="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3" data-testid="cube-builder-panel">
+                        <div className="mt-4 p-4 rounded-none bg-bauhaus-cream border-2 border-bauhaus-black space-y-3" data-testid="cube-builder-panel">
                             <div className="flex flex-wrap gap-1.5 font-mono text-sm min-h-[2rem] items-center" data-testid="cube-builder-tokens">
                                 {builderTokens.length === 0 ? (
-                                    <span className="cube-builder-hint text-slate-400 text-sm font-sans">按下面的按鈕排出打亂</span>
+                                    <span className="cube-builder-hint text-bauhaus-black/40 text-sm font-sans">按下面的按鈕排出打亂</span>
                                 ) : (
                                     builderTokens.map((t, i) => (
-                                        <span key={`${i}-${t}`} className="cube-builder-chip px-2 py-1 rounded-lg bg-white border border-slate-200 font-bold">{t}</span>
+                                        <span key={`${i}-${t}`} className="cube-builder-chip px-2 py-1 rounded-none bg-white border-2 border-bauhaus-black font-bold">{t}</span>
                                     ))
                                 )}
                             </div>
@@ -931,7 +935,7 @@ const CubeTimer = () => {
                                         data-testid={`cube-builder-key-${letter}`}
                                         onClick={() => appendBuilderToken(letter)}
                                         disabled={scrambleBusy || builderTokens.length >= BUILDER_TOKEN_LIMIT}
-                                        className="min-w-[44px] min-h-[44px] px-2 rounded-xl bg-white border border-slate-200 font-mono font-bold text-sm hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] transition-transform [-webkit-tap-highlight-color:transparent]"
+                                        className="min-w-[44px] min-h-[44px] px-2 rounded-none bg-white border-2 border-bauhaus-black font-mono font-bold text-sm hover:bg-bauhaus-muted disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                     >
                                         {letter}
                                     </button>
@@ -943,7 +947,7 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-apostrophe"
                                     onClick={applyApostrophe}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-w-[44px] min-h-[44px] px-3 rounded-xl bg-slate-200 text-slate-700 font-mono font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-300 active:scale-[0.97] transition-transform [-webkit-tap-highlight-color:transparent]"
+                                    className="min-w-[44px] min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black font-mono font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     &apos;
                                 </button>
@@ -952,7 +956,7 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-two"
                                     onClick={applyTwo}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-w-[44px] min-h-[44px] px-3 rounded-xl bg-slate-200 text-slate-700 font-mono font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-300 active:scale-[0.97] transition-transform [-webkit-tap-highlight-color:transparent]"
+                                    className="min-w-[44px] min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black font-mono font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     2
                                 </button>
@@ -961,7 +965,7 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-backspace"
                                     onClick={backspaceToken}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-w-[44px] min-h-[44px] px-3 rounded-xl bg-slate-200 text-slate-700 font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-300 active:scale-[0.97] transition-transform [-webkit-tap-highlight-color:transparent]"
+                                    className="min-w-[44px] min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     ⌫
                                 </button>
@@ -970,13 +974,13 @@ const CubeTimer = () => {
                                     data-testid="cube-builder-mod-clear"
                                     onClick={clearBuilderTokens}
                                     disabled={scrambleBusy || builderTokens.length === 0}
-                                    className="min-h-[44px] px-3 rounded-xl bg-slate-200 text-slate-700 text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-300 active:scale-[0.97] transition-transform [-webkit-tap-highlight-color:transparent]"
+                                    className="min-h-[44px] px-3 rounded-none bg-bauhaus-muted text-bauhaus-black text-sm font-bold border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-black/10 active:translate-x-[1px] active:translate-y-[1px] transition-all duration-200 [-webkit-tap-highlight-color:transparent]"
                                 >
                                     清空
                                 </button>
                             </div>
                             {builderError && (
-                                <p className="text-sm text-red-600 flex items-center gap-1.5" data-testid="cube-builder-error">
+                                <p className="text-sm text-bauhaus-red flex items-center gap-1.5" data-testid="cube-builder-error">
                                     <AlertTriangle className="w-4 h-4 shrink-0" />
                                     {builderError}
                                 </p>
@@ -986,7 +990,7 @@ const CubeTimer = () => {
                                 data-testid="cube-builder-apply"
                                 onClick={handleBuilderApply}
                                 disabled={scrambleBusy || builderTokens.length === 0}
-                                className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-800 transition-colors active:scale-[0.97] [-webkit-tap-highlight-color:transparent]"
+                                className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-none border-2 border-bauhaus-black shadow-hard-sm bg-bauhaus-black text-white text-sm font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed hover:bg-bauhaus-black/90 transition-all duration-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent]"
                             >
                                 {scrambling ? '套用中…' : '套用此打亂'}
                             </button>
@@ -995,9 +999,9 @@ const CubeTimer = () => {
                 </div>
 
                 {/* B. 3D 舞台 */}
-                <div className="mt-5 pt-5 border-t border-slate-100">
+                <div className="mt-5 pt-5 border-t-2 border-bauhaus-black/10">
                     <div className="relative">
-                        <div ref={stageRef} className="w-full h-72 sm:h-80 rounded-2xl bg-slate-50 select-none" />
+                        <div ref={stageRef} className="w-full h-72 sm:h-80 rounded-none border-2 border-bauhaus-black bg-bauhaus-muted select-none" />
                         <span
                             data-testid="cube-status-pill"
                             className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-bold ${cubeStatusClasses}`}
@@ -1005,40 +1009,40 @@ const CubeTimer = () => {
                             {cubeStatusLabel}
                         </span>
                     </div>
-                    <p className="text-center text-xs text-slate-400 mt-2">按住拖曳可旋轉視角</p>
+                    <p className="text-center text-xs text-bauhaus-black/50 mt-2">按住拖曳可旋轉視角</p>
                 </div>
 
                 {/* C. 計時器 hero */}
-                <div className="mt-5 pt-5 border-t border-slate-100 text-center">
+                <div className="mt-5 pt-5 border-t-2 border-bauhaus-black/10 text-center">
                     <div
                         data-testid="cube-timer-display"
-                        className={`text-5xl sm:text-6xl font-black tabular-nums font-mono transition-colors ${
-                            phase === 'armed' ? 'text-emerald-500' : phase === 'paused' ? 'text-amber-500' : 'text-slate-900'
+                        className={`text-5xl sm:text-6xl font-black tabular-nums font-mono transition-colors duration-200 ${
+                            phase === 'armed' || phase === 'paused' ? 'text-bauhaus-yellow' : 'text-bauhaus-black'
                         }`}
                     >
                         {formatCubeTime(displayMs)}
                     </div>
-                    <p className="text-sm text-slate-400 mt-2" data-testid="cube-status-text">{statusText}</p>
+                    <p className="text-sm text-bauhaus-black/50 mt-2" data-testid="cube-status-text">{statusText}</p>
 
                     {lastResult && (
                         <div className="mt-3" data-testid="cube-result-panel">
                             <div className="flex items-baseline justify-center gap-3 flex-wrap">
-                                <span className="text-2xl font-black tabular-nums font-mono text-blue-600" data-testid="cube-result-time">
+                                <span className="text-2xl font-black tabular-nums font-mono text-bauhaus-blue" data-testid="cube-result-time">
                                     {formatCubeTime(lastResult.timeMs)}
                                 </span>
-                                {lastResult.moveCount != null && <span className="text-sm text-slate-500">{lastResult.moveCount} 步</span>}
-                                <span className="text-xs text-slate-400 font-bold px-2 py-0.5 rounded-full bg-slate-100">
+                                {lastResult.moveCount != null && <span className="text-sm text-bauhaus-black/50">{lastResult.moveCount} 步</span>}
+                                <span className="text-xs text-bauhaus-black/60 font-bold px-2 py-0.5 rounded-full bg-bauhaus-muted border-2 border-bauhaus-black/10">
                                     {lastResult.mode === 'physical' ? '實體計時' : '鍵盤模式'}
                                 </span>
                             </div>
                             {submitError && (
-                                <p className="text-sm text-red-600 mt-2 flex items-center justify-center gap-1.5">
+                                <p className="text-sm text-bauhaus-red mt-2 flex items-center justify-center gap-1.5">
                                     <AlertTriangle className="w-4 h-4 shrink-0" />
                                     {submitError}
                                 </p>
                             )}
                             {submitted && (
-                                <p className="text-sm text-emerald-600 font-bold mt-2" data-testid="cube-submit-success">
+                                <p className="text-sm text-bauhaus-blue font-bold mt-2" data-testid="cube-submit-success">
                                     已送出，排行榜已更新！
                                 </p>
                             )}
@@ -1051,7 +1055,7 @@ const CubeTimer = () => {
                             data-testid="cube-primary-action"
                             {...primaryHandlers}
                             disabled={primaryDisabled}
-                            className={`w-full sm:w-auto px-8 min-h-[56px] rounded-2xl font-bold text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.97] [-webkit-tap-highlight-color:transparent] ${primaryColorClass}`}
+                            className={`w-full sm:w-auto px-8 min-h-[56px] rounded-none border-2 border-bauhaus-black shadow-hard font-bold uppercase tracking-wide transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none [-webkit-tap-highlight-color:transparent] ${primaryColorClass}`}
                         >
                             {primaryLabel}
                         </button>
@@ -1060,7 +1064,7 @@ const CubeTimer = () => {
                                 type="button"
                                 data-testid="cube-secondary-action"
                                 {...secondaryHandlers}
-                                className={`px-5 py-3 min-h-[44px] rounded-2xl font-bold transition-colors active:scale-[0.97] [-webkit-tap-highlight-color:transparent] ${secondaryColorClass}`}
+                                className={`px-5 py-3 min-h-[44px] rounded-none border-2 border-bauhaus-black font-bold uppercase tracking-wide transition-colors duration-200 [-webkit-tap-highlight-color:transparent] ${secondaryColorClass}`}
                             >
                                 {secondaryLabel}
                             </button>
@@ -1071,7 +1075,7 @@ const CubeTimer = () => {
                             type="button"
                             data-testid="cube-discard-result"
                             onClick={abortCurrent}
-                            className="mt-3 inline-block py-2 px-1 text-sm font-bold text-slate-400 hover:text-slate-600 underline underline-offset-2 [-webkit-tap-highlight-color:transparent]"
+                            className="mt-3 inline-block py-2 px-1 text-sm font-bold text-bauhaus-black/40 hover:text-bauhaus-black underline underline-offset-2 [-webkit-tap-highlight-color:transparent]"
                         >
                             不算
                         </button>
@@ -1081,20 +1085,20 @@ const CubeTimer = () => {
 
             {/* 螢幕轉面按鈕區（僅鍵盤模式，可收合） */}
             {isVirtual && (
-                <section className="bg-white rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6 mb-6">
+                <section className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6 mb-6">
                     <button
                         type="button"
                         onClick={() => setFaceSectionOpen((v) => !v)}
                         data-testid="cube-face-toggle"
                         className="w-full flex items-center justify-between gap-3"
                     >
-                        <span className="font-bold text-slate-800">🖱 螢幕按鈕</span>
-                        <span className="text-xs text-slate-400 font-bold">{faceSectionOpen ? '收合 ▲' : '展開 ▼'}</span>
+                        <span className="font-bold text-bauhaus-black">🖱 螢幕按鈕</span>
+                        <span className="text-xs text-bauhaus-black/40 font-bold">{faceSectionOpen ? '收合 ▲' : '展開 ▼'}</span>
                     </button>
 
                     {faceSectionOpen && (
                         <div className="mt-4">
-                            <p className="hidden md:block text-center text-xs text-slate-400 mb-3" data-testid="cube-key-legend">
+                            <p className="hidden md:block text-center text-xs text-bauhaus-black/50 mb-3" data-testid="cube-key-legend">
                                 {legendText}
                             </p>
                             <div className="grid grid-cols-3 gap-2" data-testid="cube-face-buttons">
@@ -1103,7 +1107,7 @@ const CubeTimer = () => {
                                     return (
                                         <div
                                             key={letter}
-                                            className="flex items-center justify-center gap-1 border border-slate-200 rounded-xl px-2 py-2"
+                                            className="flex items-center justify-center gap-1 border-2 border-bauhaus-black rounded-none px-2 py-2"
                                             data-testid={`cube-tile-${letter}`}
                                         >
                                             <button
@@ -1112,7 +1116,7 @@ const CubeTimer = () => {
                                                 disabled={turnButtonsDisabled}
                                                 aria-label={`${letter} 順轉`}
                                                 data-testid={`cube-btn-${letter}`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono"
+                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-muted hover:bg-bauhaus-black/10 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
                                             >
                                                 {letter}
                                             </button>
@@ -1122,7 +1126,7 @@ const CubeTimer = () => {
                                                 disabled={turnButtonsDisabled}
                                                 aria-label={`${letter} 逆轉`}
                                                 data-testid={`cube-btn-${letter}-prime`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono"
+                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-muted hover:bg-bauhaus-black/10 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
                                             >
                                                 {letter}&apos;
                                             </button>
@@ -1130,14 +1134,14 @@ const CubeTimer = () => {
                                     );
                                 })}
                             </div>
-                            <p className="mt-3 mb-1 text-xs text-slate-400 font-bold">翻面（整顆換視角，不計步數）</p>
+                            <p className="mt-3 mb-1 text-xs text-bauhaus-black/50 font-bold">翻面（整顆換視角，不計步數）</p>
                             <div className="grid grid-cols-4 gap-2" data-testid="cube-twist-buttons">
                                 {TWIST_LETTERS.map((letter) => {
                                     const def = MOVE_TABLE[letter];
                                     return (
                                         <div
                                             key={letter}
-                                            className="col-span-2 flex items-center justify-center gap-1 border border-amber-200 rounded-xl px-2 py-2"
+                                            className="col-span-2 flex items-center justify-center gap-1 border-2 border-bauhaus-yellow rounded-none px-2 py-2"
                                             data-testid={`cube-tile-${letter}`}
                                         >
                                             <button
@@ -1146,7 +1150,7 @@ const CubeTimer = () => {
                                                 disabled={turnButtonsDisabled}
                                                 aria-label={`整顆換視角 ${letter}`}
                                                 data-testid={`cube-btn-${letter}`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-amber-700"
+                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-yellow/20 hover:bg-bauhaus-yellow/40 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
                                             >
                                                 {letter}
                                             </button>
@@ -1156,7 +1160,7 @@ const CubeTimer = () => {
                                                 disabled={turnButtonsDisabled}
                                                 aria-label={`整顆換視角 ${letter} 反向`}
                                                 data-testid={`cube-btn-${letter}-prime`}
-                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-amber-700"
+                                                className="min-w-[40px] min-h-[40px] px-2 py-1.5 rounded-none bg-bauhaus-yellow/20 hover:bg-bauhaus-yellow/40 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold font-mono text-bauhaus-black"
                                             >
                                                 {letter}&apos;
                                             </button>
@@ -1171,30 +1175,30 @@ const CubeTimer = () => {
 
             {/* 成績與紀錄 */}
             <section className="grid md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6">
-                    <h2 className="font-bold text-slate-800 mb-3">
-                        排行榜 Top 10 <span className="text-xs text-slate-400 font-normal">・{isVirtual ? '鍵盤模式' : '實體計時'}</span>
+                <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
+                    <h2 className="font-bold text-bauhaus-black mb-3">
+                        排行榜 Top 10 <span className="text-xs text-bauhaus-black/40 font-normal">・{isVirtual ? '鍵盤模式' : '實體計時'}</span>
                     </h2>
-                    {leaderboardState === 'loading' && <p className="text-sm text-slate-400">載入中…</p>}
-                    {leaderboardState === 'unavailable' && <p className="text-sm text-slate-400">排行榜功能待資料庫更新後開放。</p>}
+                    {leaderboardState === 'loading' && <p className="text-sm text-bauhaus-black/40">載入中…</p>}
+                    {leaderboardState === 'unavailable' && <p className="text-sm text-bauhaus-black/40">排行榜功能待資料庫更新後開放。</p>}
                     {leaderboardState === 'error' && (
-                        <p className="text-sm text-red-500 flex items-center gap-1.5">
+                        <p className="text-sm text-bauhaus-red flex items-center gap-1.5">
                             <AlertTriangle className="w-4 h-4 shrink-0" />
                             排行榜載入失敗，請稍後再試。
                         </p>
                     )}
                     {leaderboardState === 'ok' && (
                         leaderboard.length === 0 ? (
-                            <p className="text-sm text-slate-400">還沒有人送出成績，當第一個吧！</p>
+                            <p className="text-sm text-bauhaus-black/40">還沒有人送出成績，當第一個吧！</p>
                         ) : (
-                            <div className="divide-y divide-slate-100">
+                            <div className="divide-y-2 divide-bauhaus-black/10">
                                 {leaderboard.slice(0, 10).map((row) => {
                                     const isMe = row.user_id === user?.id;
                                     return (
-                                        <div key={row.user_id} className={`flex items-center gap-3 py-2.5 ${isMe ? 'bg-blue-50/80 -mx-2 px-2 rounded-xl' : ''}`}>
-                                            <span className={`w-8 text-center font-black tabular-nums ${isMe ? 'text-blue-600' : 'text-slate-300'}`}>{row.rank}</span>
-                                            <span className={`flex-1 truncate font-bold ${isMe ? 'text-blue-700' : 'text-slate-700'}`}>{row.display_name || '匿名老師'}</span>
-                                            <span className={`font-mono font-black tabular-nums ${isMe ? 'text-blue-700' : 'text-slate-800'}`}>{formatCubeTime(row.best_ms)}</span>
+                                        <div key={row.user_id} className={`flex items-center gap-3 py-2.5 ${isMe ? 'bg-bauhaus-blue/10 -mx-2 px-2' : ''}`}>
+                                            <span className={`w-8 text-center font-black tabular-nums ${isMe ? 'text-bauhaus-blue' : 'text-bauhaus-black/30'}`}>{row.rank}</span>
+                                            <span className={`flex-1 truncate font-bold ${isMe ? 'text-bauhaus-blue' : 'text-bauhaus-black'}`}>{row.display_name || '匿名老師'}</span>
+                                            <span className={`font-mono font-black tabular-nums ${isMe ? 'text-bauhaus-blue' : 'text-bauhaus-black'}`}>{formatCubeTime(row.best_ms)}</span>
                                         </div>
                                     );
                                 })}
@@ -1203,8 +1207,8 @@ const CubeTimer = () => {
                     )}
                 </div>
 
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6">
-                    <h2 className="font-bold text-slate-800 mb-3">我的紀錄</h2>
+                <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
+                    <h2 className="font-bold text-bauhaus-black mb-3">我的紀錄</h2>
                     <div className="grid grid-cols-4 gap-2 mb-4" data-testid="cube-my-stats">
                         <StatTile
                             testId="cube-stat-best"
@@ -1228,47 +1232,47 @@ const CubeTimer = () => {
                         />
                     </div>
                     <div>
-                        <div className="text-xs text-slate-400 font-bold mb-1">我的最近 5 次</div>
+                        <div className="text-xs text-bauhaus-black/40 font-bold mb-1">我的最近 5 次</div>
                         {myStatsState === 'ok' && myRecent.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
                                 {myRecent.slice(0, 5).map((r) => (
-                                    <span key={r.id} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-mono font-bold">{formatCubeTime(r.time_ms)}</span>
+                                    <span key={r.id} className="px-2 py-1 rounded-none border-2 border-bauhaus-black/10 bg-bauhaus-muted text-bauhaus-black text-xs font-mono font-bold">{formatCubeTime(r.time_ms)}</span>
                                 ))}
                             </div>
                         )}
-                        {myStatsState === 'ok' && myRecent.length === 0 && <span className="text-sm text-slate-400">還沒有紀錄</span>}
+                        {myStatsState === 'ok' && myRecent.length === 0 && <span className="text-sm text-bauhaus-black/40">還沒有紀錄</span>}
                     </div>
                 </div>
             </section>
 
             {/* 設定（按鍵設定＋按鈕排列，移到頁面最下方，可摺疊） */}
-            <section className="bg-white rounded-3xl border border-slate-200 shadow-sm p-5 sm:p-6">
+            <section className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard p-5 sm:p-6">
                 <button
                     type="button"
                     onClick={() => setKeySettingsOpen((v) => !v)}
                     data-testid="cube-key-settings-toggle"
                     className="w-full flex items-center justify-between gap-3"
                 >
-                    <span className="font-bold text-slate-800 flex items-center gap-2">
-                        <KeyRound className="w-4 h-4 text-slate-400" />
+                    <span className="font-bold text-bauhaus-black flex items-center gap-2">
+                        <KeyRound className="w-4 h-4 text-bauhaus-black/40" />
                         按鍵設定
                     </span>
-                    <span className="text-xs text-slate-400 font-bold">{keySettingsOpen ? '收合 ▲' : '展開 ▼'}</span>
+                    <span className="text-xs text-bauhaus-black/40 font-bold">{keySettingsOpen ? '收合 ▲' : '展開 ▼'}</span>
                 </button>
 
                 {keySettingsOpen && (
                     <div className="mt-4 space-y-5">
                         {conflictMsg && (
-                            <p className="text-sm text-red-600 flex items-center gap-1.5" data-testid="cube-keymap-conflict">
+                            <p className="text-sm text-bauhaus-red flex items-center gap-1.5" data-testid="cube-keymap-conflict">
                                 <AlertTriangle className="w-4 h-4 shrink-0" />
                                 {conflictMsg}
                             </p>
                         )}
                         {capturingAction && (
-                            <p className="text-sm text-blue-600 font-bold">請按下想綁定的新按鍵…（Esc 取消）</p>
+                            <p className="text-sm text-bauhaus-blue font-bold">請按下想綁定的新按鍵…（Esc 取消）</p>
                         )}
                         <div>
-                            <h3 className="text-xs font-bold text-slate-400 mb-2">轉面（僅鍵盤模式作用，代號＝國際標準轉法記號）</h3>
+                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">轉面（僅鍵盤模式作用，代號＝國際標準轉法記號）</h3>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {FACE_ACTIONS.map((a) => (
                                     <KeyRow
@@ -1283,7 +1287,7 @@ const CubeTimer = () => {
                             </div>
                         </div>
                         <div>
-                            <h3 className="text-xs font-bold text-slate-400 mb-2">控制</h3>
+                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">控制</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 {CONTROL_ACTIONS.map((id) => (
                                     <KeyRow
@@ -1298,15 +1302,15 @@ const CubeTimer = () => {
                             </div>
                         </div>
                         <div>
-                            <h3 className="text-xs font-bold text-slate-400 mb-2">按鈕排列（轉面格子順序，x/y 翻面固定不排序）</h3>
+                            <h3 className="text-xs font-bold text-bauhaus-black/40 mb-2">按鈕排列（轉面格子順序，x/y 翻面固定不排序）</h3>
                             <div className="space-y-1.5 max-w-xs">
                                 {tileOrder.map((letter, idx) => (
                                     <div
                                         key={letter}
-                                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50"
+                                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-none border-2 border-bauhaus-black bg-white"
                                         data-testid={`cube-tile-order-row-${letter}`}
                                     >
-                                        <span className="font-mono font-bold text-slate-700">{letter}</span>
+                                        <span className="font-mono font-bold text-bauhaus-black">{letter}</span>
                                         <div className="flex gap-1">
                                             <button
                                                 type="button"
@@ -1314,7 +1318,7 @@ const CubeTimer = () => {
                                                 disabled={idx === 0}
                                                 aria-label={`${letter} 往左移`}
                                                 data-testid={`cube-tile-move-left-${letter}`}
-                                                className="p-1.5 rounded-lg bg-white border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100"
+                                                className="p-1.5 rounded-none bg-white border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-muted"
                                             >
                                                 <ChevronLeft className="w-4 h-4" />
                                             </button>
@@ -1324,7 +1328,7 @@ const CubeTimer = () => {
                                                 disabled={idx === tileOrder.length - 1}
                                                 aria-label={`${letter} 往右移`}
                                                 data-testid={`cube-tile-move-right-${letter}`}
-                                                className="p-1.5 rounded-lg bg-white border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100"
+                                                className="p-1.5 rounded-none bg-white border-2 border-bauhaus-black disabled:opacity-30 disabled:cursor-not-allowed hover:bg-bauhaus-muted"
                                             >
                                                 <ChevronRight className="w-4 h-4" />
                                             </button>
@@ -1337,7 +1341,7 @@ const CubeTimer = () => {
                             type="button"
                             onClick={resetKeymap}
                             data-testid="cube-keymap-reset"
-                            className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-sm font-bold hover:bg-slate-200 transition-colors flex items-center gap-1.5"
+                            className="px-4 py-2 rounded-none border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black text-sm font-bold hover:bg-bauhaus-black/10 transition-colors duration-200 flex items-center gap-1.5"
                         >
                             <RotateCcw className="w-3.5 h-3.5" />
                             全部恢復預設

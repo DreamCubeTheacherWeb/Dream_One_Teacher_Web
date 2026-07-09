@@ -73,6 +73,8 @@ async function handleRoute(route) {
     const req = route.request();
     const url = new URL(req.url());
     if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return route.continue();
+    // Google Fonts（index.html 載入 Outfit＋Noto Sans TC）放行，否則每頁誤報 ERR_FAILED
+    if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') return route.continue();
     if (!url.hostname.endsWith('.supabase.co')) return route.abort();
     const p = url.pathname;
 

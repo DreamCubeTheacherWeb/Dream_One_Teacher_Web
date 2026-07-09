@@ -91,10 +91,10 @@ const LessonView = () => {
     }, [courseId]);
 
     if (loading) return (
-        <div className="p-12 text-center text-slate-500 text-lg font-bold">課程內容載入中...</div>
+        <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">課程內容載入中...</div>
     );
     if (!course) return (
-        <div className="p-12 text-center text-red-500">找不到該課程。</div>
+        <div className="p-12 text-center text-bauhaus-red font-bold">找不到該課程。</div>
     );
 
     const completedCount = lessons.filter(l => progress[l.id]).length;
@@ -104,30 +104,30 @@ const LessonView = () => {
             {/* Back link */}
             <Link
                 to="/courses"
-                className="inline-flex items-center gap-1.5 text-xs font-black text-blue-600 uppercase tracking-widest hover:text-blue-700 mb-6 transition-colors min-h-[44px]"
+                className="inline-flex items-center gap-1.5 text-xs font-black text-bauhaus-blue uppercase tracking-widest hover:text-bauhaus-black mb-6 transition-colors duration-200 min-h-[44px]"
             >
                 <ChevronLeft className="w-3.5 h-3.5" /> 返回課程列表
             </Link>
 
             {/* Course header */}
             <div className="mb-2">
-                <h1 className="text-3xl font-black text-slate-900 tracking-tight">{course.title}</h1>
+                <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">{course.title}</h1>
             </div>
             {course.description && (
-                <p className="text-slate-500 mb-6">{course.description}</p>
+                <p className="text-bauhaus-black/60 mb-6 font-medium">{course.description}</p>
             )}
 
             {/* Progress bar */}
             {lessons.length > 0 && (
-                <div className="mb-8 bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4 shadow-sm">
+                <div className="mb-8 bg-white border-2 border-bauhaus-black p-4 flex items-center gap-4 shadow-hard">
                     <div className="flex-1">
-                        <div className="flex justify-between text-xs font-bold text-slate-500 mb-1.5">
+                        <div className="flex justify-between text-xs font-bold text-bauhaus-black/60 mb-1.5">
                             <span>學習進度</span>
                             <span>{completedCount} / {lessons.length} 章節</span>
                         </div>
-                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-2 lg:h-3 rounded-none bg-bauhaus-muted border-2 border-bauhaus-black overflow-hidden">
                             <div
-                                className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                                className="h-full bg-bauhaus-blue rounded-none transition-all duration-500"
                                 style={{ width: `${lessons.length ? (completedCount / lessons.length) * 100 : 0}%` }}
                             />
                         </div>
@@ -147,27 +147,27 @@ const LessonView = () => {
                             <Link
                                 key={lesson.id}
                                 to={`/courses/${courseId}/lessons/${lesson.id}`}
-                                className="group flex items-start gap-4 bg-white rounded-2xl border border-slate-100 px-6 py-5 hover:border-blue-300 hover:shadow-md hover:shadow-blue-50 transition-all duration-200"
+                                className="group flex items-start gap-4 bh-card bh-card-hover px-6 py-5"
                             >
                                 {/* Chapter number & completion icon */}
                                 <div className="shrink-0 flex flex-col items-center gap-1 pt-0.5">
                                     {isCompleted ? (
-                                        <CheckCircle className="w-6 h-6 text-green-500 fill-green-50" />
+                                        <CheckCircle className="w-6 h-6 text-bauhaus-blue fill-bauhaus-blue/10" />
                                     ) : (
-                                        <Circle className="w-6 h-6 text-slate-200 group-hover:text-blue-200 transition-colors" />
+                                        <Circle className="w-6 h-6 text-bauhaus-black/20 group-hover:text-bauhaus-blue/40 transition-colors duration-200" />
                                     )}
                                 </div>
 
                                 {/* Text content */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">
+                                    <div className="text-[10px] font-black text-bauhaus-black/40 uppercase tracking-[0.2em] mb-1">
                                         章節 {idx + 1}
                                     </div>
-                                    <div className={`text-base font-bold mb-1.5 line-clamp-2 transition-colors ${isCompleted ? 'text-slate-400' : 'text-slate-800 group-hover:text-blue-600'}`}>
+                                    <div className={`text-base font-bold mb-1.5 line-clamp-2 transition-colors duration-200 ${isCompleted ? 'text-bauhaus-black/40' : 'text-bauhaus-black group-hover:text-bauhaus-blue'}`}>
                                         {lesson.title}
                                     </div>
                                     {preview && (
-                                        <p className="text-sm text-slate-400 leading-relaxed line-clamp-2">
+                                        <p className="text-sm text-bauhaus-black/50 leading-relaxed line-clamp-2">
                                             {preview}
                                         </p>
                                     )}
@@ -175,12 +175,12 @@ const LessonView = () => {
                                     {(count.video > 0 || count.text > 0) && (
                                         <div className="flex items-center gap-2 mt-2.5">
                                             {count.video > 0 && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-white bg-bauhaus-blue px-2 py-0.5 border-2 border-bauhaus-black">
                                                     <Play className="w-2.5 h-2.5" /> {count.video} 影片
                                                 </span>
                                             )}
                                             {count.text > 0 && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black">
                                                     <FileText className="w-2.5 h-2.5" /> {count.text} 文章
                                                 </span>
                                             )}
@@ -189,13 +189,18 @@ const LessonView = () => {
                                 </div>
 
                                 {/* Arrow */}
-                                <ChevronRight className="w-5 h-5 text-slate-200 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
+                                <ChevronRight className="w-5 h-5 text-bauhaus-black/20 group-hover:text-bauhaus-blue group-hover:translate-x-0.5 transition-all duration-200 shrink-0 mt-1" />
                             </Link>
                         );
                     })
                 ) : (
-                    <div className="py-20 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-                        <p className="text-slate-400">此課程目前尚無章節。</p>
+                    <div className="py-20 text-center bg-white border-2 border-bauhaus-black">
+                        <div className="flex items-center justify-center gap-2 mb-4" aria-hidden="true">
+                            <span className="w-4 h-4 rounded-full bg-bauhaus-red" />
+                            <span className="w-4 h-4 bg-bauhaus-blue" />
+                            <span className="w-4 h-4 bg-bauhaus-yellow" style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />
+                        </div>
+                        <p className="font-black text-bauhaus-black">此課程目前尚無章節</p>
                     </div>
                 )}
             </div>

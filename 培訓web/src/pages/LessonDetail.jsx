@@ -349,10 +349,10 @@ const LessonDetail = () => {
     };
 
     if (loading) return (
-        <div className="p-12 text-center text-slate-500 text-lg font-bold">章節內容載入中...</div>
+        <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">章節內容載入中...</div>
     );
     if (!lesson) return (
-        <div className="p-12 text-center text-red-500">找不到此章節。</div>
+        <div className="p-12 text-center text-bauhaus-red font-bold">找不到此章節。</div>
     );
 
     const currentIdx = lessons.findIndex(l => l.id === lessonId);
@@ -374,29 +374,29 @@ const LessonDetail = () => {
     return (
         <div className="max-w-4xl mx-auto px-6 py-10">
             {/* Breadcrumb */}
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-400 mb-8">
-                <Link to="/courses" className="hover:text-blue-600 transition-colors">我的課程</Link>
+            <div className="flex items-center gap-2 text-xs font-bold text-bauhaus-black/50 mb-8">
+                <Link to="/courses" className="hover:text-bauhaus-blue transition-colors duration-200">我的課程</Link>
                 <ChevronRight className="w-3 h-3" />
-                <Link to={`/courses/${courseId}`} className="hover:text-blue-600 transition-colors">
+                <Link to={`/courses/${courseId}`} className="hover:text-bauhaus-blue transition-colors duration-200">
                     {course?.title}
                 </Link>
                 <ChevronRight className="w-3 h-3" />
-                <span className="text-slate-600 truncate max-w-[200px]">{lesson.title}</span>
+                <span className="text-bauhaus-black truncate max-w-[200px]">{lesson.title}</span>
             </div>
 
             {/* Lesson header */}
-            <div className="flex items-start justify-between gap-4 mb-10 pb-8 border-b border-slate-200/60">
+            <div className="flex items-start justify-between gap-4 mb-10 pb-8 border-b-2 lg:border-b-4 border-bauhaus-black">
                 <div>
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">
+                    <div className="text-[10px] font-black text-bauhaus-black/40 uppercase tracking-[0.2em] mb-2">
                         章節 {currentIdx + 1}
                     </div>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight">{lesson.title}</h1>
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight leading-[0.95]">{lesson.title}</h1>
                 </div>
                 <button
                     onClick={toggleComplete}
-                    className={`shrink-0 flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-sm font-black transition-all shadow-sm ${isCompleted
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                        : 'bg-white border border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-600'
+                    className={`shrink-0 flex items-center gap-2.5 px-5 py-2.5 border-2 border-bauhaus-black text-sm font-black uppercase tracking-wide shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${isCompleted
+                        ? 'bg-bauhaus-blue text-white hover:bg-bauhaus-blue/90'
+                        : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
                         }`}
                 >
                     {isCompleted ? <CheckCircle className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
@@ -412,25 +412,25 @@ const LessonDetail = () => {
                     {contents.map((item) => (
                         <div
                             key={item.id}
-                            className="bg-white rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-slate-100/80 overflow-hidden"
+                            className="bh-card overflow-hidden"
                         >
-                            <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100/50 flex items-center gap-3">
-                                <div className={`p-2 rounded-xl ${
-                                    item.type === 'video' ? 'bg-blue-100 text-blue-600' :
-                                    item.type === 'image_text' ? 'bg-emerald-100 text-emerald-600' :
-                                    'bg-orange-100 text-orange-600'
+                            <div className="px-6 py-4 bg-bauhaus-paper border-b-2 border-bauhaus-black flex items-center gap-3">
+                                <div className={`p-2 border-2 border-bauhaus-black ${
+                                    item.type === 'video' ? 'bg-bauhaus-blue text-white' :
+                                    item.type === 'image_text' ? 'bg-bauhaus-yellow text-bauhaus-black' :
+                                    'bg-bauhaus-black text-white'
                                 }`}>
                                     {item.type === 'video' ? <Play className="w-4 h-4" /> :
                                      item.type === 'image_text' ? <ImageIcon className="w-4 h-4" /> :
                                      <FileText className="w-4 h-4" />}
                                 </div>
-                                <span className="text-sm font-black text-slate-700 uppercase tracking-wide">{item.title}</span>
+                                <span className="text-sm font-black text-bauhaus-black uppercase tracking-wide">{item.title}</span>
                             </div>
                             <div className="p-8">
                                 {item.type === 'image_text' ? (
                                     <ImageTextContent item={item} />
                                 ) : item.type === 'video' ? (
-                                    <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
+                                    <div className="aspect-video bg-bauhaus-black overflow-hidden border-2 border-bauhaus-black">
                                         <iframe
                                             src={toEmbedUrl(item.video_url)}
                                             title={item.title}
@@ -440,7 +440,7 @@ const LessonDetail = () => {
                                     </div>
                                 ) : (
                                     <div
-                                        className="prose prose-slate prose-lg max-w-none prose-headings:font-black prose-p:leading-relaxed prose-a:text-blue-600 font-medium text-slate-700 ql-editor lesson-content"
+                                        className="prose prose-slate prose-lg max-w-none prose-headings:font-black prose-p:leading-relaxed prose-a:text-bauhaus-blue font-medium text-bauhaus-black ql-editor lesson-content"
                                         dangerouslySetInnerHTML={{ __html: item.body }}
                                     />
                                 )}
@@ -449,8 +449,8 @@ const LessonDetail = () => {
                     ))}
 
                     {contents.length === 0 && (
-                        <div className="py-24 text-center bg-white rounded-3xl border-2 border-dashed border-slate-200/60">
-                            <p className="text-slate-400 font-medium">本章節暫無學習內容。</p>
+                        <div className="py-24 text-center bg-white border-2 border-bauhaus-black">
+                            <p className="text-bauhaus-black/50 font-medium">本章節暫無學習內容。</p>
                         </div>
                     )}
                 </div>
@@ -458,60 +458,60 @@ const LessonDetail = () => {
 
             {/* Assignment section */}
             {showAssignment && (
-            <div className="mt-16 pt-12 border-t border-slate-200/60">
+            <div className="mt-16 pt-12 border-t-2 lg:border-t-4 border-bauhaus-black">
                 {/* Previously submitted assignments */}
                 {myAssignments.length > 0 && (
                     <div className="mb-10 space-y-5">
-                        <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                            <CheckCircle className="w-5 h-5 text-green-500" /> 我的作業紀錄
+                        <h3 className="text-xl font-black text-bauhaus-black flex items-center gap-2">
+                            <CheckCircle className="w-5 h-5 text-bauhaus-blue" /> 我的作業紀錄
                         </h3>
                         {myAssignments.map((a) => (
-                            <div key={a.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                                    <span className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                            <div key={a.id} className="bh-card overflow-hidden">
+                                <div className="px-6 py-4 bg-bauhaus-paper border-b-2 border-bauhaus-black flex items-center justify-between">
+                                    <span className="text-xs font-bold text-bauhaus-black/50 flex items-center gap-1.5">
                                         <Clock className="w-3.5 h-3.5" /> {formatTime(a.created_at)}
                                     </span>
-                                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                                    <span className="text-[10px] font-bold text-bauhaus-black/40 uppercase tracking-wider">
                                         {a.type === 'youtube' ? 'YouTube 影片' : a.type === 'video' ? '影片作業' : '文字作業'}
                                     </span>
                                 </div>
                                 <div className="px-6 py-5">
                                     {a.video_url ? (
-                                        <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                                        <div className="aspect-video overflow-hidden bg-bauhaus-black border-2 border-bauhaus-black">
                                             <iframe src={toEmbedUrl(a.video_url)} title="作業影片" className="w-full h-full" allowFullScreen />
                                         </div>
                                     ) : (
-                                        <p className="text-slate-700 whitespace-pre-wrap leading-relaxed">{a.content}</p>
+                                        <p className="text-bauhaus-black whitespace-pre-wrap leading-relaxed">{a.content}</p>
                                     )}
                                 </div>
-                                <div className="px-6 py-4 border-t border-slate-100">
+                                <div className="px-6 py-4 border-t-2 border-bauhaus-black">
                                     {a.feedbacks && a.feedbacks.length > 0 ? (
                                         <div className="space-y-3">
-                                            <h4 className="text-sm font-black text-slate-600 flex items-center gap-2">
-                                                <MessageSquare className="w-4 h-4 text-amber-500" />
+                                            <h4 className="text-sm font-black text-bauhaus-black flex items-center gap-2">
+                                                <MessageSquare className="w-4 h-4 text-bauhaus-black" />
                                                 回饋紀錄（{a.feedbacks.length} 則）
                                             </h4>
                                             {a.feedbacks.map((fb) => (
-                                                <div key={fb.id} className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4">
+                                                <div key={fb.id} className="bg-bauhaus-cream border-2 border-bauhaus-black px-5 py-4">
                                                     <div className="flex items-center justify-between mb-2">
                                                         <div className="flex items-center gap-2">
-                                                            <Star className="w-4 h-4 text-amber-500" />
-                                                            <span className="text-sm font-black text-amber-700">
+                                                            <Star className="w-4 h-4 text-bauhaus-black" />
+                                                            <span className="text-sm font-black text-bauhaus-black">
                                                                 {fb.authorDisplay}
                                                             </span>
                                                         </div>
-                                                        <span className="text-xs text-amber-500 flex items-center gap-1">
+                                                        <span className="text-xs text-bauhaus-black/50 flex items-center gap-1">
                                                             <Clock className="w-3 h-3" />
                                                             {formatTime(fb.created_at)}
                                                         </span>
                                                     </div>
-                                                    <p className="text-amber-900 text-sm leading-relaxed whitespace-pre-wrap">{fb.body}</p>
+                                                    <p className="text-bauhaus-black text-sm leading-relaxed whitespace-pre-wrap">{fb.body}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 text-center">
-                                            <p className="text-slate-400 text-sm font-medium">
+                                        <div className="bg-bauhaus-paper border-2 border-bauhaus-black px-5 py-4 text-center">
+                                            <p className="text-bauhaus-black/50 text-sm font-medium">
                                                 請通知輔導員給予回饋，若已通知則耐心等候
                                             </p>
                                         </div>
@@ -523,32 +523,31 @@ const LessonDetail = () => {
                 )}
 
                 {/* Submit new assignment */}
-                <div className="bg-indigo-900 text-white rounded-3xl p-10 shadow-2xl shadow-indigo-900/20 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl pointer-events-none" />
+                <div className="bg-bauhaus-black text-white border-2 lg:border-4 border-bauhaus-black p-10 shadow-hard-lg relative overflow-hidden">
                     <h3 className="text-2xl font-black mb-2 flex items-center gap-3">
-                        <FileText className="w-7 h-7 text-indigo-300" />
+                        <FileText className="w-7 h-7 text-bauhaus-yellow" />
                         {myAssignments.length > 0 ? '再次繳交作業' : '章節作業繳交'}
                     </h3>
-                    <p className="text-indigo-200/80 mb-8 font-medium">請根據本章節內容，撰寫您的學習心得或繳交指定作業。</p>
+                    <p className="text-white/70 mb-8 font-medium">請根據本章節內容，撰寫您的學習心得或繳交指定作業。</p>
                     <div className="space-y-6 relative z-10">
                         {/* Type selector */}
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setAssignment({ ...assignment, type: 'text' })}
-                                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                                className={`px-5 py-2.5 border-2 border-white text-sm font-bold uppercase tracking-wide transition-colors duration-200 min-h-[44px] ${
                                     assignment.type === 'text'
-                                        ? 'bg-white text-indigo-900'
-                                        : 'bg-white/10 text-white/70 hover:bg-white/20'
+                                        ? 'bg-bauhaus-yellow text-bauhaus-black'
+                                        : 'bg-transparent text-white/70 hover:bg-white/10'
                                 }`}
                             >
                                 文字心得
                             </button>
                             <button
                                 onClick={() => setAssignment({ ...assignment, type: 'youtube' })}
-                                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${
+                                className={`px-5 py-2.5 border-2 border-white text-sm font-bold uppercase tracking-wide transition-colors duration-200 flex items-center gap-2 min-h-[44px] ${
                                     assignment.type === 'youtube'
-                                        ? 'bg-white text-indigo-900'
-                                        : 'bg-white/10 text-white/70 hover:bg-white/20'
+                                        ? 'bg-bauhaus-yellow text-bauhaus-black'
+                                        : 'bg-transparent text-white/70 hover:bg-white/10'
                                 }`}
                             >
                                 <Play className="w-4 h-4" /> YouTube 連結
@@ -560,7 +559,7 @@ const LessonDetail = () => {
                                 rows="6"
                                 value={assignment.content}
                                 onChange={(e) => setAssignment({ ...assignment, content: e.target.value })}
-                                className="w-full px-6 py-5 bg-white/10 border border-white/20 rounded-2xl focus:ring-2 focus:ring-indigo-400 outline-none resize-none text-white placeholder:text-indigo-300/50 font-medium transition-all"
+                                className="w-full px-6 py-5 bg-white/10 border-2 border-white focus:ring-2 focus:ring-bauhaus-yellow outline-none resize-none text-white placeholder:text-white/40 font-medium transition-colors duration-200"
                                 placeholder="在此輸入您的心得或作業內容..."
                             />
                         ) : (
@@ -569,11 +568,11 @@ const LessonDetail = () => {
                                     type="url"
                                     value={assignment.video_url}
                                     onChange={(e) => setAssignment({ ...assignment, video_url: e.target.value })}
-                                    className="w-full px-6 py-4 bg-white/10 border border-white/20 rounded-2xl focus:ring-2 focus:ring-indigo-400 outline-none text-white placeholder:text-indigo-300/50 font-medium transition-all"
+                                    className="w-full px-6 py-4 bg-white/10 border-2 border-white focus:ring-2 focus:ring-bauhaus-yellow outline-none text-white placeholder:text-white/40 font-medium transition-colors duration-200"
                                     placeholder="貼上 YouTube 影片連結，例如 https://youtu.be/..."
                                 />
                                 {assignment.video_url && toEmbedUrl(assignment.video_url) !== assignment.video_url && (
-                                    <div className="aspect-video rounded-xl overflow-hidden bg-black/50">
+                                    <div className="aspect-video overflow-hidden bg-black border-2 border-white">
                                         <iframe src={toEmbedUrl(assignment.video_url)} title="預覽" className="w-full h-full" allowFullScreen />
                                     </div>
                                 )}
@@ -583,7 +582,7 @@ const LessonDetail = () => {
                         <button
                             onClick={submitAssignment}
                             disabled={isSubmitting || (assignment.type === 'text' ? !assignment.content : !assignment.video_url)}
-                            className="w-full py-4 bg-white text-indigo-900 font-black rounded-2xl hover:bg-indigo-50 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98]"
+                            className="w-full py-4 bg-bauhaus-yellow text-bauhaus-black font-black uppercase tracking-wide border-2 border-white shadow-hard-white hover:bg-bauhaus-yellow/90 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none min-h-[44px]"
                         >
                             {isSubmitting ? '繳交中...' : '確認繳交作業'}
                         </button>
@@ -593,15 +592,15 @@ const LessonDetail = () => {
             )}
 
             {/* Comment / Discussion section */}
-            <div className="mt-16 pt-12 border-t border-slate-200/60">
-                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-6">
-                    <MessageSquare className="w-5 h-5 text-blue-500" /> 留言討論區
+            <div className="mt-16 pt-12 border-t-2 lg:border-t-4 border-bauhaus-black">
+                <h3 className="text-xl font-black text-bauhaus-black flex items-center gap-2 mb-6">
+                    <MessageSquare className="w-5 h-5 text-bauhaus-blue" /> 留言討論區
                 </h3>
 
                 {comments.length === 0 ? (
-                    <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-200">
-                        <MessageSquare className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-                        <p className="text-slate-400 font-medium">目前還沒有留言，成為第一個留言的人吧！</p>
+                    <div className="text-center py-12 bg-white border-2 border-bauhaus-black">
+                        <MessageSquare className="w-10 h-10 text-bauhaus-black/20 mx-auto mb-3" />
+                        <p className="text-bauhaus-black/50 font-medium">目前還沒有留言，成為第一個留言的人吧！</p>
                     </div>
                 ) : (
                     <div className="space-y-4 mb-8">
@@ -609,17 +608,17 @@ const LessonDetail = () => {
                             const likeCount = commentLikes[c.id] || 0;
                             const liked = myLikes.has(c.id);
                             return (
-                                <div key={c.id} className="bg-white rounded-2xl border border-slate-200 px-5 py-4 shadow-sm">
+                                <div key={c.id} className="bh-card px-5 py-4">
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className="text-sm font-bold text-slate-700">
+                                        <span className="text-sm font-bold text-bauhaus-black">
                                             {displayName(c)}
                                         </span>
                                         <div className="flex items-center gap-3">
-                                            <span className="text-[11px] text-slate-400 font-medium">{formatTime(c.created_at)}</span>
+                                            <span className="text-[11px] text-bauhaus-black/40 font-medium">{formatTime(c.created_at)}</span>
                                             {isAdmin && (
                                                 <button
                                                     onClick={() => deleteComment(c.id)}
-                                                    className="text-slate-300 hover:text-red-500 transition-colors"
+                                                    className="text-bauhaus-black/30 hover:text-bauhaus-red transition-colors duration-200"
                                                     title="刪除留言"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
@@ -627,18 +626,18 @@ const LessonDetail = () => {
                                             )}
                                         </div>
                                     </div>
-                                    <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">{c.body}</p>
-                                    <div className="flex items-center mt-3 pt-2 border-t border-slate-100">
+                                    <p className="text-bauhaus-black/70 text-sm leading-relaxed whitespace-pre-wrap">{c.body}</p>
+                                    <div className="flex items-center mt-3 pt-2 border-t-2 border-bauhaus-black/10">
                                         <button
                                             onClick={() => toggleLike(c.id)}
                                             disabled={!currentUser}
-                                            className={`flex items-center gap-1.5 text-xs font-medium transition-all rounded-lg px-2.5 py-1.5 ${
+                                            className={`flex items-center gap-1.5 text-xs font-medium transition-colors duration-200 px-2.5 py-1.5 border-2 ${
                                                 liked
-                                                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-                                                    : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50'
+                                                    ? 'text-white bg-bauhaus-blue border-bauhaus-blue'
+                                                    : 'text-bauhaus-black/50 border-transparent hover:text-bauhaus-blue hover:border-bauhaus-black/20'
                                             } disabled:opacity-40 disabled:cursor-not-allowed`}
                                         >
-                                            <ThumbsUp className={`w-3.5 h-3.5 ${liked ? 'fill-blue-600' : ''}`} />
+                                            <ThumbsUp className={`w-3.5 h-3.5 ${liked ? 'fill-white' : ''}`} />
                                             {likeCount > 0 && <span>{likeCount}</span>}
                                         </button>
                                     </div>
@@ -649,19 +648,19 @@ const LessonDetail = () => {
                 )}
 
                 {currentUser && (
-                    <div className="mt-6 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                    <div className="mt-6 bh-card p-5">
                         <textarea
                             rows="3"
                             value={newComment}
                             onChange={(e) => setNewComment(e.target.value)}
-                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-300 focus:border-blue-300 outline-none resize-none text-slate-700 placeholder:text-slate-400 text-sm font-medium transition-all"
+                            className="w-full px-4 py-3 bg-bauhaus-paper border-2 border-bauhaus-black focus:ring-2 focus:ring-bauhaus-blue outline-none resize-none text-bauhaus-black placeholder:text-bauhaus-black/40 text-sm font-medium transition-colors duration-200"
                             placeholder="輸入您的留言..."
                         />
                         <div className="flex justify-end mt-3">
                             <button
                                 onClick={submitComment}
                                 disabled={commentSubmitting || !newComment.trim()}
-                                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-5 py-2.5 bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold uppercase tracking-wide shadow-hard hover:bg-bauhaus-blue/90 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:translate-x-[2px] active:translate-y-[2px] active:shadow-none min-h-[44px]"
                             >
                                 <Send className="w-4 h-4" />
                                 {commentSubmitting ? '送出中...' : '送出留言'}
@@ -695,7 +694,7 @@ const LessonDetail = () => {
                 {prevLesson ? (
                     <Link
                         to={`/courses/${courseId}/lessons/${prevLesson.id}`}
-                        className="flex items-center gap-2 px-5 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-600 hover:border-blue-300 hover:text-blue-600 transition-all"
+                        className="flex items-center gap-2 px-5 py-3 bg-white border-2 border-bauhaus-black text-sm font-bold text-bauhaus-black hover:bg-bauhaus-muted shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                         <ChevronLeft className="w-4 h-4" />
                         上一章節
@@ -703,14 +702,14 @@ const LessonDetail = () => {
                 ) : <div />}
                 <Link
                     to={`/courses/${courseId}`}
-                    className="text-xs font-black text-slate-400 hover:text-blue-600 transition-colors uppercase tracking-widest"
+                    className="text-xs font-black text-bauhaus-black/50 hover:text-bauhaus-blue transition-colors duration-200 uppercase tracking-widest"
                 >
                     返回章節清單
                 </Link>
                 {nextLesson ? (
                     <Link
                         to={`/courses/${courseId}/lessons/${nextLesson.id}`}
-                        className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl text-sm font-bold hover:bg-blue-700 transition-all"
+                        className="flex items-center gap-2 px-5 py-3 bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold hover:bg-bauhaus-blue/90 shadow-hard transition-all duration-200 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                         下一章節
                         <ChevronRight className="w-4 h-4" />
@@ -847,7 +846,7 @@ const CanvasViewer = ({ contents }) => {
                         <button
                             type="button"
                             onClick={() => setZoomed((z) => !z)}
-                            className="min-h-[44px] inline-flex items-center gap-1.5 px-4 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold active:bg-slate-200 transition-colors"
+                            className="min-h-[44px] inline-flex items-center gap-1.5 px-4 border-2 border-bauhaus-black bg-white text-bauhaus-black text-xs font-bold uppercase tracking-wide active:bg-bauhaus-muted transition-colors duration-200"
                         >
                             {zoomed ? (
                                 <>
@@ -861,7 +860,7 @@ const CanvasViewer = ({ contents }) => {
                         </button>
                     </div>
                     {zoomed && (
-                        <p className="text-[10px] text-slate-400 text-right mt-1">可上下左右滑動查看完整內容</p>
+                        <p className="text-[10px] text-bauhaus-black/40 text-right mt-1">可上下左右滑動查看完整內容</p>
                     )}
                 </div>
             )}
@@ -928,7 +927,7 @@ const ImageTextContent = ({ item }) => {
                 <img
                     src={imgUrl}
                     alt={caption || item.title}
-                    className="max-w-full rounded-2xl shadow-md"
+                    className="max-w-full border-2 border-bauhaus-black"
                 />
             )}
             {caption && (
@@ -938,17 +937,17 @@ const ImageTextContent = ({ item }) => {
                             href={captionLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2 transition-colors"
+                            className="text-bauhaus-blue hover:text-bauhaus-black font-medium underline underline-offset-2 transition-colors duration-200"
                         >
                             {caption}
                         </a>
                     ) : (
-                        <p className="text-slate-600 font-medium">{caption}</p>
+                        <p className="text-bauhaus-black font-medium">{caption}</p>
                     )}
                 </div>
             )}
             {!imgUrl && !caption && (
-                <p className="text-slate-400 text-sm">此區塊尚無內容</p>
+                <p className="text-bauhaus-black/40 text-sm">此區塊尚無內容</p>
             )}
         </div>
     );

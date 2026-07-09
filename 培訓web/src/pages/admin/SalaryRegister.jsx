@@ -5,9 +5,9 @@ import { Search, Plus, AlertTriangle, X, Calendar, ChevronDown, CheckCircle2, Cl
 import { COURSE_LABELS, ROLE_LABELS } from '../../lib/constants';
 
 const STATUS_STYLES = {
-    pending:  { label: '待核准',   color: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock },
-    approved: { label: '已核准',   color: 'bg-blue-50 text-blue-700 border-blue-200', icon: CheckCircle2 },
-    paid:     { label: '已付款',   color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: Wallet },
+    pending:  { label: '待核准',   color: 'bg-bauhaus-yellow text-bauhaus-black', icon: Clock },
+    approved: { label: '已核准',   color: 'bg-bauhaus-blue text-white', icon: CheckCircle2 },
+    paid:     { label: '已付款',   color: 'bg-bauhaus-black text-white', icon: Wallet },
 };
 
 const SalaryRegister = () => {
@@ -64,16 +64,16 @@ const SalaryRegister = () => {
         <div className="p-4 sm:p-8">
             <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900">薪資登記</h1>
-                    <p className="text-slate-500 mt-1 text-sm">
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">薪資登記</h1>
+                    <p className="text-bauhaus-black/60 font-medium mt-1 text-sm">
                         共 {sessions.length} 筆紀錄
                         {pendingCount > 0 && (
-                            <button onClick={() => setStatusFilter('pending')} className="ml-2 text-amber-600 font-bold hover:underline">
+                            <button onClick={() => setStatusFilter('pending')} className="ml-2 text-bauhaus-black font-bold hover:underline">
                                 🔔 {pendingCount} 筆待審核
                             </button>
                         )}
                         {anomalyCount > 0 && (
-                            <button onClick={() => setAnomalyOnly(!anomalyOnly)} className="ml-2 text-rose-600 font-bold hover:underline">
+                            <button onClick={() => setAnomalyOnly(!anomalyOnly)} className="ml-2 text-bauhaus-red font-bold hover:underline">
                                 ⚠️ {anomalyCount} 筆異常
                             </button>
                         )}
@@ -81,7 +81,7 @@ const SalaryRegister = () => {
                 </div>
                 <button
                     onClick={() => setShowAdd(true)}
-                    className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl transition-colors"
+                    className="bh-btn bh-btn-blue px-4 py-2.5"
                 >
                     <Plus className="w-4 h-4" /> 新增薪資紀錄
                 </button>
@@ -89,49 +89,49 @@ const SalaryRegister = () => {
 
             {/* 統計卡 */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                <StatCard label="篩選筆數" value={stats.count.toLocaleString()} />
-                <StatCard label="總薪資" value={`$${Math.round(stats.total).toLocaleString()}`} color="text-blue-600" />
-                <StatCard label="已付款" value={`$${Math.round(stats.paid).toLocaleString()}`} color="text-emerald-600" />
-                <StatCard label="未付款" value={`$${Math.round(stats.unpaid).toLocaleString()}`} color="text-amber-600" />
+                <StatCard label="篩選筆數" value={stats.count.toLocaleString()} idx={0} />
+                <StatCard label="總薪資" value={`$${Math.round(stats.total).toLocaleString()}`} color="text-bauhaus-blue" idx={1} />
+                <StatCard label="已付款" value={`$${Math.round(stats.paid).toLocaleString()}`} color="text-bauhaus-blue" idx={2} />
+                <StatCard label="未付款" value={`$${Math.round(stats.unpaid).toLocaleString()}`} color="text-bauhaus-red" idx={0} />
             </div>
 
             {/* 篩選列 */}
             <div className="flex flex-wrap gap-2 mb-4 items-center">
                 <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bauhaus-black/40" />
                     <input
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="搜尋姓名、課程名稱..."
-                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-blue-400"
+                        className="bh-input w-full pl-9 pr-3 py-2 text-sm"
                     />
                 </div>
                 <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
-                    className="text-sm px-3 py-2 rounded-lg border border-slate-200 outline-none">
+                    className="bh-input text-sm px-3 py-2 w-auto">
                     <option value="">全部月份</option>
                     {months.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-                    className="text-sm px-3 py-2 rounded-lg border border-slate-200 outline-none">
+                    className="bh-input text-sm px-3 py-2 w-auto">
                     <option value="">全部狀態</option>
                     <option value="pending">待核准</option>
                     <option value="approved">已核准</option>
                     <option value="paid">已付款</option>
                 </select>
-                <label className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50">
-                    <input type="checkbox" checked={anomalyOnly} onChange={e => setAnomalyOnly(e.target.checked)} className="w-5 h-5" />
+                <label className="inline-flex items-center gap-2 text-sm px-3 py-2 border-2 border-bauhaus-black cursor-pointer hover:bg-bauhaus-cream">
+                    <input type="checkbox" checked={anomalyOnly} onChange={e => setAnomalyOnly(e.target.checked)} className="w-5 h-5 accent-bauhaus-red" />
                     僅看異常
                 </label>
             </div>
 
             {/* 表格 */}
             {loading ? (
-                <div className="p-12 text-center text-slate-500">載入中...</div>
+                <div className="p-12 text-center text-bauhaus-black/60 font-bold">載入中...</div>
             ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="bh-card overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-slate-400 text-xs uppercase tracking-wider">
+                            <thead className="bg-bauhaus-black text-white text-xs uppercase tracking-wider">
                                 <tr>
                                     <th className="px-4 py-3 text-left">日期</th>
                                     <th className="px-4 py-3 text-left">講師</th>
@@ -143,16 +143,16 @@ const SalaryRegister = () => {
                                     <th className="px-4 py-3 text-left">狀態</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
+                            <tbody className="divide-y-2 divide-bauhaus-black/20">
                                 {filtered.slice(0, 200).map(s => <SalaryRow key={s.id} session={s} onEdit={() => setEditing(s)} />)}
                                 {filtered.length === 0 && (
-                                    <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">沒有符合的紀錄</td></tr>
+                                    <tr><td colSpan={8} className="px-4 py-12 text-center text-bauhaus-black/50">沒有符合的紀錄</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
                     {filtered.length > 200 && (
-                        <div className="px-4 py-3 text-xs text-slate-400 text-center bg-slate-50 border-t border-slate-100">
+                        <div className="px-4 py-3 text-xs text-bauhaus-black/50 text-center bg-bauhaus-cream border-t-2 border-bauhaus-black">
                             僅顯示前 200 筆,請使用篩選縮小範圍
                         </div>
                     )}
@@ -171,10 +171,18 @@ const SalaryRegister = () => {
 };
 
 
-const StatCard = ({ label, value, color = 'text-slate-900' }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4">
-        <div className="text-xs text-slate-400 font-medium">{label}</div>
-        <div className={`text-xl sm:text-2xl font-black mt-1 ${color}`}>{value}</div>
+const STAT_DECO_SHAPES = ['bg-bauhaus-red', 'bg-bauhaus-blue rounded-full', 'bg-bauhaus-yellow'];
+const STAT_DECO_STYLE = { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' };
+
+const StatCard = ({ label, value, color = 'text-bauhaus-black', idx = 0 }) => (
+    <div className="bh-card relative p-4">
+        <span
+            className={`absolute -top-2 -right-2 w-4 h-4 ${STAT_DECO_SHAPES[idx % 3]}`}
+            style={idx % 3 === 2 ? STAT_DECO_STYLE : undefined}
+            aria-hidden="true"
+        />
+        <div className="bh-label text-bauhaus-black/60">{label}</div>
+        <div className={`text-2xl sm:text-4xl font-black tabular-nums mt-1 ${color}`}>{value}</div>
     </div>
 );
 
@@ -186,39 +194,39 @@ const SalaryRow = ({ session, onEdit }) => {
     return (
         <tr
             onClick={onEdit}
-            className={`cursor-pointer ${s.is_anomaly ? 'bg-rose-50/40 hover:bg-rose-50/60' : s.status === 'pending' ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50'}`}
+            className={`cursor-pointer ${s.is_anomaly ? 'bg-bauhaus-red/10 hover:bg-bauhaus-red/20' : s.status === 'pending' ? 'bg-bauhaus-yellow/20 hover:bg-bauhaus-yellow/30' : 'hover:bg-bauhaus-cream'}`}
         >
             <td className="px-4 py-3">
                 <div className="flex items-center gap-1.5">
-                    {s.is_anomaly && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" title={s.anomaly_reasons?.join(', ')} />}
-                    <span className="text-slate-700">{s.session_date}</span>
+                    {s.is_anomaly && <AlertTriangle className="w-3.5 h-3.5 text-bauhaus-red" title={s.anomaly_reasons?.join(', ')} />}
+                    <span className="text-bauhaus-black/80">{s.session_date}</span>
                 </div>
             </td>
             <td className="px-4 py-3">
-                <div className="font-semibold text-slate-900">{s.instructor_name}</div>
+                <div className="font-semibold text-bauhaus-black">{s.instructor_name}</div>
                 {s.instructor_role_at_time && (
-                    <div className="text-xs text-slate-400">{s.instructor_role_at_time}</div>
+                    <div className="text-xs text-bauhaus-black/50">{s.instructor_role_at_time}</div>
                 )}
             </td>
             <td className="px-4 py-3">
-                <div className="text-slate-700">{COURSE_LABELS[s.course_type] || s.course_type}</div>
-                {s.course_name && <div className="text-xs text-slate-500 truncate max-w-[200px]">{s.course_name}</div>}
+                <div className="text-bauhaus-black/80">{COURSE_LABELS[s.course_type] || s.course_type}</div>
+                {s.course_name && <div className="text-xs text-bauhaus-black/50 truncate max-w-[200px]">{s.course_name}</div>}
             </td>
-            <td className="px-4 py-3 text-right text-slate-600 text-xs">
+            <td className="px-4 py-3 text-right text-bauhaus-black/70 text-xs">
                 {s.duration_hours ? `${s.duration_hours}h` : '–'}
                 {s.student_count ? ` / ${s.student_count}人` : ''}
             </td>
-            <td className="px-4 py-3 text-right text-slate-700">
+            <td className="px-4 py-3 text-right text-bauhaus-black/80">
                 {s.base_salary > 0 ? `$${Math.round(s.base_salary).toLocaleString()}` : '–'}
             </td>
-            <td className="px-4 py-3 text-right text-slate-700">
+            <td className="px-4 py-3 text-right text-bauhaus-black/80">
                 {s.bonus > 0 ? `$${Math.round(s.bonus).toLocaleString()}` : '–'}
             </td>
-            <td className="px-4 py-3 text-right font-bold text-slate-900">
+            <td className="px-4 py-3 text-right font-bold text-bauhaus-black">
                 ${Math.round(s.total_salary || 0).toLocaleString()}
             </td>
             <td className="px-4 py-3">
-                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full border ${status.color}`}>
+                <span className={`bh-chip ${status.color}`}>
                     <StatusIcon className="w-3 h-3" />{status.label}
                 </span>
             </td>
@@ -272,11 +280,11 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={onClose}>
-            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-6 border-b border-slate-100">
-                    <h2 className="text-xl font-black text-slate-900">新增薪資紀錄</h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1">
+        <div className="fixed inset-0 bg-bauhaus-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
+            <div className="bh-card shadow-hard-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-6 border-b-2 border-bauhaus-black">
+                    <h2 className="text-xl font-black text-bauhaus-black">新增薪資紀錄</h2>
+                    <button onClick={onClose} className="text-bauhaus-black/50 hover:text-bauhaus-black p-1">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -284,7 +292,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
                 <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Field label="講師*">
                         <select value={form.instructor_id} onChange={e => setForm({ ...form, instructor_id: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400">
+                            className="bh-input">
                             <option value="">請選擇</option>
                             {instructors.map(i => <option key={i.id} value={i.id}>{i.full_name} {i.instructor_role && `(${i.instructor_role})`}</option>)}
                         </select>
@@ -292,19 +300,19 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
 
                     <Field label="日期*">
                         <input type="date" value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400" />
+                            className="bh-input" />
                     </Field>
 
                     <Field label="課程類型*">
                         <select value={form.course_type} onChange={e => setForm({ ...form, course_type: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400">
+                            className="bh-input">
                             {Object.entries(COURSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                     </Field>
 
                     <Field label="角色">
                         <select value={form.role_in_session} onChange={e => setForm({ ...form, role_in_session: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400">
+                            className="bh-input">
                             {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                     </Field>
@@ -312,42 +320,42 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
                     <Field label="課程名稱" full>
                         <input type="text" value={form.course_name} onChange={e => setForm({ ...form, course_name: e.target.value })}
                             placeholder="例:OO 國小週二班 5/20"
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400" />
+                            className="bh-input" />
                     </Field>
 
                     <Field label="時數">
                         <input type="number" step="0.5" value={form.duration_hours} onChange={e => setForm({ ...form, duration_hours: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400" />
+                            className="bh-input" />
                     </Field>
 
                     <Field label="人數">
                         <input type="number" value={form.student_count} onChange={e => setForm({ ...form, student_count: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400" />
+                            className="bh-input" />
                     </Field>
 
                     <Field label="薪資">
                         <input type="number" value={form.base_salary} onChange={e => setForm({ ...form, base_salary: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400" />
+                            className="bh-input" />
                     </Field>
 
                     <Field label="獎金">
                         <input type="number" value={form.bonus} onChange={e => setForm({ ...form, bonus: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400" />
+                            className="bh-input" />
                     </Field>
 
                     <Field label="備註" full>
                         <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400" />
+                            className="bh-input" />
                     </Field>
                 </div>
 
                 {error && (
-                    <div className="px-6 pb-2 text-sm text-rose-600">{error}</div>
+                    <div className="px-6 pb-2 text-sm text-bauhaus-red font-bold">{error}</div>
                 )}
 
-                <div className="flex justify-end gap-2 p-6 border-t border-slate-100">
-                    <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100">取消</button>
-                    <button onClick={submit} disabled={saving} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-50">
+                <div className="flex justify-end gap-2 p-6 border-t-2 border-bauhaus-black">
+                    <button onClick={onClose} className="bh-btn bh-btn-outline px-4 py-2">取消</button>
+                    <button onClick={submit} disabled={saving} className="bh-btn bh-btn-blue px-4 py-2">
                         {saving ? '儲存中...' : '儲存'}
                     </button>
                 </div>
@@ -358,7 +366,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
 
 const Field = ({ label, children, full = false }) => (
     <div className={full ? 'sm:col-span-2' : ''}>
-        <label className="block text-xs font-bold text-slate-600 mb-1">{label}</label>
+        <label className="bh-label block mb-1">{label}</label>
         {children}
     </div>
 );
@@ -420,49 +428,49 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
     const approve = () => save({ status: 'approved', approved_by: profile?.id, approved_at: new Date().toISOString() });
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={onClose}>
-            <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-6 border-b border-slate-100">
+        <div className="fixed inset-0 bg-bauhaus-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
+            <div className="bh-card shadow-hard-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-6 border-b-2 border-bauhaus-black">
                     <div>
-                        <h2 className="text-xl font-black text-slate-900">
+                        <h2 className="text-xl font-black text-bauhaus-black">
                             審核 / 編輯薪資紀錄
                         </h2>
-                        <p className="text-sm text-slate-500 mt-0.5">
+                        <p className="text-sm text-bauhaus-black/60 mt-0.5">
                             {session.instructor_name} {session.instructor_role_at_time && `(${session.instructor_role_at_time})`}
-                            {session.source === 'self_report' && <span className="ml-2 text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold">講師自填</span>}
-                            {session.source === 'historical_import' && <span className="ml-2 text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">歷史匯入</span>}
+                            {session.source === 'self_report' && <span className="bh-chip ml-2 bg-bauhaus-blue text-white">講師自填</span>}
+                            {session.source === 'historical_import' && <span className="bh-chip ml-2 bg-bauhaus-muted text-bauhaus-black">歷史匯入</span>}
                         </p>
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1">
+                    <button onClick={onClose} className="text-bauhaus-black/50 hover:text-bauhaus-black p-1">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 {/* 異常提示 */}
                 {session.is_anomaly && session.anomaly_reasons?.length > 0 && (
-                    <div className="mx-6 mt-4 bg-rose-50 border border-rose-200 rounded-xl p-3 flex gap-2">
-                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="mx-6 mt-4 bg-bauhaus-red/10 border-2 border-bauhaus-red p-3 flex gap-2">
+                        <AlertTriangle className="w-4 h-4 text-bauhaus-red shrink-0 mt-0.5" />
                         <div className="text-sm">
-                            <div className="font-bold text-rose-700">系統偵測到異常</div>
-                            <div className="text-rose-600 text-xs mt-0.5">{session.anomaly_reasons.join('、')}</div>
+                            <div className="font-bold text-bauhaus-red">系統偵測到異常</div>
+                            <div className="text-bauhaus-red/80 text-xs mt-0.5">{session.anomaly_reasons.join('、')}</div>
                         </div>
                     </div>
                 )}
 
                 {/* 講師原本填的回報 */}
                 {(session.self_review || session.progress_note || session.incident_report) && (
-                    <div className="mx-6 mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
-                        <div className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                    <div className="mx-6 mt-4 bg-bauhaus-cream border-2 border-bauhaus-black p-4 space-y-2">
+                        <div className="text-xs font-bold text-bauhaus-black/70 flex items-center gap-1">
                             <MessageSquare className="w-3.5 h-3.5" /> 講師回報
                         </div>
                         {session.self_review && (
-                            <div><span className="text-xs text-slate-400">自評:</span><div className="text-sm text-slate-700 whitespace-pre-wrap">{session.self_review}</div></div>
+                            <div><span className="text-xs text-bauhaus-black/50">自評:</span><div className="text-sm text-bauhaus-black/80 whitespace-pre-wrap">{session.self_review}</div></div>
                         )}
                         {session.progress_note && (
-                            <div><span className="text-xs text-slate-400">學習進度:</span><div className="text-sm text-slate-700 whitespace-pre-wrap">{session.progress_note}</div></div>
+                            <div><span className="text-xs text-bauhaus-black/50">學習進度:</span><div className="text-sm text-bauhaus-black/80 whitespace-pre-wrap">{session.progress_note}</div></div>
                         )}
                         {session.incident_report && (
-                            <div><span className="text-xs text-slate-400">特殊狀況:</span><div className="text-sm text-rose-700 whitespace-pre-wrap">{session.incident_report}</div></div>
+                            <div><span className="text-xs text-bauhaus-black/50">特殊狀況:</span><div className="text-sm text-bauhaus-red whitespace-pre-wrap">{session.incident_report}</div></div>
                         )}
                     </div>
                 )}
@@ -470,35 +478,35 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
                 <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Field label="課程類型">
                         <select value={form.course_type} onChange={e => setForm({ ...form, course_type: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none">
+                            className="bh-input">
                             {Object.entries(COURSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                     </Field>
                     <Field label="日期">
                         <input type="date" value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                            className="bh-input" />
                     </Field>
                     <Field label="課程名稱" full>
                         <input value={form.course_name} onChange={e => setForm({ ...form, course_name: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                            className="bh-input" />
                     </Field>
                     <Field label="時數">
                         <input type="number" step="0.5" value={form.duration_hours} onChange={e => setForm({ ...form, duration_hours: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                            className="bh-input" />
                     </Field>
                     <Field label="人數">
                         <input type="number" value={form.student_count} onChange={e => setForm({ ...form, student_count: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                            className="bh-input" />
                     </Field>
                     <Field label="角色">
                         <select value={form.role_in_session} onChange={e => setForm({ ...form, role_in_session: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none">
+                            className="bh-input">
                             {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                     </Field>
                     <Field label="狀態">
                         <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none">
+                            className="bh-input">
                             <option value="pending">待核准</option>
                             <option value="approved">已核准</option>
                             <option value="paid">已付款</option>
@@ -507,25 +515,25 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
                 </div>
 
                 {/* 薪資區塊 */}
-                <div className="mx-6 mb-4 bg-blue-50/50 border border-blue-100 rounded-xl p-4">
-                    <div className="text-xs font-bold text-blue-700 mb-3">薪資設定</div>
+                <div className="mx-6 mb-4 bg-bauhaus-cream border-2 border-bauhaus-black p-4">
+                    <div className="text-xs font-bold text-bauhaus-black/70 mb-3 uppercase tracking-widest">薪資設定</div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <Field label="基本薪資">
                             <input type="number" value={form.base_salary} onChange={e => setForm({ ...form, base_salary: e.target.value })}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                                className="bh-input" />
                         </Field>
                         <Field label="獎金">
                             <input type="number" value={form.bonus} onChange={e => setForm({ ...form, bonus: e.target.value })}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                                className="bh-input" />
                         </Field>
                         <Field label="總計(自動)">
-                            <div className="w-full px-3 py-2 rounded-lg bg-white border border-blue-200 font-bold text-blue-700">
+                            <div className="w-full px-3 py-2 bg-white border-2 border-bauhaus-black font-bold text-bauhaus-blue">
                                 ${Math.round(total).toLocaleString()}
                             </div>
                         </Field>
                         <Field label="已付款金額">
                             <input type="number" value={form.paid_amount} onChange={e => setForm({ ...form, paid_amount: e.target.value })}
-                                className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                                className="bh-input" />
                         </Field>
                     </div>
                 </div>
@@ -533,27 +541,27 @@ const EditSalaryModal = ({ session, profile, onClose, onSaved }) => {
                 <div className="px-6 pb-4">
                     <Field label="備註" full>
                         <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none" />
+                            className="bh-input" />
                     </Field>
                 </div>
 
-                {error && <div className="px-6 pb-3 text-sm text-rose-600">{error}</div>}
+                {error && <div className="px-6 pb-3 text-sm text-bauhaus-red font-bold">{error}</div>}
 
-                <div className="flex flex-wrap items-center justify-between gap-2 p-6 border-t border-slate-100">
-                    <div className="text-xs text-slate-400">
+                <div className="flex flex-wrap items-center justify-between gap-2 p-6 border-t-2 border-bauhaus-black">
+                    <div className="text-xs text-bauhaus-black/50">
                         {session.registered_by_name && `登記者:${session.registered_by_name} · `}
                         建立於 {new Date(session.created_at).toLocaleString('zh-TW')}
                     </div>
                     <div className="flex gap-2">
                         {session.status === 'pending' && (
                             <button onClick={approve} disabled={saving}
-                                className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm disabled:opacity-50">
+                                className="bh-btn bh-btn-blue px-4 py-2 text-sm">
                                 <CheckCircle2 className="w-4 h-4" /> 核准
                             </button>
                         )}
-                        <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 text-sm">取消</button>
+                        <button onClick={onClose} className="bh-btn bh-btn-outline px-4 py-2 text-sm">取消</button>
                         <button onClick={() => save()} disabled={saving}
-                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm disabled:opacity-50">
+                            className="bh-btn bh-btn-blue px-4 py-2 text-sm">
                             {saving ? '儲存中...' : '儲存'}
                         </button>
                     </div>

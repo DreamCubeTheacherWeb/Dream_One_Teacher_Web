@@ -7,12 +7,12 @@ import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, 
 const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習' };
 
 const STATUS_OPTIONS = [
-    { key: 'active',    label: '講師',     color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    { key: 'staff',     label: '職員',     color: 'bg-blue-50 text-blue-700 border-blue-200' },
-    { key: 'assistant', label: '助教',     color: 'bg-purple-50 text-purple-700 border-purple-200' },
-    { key: 'part_time', label: '工讀生',   color: 'bg-slate-100 text-slate-600 border-slate-200' },
-    { key: 'frozen',    label: '冷凍',     color: 'bg-amber-50 text-amber-700 border-amber-200' },
-    { key: 'cancelled', label: '停止合作', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+    { key: 'active',    label: '講師',     color: 'bg-bauhaus-blue text-white' },
+    { key: 'staff',     label: '職員',     color: 'bg-bauhaus-black text-white' },
+    { key: 'assistant', label: '助教',     color: 'bg-white text-bauhaus-black' },
+    { key: 'part_time', label: '工讀生',   color: 'bg-bauhaus-muted text-bauhaus-black' },
+    { key: 'frozen',    label: '冷凍',     color: 'bg-bauhaus-yellow text-bauhaus-black' },
+    { key: 'cancelled', label: '停止合作', color: 'bg-bauhaus-red text-white' },
 ];
 const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map(s => [s.key, s]));
 
@@ -24,9 +24,9 @@ const DOC_KEYS = [
 ];
 
 const LINK_FILTERS = [
-    { key: '', label: '全部', color: 'bg-slate-900 text-white border-slate-900' },
-    { key: 'linked', label: '已綁帳號', color: 'bg-green-50 text-green-700 border-green-200' },
-    { key: 'unlinked', label: '未綁帳號', color: 'bg-slate-50 text-slate-600 border-slate-200' },
+    { key: '', label: '全部', color: 'bg-bauhaus-black text-white' },
+    { key: 'linked', label: '已綁帳號', color: 'bg-bauhaus-blue text-white' },
+    { key: 'unlinked', label: '未綁帳號', color: 'bg-bauhaus-muted text-bauhaus-black' },
 ];
 
 const InstructorList = () => {
@@ -135,38 +135,38 @@ const InstructorList = () => {
         await loadInstructors();
     };
 
-    if (loading) return <div className="p-12 text-center text-slate-500">載入中...</div>;
+    if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold">載入中...</div>;
 
     return (
         <div className="p-4 sm:p-8">
             <div className="flex items-start sm:items-center justify-between mb-8 gap-3 flex-col sm:flex-row">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900">講師資料總覽</h1>
-                    <p className="text-slate-500 mt-1">
-                        共 {instructors.length} 位 ・ <span className="text-green-600 font-bold">{linkedCount}</span> 位已綁帳號 ・ <span className="text-slate-500 font-bold">{unlinkedCount}</span> 位待登入
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">講師資料總覽</h1>
+                    <p className="text-bauhaus-black/60 mt-1 font-medium">
+                        共 {instructors.length} 位 ・ <span className="text-bauhaus-blue font-bold">{linkedCount}</span> 位已綁帳號 ・ <span className="text-bauhaus-black/60 font-bold">{unlinkedCount}</span> 位待登入
                     </p>
                 </div>
                 {isAdmin && (
                     <div className="flex items-center gap-2 flex-wrap">
                         <Link
                             to="/admin/claims"
-                            className={`inline-flex items-center gap-2 font-bold px-3 py-2.5 rounded-xl transition-colors text-sm min-h-[44px] ${
+                            className={`inline-flex items-center gap-2 font-bold px-3 py-2.5 border-2 border-bauhaus-black transition-colors text-sm min-h-[44px] ${
                                 pendingClaimCount > 0
-                                    ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-                                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                                    ? 'bg-bauhaus-yellow text-bauhaus-black hover:bg-bauhaus-yellow/80'
+                                    : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
                             }`}
                         >
                             <Inbox className="w-4 h-4" />
                             認領申請
                             {pendingClaimCount > 0 && (
-                                <span className="bg-amber-500 text-white text-xs px-1.5 rounded-full min-w-[20px] text-center">
+                                <span className="bg-bauhaus-black text-white text-xs px-1.5 min-w-[20px] text-center">
                                     {pendingClaimCount}
                                 </span>
                             )}
                         </Link>
                         <button
                             onClick={() => setShowAddModal(true)}
-                            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md shadow-blue-500/20 transition-colors"
+                            className="bh-btn bh-btn-blue px-4 py-2.5"
                         >
                             <Plus className="w-4 h-4" /> 新增講師
                         </button>
@@ -175,13 +175,13 @@ const InstructorList = () => {
             </div>
 
             <div className="relative mb-3">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-bauhaus-black/40" />
                 <input
                     type="text"
                     placeholder="搜尋姓名、Email 或手機號碼⋯⋯"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                    className="bh-input pl-12 py-3"
                 />
             </div>
 
@@ -193,8 +193,8 @@ const InstructorList = () => {
                         <button
                             key={f.key || 'all'}
                             onClick={() => setLinkFilter(f.key)}
-                            className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors min-h-[44px] ${
-                                active ? f.color + ' ring-2 ring-offset-1 ring-slate-300' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                            className={`bh-chip transition-colors min-h-[44px] ${
+                                active ? f.color : 'bg-white text-bauhaus-black/60 hover:bg-bauhaus-muted'
                             }`}
                         >
                             {f.label} {count}
@@ -206,8 +206,8 @@ const InstructorList = () => {
             <div className="flex flex-wrap gap-2 mb-6">
                 <button
                     onClick={() => setStatusFilter('')}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors min-h-[44px] ${
-                        !statusFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+                    className={`bh-chip transition-colors min-h-[44px] ${
+                        !statusFilter ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black/60 hover:bg-bauhaus-muted'
                     }`}
                 >
                     全部狀態
@@ -216,20 +216,20 @@ const InstructorList = () => {
                     <button
                         key={s.key}
                         onClick={() => setStatusFilter(statusFilter === s.key ? '' : s.key)}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors min-h-[44px] ${
+                        className={`bh-chip transition-colors min-h-[44px] ${
                             statusFilter === s.key
-                                ? `${s.color} ring-2 ring-offset-1 ring-slate-300`
-                                : `${s.color} opacity-60 hover:opacity-100`
+                                ? `${s.color}`
+                                : 'bg-white text-bauhaus-black/60 hover:bg-bauhaus-muted'
                         }`}
                     >
                         {s.label} {statusCounts[s.key] || 0}
                     </button>
                 ))}
-                <div className="border-l border-slate-200 mx-2"></div>
+                <div className="border-l-2 border-bauhaus-black/20 mx-2"></div>
                 <select
                     value={roleFilter}
                     onChange={e => setRoleFilter(e.target.value)}
-                    className="text-xs font-bold px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-600 cursor-pointer hover:border-slate-400 outline-none"
+                    className="bh-chip bg-white text-bauhaus-black cursor-pointer hover:bg-bauhaus-muted outline-none"
                 >
                     <option value="">全部等級</option>
                     {Object.entries(ROLE_LABELS).map(([k, v]) => (
@@ -240,7 +240,7 @@ const InstructorList = () => {
 
             <div className="block md:hidden space-y-3">
                 {filtered.length === 0 ? (
-                    <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400">
+                    <div className="bh-card p-8 text-center text-bauhaus-black/50">
                         {search ? '找不到符合的講師' : '尚無講師資料'}
                     </div>
                 ) : (
@@ -261,9 +261,9 @@ const InstructorList = () => {
                 )}
             </div>
 
-            <div className="hidden md:block bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="hidden md:block bh-card overflow-hidden">
                 <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                    <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider">
                         <tr>
                             <th className="px-6 py-4">姓名</th>
                             <th className="px-6 py-4">Email</th>
@@ -274,7 +274,7 @@ const InstructorList = () => {
                             <th className="px-6 py-4 text-right">操作</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y-2 divide-bauhaus-black/20">
                         {filtered.map(inst => (
                             <InstructorRow
                                 key={inst.id}
@@ -291,7 +291,7 @@ const InstructorList = () => {
                         ))}
                         {filtered.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
+                                <td colSpan={7} className="px-6 py-12 text-center text-bauhaus-black/50">
                                     {search ? '找不到符合的講師' : '尚無講師資料'}
                                 </td>
                             </tr>
@@ -323,11 +323,11 @@ const InstructorList = () => {
 // ───────────────────────────────────────────────────────────────
 const LinkBadge = ({ userId }) => (
     userId ? (
-        <span className="inline-flex items-center gap-1 text-xs font-bold bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
+        <span className="bh-chip bg-bauhaus-blue text-white">
             <Check className="w-3 h-3" /> 已綁
         </span>
     ) : (
-        <span className="inline-flex items-center gap-1 text-xs font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+        <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">
             未綁
         </span>
     )
@@ -339,7 +339,7 @@ const LinkBadge = ({ userId }) => (
 const InstructorExpandedContent = ({ inst, urls }) => (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-3">
-            <h3 className="font-bold text-slate-900 text-sm">基本資料</h3>
+            <h3 className="bh-label">基本資料</h3>
             <InfoRow label="出生年月日" value={inst.birth_date} />
             <InfoRow label="身分證字號" value={inst.id_number ? '••••••' + inst.id_number.slice(-4) : null} />
             <InfoRow label="手機" value={inst.phone_mobile} />
@@ -353,31 +353,31 @@ const InstructorExpandedContent = ({ inst, urls }) => (
             {inst.facebook_url && (
                 <InfoRow
                     label="Facebook"
-                    value={<a href={inst.facebook_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline inline-flex items-center gap-1">連結 <ExternalLink className="w-3 h-3" /></a>}
+                    value={<a href={inst.facebook_url} target="_blank" rel="noopener noreferrer" className="text-bauhaus-blue hover:underline inline-flex items-center gap-1">連結 <ExternalLink className="w-3 h-3" /></a>}
                 />
             )}
 
-            <h3 className="font-bold text-slate-900 text-sm pt-3">教學資訊</h3>
+            <h3 className="bh-label pt-3">教學資訊</h3>
             <InfoRow label="接課頻率(學期)" value={inst.teaching_freq_semester} />
             <InfoRow label="接課頻率(寒暑假)" value={inst.teaching_freq_vacation} />
             <div>
-                <span className="text-xs text-slate-400">接課地區:</span>
+                <span className="text-xs text-bauhaus-black/40">接課地區:</span>
                 <div className="flex flex-wrap gap-1 mt-1">
                     {inst.teaching_regions?.length ? (
                         inst.teaching_regions.map(r => (
-                            <span key={r} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{r}</span>
+                            <span key={r} className="bh-chip bg-white text-bauhaus-black">{r}</span>
                         ))
                     ) : inst.teaching_regions_raw ? (
-                        <span className="text-xs text-slate-500 italic">{inst.teaching_regions_raw}(未對應到縣市)</span>
+                        <span className="text-xs text-bauhaus-black/50 italic">{inst.teaching_regions_raw}(未對應到縣市)</span>
                     ) : (
-                        <span className="text-xs text-slate-300">—</span>
+                        <span className="text-xs text-bauhaus-black/30">—</span>
                     )}
                 </div>
             </div>
 
             {(inst.bio_personal_experience || inst.bio_teaching_experience || inst.teaching_philosophy || inst.bio_notes) && (
                 <>
-                    <h3 className="font-bold text-slate-900 text-sm pt-3">經歷 / 理念</h3>
+                    <h3 className="bh-label pt-3">經歷 / 理念</h3>
                     {inst.bio_personal_experience && <BioBlock label="個人經歷" text={inst.bio_personal_experience} />}
                     {inst.bio_teaching_experience && <BioBlock label="授課經驗" text={inst.bio_teaching_experience} />}
                     {inst.teaching_philosophy && <BioBlock label="教學理念" text={inst.teaching_philosophy} />}
@@ -387,13 +387,13 @@ const InstructorExpandedContent = ({ inst, urls }) => (
 
             {(inst.bank_info_raw || inst.note_to_team || inst.note_internal) && (
                 <>
-                    <h3 className="font-bold text-slate-900 text-sm pt-3">其他</h3>
+                    <h3 className="bh-label pt-3">其他</h3>
                     <InfoRow label="匯款帳戶" value={inst.bank_info_raw} />
                     <InfoRow label="想對團隊說" value={inst.note_to_team} />
                     {inst.note_internal && (
-                        <div className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mt-2">
-                            <div className="text-xs font-bold text-rose-700 mb-0.5">內部備註</div>
-                            <div className="text-xs text-rose-900 whitespace-pre-wrap">{inst.note_internal}</div>
+                        <div className="bg-bauhaus-red/10 border-2 border-bauhaus-red px-3 py-2 mt-2">
+                            <div className="text-xs font-bold text-bauhaus-red mb-0.5">內部備註</div>
+                            <div className="text-xs text-bauhaus-black whitespace-pre-wrap">{inst.note_internal}</div>
                         </div>
                     )}
                 </>
@@ -401,30 +401,30 @@ const InstructorExpandedContent = ({ inst, urls }) => (
         </div>
 
         <div>
-            <h3 className="font-bold text-slate-900 text-sm mb-3">上傳文件</h3>
+            <h3 className="bh-label mb-3">上傳文件</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {DOC_KEYS.map(({ key, label }) => {
                     const externalUrl = inst[`${key}_external_url`];
                     const storageUrl = urls[key];
                     return (
-                        <div key={key} className="border border-slate-200 rounded-xl p-3">
-                            <div className="text-xs font-medium text-slate-500 mb-2">{label}</div>
+                        <div key={key} className="border-2 border-bauhaus-black p-3">
+                            <div className="text-xs font-bold text-bauhaus-black/60 mb-2">{label}</div>
                             {storageUrl ? (
                                 <a href={storageUrl} target="_blank" rel="noopener noreferrer" className="block group">
-                                    <img src={storageUrl} alt={label} className="w-full h-24 object-cover rounded-lg" />
-                                    <div className="flex items-center gap-1 text-xs text-blue-500 mt-1 group-hover:underline">
+                                    <img src={storageUrl} alt={label} className="w-full h-24 object-cover border-2 border-bauhaus-black" />
+                                    <div className="flex items-center gap-1 text-xs text-bauhaus-blue mt-1 group-hover:underline">
                                         <ExternalLink className="w-3 h-3" /> 開啟原圖
                                     </div>
                                 </a>
                             ) : externalUrl ? (
                                 <a href={externalUrl} target="_blank" rel="noopener noreferrer"
-                                    className="block group w-full h-24 bg-amber-50 border border-amber-200 rounded-lg flex flex-col items-center justify-center gap-1 hover:bg-amber-100 transition-colors">
-                                    <ExternalLink className="w-5 h-5 text-amber-600" />
-                                    <span className="text-xs font-medium text-amber-700">Google Drive</span>
-                                    <span className="text-[10px] text-amber-600 group-hover:underline">點擊開啟</span>
+                                    className="block group w-full h-24 bg-bauhaus-yellow border-2 border-bauhaus-black flex flex-col items-center justify-center gap-1 hover:bg-bauhaus-yellow/80 transition-colors">
+                                    <ExternalLink className="w-5 h-5 text-bauhaus-black" />
+                                    <span className="text-xs font-bold text-bauhaus-black">Google Drive</span>
+                                    <span className="text-[10px] text-bauhaus-black/70 group-hover:underline">點擊開啟</span>
                                 </a>
                             ) : (
-                                <div className="w-full h-24 bg-slate-100 rounded-lg flex items-center justify-center text-xs text-slate-400">
+                                <div className="w-full h-24 bg-bauhaus-muted border-2 border-bauhaus-black/20 flex items-center justify-center text-xs text-bauhaus-black/40">
                                     未上傳
                                 </div>
                             )}
@@ -437,11 +437,11 @@ const InstructorExpandedContent = ({ inst, urls }) => (
 );
 
 const StatusBadge = ({ status }) => {
-    if (!status) return <span className="text-xs text-slate-300">—</span>;
+    if (!status) return <span className="text-xs text-bauhaus-black/30">—</span>;
     const s = STATUS_MAP[status];
-    if (!s) return <span className="text-xs text-slate-400">{status}</span>;
+    if (!s) return <span className="text-xs text-bauhaus-black/40">{status}</span>;
     return (
-        <span className={`inline-flex items-center text-xs font-bold px-2.5 py-0.5 rounded-full border ${s.color}`}>
+        <span className={`bh-chip ${s.color}`}>
             {s.label}
         </span>
     );
@@ -449,25 +449,25 @@ const StatusBadge = ({ status }) => {
 
 const BioBlock = ({ label, text }) => (
     <div className="mt-2">
-        <div className="text-xs text-slate-400 mb-0.5">{label}</div>
-        <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{text}</p>
+        <div className="text-xs text-bauhaus-black/40 mb-0.5">{label}</div>
+        <p className="text-sm text-bauhaus-black/80 whitespace-pre-wrap leading-relaxed">{text}</p>
     </div>
 );
 
 const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+    <div className="bh-card overflow-hidden">
         <div
-            className="p-4 flex items-start gap-3 cursor-pointer hover:bg-slate-50 transition-colors"
+            className="p-4 flex items-start gap-3 cursor-pointer hover:bg-bauhaus-cream transition-colors"
             onClick={onToggle}
         >
             <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-slate-900 truncate">{inst.full_name}</span>
+                    <span className="font-bold text-bauhaus-black truncate">{inst.full_name}</span>
                     {inst.gender && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 shrink-0">{inst.gender}</span>
+                        <span className="bh-chip bg-bauhaus-muted text-bauhaus-black shrink-0">{inst.gender}</span>
                     )}
                 </div>
-                <div className="text-sm text-slate-500 mt-0.5 truncate">{inst.email_primary}</div>
+                <div className="text-sm text-bauhaus-black/60 mt-0.5 truncate">{inst.email_primary}</div>
                 <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
                     <StatusBadge status={inst.employment_status} />
                     <LinkBadge userId={inst.user_id} />
@@ -475,8 +475,8 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                         <select
                             value={inst.instructor_role || ''}
                             onChange={e => onRoleChange(e.target.value)}
-                            className={`text-xs font-bold px-2.5 py-1 rounded-full border-0 outline-none cursor-pointer ${
-                                inst.instructor_role ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'
+                            className={`bh-chip border-0 outline-none cursor-pointer ${
+                                inst.instructor_role ? 'bg-bauhaus-black text-white' : 'bg-bauhaus-muted text-bauhaus-black'
                             }`}
                         >
                             <option value="">未設定</option>
@@ -485,35 +485,35 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                             ))}
                         </select>
                     ) : inst.instructor_role ? (
-                        <span className="inline-flex items-center text-xs font-bold bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full">
+                        <span className="bh-chip bg-bauhaus-black text-white">
                             {ROLE_LABELS[inst.instructor_role] || inst.instructor_role}
                         </span>
                     ) : (
-                        <span className="text-xs text-slate-400">未設定</span>
+                        <span className="text-xs text-bauhaus-black/40">未設定</span>
                     )}
-                    <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                    <span className="inline-flex items-center gap-1 text-xs text-bauhaus-black/60">
                         <MapPin className="w-3 h-3" />
                         {inst.teaching_regions?.length || inst.teaching_regions_raw ? (inst.teaching_regions?.length || '–') : 0}
                     </span>
-                    <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${docCount === 4 ? 'bg-green-50 text-green-600' : docCount > 0 ? 'bg-yellow-50 text-yellow-600' : 'bg-slate-100 text-slate-400'}`}>
+                    <span className={`bh-chip ${docCount === 4 ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
                         <FileImage className="w-3 h-3" />
                         {docCount}/4
                     </span>
                     {isAdmin && (
                         inst.user_id ? (
-                            <button onClick={onUnlink} className="text-xs text-rose-500 hover:text-rose-700 hover:underline">解綁</button>
+                            <button onClick={onUnlink} className="text-xs font-bold text-bauhaus-red hover:underline">解綁</button>
                         ) : (
-                            <button onClick={onLink} className="text-xs text-blue-500 hover:text-blue-700 hover:underline">綁定</button>
+                            <button onClick={onLink} className="text-xs font-bold text-bauhaus-blue hover:underline">綁定</button>
                         )
                     )}
                 </div>
             </div>
-            <button className="shrink-0 text-slate-400 hover:text-blue-600 transition-colors p-1">
+            <button className="shrink-0 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors p-1">
                 {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
             </button>
         </div>
         {expanded && (
-            <div className="px-4 pb-4 pt-0 bg-slate-50/50">
+            <div className="px-4 pb-4 pt-0 bg-bauhaus-cream border-t-2 border-bauhaus-black">
                 <InstructorExpandedContent inst={inst} urls={urls} />
             </div>
         )}
@@ -522,22 +522,22 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
 
 const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink }) => (
     <>
-        <tr className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={onToggle}>
+        <tr className="hover:bg-bauhaus-cream transition-colors cursor-pointer" onClick={onToggle}>
             <td className="px-6 py-4">
-                <div className="font-semibold text-slate-900">{inst.full_name}</div>
+                <div className="font-bold text-bauhaus-black">{inst.full_name}</div>
                 <div className="mt-1"><StatusBadge status={inst.employment_status} /></div>
             </td>
-            <td className="px-6 py-4 text-sm text-slate-600">{inst.email_primary || <span className="text-slate-300">—</span>}</td>
+            <td className="px-6 py-4 text-sm text-bauhaus-black/60">{inst.email_primary || <span className="text-bauhaus-black/30">—</span>}</td>
             <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-2">
                     <LinkBadge userId={inst.user_id} />
                     {isAdmin && (
                         inst.user_id ? (
-                            <button onClick={onUnlink} title="解除綁定" className="text-rose-400 hover:text-rose-600 transition-colors">
+                            <button onClick={onUnlink} title="解除綁定" className="text-bauhaus-red/70 hover:text-bauhaus-red transition-colors">
                                 <Unlink className="w-3.5 h-3.5" />
                             </button>
                         ) : (
-                            <button onClick={onLink} title="手動綁定" className="text-blue-400 hover:text-blue-600 transition-colors">
+                            <button onClick={onLink} title="手動綁定" className="text-bauhaus-blue/70 hover:text-bauhaus-blue transition-colors">
                                 <Link2 className="w-3.5 h-3.5" />
                             </button>
                         )
@@ -549,8 +549,8 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                     <select
                         value={inst.instructor_role || ''}
                         onChange={e => onRoleChange(e.target.value)}
-                        className={`text-xs font-bold px-2.5 py-1.5 rounded-full border-0 outline-none cursor-pointer ${
-                            inst.instructor_role ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'
+                        className={`bh-chip border-0 outline-none cursor-pointer ${
+                            inst.instructor_role ? 'bg-bauhaus-black text-white' : 'bg-bauhaus-muted text-bauhaus-black'
                         }`}
                     >
                         <option value="">未設定</option>
@@ -559,31 +559,31 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                         ))}
                     </select>
                 ) : inst.instructor_role ? (
-                    <span className="inline-flex items-center text-xs font-bold bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full">
+                    <span className="bh-chip bg-bauhaus-black text-white">
                         {ROLE_LABELS[inst.instructor_role] || inst.instructor_role}
                     </span>
                 ) : (
-                    <span className="text-xs text-slate-400">未設定</span>
+                    <span className="text-xs text-bauhaus-black/40">未設定</span>
                 )}
             </td>
             <td className="px-6 py-4">
-                <div className="flex items-center gap-1 text-xs text-slate-500">
+                <div className="flex items-center gap-1 text-xs text-bauhaus-black/60">
                     <MapPin className="w-3 h-3" />
                     {inst.teaching_regions?.length
                         ? `${inst.teaching_regions.length} 個縣市`
                         : inst.teaching_regions_raw
-                            ? <span className="text-slate-400 truncate max-w-[120px] inline-block">{inst.teaching_regions_raw}</span>
-                            : <span className="text-slate-300">—</span>}
+                            ? <span className="text-bauhaus-black/40 truncate max-w-[120px] inline-block">{inst.teaching_regions_raw}</span>
+                            : <span className="text-bauhaus-black/30">—</span>}
                 </div>
             </td>
             <td className="px-6 py-4">
-                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${docCount === 4 ? 'bg-green-50 text-green-600' : docCount > 0 ? 'bg-yellow-50 text-yellow-600' : 'bg-slate-100 text-slate-400'}`}>
+                <span className={`bh-chip ${docCount === 4 ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
                     <FileImage className="w-3 h-3" />
                     {docCount}/4
                 </span>
             </td>
             <td className="px-6 py-4 text-right">
-                <button className="text-slate-400 hover:text-blue-600 transition-colors">
+                <button className="text-bauhaus-black/40 hover:text-bauhaus-black transition-colors">
                     {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </button>
             </td>
@@ -591,7 +591,7 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
 
         {expanded && (
             <tr>
-                <td colSpan={7} className="px-6 py-6 bg-slate-50/50">
+                <td colSpan={7} className="px-6 py-6 bg-bauhaus-cream">
                     <InstructorExpandedContent inst={inst} urls={urls} />
                 </td>
             </tr>
@@ -603,8 +603,8 @@ const InfoRow = ({ label, value }) => {
     if (!value) return null;
     return (
         <div className="flex items-start gap-2 text-sm">
-            <span className="text-slate-400 whitespace-nowrap min-w-[100px]">{label}:</span>
-            <span className="text-slate-700">{value}</span>
+            <span className="text-bauhaus-black/40 whitespace-nowrap min-w-[100px]">{label}:</span>
+            <span className="text-bauhaus-black/80">{value}</span>
         </div>
     );
 };
@@ -646,14 +646,14 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
         onCreated();
     };
 
-    const inputCls = 'w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none text-sm';
+    const inputCls = 'bh-input text-sm';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[85dvh] overflow-y-auto">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-                    <h2 className="font-bold text-lg text-slate-900">新增講師</h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
+            <div className="bh-card shadow-hard-lg max-w-md w-full max-h-[85dvh] overflow-y-auto">
+                <div className="flex items-center justify-between px-6 py-4 border-b-2 border-bauhaus-black bg-bauhaus-black text-white">
+                    <h2 className="font-black uppercase tracking-wide">新增講師</h2>
+                    <button onClick={onClose} className="text-white/70 hover:text-white">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -706,18 +706,18 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
                     </div>
 
                     {err && (
-                        <div className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                        <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
                             {err}
                         </div>
                     )}
 
                     <div className="flex justify-end gap-2 pt-2">
                         <button type="button" onClick={onClose}
-                            className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold text-sm">
+                            className="bh-btn bh-btn-outline px-4 py-2 text-sm">
                             取消
                         </button>
                         <button type="submit" disabled={saving}
-                            className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm disabled:opacity-50">
+                            className="bh-btn bh-btn-blue px-5 py-2 text-sm">
                             {saving ? '新增中⋯' : '新增'}
                         </button>
                     </div>
@@ -729,11 +729,11 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
 
 const Field = ({ label, required, hint, children }) => (
     <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">
-            {label} {required && <span className="text-red-500">*</span>}
+        <label className="bh-label block mb-1">
+            {label} {required && <span className="text-bauhaus-red">*</span>}
         </label>
         {children}
-        {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+        {hint && <p className="text-xs text-bauhaus-black/50 mt-1 font-medium normal-case tracking-normal">{hint}</p>}
     </div>
 );
 
@@ -790,72 +790,72 @@ const LinkInstructorModal = ({ inst, onClose, onLinked }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
+            <div className="bh-card shadow-hard-lg max-w-lg w-full max-h-[80vh] flex flex-col">
+                <div className="flex items-center justify-between px-6 py-4 border-b-2 border-bauhaus-black bg-bauhaus-black text-white">
                     <div>
-                        <h2 className="font-bold text-lg text-slate-900">手動綁定</h2>
-                        <p className="text-xs text-slate-500 mt-0.5">
+                        <h2 className="font-black uppercase tracking-wide">手動綁定</h2>
+                        <p className="text-xs text-white/70 mt-0.5">
                             講師:<strong>{inst.full_name}</strong>({inst.email_primary || '無 Email'})
                         </p>
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+                    <button onClick={onClose} className="text-white/70 hover:text-white">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                <div className="px-6 py-3 border-b border-slate-100">
+                <div className="px-6 py-3 border-b-2 border-bauhaus-black">
                     <input
                         type="text" value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="搜尋使用者(姓名或 Email)⋯⋯"
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-blue-400 outline-none text-sm"
+                        className="bh-input text-sm"
                         autoFocus
                     />
-                    <p className="text-xs text-slate-400 mt-1">僅列出尚未綁定其他講師的使用者</p>
+                    <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">僅列出尚未綁定其他講師的使用者</p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-6 py-2">
                     {loading ? (
-                        <div className="text-center text-slate-400 py-8 text-sm">載入中⋯</div>
+                        <div className="text-center text-bauhaus-black/50 py-8 text-sm font-bold">載入中⋯</div>
                     ) : filtered.length === 0 ? (
-                        <div className="text-center text-slate-400 py-8 text-sm">沒有符合的使用者</div>
+                        <div className="text-center text-bauhaus-black/50 py-8 text-sm font-bold">沒有符合的使用者</div>
                     ) : (
                         <div className="space-y-1">
                             {filtered.slice(0, 50).map(u => (
                                 <label key={u.id}
-                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer hover:bg-slate-50 ${selectedUserId === u.id ? 'bg-blue-50 ring-1 ring-blue-200' : ''}`}>
+                                    className={`flex items-center gap-3 px-3 py-2 border-2 cursor-pointer hover:bg-bauhaus-cream ${selectedUserId === u.id ? 'bg-bauhaus-cream border-bauhaus-black' : 'border-transparent'}`}>
                                     <input
                                         type="radio" name="user"
                                         checked={selectedUserId === u.id}
                                         onChange={() => setSelectedUserId(u.id)}
-                                        className="accent-blue-600"
+                                        className="accent-bauhaus-blue"
                                     />
                                     <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-medium text-slate-800 truncate">{u.name || '(無姓名)'}</div>
-                                        <div className="text-xs text-slate-500 truncate">{u.email}</div>
+                                        <div className="text-sm font-bold text-bauhaus-black truncate">{u.name || '(無姓名)'}</div>
+                                        <div className="text-xs text-bauhaus-black/60 truncate">{u.email}</div>
                                     </div>
-                                    <span className="text-xs text-slate-400 px-2 py-0.5 bg-slate-100 rounded-full">{u.role}</span>
+                                    <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">{u.role}</span>
                                 </label>
                             ))}
                             {filtered.length > 50 && (
-                                <div className="text-xs text-slate-400 text-center pt-2">已顯示前 50 筆,請以搜尋縮小範圍</div>
+                                <div className="text-xs text-bauhaus-black/50 text-center pt-2">已顯示前 50 筆,請以搜尋縮小範圍</div>
                             )}
                         </div>
                     )}
                 </div>
 
                 {err && (
-                    <div className="px-6 pt-2 text-sm text-rose-600">{err}</div>
+                    <div className="px-6 pt-2 text-sm text-bauhaus-red font-bold">{err}</div>
                 )}
 
-                <div className="px-6 py-3 border-t border-slate-100 flex justify-end gap-2">
+                <div className="px-6 py-3 border-t-2 border-bauhaus-black flex justify-end gap-2">
                     <button onClick={onClose}
-                        className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold text-sm">
+                        className="bh-btn bh-btn-outline px-4 py-2 text-sm">
                         取消
                     </button>
                     <button onClick={doLink} disabled={saving || !selectedUserId}
-                        className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm disabled:opacity-50">
+                        className="bh-btn bh-btn-blue px-5 py-2 text-sm">
                         {saving ? '綁定中⋯' : '確認綁定'}
                     </button>
                 </div>

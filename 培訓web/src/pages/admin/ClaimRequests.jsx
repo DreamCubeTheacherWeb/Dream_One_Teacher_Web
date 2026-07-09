@@ -4,9 +4,9 @@ import { supabase } from '../../lib/supabaseClient';
 import { ArrowLeft, Check, X, Inbox, ChevronDown, ChevronUp, Mail, Phone, MessageSquare, Clock, ShieldCheck, Ban } from 'lucide-react';
 
 const TABS = [
-    { key: 'pending',  label: '待審核', color: 'text-amber-600',  bg: 'bg-amber-50' },
-    { key: 'approved', label: '已通過', color: 'text-green-600',  bg: 'bg-green-50' },
-    { key: 'rejected', label: '已拒絕', color: 'text-slate-500',  bg: 'bg-slate-100' },
+    { key: 'pending',  label: '待審核', color: 'text-bauhaus-black', bg: 'bg-bauhaus-yellow text-bauhaus-black' },
+    { key: 'approved', label: '已通過', color: 'text-bauhaus-black', bg: 'bg-bauhaus-blue text-white' },
+    { key: 'rejected', label: '已拒絕', color: 'text-bauhaus-black', bg: 'bg-bauhaus-muted text-bauhaus-black' },
 ];
 
 const ClaimRequests = () => {
@@ -68,30 +68,28 @@ const ClaimRequests = () => {
 
     return (
         <div className="p-4 sm:p-8">
-            <Link to="/admin" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-blue-600 mb-4 min-h-[44px]">
+            <Link to="/admin" className="inline-flex items-center gap-1 text-sm font-bold text-bauhaus-black/60 hover:text-bauhaus-black mb-4 min-h-[44px]">
                 <ArrowLeft className="w-4 h-4" /> 返回後台
             </Link>
 
             <div className="mb-6">
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900">講師資料認領申請</h1>
-                <p className="text-slate-500 mt-1 text-sm">
+                <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">講師資料認領申請</h1>
+                <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">
                     當使用者的 Email 與歷史講師資料不一致時,會在此提出認領申請。請核對後決定通過或拒絕。
                 </p>
             </div>
 
-            <div className="flex gap-2 mb-6 border-b border-slate-100">
+            <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black mb-6">
                 {TABS.map(t => (
                     <button
                         key={t.key}
                         onClick={() => setTab(t.key)}
-                        className={`px-4 py-3 -mb-px font-bold text-sm border-b-2 transition-colors ${
-                            tab === t.key
-                                ? `border-blue-500 ${t.color}`
-                                : 'border-transparent text-slate-400 hover:text-slate-600'
+                        className={`px-4 py-3 text-sm font-bold uppercase tracking-wide transition-colors duration-200 ${
+                            tab === t.key ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
                         }`}
                     >
                         {t.label}
-                        <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${tab === t.key ? t.bg : 'bg-slate-100 text-slate-500'}`}>
+                        <span className={`ml-2 bh-chip ${tab === t.key ? t.bg : 'bg-bauhaus-muted text-bauhaus-black'} !border-0 !px-1.5`}>
                             {counts[t.key] || 0}
                         </span>
                     </button>
@@ -99,11 +97,11 @@ const ClaimRequests = () => {
             </div>
 
             {loading ? (
-                <div className="text-center text-slate-400 py-16">載入中⋯</div>
+                <div className="text-center text-bauhaus-black/50 py-16 font-bold">載入中⋯</div>
             ) : filtered.length === 0 ? (
-                <div className="text-center text-slate-400 py-16">
-                    <Inbox className="w-12 h-12 mx-auto mb-3 text-slate-200" />
-                    <p>目前沒有{TABS.find(t => t.key === tab)?.label}的申請</p>
+                <div className="text-center text-bauhaus-black/50 py-16">
+                    <Inbox className="w-12 h-12 mx-auto mb-3 text-bauhaus-black/20" />
+                    <p className="font-medium">目前沒有{TABS.find(t => t.key === tab)?.label}的申請</p>
                 </div>
             ) : (
                 <div className="space-y-3">
@@ -134,24 +132,24 @@ const ClaimRequests = () => {
 const ClaimCard = ({ claim, expanded, onToggle, onApprove, onReject }) => {
     const instructorLinked = !!claim.instructor?.user_id;
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 flex items-start gap-3 cursor-pointer hover:bg-slate-50 transition-colors" onClick={onToggle}>
+        <div className="bh-card overflow-hidden">
+            <div className="p-4 flex items-start gap-3 cursor-pointer hover:bg-bauhaus-cream transition-colors" onClick={onToggle}>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-slate-900">
+                        <span className="font-bold text-bauhaus-black">
                             {claim.requester?.name || '(無姓名)'}
                         </span>
-                        <span className="text-xs text-slate-500">→ 認領</span>
-                        <span className="font-bold text-blue-700">
+                        <span className="text-xs text-bauhaus-black/50">→ 認領</span>
+                        <span className="font-bold text-bauhaus-blue">
                             {claim.instructor?.full_name || '(資料已刪除)'}
                         </span>
                         {instructorLinked && claim.status === 'pending' && (
-                            <span className="text-xs bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full font-bold">
+                            <span className="bh-chip bg-bauhaus-red text-white">
                                 ⚠️ 目標已被綁定
                             </span>
                         )}
                     </div>
-                    <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                    <div className="text-xs text-bauhaus-black/50 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                         <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" /> {claim.requester_email}</span>
                         {claim.proposed_phone && (
                             <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" /> 提供手機: {claim.proposed_phone}</span>
@@ -159,20 +157,20 @@ const ClaimCard = ({ claim, expanded, onToggle, onApprove, onReject }) => {
                         <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(claim.created_at).toLocaleString('zh-TW')}</span>
                     </div>
                 </div>
-                <button className="relative shrink-0 text-slate-400 hover:text-blue-600 transition-colors p-1 before:absolute before:-inset-2 before:content-['']">
+                <button className="relative shrink-0 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors p-1 before:absolute before:-inset-2 before:content-['']">
                     {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </button>
             </div>
 
             {expanded && (
-                <div className="px-4 pb-4 pt-0 bg-slate-50/50 border-t border-slate-100">
+                <div className="px-4 pb-4 pt-0 bg-bauhaus-cream border-t-2 border-bauhaus-black">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                         <Block title="申請人(登入帳號)" tone="blue">
                             <Row label="姓名" value={claim.requester?.name} />
                             <Row label="登入 Email" value={claim.requester?.email} />
                             <Row label="目前角色" value={claim.requester?.role} />
                         </Block>
-                        <Block title="目標講師資料" tone="purple">
+                        <Block title="目標講師資料" tone="black">
                             <Row label="姓名" value={claim.instructor?.full_name} />
                             <Row label="檔案 Email" value={claim.instructor?.email_primary} />
                             <Row label="檔案手機" value={claim.instructor?.phone_mobile} />
@@ -182,24 +180,24 @@ const ClaimCard = ({ claim, expanded, onToggle, onApprove, onReject }) => {
                     </div>
 
                     {claim.message && (
-                        <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                            <div className="text-xs font-bold text-amber-700 flex items-center gap-1 mb-1">
+                        <div className="mt-3 bg-bauhaus-yellow border-2 border-bauhaus-black p-3">
+                            <div className="text-xs font-bold text-bauhaus-black flex items-center gap-1 mb-1">
                                 <MessageSquare className="w-3 h-3" /> 申請說明
                             </div>
-                            <p className="text-sm text-amber-900 whitespace-pre-wrap">{claim.message}</p>
+                            <p className="text-sm text-bauhaus-black whitespace-pre-wrap">{claim.message}</p>
                         </div>
                     )}
 
                     {claim.status !== 'pending' && (
-                        <div className="mt-3 text-xs text-slate-500 flex items-center gap-1">
+                        <div className="mt-3 text-xs text-bauhaus-black/60 flex items-center gap-1 font-medium">
                             {claim.status === 'approved' ? (
                                 <>
-                                    <ShieldCheck className="w-3.5 h-3.5 text-green-500" />
+                                    <ShieldCheck className="w-3.5 h-3.5 text-bauhaus-blue" />
                                     <span>於 {new Date(claim.reviewed_at).toLocaleString('zh-TW')} 通過</span>
                                 </>
                             ) : (
                                 <>
-                                    <Ban className="w-3.5 h-3.5 text-rose-500" />
+                                    <Ban className="w-3.5 h-3.5 text-bauhaus-red" />
                                     <span>於 {new Date(claim.reviewed_at).toLocaleString('zh-TW')} 拒絕</span>
                                 </>
                             )}
@@ -212,11 +210,11 @@ const ClaimCard = ({ claim, expanded, onToggle, onApprove, onReject }) => {
                     {claim.status === 'pending' && (
                         <div className="flex justify-end gap-2 mt-4">
                             <button onClick={onReject}
-                                className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-sm">
+                                className="bh-btn bh-btn-red px-4 py-2 text-sm">
                                 <X className="w-4 h-4" /> 拒絕
                             </button>
                             <button onClick={onApprove} disabled={instructorLinked}
-                                className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                                className="bh-btn bh-btn-blue px-4 py-2 text-sm">
                                 <Check className="w-4 h-4" /> 通過認領
                             </button>
                         </div>
@@ -229,12 +227,12 @@ const ClaimCard = ({ claim, expanded, onToggle, onApprove, onReject }) => {
 
 const Block = ({ title, tone, children }) => {
     const toneCls = {
-        blue: 'bg-blue-50 border-blue-100',
-        purple: 'bg-purple-50 border-purple-100',
-    }[tone] || 'bg-slate-50 border-slate-100';
+        blue: 'bg-white border-bauhaus-black',
+        black: 'bg-bauhaus-muted border-bauhaus-black',
+    }[tone] || 'bg-white border-bauhaus-black';
     return (
-        <div className={`${toneCls} border rounded-xl p-3`}>
-            <div className="text-xs font-bold text-slate-700 mb-2">{title}</div>
+        <div className={`${toneCls} border-2 p-3`}>
+            <div className="bh-label mb-2">{title}</div>
             <div className="space-y-1">{children}</div>
         </div>
     );
@@ -242,8 +240,8 @@ const Block = ({ title, tone, children }) => {
 
 const Row = ({ label, value }) => (
     <div className="flex items-start gap-2 text-sm">
-        <span className="text-slate-400 whitespace-nowrap min-w-[80px]">{label}:</span>
-        <span className="text-slate-700 break-all">{value || <span className="text-slate-300">—</span>}</span>
+        <span className="text-bauhaus-black/40 whitespace-nowrap min-w-[80px]">{label}:</span>
+        <span className="text-bauhaus-black/80 break-all">{value || <span className="text-bauhaus-black/30">—</span>}</span>
     </div>
 );
 
@@ -266,24 +264,24 @@ const RejectModal = ({ claimId, onClose, onDone }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[85dvh] overflow-y-auto">
-                <h2 className="font-bold text-lg text-slate-900 mb-2">拒絕認領申請</h2>
-                <p className="text-sm text-slate-500 mb-4">可選填理由,會記錄在審核紀錄裡(申請人目前不會看到)。</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
+            <div className="bh-card shadow-hard-lg max-w-md w-full p-6 max-h-[85dvh] overflow-y-auto">
+                <h2 className="font-black text-bauhaus-black mb-2 uppercase tracking-wide">拒絕認領申請</h2>
+                <p className="text-sm text-bauhaus-black/60 mb-4 font-medium">可選填理由,會記錄在審核紀錄裡(申請人目前不會看到)。</p>
                 <textarea
                     value={notes}
                     onChange={e => setNotes(e.target.value)}
                     rows={3}
                     placeholder="例:該講師資料另有歸屬"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-rose-300 outline-none text-sm resize-none"
+                    className="bh-input text-sm resize-none"
                 />
                 <div className="flex justify-end gap-2 mt-4">
                     <button onClick={onClose}
-                        className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-bold text-sm">
+                        className="bh-btn bh-btn-outline px-4 py-2 text-sm">
                         取消
                     </button>
                     <button onClick={submit} disabled={saving}
-                        className="px-5 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm disabled:opacity-50">
+                        className="bh-btn bh-btn-red px-5 py-2 text-sm">
                         {saving ? '送出⋯' : '確認拒絕'}
                     </button>
                 </div>

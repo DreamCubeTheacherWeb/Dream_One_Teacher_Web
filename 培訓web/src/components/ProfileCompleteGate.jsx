@@ -87,25 +87,21 @@ const ProfileCompleteGate = () => {
   return (
     <div className="max-w-4xl mx-auto px-4 pt-4">
       <div
-        className={`rounded-2xl p-4 sm:p-5 border-2 flex items-start gap-3 ${
-          overdue
-            ? 'bg-red-50 border-red-300'
-            : remaining === 0
-            ? 'bg-orange-50 border-orange-300'
-            : 'bg-amber-50 border-amber-300'
+        className={`p-4 sm:p-5 border-2 border-bauhaus-black flex items-start gap-3 ${
+          overdue ? 'bg-bauhaus-red/10' : 'bg-bauhaus-yellow/20'
         }`}
       >
         <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white font-black text-lg ${
-            overdue ? 'bg-red-500' : remaining === 0 ? 'bg-orange-500' : 'bg-amber-500'
+          className={`w-10 h-10 border-2 border-bauhaus-black flex items-center justify-center shrink-0 font-black text-lg ${
+            overdue ? 'bg-bauhaus-red text-white' : 'bg-bauhaus-yellow text-bauhaus-black'
           }`}
         >
           {overdue ? '!' : remaining}
         </div>
         <div className="flex-1 min-w-0">
           <div
-            className={`font-bold text-base ${
-              overdue ? 'text-red-800' : remaining === 0 ? 'text-orange-800' : 'text-amber-800'
+            className={`font-black text-base ${
+              overdue ? 'text-bauhaus-red' : 'text-bauhaus-black'
             }`}
           >
             {overdue
@@ -115,8 +111,8 @@ const ProfileCompleteGate = () => {
               : `您還有 ${remaining} 天需完成講師資料`}
           </div>
           <div
-            className={`text-sm mt-1 ${
-              overdue ? 'text-red-700' : remaining === 0 ? 'text-orange-700' : 'text-amber-700'
+            className={`text-sm mt-1 font-medium ${
+              overdue ? 'text-bauhaus-red/80' : 'text-bauhaus-black/70'
             }`}
           >
             首次登入起 3 天內須完成所有資料（含銀行資訊與身分證、存摺等檔案）。

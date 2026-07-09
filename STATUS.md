@@ -1,7 +1,46 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（排行榜擴充：大班/小班分類＋WCA 世界賽成績，已上線，Opus 4.8）。
+> 最後更新：2026-07-09（全站 Bauhaus 視覺改版完成，未 commit，Fable 5）。
+
+---
+
+## 🎨 2026-07-09：全站 Bauhaus 視覺大改版（✅ 業主本地過目後已 commit＋push 上線）
+
+**上線備註**：分兩個 commit——①Bauhaus 改版本體；②Leaderboard.jsx＋wca.js（此檔同時含
+並行 session 的「WCA 全能王」功能接線，無法拆檔，如實分開標註）。
+**⚠️ 全能王分頁上線後會顯示錯誤/空狀態**，直到 `2026-07-09_gamify_compute.sql` 跑進正式
+Supabase（anon 探測確認 RPC 尚不存在，PGRST202；程式有降級處理不會炸頁）。該 SQL 屬並行
+線未收尾工作，本線未審查其權限守衛，跑之前建議照慣例過一輪。
+
+**做了什麼**：依業主提供的 Bauhaus design system prompt，全站 25 頁改版——三原色
+（紅 #D02020／藍 #1040C0／黃 #F0C020）＋黑框直角＋硬陰影＋幾何裝飾，字體 Outfit（英數）
+＋ Noto Sans TC（中文）。共改 37 檔＋新增 `培訓web/DESIGN.md`（設計規範書，含 token、
+`.bh-*` 共用配方、語意色對照、危險區清單——**日後改版面先讀它**）。
+Token 集中在 `tailwind.config.js`＋`index.css` @layer components，頁面只引用不散寫。
+
+**✅ 證據（全部主對話親跑或親手抽查）**：
+- `npm run build` 綠燈 ✓ built in 6.47s；`npm run lint` **25 problems＝基線、零新增**。
+- `node scripts/mobile-audit.mjs`：44 檢查（22 路由×375/390），**0 橫向溢出／0 pageerror／
+  0 空白頁**，剩 6 旗標＝改版前既有已知非問題（mock 年份空 pill、20px 勾選框）。
+- 樣板（Layout＋首頁）與全站各 1 輪 fresh agent 截圖判讀通過（桌機 1280×8 頁＋手機 22 路由），
+  截圖檔存在性親手 ls 核實。判讀抓到的 2 處「透明度淡化違反鐵律」（InstructorList 篩選 chip、
+  `.bh-btn` disabled 態）已修並重跑稽核回歸。
+- 危險區（課程畫布 CanvasViewer、cubeEngine `.dc-*`、SignaturePad canvas、react-pdf 內部）
+  逐一以 git diff 驗證**零改動**；觸控熱區 min-h-[44px] 數量逐檔前後一致。
+
+**⚠️ 未驗**：真帳號 OAuth 登入後的實資料畫面（mock 只能驗空/假資料）；modal／hover 態
+未逐一截圖；第一站畫布課程以真資料的渲染（程式碼未動，理論不受影響但沒親眼看）。
+
+**💣 本次地雷**：
+1. **並行 session 正在做徽章/WCA 全能王功能**：`src/lib/wca.js` 的改動、未追蹤的
+   `src/lib/badges.js`＋`2026-07-09_badges_foundation.sql`＋`2026-07-09_gamify_compute.sql`
+   ＋`2026-07-09_leaderboard_hide.sql` 都是**那條線的，不屬於本次改版**。
+   commit 時務必分開，別把兩條線混進同一個 commit。
+2. `scripts/mobile-audit.mjs:76` 已放行 Google Fonts 域名（否則新字體讓 44 檢查全誤報
+   ERR_FAILED）。
+3. 設計鐵律：禁 `rounded-lg/xl` 系、禁柔陰影、禁漸層、禁透明度淡化——新寫頁面照
+   `DESIGN.md` §4/§8，別讓舊 SaaS 風格回流。
 
 ---
 

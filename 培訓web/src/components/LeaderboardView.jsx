@@ -1,30 +1,33 @@
 import { useMemo } from 'react';
 import { Trophy, Crown, Medal } from 'lucide-react';
-import { toHours, highestMilestone, rankTitle } from '../lib/leaderboard';
+import { toHours, highestMilestone } from '../lib/leaderboard';
 
-// 單一排行維度：接課時數。showRankTitle＝是否顯示「教學王」稱號徽章
-// （教學專屬榮譽，方塊競速／WCA 賽事的 metric 不設此旗標，就不會顯示）。
-const METRIC = { label: '接課時數', unit: '小時', accent: 'blue', getValue: (r) => toHours(r.total_hours), showRankTitle: true };
+// 單一排行維度：接課時數。championTitle＝該榜第 1 名要顯示的冠軍稱號字串
+// （通用機制：任何 metric 想在第一名頭上顯示稱號，設這個欄位就好；
+// 不設或設 null／undefined，該榜就不顯示稱號徽章）。
+const METRIC = { label: '接課時數', unit: '小時', accent: 'blue', getValue: (r) => toHours(r.total_hours), championTitle: '桃李之王' };
 
 const ACCENT = {
-    blue: 'from-blue-500 to-indigo-500',
+    blue: 'bg-bauhaus-blue',
 };
 
-// 名次視覺（金銀銅）：獎座、光暈、皇冠
+// 名次視覺（Bauhaus 重新詮釋金銀銅）：黃＝第1（黃底黑字）、黑框白底＝第2、紅＝第3。
+// 理由：獎座漸層／光暈是擬態金屬光澤，違反扁平幾何鐵律；改用三原色體系（黃/紅）＋
+// 黑白，沿用全站既有語意（黃＝亮點／成就，milestone 徽章已用黃），第一名依然最搶眼。
 const PODIUM = {
-    1: { icon: Crown, iconClass: 'text-amber-400 drop-shadow-[0_2px_6px_rgba(245,158,11,0.55)]', ring: 'ring-amber-300', value: 'text-amber-600', pedestal: 'from-amber-300 via-amber-400 to-amber-500', pedestalText: 'text-amber-50', h: 'h-32 sm:h-36' },
-    2: { icon: Medal, iconClass: 'text-slate-400', ring: 'ring-slate-300', value: 'text-slate-600', pedestal: 'from-slate-200 via-slate-300 to-slate-400', pedestalText: 'text-slate-600', h: 'h-24 sm:h-28' },
-    3: { icon: Medal, iconClass: 'text-orange-400', ring: 'ring-orange-300', value: 'text-orange-600', pedestal: 'from-orange-200 via-orange-300 to-orange-400', pedestalText: 'text-orange-700', h: 'h-20 sm:h-24' },
+    1: { icon: Crown, iconClass: 'text-bauhaus-black', ring: 'border-bauhaus-yellow', value: 'text-bauhaus-black', pedestal: 'bg-bauhaus-yellow', pedestalText: 'text-bauhaus-black', h: 'h-32 sm:h-36' },
+    2: { icon: Medal, iconClass: 'text-bauhaus-black', ring: 'border-bauhaus-black', value: 'text-bauhaus-black', pedestal: 'bg-white', pedestalText: 'text-bauhaus-black', h: 'h-24 sm:h-28' },
+    3: { icon: Medal, iconClass: 'text-bauhaus-black', ring: 'border-bauhaus-red', value: 'text-bauhaus-red', pedestal: 'bg-bauhaus-red', pedestalText: 'text-white', h: 'h-20 sm:h-24' },
 };
 
 const initialOf = (name) => (name ? name.trim().charAt(0) : '?');
 
 const Avatar = ({ url, name, size = 'w-12 h-12', textSize = 'text-lg' }) => (
-    <div className={`${size} rounded-full overflow-hidden shrink-0 bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center border-2 border-white shadow-sm`}>
+    <div className={`${size} rounded-full overflow-hidden shrink-0 bg-bauhaus-muted flex items-center justify-center border-2 border-bauhaus-black`}>
         {url ? (
             <img src={url} alt={name} className="w-full h-full object-cover" />
         ) : (
-            <span className={`${textSize} font-black text-slate-500`}>{initialOf(name)}</span>
+            <span className={`${textSize} font-black text-bauhaus-black/50`}>{initialOf(name)}</span>
         )}
     </div>
 );
@@ -34,7 +37,7 @@ const MilestoneChip = ({ hours, small }) => {
     const m = highestMilestone(hours);
     if (!m) return null;
     return (
-        <span className={`inline-flex items-center gap-0.5 rounded-full bg-amber-50 text-amber-700 font-bold ring-1 ring-amber-200 shrink-0 whitespace-nowrap ${small ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5'}`}>
+        <span className={`inline-flex items-center gap-0.5 rounded-full bg-bauhaus-yellow text-bauhaus-black font-bold border-2 border-bauhaus-black shrink-0 whitespace-nowrap ${small ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5'}`}>
             <span>{m.emoji}</span> {m.name}
         </span>
     );
@@ -103,12 +106,12 @@ const LeaderboardView = ({
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
             {/* Header */}
-            <div className={`relative overflow-hidden rounded-3xl bg-gradient-to-r ${ACCENT[activeTab.accent]} p-6 sm:p-8 text-white shadow-lg mb-6`}>
-                <div className="pointer-events-none absolute -right-8 -top-10 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
-                <div className="pointer-events-none absolute right-16 bottom-0 w-24 h-24 rounded-full bg-white/10 blur-xl" />
+            <div className={`relative overflow-hidden ${ACCENT[activeTab.accent]} border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-6 sm:p-8 text-white mb-6`}>
+                <div className="pointer-events-none absolute -right-8 -top-10 w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-white/10" />
+                <div className="pointer-events-none absolute right-10 bottom-0 w-20 h-20 sm:w-24 sm:h-24 bg-white/10 rotate-45" />
                 <div className="relative flex items-center gap-3">
-                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0">
-                        <HeaderIcon className="w-6 h-6 sm:w-7 sm:h-7" />
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                        <HeaderIcon className="w-6 h-6 sm:w-7 sm:h-7 text-bauhaus-blue" />
                     </div>
                     <div>
                         <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{title}</h1>
@@ -116,7 +119,7 @@ const LeaderboardView = ({
                     </div>
                 </div>
                 {myRow && (
-                    <div className="relative mt-5 bg-white/15 backdrop-blur rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 ring-1 ring-white/20">
+                    <div className="relative mt-5 bg-white/10 border-2 border-white px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                         <span className="text-sm font-medium text-white/90 whitespace-nowrap">你目前的名次</span>
                         <span className="text-2xl font-black tabular-nums leading-none">#{myRankIndex + 1}</span>
                         <span className="w-full sm:w-auto sm:ml-auto text-sm text-white/80 whitespace-nowrap">
@@ -137,12 +140,12 @@ const LeaderboardView = ({
             )}
 
             {sorted.length === 0 ? (
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm py-16 text-center">
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <HeaderIcon className="w-8 h-8 text-slate-300" />
+                <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard py-16 text-center">
+                    <div className="w-16 h-16 bg-bauhaus-muted border-2 border-bauhaus-black rounded-full flex items-center justify-center mx-auto mb-4">
+                        <HeaderIcon className="w-8 h-8 text-bauhaus-black/40" />
                     </div>
-                    <h2 className="text-xl font-black text-slate-900">{emptyTitle}</h2>
-                    <p className="text-slate-500 mt-2 text-sm">{emptyDesc}</p>
+                    <h2 className="text-xl font-black text-bauhaus-black">{emptyTitle}</h2>
+                    <p className="text-bauhaus-black/50 mt-2 text-sm">{emptyDesc}</p>
                 </div>
             ) : (
                 <>
@@ -155,9 +158,9 @@ const LeaderboardView = ({
                                 const Icon = p.icon;
                                 const isMe = r.user_id && r.user_id === currentUserId;
                                 const isFirst = rank === 1;
-                                // 稱號徽章只在有 showRankTitle 旗標的 metric（＝教學榜）顯示，
-                                // 不可漏到方塊競速榜／WCA 賽事榜的第一名頭上。
-                                const rankName = activeTab.showRankTitle ? rankTitle(rank, selectedYear) : null;
+                                // 稱號徽章只在該 metric 設了 championTitle 時才顯示，且只在第一名頭上，
+                                // 不可漏到第二、三名或沒設稱號的榜（例如未列出對照的教學範圍）。
+                                const rankName = rank === 1 ? (activeTab.championTitle || null) : null;
                                 return (
                                     <div
                                         key={r.instructor_id}
@@ -166,11 +169,10 @@ const LeaderboardView = ({
                                     >
                                         <Icon className={`w-6 h-6 sm:w-8 sm:h-8 mb-1 ${p.iconClass}`} />
                                         {rankName && (
-                                            <span data-testid="rank-title" className="mb-1 text-[10px] sm:text-[11px] font-black text-amber-700 bg-amber-100 ring-1 ring-amber-200 px-2 py-0.5 rounded-full text-center leading-tight">{rankName}</span>
+                                            <span data-testid="rank-title" className="mb-1 text-[10px] sm:text-[11px] font-black text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black px-2 py-0.5 rounded-full text-center leading-tight">{rankName}</span>
                                         )}
                                         <div className="relative flex flex-col items-center">
-                                            {isFirst && <div className="pointer-events-none absolute -inset-2 rounded-full bg-amber-300/40 blur-xl" />}
-                                            <div className={`relative ring-4 ${isMe ? 'ring-blue-400' : p.ring} rounded-full ${isFirst ? 'p-0.5' : ''}`}>
+                                            <div className={`relative border-4 ${isMe ? 'border-bauhaus-blue' : p.ring} rounded-full ${isFirst ? 'p-0.5' : ''}`}>
                                                 <Avatar
                                                     url={avatarMap[r.instructor_id]}
                                                     name={r.display_name}
@@ -180,23 +182,23 @@ const LeaderboardView = ({
                                             </div>
                                         </div>
                                         <div className="mt-2 text-center w-full px-0.5">
-                                            <div className="font-black text-slate-800 text-xs sm:text-base truncate">
+                                            <div className="font-black text-bauhaus-black text-xs sm:text-base truncate">
                                                 {r.display_name || '匿名講師'}
-                                                {isMe && <span className="hidden sm:inline ml-1.5 text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full align-middle">你</span>}
+                                                {isMe && <span className="hidden sm:inline ml-1.5 text-[10px] font-bold text-white bg-bauhaus-blue px-1.5 py-0.5 rounded-full align-middle">你</span>}
                                             </div>
                                             <div className={`text-lg sm:text-2xl font-black tabular-nums ${p.value}`}>{fmt(r.value)}</div>
                                             {activeTab.unit && (
-                                                <div className="text-[10px] sm:text-[11px] text-slate-400 font-medium -mt-0.5">{activeTab.unit}</div>
+                                                <div className="text-[10px] sm:text-[11px] text-bauhaus-black/40 font-medium -mt-0.5">{activeTab.unit}</div>
                                             )}
                                         </div>
                                         <div className="mt-1.5 h-5 flex items-center justify-center">
                                             <MilestoneChip hours={r.total_hours} small />
                                         </div>
                                         <div
-                                            className={`mt-1 w-full ${p.h} rounded-t-xl bg-gradient-to-b ${p.pedestal} shadow-inner flex items-start justify-center pt-2 origin-bottom ${isMe ? 'ring-2 ring-blue-400/60' : ''}`}
+                                            className={`mt-1 w-full ${p.h} border-2 lg:border-4 border-bauhaus-black border-b-0 ${p.pedestal} flex items-start justify-center pt-2 origin-bottom`}
                                             style={{ animation: 'lb-rise 0.55s cubic-bezier(0.22,1,0.36,1) both', animationDelay: `${i * 90 + 120}ms` }}
                                         >
-                                            <span className={`text-3xl sm:text-5xl font-black ${p.pedestalText} drop-shadow-sm tabular-nums`}>{rank}</span>
+                                            <span className={`text-3xl sm:text-5xl font-black ${p.pedestalText} tabular-nums`}>{rank}</span>
                                         </div>
                                     </div>
                                 );
@@ -206,7 +208,7 @@ const LeaderboardView = ({
 
                     {/* 其餘名次列表 */}
                     {rest.length > 0 && (
-                        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
+                        <div className="bg-white rounded-none border-2 lg:border-4 border-bauhaus-black shadow-hard overflow-hidden divide-y-2 divide-bauhaus-black/20">
                             {rest.map((r) => {
                                 const rank = sorted.findIndex((x) => x.instructor_id === r.instructor_id) + 1;
                                 const isMe = r.user_id && r.user_id === currentUserId;
@@ -214,27 +216,27 @@ const LeaderboardView = ({
                                 return (
                                     <div
                                         key={r.instructor_id}
-                                        className={`group flex items-center gap-3 px-4 sm:px-5 py-3 transition-colors ${isMe ? 'bg-blue-50/80' : 'hover:bg-slate-50'}`}
+                                        className={`group flex items-center gap-3 px-4 sm:px-5 py-3 transition-colors ${isMe ? 'bg-bauhaus-blue/10' : 'hover:bg-bauhaus-cream'}`}
                                     >
-                                        <div className={`w-8 text-center text-lg font-black tabular-nums ${isMe ? 'text-blue-600' : 'text-slate-300 group-hover:text-slate-400'}`}>
+                                        <div className={`w-8 text-center text-lg font-black tabular-nums ${isMe ? 'text-bauhaus-blue' : 'text-bauhaus-black/30 group-hover:text-bauhaus-black/50'}`}>
                                             {rank}
                                         </div>
                                         <Avatar url={avatarMap[r.instructor_id]} name={r.display_name} size="w-11 h-11" />
                                         <div className="flex-1 min-w-0">
-                                            <div className={`font-bold truncate flex items-center gap-2 ${isMe ? 'text-blue-700' : 'text-slate-800'}`}>
+                                            <div className={`font-bold truncate flex items-center gap-2 ${isMe ? 'text-bauhaus-blue' : 'text-bauhaus-black'}`}>
                                                 <span className="truncate">{r.display_name || '匿名講師'}</span>
-                                                {isMe && <span className="shrink-0 text-[11px] font-bold text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">你</span>}
+                                                {isMe && <span className="shrink-0 text-[11px] font-bold text-white bg-bauhaus-blue px-2 py-0.5 rounded-full">你</span>}
                                             </div>
                                             {(sub || highestMilestone(r.total_hours)) && (
                                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5 min-w-0">
                                                     <MilestoneChip hours={r.total_hours} small />
-                                                    {sub && <span className="text-[11px] text-slate-500">{sub}</span>}
+                                                    {sub && <span className="text-[11px] text-bauhaus-black/50">{sub}</span>}
                                                 </div>
                                             )}
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <span className={`text-lg font-black tabular-nums ${isMe ? 'text-blue-700' : 'text-slate-800'}`}>{fmt(r.value)}</span>
-                                            {activeTab.unit && <span className="text-xs text-slate-500 ml-1">{activeTab.unit}</span>}
+                                            <span className={`text-lg font-black tabular-nums ${isMe ? 'text-bauhaus-blue' : 'text-bauhaus-black'}`}>{fmt(r.value)}</span>
+                                            {activeTab.unit && <span className="text-xs text-bauhaus-black/50 ml-1">{activeTab.unit}</span>}
                                         </div>
                                     </div>
                                 );
@@ -250,10 +252,10 @@ const LeaderboardView = ({
 const YearPill = ({ active, onClick, children }) => (
     <button
         onClick={onClick}
-        className={`px-3.5 py-3 md:py-1.5 rounded-full text-sm font-bold transition-all ${
+        className={`px-3.5 py-3 md:py-1.5 rounded-full text-sm font-bold border-2 border-bauhaus-black transition-colors duration-200 ${
             active
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700'
+                ? 'bg-bauhaus-black text-white'
+                : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
         }`}
     >
         {children}

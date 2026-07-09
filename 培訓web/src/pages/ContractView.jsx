@@ -97,7 +97,7 @@ const ContractView = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full" />
+        <div className="animate-spin w-10 h-10 border-4 border-bauhaus-black border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -105,9 +105,9 @@ const ContractView = () => {
   if (!contract) {
     return (
       <div className="max-w-2xl mx-auto p-8 text-center">
-        <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-        <p className="text-slate-600">找不到此合約</p>
-        <button onClick={() => navigate('/profile')} className="mt-4 px-5 py-2 bg-slate-100 rounded-xl font-bold text-sm hover:bg-slate-200">返回</button>
+        <AlertTriangle className="w-12 h-12 text-bauhaus-yellow mx-auto mb-4" />
+        <p className="text-bauhaus-black/70 font-medium">找不到此合約</p>
+        <button onClick={() => navigate('/profile')} className="bh-btn bh-btn-outline mt-4 px-5 py-2 text-sm">返回</button>
       </div>
     );
   }
@@ -128,10 +128,10 @@ const ContractView = () => {
     <div className="max-w-4xl mx-auto p-4 sm:p-8">
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 mb-2 transition-colors py-3 md:py-0">
+          <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-sm text-bauhaus-black/60 hover:text-bauhaus-black mb-2 transition-colors py-3 md:py-0">
             <ArrowLeft className="w-4 h-4" /> 返回
           </button>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900">合約檢視</h1>
+          <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">合約檢視</h1>
         </div>
         {hasAnySignedPdf && (
           <div className="flex gap-2 flex-wrap">
@@ -139,7 +139,7 @@ const ContractView = () => {
               const meta = docMeta.find(d => d.doc_type === dt);
               return (
                 <button key={dt} onClick={() => handleDownloadPdf(dt)}
-                  className="flex items-center gap-2 px-4 py-3 md:py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/25 shrink-0">
+                  className="bh-btn bh-btn-blue px-4 py-3 md:py-2 text-sm shrink-0">
                   <Download className="w-4 h-4" /> {meta?.display_name || dt}
                 </button>
               );
@@ -149,39 +149,41 @@ const ContractView = () => {
       </div>
 
       {contract.status === 'voided' && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
-          <p className="text-sm text-red-700">此合約已作廢（因重新簽約）</p>
+        <div className="mb-6 bg-bauhaus-red border-2 border-bauhaus-black p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-white shrink-0" />
+          <p className="text-sm font-bold text-white">此合約已作廢（因重新簽約）</p>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-1.5 px-4 py-3 md:py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
-              activeTab === t.id
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-            }`}>
-            <t.icon className="w-4 h-4" />
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-6 overflow-x-auto pb-1">
+        <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              className={`flex items-center gap-1.5 px-4 py-3 md:py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 shrink-0 ${
+                activeTab === t.id
+                  ? 'bg-bauhaus-black text-white'
+                  : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
+              }`}>
+              <t.icon className="w-4 h-4" />
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
+      <div className="bh-card overflow-hidden">
         {activeTab === 'overview' && (
           <div className="p-6 sm:p-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-green-500" />
+              <div className="w-12 h-12 border-2 border-bauhaus-black bg-bauhaus-blue flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900">
+                <h3 className="font-bold text-bauhaus-black">
                   {contract.status === 'signed' ? '合約已簽署' : '合約已作廢'}
                 </h3>
-                <p className="text-sm text-slate-500">簽署時間：{new Date(contract.signed_at).toLocaleString('zh-TW')}</p>
+                <p className="text-sm text-bauhaus-black/60">簽署時間：{new Date(contract.signed_at).toLocaleString('zh-TW')}</p>
               </div>
             </div>
 
@@ -194,8 +196,8 @@ const ContractView = () => {
               <InfoRow icon={Calendar} label="簽約日期" value={new Date(contract.signed_at).toLocaleDateString('zh-TW')} />
             </div>
 
-            <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-500 space-y-1 mb-6">
-              <p className="font-bold text-slate-700 mb-2">文件版本</p>
+            <div className="bg-bauhaus-paper border-2 border-bauhaus-black/10 p-4 text-sm text-bauhaus-black/60 space-y-1 mb-6">
+              <p className="font-bold text-bauhaus-black mb-2">文件版本</p>
               {Object.keys(docVersions).length > 0 ? (
                 Object.entries(docVersions).map(([k, v]) => {
                   const meta = docMeta.find(d => d.doc_type === k);
@@ -212,8 +214,8 @@ const ContractView = () => {
 
             {signatureUrl && (
               <div>
-                <h4 className="text-sm font-bold text-slate-700 mb-2">甲方簽名</h4>
-                <div className="border border-slate-200 rounded-xl p-4 bg-white">
+                <h4 className="text-sm font-bold text-bauhaus-black mb-2">甲方簽名</h4>
+                <div className="border-2 border-bauhaus-black p-4 bg-white">
                   <img src={signatureUrl} alt="簽名" className="max-h-20 mx-auto" />
                 </div>
               </div>
@@ -228,7 +230,7 @@ const ContractView = () => {
             ) : docUrls[activeTab] ? (
               <DocumentViewer fileUrl={docUrls[activeTab]} />
             ) : (
-              <p className="text-center text-slate-400 py-12">文件不可用</p>
+              <p className="text-center text-bauhaus-black/40 py-12 font-medium">文件不可用</p>
             )}
           </div>
         )}
@@ -240,11 +242,11 @@ const ContractView = () => {
 const InfoRow = ({ icon, label, value }) => {
   const Icon = icon;
   return (
-    <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
-      <Icon className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+    <div className="flex items-start gap-3 p-3 border-2 border-bauhaus-black/10 bg-bauhaus-paper">
+      <Icon className="w-4 h-4 text-bauhaus-black/40 mt-0.5 shrink-0" />
       <div>
-        <div className="text-xs text-slate-400">{label}</div>
-        <div className="text-sm font-bold text-slate-900">{value || '-'}</div>
+        <div className="text-xs text-bauhaus-black/50">{label}</div>
+        <div className="text-sm font-bold text-bauhaus-black">{value || '-'}</div>
       </div>
     </div>
   );

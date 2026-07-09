@@ -88,13 +88,13 @@ const OtpInput = ({ value, onChange, onComplete, disabled, invalid }) => {
                     onKeyDown={(e) => handleKeyDown(i, e)}
                     onFocus={(e) => e.target.select()}
                     aria-label={`驗證碼第 ${i + 1} 碼`}
-                    className={`w-11 h-14 sm:w-12 sm:h-14 text-center text-2xl font-black rounded-xl border-2 outline-none transition-all tabular-nums
+                    className={`w-11 h-14 sm:w-12 sm:h-14 text-center text-2xl font-black border-2 outline-none transition-all tabular-nums
                         ${invalid
-                            ? 'border-red-300 bg-red-50 text-red-600'
+                            ? 'border-bauhaus-red bg-bauhaus-red/10 text-bauhaus-red'
                             : d
-                                ? 'border-blue-400 bg-blue-50 text-slate-800 shadow-sm'
-                                : 'border-slate-200 bg-white text-slate-800'}
-                        focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:bg-white
+                                ? 'border-bauhaus-blue bg-bauhaus-cream text-bauhaus-black shadow-hard-sm'
+                                : 'border-bauhaus-black bg-white text-bauhaus-black'}
+                        focus:border-bauhaus-blue focus:ring-2 focus:ring-bauhaus-blue/30 focus:bg-white
                         disabled:opacity-50`}
                     style={d ? { animation: 'otp-cell-in 0.15s ease-out' } : undefined}
                 />
@@ -115,14 +115,14 @@ const Stepper = ({ step }) => {
                 return (
                     <div key={label} className="flex items-center gap-1.5 flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 min-w-0">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 transition-colors
-                                ${done ? 'bg-green-500 text-white' : active ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 transition-colors border-2 border-bauhaus-black
+                                ${done ? 'bg-bauhaus-blue text-white' : active ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black/40'}`}>
                                 {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : n}
                             </div>
-                            <span className={`text-[11px] font-bold truncate ${active ? 'text-blue-700' : done ? 'text-green-600' : 'text-slate-400'}`}>{label}</span>
+                            <span className={`text-[11px] font-bold truncate ${active ? 'text-bauhaus-black' : done ? 'text-bauhaus-blue' : 'text-bauhaus-black/40'}`}>{label}</span>
                         </div>
                         {i < steps.length - 1 && (
-                            <div className={`h-0.5 flex-1 rounded-full ${done ? 'bg-green-400' : 'bg-slate-200'}`} />
+                            <div className={`h-0.5 flex-1 ${done ? 'bg-bauhaus-blue' : 'bg-bauhaus-black/20'}`} />
                         )}
                     </div>
                 );
@@ -213,16 +213,16 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
     if (verified) {
         return (
             <div
-                className="mb-6 rounded-2xl p-5 bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 shadow-sm"
+                className="mb-6 p-5 bg-bauhaus-blue border-2 border-bauhaus-black shadow-hard"
                 style={{ animation: 'otp-pop 0.4s cubic-bezier(0.22,1,0.36,1)' }}
             >
                 <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/30 shrink-0">
-                        <CheckCircle2 className="w-6 h-6 text-white" />
+                    <div className="w-11 h-11 rounded-full bg-white border-2 border-bauhaus-black flex items-center justify-center shrink-0">
+                        <CheckCircle2 className="w-6 h-6 text-bauhaus-blue" />
                     </div>
                     <div>
-                        <p className="text-sm font-black text-green-700">本人身分已驗證</p>
-                        <p className="text-xs text-green-600 mt-0.5">已確認為本人操作，可放心進行簽名。</p>
+                        <p className="text-sm font-black text-white">本人身分已驗證</p>
+                        <p className="text-xs text-white/80 mt-0.5">已確認為本人操作，可放心進行簽名。</p>
                     </div>
                 </div>
             </div>
@@ -232,11 +232,11 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
     const step = !sent ? 1 : 2;
 
     return (
-        <div className="mb-6 rounded-2xl p-5 bg-gradient-to-br from-blue-50 to-indigo-50/60 border border-blue-100 shadow-sm">
-            <h4 className="text-sm font-black text-slate-800 mb-1 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-blue-600" /> 本人身分驗證
+        <div className="mb-6 p-5 bg-white border-2 border-bauhaus-black shadow-hard">
+            <h4 className="text-sm font-black text-bauhaus-black mb-1 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-bauhaus-blue" /> 本人身分驗證
             </h4>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-bauhaus-black/60 mb-4">
                 為確認是本人簽署，簽名前需先驗證信箱。系統會寄一組 6 碼到您的登入信箱。
             </p>
 
@@ -247,11 +247,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
                     type="button"
                     onClick={handleSend}
                     disabled={sending || cooldown > 0}
-                    className={`w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 md:py-2.5 text-sm font-bold rounded-xl transition-all ${
-                        sending || cooldown > 0
-                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/25'
-                    }`}
+                    className="bh-btn bh-btn-blue w-full sm:w-auto px-5 py-3 md:py-2.5 text-sm"
                 >
                     {sending ? (
                         <><Loader2 className="w-4 h-4 animate-spin" /> 寄送中...</>
@@ -264,7 +260,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
             ) : (
                 <div className="space-y-4">
                     {info && (
-                        <p className="text-xs text-blue-700 flex items-start gap-1.5 bg-white/60 rounded-lg px-3 py-2">
+                        <p className="text-xs text-bauhaus-black flex items-start gap-1.5 bg-bauhaus-cream border-2 border-bauhaus-black/10 px-3 py-2">
                             <MailCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {info}
                         </p>
                     )}
@@ -284,11 +280,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
                             type="button"
                             onClick={() => handleVerify(code)}
                             disabled={verifying || code.length !== 6}
-                            className={`flex items-center justify-center gap-2 px-6 py-3 md:py-2.5 text-sm font-bold rounded-xl transition-all ${
-                                verifying || code.length !== 6
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                    : 'bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-500/25'
-                            }`}
+                            className="bh-btn bh-btn-blue px-6 py-3 md:py-2.5 text-sm"
                         >
                             {verifying ? (
                                 <><Loader2 className="w-4 h-4 animate-spin" /> 驗證中...</>
@@ -300,7 +292,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
                             type="button"
                             onClick={handleSend}
                             disabled={sending || cooldown > 0}
-                            className="text-xs font-bold text-slate-500 hover:text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors px-2 py-3.5 md:py-2 self-start sm:self-auto"
+                            className="text-xs font-bold text-bauhaus-black/60 hover:text-bauhaus-blue disabled:text-bauhaus-black/30 disabled:cursor-not-allowed transition-colors px-2 py-3.5 md:py-2 self-start sm:self-auto"
                         >
                             {cooldown > 0 ? `重新寄送（${cooldown}s）` : '沒收到？重新寄送'}
                         </button>
@@ -309,7 +301,7 @@ const EmailOtpGate = ({ email, verified, onVerified }) => {
             )}
 
             {error && (
-                <p className="mt-3 text-xs text-red-600 flex items-start gap-1.5">
+                <p className="mt-3 text-xs text-bauhaus-red font-bold flex items-start gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
                 </p>
             )}

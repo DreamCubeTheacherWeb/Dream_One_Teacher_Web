@@ -210,7 +210,7 @@ const DownloadCenter = () => {
 
   if (loading) {
     return (
-      <div className="p-12 flex items-center justify-center text-slate-500">
+      <div className="p-12 flex items-center justify-center text-bauhaus-black/60 font-bold">
         <Loader2 className="w-6 h-6 animate-spin mr-2" /> 載入中...
       </div>
     );
@@ -222,30 +222,30 @@ const DownloadCenter = () => {
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <Link to="/admin" className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1 mb-3 min-h-[44px]">
+        <Link to="/admin" className="text-sm text-bauhaus-black/60 hover:text-bauhaus-black flex items-center gap-1 mb-3 min-h-[44px]">
           <ArrowLeft className="w-4 h-4" /> 返回後台首頁
         </Link>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 flex items-center gap-2">
-          <Download className="w-7 h-7 text-blue-600" /> 講師表單下載中心
+        <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight flex items-center gap-2">
+          <Download className="w-7 h-7 text-bauhaus-blue" /> 講師表單下載中心
         </h1>
-        <p className="text-slate-500 mt-1 text-sm">
+        <p className="text-bauhaus-black/60 font-medium mt-1 text-sm">
           選擇要下載的表單與講師後，系統會把講師資料自動套入模板並下載 PDF。
         </p>
       </div>
 
       {/* ── 表單選擇 ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-5 shadow-sm">
+      <div className="bh-card p-5 mb-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-blue-600" /> 選擇表單模板
+          <h2 className="text-sm font-black text-bauhaus-black flex items-center gap-2">
+            <FileText className="w-4 h-4 text-bauhaus-blue" /> 選擇表單模板
           </h2>
-          <Link to="/admin/contracts" className="text-xs text-blue-600 hover:underline flex items-center gap-1 min-h-[44px]">
+          <Link to="/admin/contracts" className="text-xs text-bauhaus-blue hover:underline flex items-center gap-1 min-h-[44px]">
             <Settings className="w-3 h-3" /> 管理模板
           </Link>
         </div>
 
         {forms.length === 0 ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 flex items-start gap-2">
+          <div className="bg-bauhaus-yellow/20 border-2 border-bauhaus-black p-4 text-sm text-bauhaus-black flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
               尚未設定任何「表單」類型的模板。請至「合約管理」上傳 PDF 模板，並把
@@ -258,10 +258,10 @@ const DownloadCenter = () => {
               <button
                 key={f.doc_type}
                 onClick={() => setSelectedForm(f.doc_type)}
-                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${
+                className={`px-4 py-2 text-sm font-bold transition-all border-2 border-bauhaus-black ${
                   selectedForm === f.doc_type
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25'
-                    : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                    ? 'bg-bauhaus-black text-white'
+                    : 'bg-white text-bauhaus-black hover:bg-bauhaus-cream'
                 }`}
               >
                 {f.display_name || f.doc_type}
@@ -273,40 +273,40 @@ const DownloadCenter = () => {
       </div>
 
       {/* ── 工具列 ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-3 shadow-sm flex flex-wrap items-center gap-3">
+      <div className="bh-card p-4 mb-3 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-bauhaus-black/40 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="搜尋姓名、暱稱、email、電話、身分證..."
-            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+            className="bh-input w-full pl-9 pr-3 py-2 text-sm"
           />
         </div>
         <div className="relative">
-          <Filter className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Filter className="w-4 h-4 text-bauhaus-black/40 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
-            className="pl-9 pr-8 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:border-blue-400 outline-none appearance-none cursor-pointer"
+            className="bh-input pl-9 pr-8 py-2 text-sm appearance-none cursor-pointer"
           >
             <option value="all">全部講師</option>
             <option value="complete">資料齊全</option>
             <option value="incomplete">資料未完整</option>
           </select>
-          <ChevronDown className="w-3 h-3 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <ChevronDown className="w-3 h-3 text-bauhaus-black/40 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
         <button
           onClick={toggleAllVisible}
-          className="px-3 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors min-h-[44px]"
+          className="bh-btn bh-btn-outline px-3 py-2 text-sm min-h-[44px]"
         >
           {allVisibleSelected ? '取消全選' : '全選此頁'}
         </button>
         <button
           onClick={downloadBatch}
           disabled={generating || !selectedForm || selectedIds.size === 0}
-          className="ml-auto flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-blue-500/20 min-h-[44px]"
+          className="bh-btn bh-btn-blue ml-auto px-5 py-2 text-sm min-h-[44px]"
         >
           {generating ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> 產生中... ({progress.done}/{progress.total})</>
@@ -317,14 +317,14 @@ const DownloadCenter = () => {
       </div>
 
       {generating && progress.current && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3 text-sm text-blue-700 flex items-center gap-2">
+        <div className="bg-bauhaus-blue/10 border-2 border-bauhaus-blue p-3 mb-3 text-sm text-bauhaus-blue flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
           正在處理：<strong>{progress.current}</strong>
         </div>
       )}
 
       {errors.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-3 text-sm text-red-700">
+        <div className="bg-bauhaus-red/10 border-2 border-bauhaus-red p-3 mb-3 text-sm text-bauhaus-red">
           <div className="font-bold flex items-center gap-1 mb-1">
             <FileWarning className="w-4 h-4" /> 部分失敗（{errors.length} 筆）
           </div>
@@ -335,16 +335,16 @@ const DownloadCenter = () => {
       )}
 
       {/* ── 講師列表 ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 text-xs text-slate-500 flex items-center gap-2">
+      <div className="bh-card overflow-hidden">
+        <div className="px-4 py-3 border-b-2 border-bauhaus-black bg-bauhaus-black text-white text-xs uppercase tracking-wider flex items-center gap-2">
           <Users className="w-4 h-4" />
           顯示 {filtered.length} / {instructors.length} 位講師
         </div>
 
         {filtered.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">沒有符合條件的講師</div>
+          <div className="p-12 text-center text-bauhaus-black/50">沒有符合條件的講師</div>
         ) : (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y-2 divide-bauhaus-black/20">
             {filtered.map(inst => {
               const checked = selectedIds.has(inst.user_id);
               const complete = isComplete(inst);
@@ -352,43 +352,43 @@ const DownloadCenter = () => {
               return (
                 <div
                   key={inst.user_id}
-                  className={`px-4 py-3 flex items-center gap-3 transition-colors ${checked ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`}
+                  className={`px-4 py-3 flex items-center gap-3 transition-colors ${checked ? 'bg-bauhaus-cream' : 'hover:bg-bauhaus-cream'}`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleOne(inst.user_id)}
-                    className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    className="w-5 h-5 accent-bauhaus-blue"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-slate-900 text-sm">{inst.full_name || '(未填姓名)'}</span>
+                      <span className="font-bold text-bauhaus-black text-sm">{inst.full_name || '(未填姓名)'}</span>
                       {inst.nickname && (
-                        <span className="text-xs text-slate-400">@{inst.nickname}</span>
+                        <span className="text-xs text-bauhaus-black/50">@{inst.nickname}</span>
                       )}
                       {inst.instructor_role && (
-                        <span className="text-[10px] font-bold bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">
+                        <span className="bh-chip bg-bauhaus-muted text-bauhaus-black text-[10px] px-1.5 py-0.5">
                           {inst.instructor_role}級
                         </span>
                       )}
                       {complete ? (
-                        <span className="text-[10px] font-bold bg-green-50 text-green-600 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        <span className="bh-chip bg-bauhaus-blue text-white text-[10px] px-1.5 py-0.5">
                           <CheckCircle2 className="w-3 h-3" /> 齊全
                         </span>
                       ) : (
-                        <span className="text-[10px] font-bold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">
+                        <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black text-[10px] px-1.5 py-0.5">
                           {pct}% 完成
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-slate-500 mt-0.5 truncate">
+                    <div className="text-xs text-bauhaus-black/60 mt-0.5 truncate">
                       {inst.email_primary || '—'} · {inst.phone_mobile || '—'}
                     </div>
                   </div>
                   <button
                     onClick={() => downloadSingle(inst)}
                     disabled={generating || !selectedForm}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="bh-btn bh-btn-outline text-xs px-3 py-1.5"
                     title={selectedFormMeta ? `下載「${selectedFormMeta.display_name}」` : ''}
                   >
                     <Download className="w-3 h-3" /> 下載

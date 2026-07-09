@@ -68,36 +68,36 @@ const SignaturePadComponent = ({ onConfirm, onCancel, isOpen }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col animate-in fade-in zoom-in duration-300">
+    <div className="fixed inset-0 z-50 bg-bauhaus-black/70 flex items-center justify-center p-4">
+      <div className="bh-card bg-white w-full max-w-2xl shadow-hard-lg overflow-hidden max-h-[90dvh] flex flex-col">
         <div className="overflow-y-auto min-h-0">
           {/* Header */}
-          <div className="p-4 md:p-5 border-b border-slate-100 flex items-center justify-between">
+          <div className="p-4 md:p-5 border-b-2 border-bauhaus-black flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-bold text-slate-900">電子簽名</h3>
-              <p className="text-sm text-slate-500 mt-0.5">請在下方白色區域簽下您的姓名</p>
+              <h3 className="text-lg font-bold text-bauhaus-black">電子簽名</h3>
+              <p className="text-sm text-bauhaus-black/60 mt-0.5">請在下方白色區域簽下您的姓名</p>
             </div>
-            <button onClick={onCancel} className="p-3 md:p-2 hover:bg-slate-100 rounded-lg transition-colors">
-              <X className="w-5 h-5 text-slate-400" />
+            <button onClick={onCancel} className="p-3 md:p-2 border-2 border-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200">
+              <X className="w-5 h-5 text-bauhaus-black" />
             </button>
           </div>
 
           {/* Canvas area */}
           <div className="p-4 md:p-5">
-            <div className="relative border-2 border-dashed border-slate-200 rounded-xl bg-white overflow-hidden h-[220px] md:h-[280px]">
+            <div className="relative border-2 border-dashed border-bauhaus-black bg-white overflow-hidden h-[220px] md:h-[280px]">
               <canvas
                 ref={canvasRef}
                 className="absolute inset-0 cursor-crosshair touch-none"
               />
               {isEmpty && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <p className="text-slate-300 text-lg font-medium select-none">在此簽名</p>
+                  <p className="text-bauhaus-black/20 text-lg font-medium select-none">在此簽名</p>
                 </div>
               )}
               {/* Signature line */}
-              <div className="absolute bottom-12 left-8 right-8 border-b border-slate-200 pointer-events-none" />
+              <div className="absolute bottom-12 left-8 right-8 border-b-2 border-bauhaus-black/20 pointer-events-none" />
               <div className="absolute bottom-8 left-8 pointer-events-none">
-                <span className="text-xs text-slate-300">甲方簽名</span>
+                <span className="text-xs text-bauhaus-black/30">甲方簽名</span>
               </div>
             </div>
           </div>
@@ -106,7 +106,7 @@ const SignaturePadComponent = ({ onConfirm, onCancel, isOpen }) => {
           <div className="px-4 pb-4 md:px-5 md:pb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <button
               onClick={handleClear}
-              className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-3 md:py-2.5 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"
+              className="bh-btn bh-btn-outline w-full md:w-auto px-4 py-3 md:py-2.5 text-sm"
             >
               <RotateCcw className="w-4 h-4" />
               清除重簽
@@ -114,18 +114,14 @@ const SignaturePadComponent = ({ onConfirm, onCancel, isOpen }) => {
             <div className="flex gap-3 w-full md:w-auto">
               <button
                 onClick={onCancel}
-                className="flex-1 md:flex-none flex items-center justify-center px-5 py-3 md:py-2.5 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"
+                className="bh-btn bh-btn-outline flex-1 md:flex-none px-5 py-3 md:py-2.5 text-sm"
               >
                 返回
               </button>
               <button
                 onClick={handleConfirm}
                 disabled={isEmpty}
-                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 md:py-2.5 text-sm font-bold rounded-xl transition-all ${
-                  isEmpty
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/25'
-                }`}
+                className="bh-btn bh-btn-blue flex-1 md:flex-none px-6 py-3 md:py-2.5 text-sm"
               >
                 <Check className="w-4 h-4" />
                 確認簽名

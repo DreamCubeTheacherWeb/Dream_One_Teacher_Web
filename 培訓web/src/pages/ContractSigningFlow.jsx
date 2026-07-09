@@ -377,7 +377,7 @@ const ContractSigningFlow = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full" />
+        <div className="animate-spin w-10 h-10 border-4 border-bauhaus-black border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -385,15 +385,15 @@ const ContractSigningFlow = () => {
   if (loadError) {
     return (
       <div className="max-w-2xl mx-auto p-4 sm:p-8">
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-lg p-8 text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-900 mb-2">資料載入失敗</h2>
-          <p className="text-slate-500 mb-6">{loadError}</p>
+        <div className="bg-bauhaus-red border-2 lg:border-4 border-bauhaus-black shadow-hard lg:shadow-hard-lg p-8 text-center text-white">
+          <AlertCircle className="w-12 h-12 text-white mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">資料載入失敗</h2>
+          <p className="text-white/80 mb-6">{loadError}</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button onClick={() => loadData()} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all">
+            <button onClick={() => loadData()} className="bh-btn bh-btn-blue border-white shadow-hard-white px-6 py-3">
               重新載入
             </button>
-            <button onClick={() => navigate('/profile')} className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all">
+            <button onClick={() => navigate('/profile')} className="bh-btn bh-btn-outline border-white shadow-hard-white px-6 py-3">
               返回個人資料
             </button>
           </div>
@@ -405,33 +405,33 @@ const ContractSigningFlow = () => {
   if (completed) {
     return (
       <div className="max-w-2xl mx-auto p-4 sm:p-8">
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-lg p-8 sm:p-12 text-center">
-          <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <PartyPopper className="w-10 h-10 text-green-500" />
+        <div className="bh-card p-8 sm:p-12 text-center">
+          <div className="w-20 h-20 border-2 border-bauhaus-black bg-bauhaus-blue rounded-full flex items-center justify-center mx-auto mb-6">
+            <PartyPopper className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-3">簽約完成！</h1>
-          <p className="text-slate-500 mb-8">您的電子合約已成功簽署並存檔。</p>
-          <div className="bg-slate-50 rounded-2xl p-5 mb-8 text-left space-y-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-3">簽約完成！</h1>
+          <p className="text-bauhaus-black/60 mb-8">您的電子合約已成功簽署並存檔。</p>
+          <div className="bg-bauhaus-paper border-2 border-bauhaus-black/10 p-5 mb-8 text-left space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">簽約人</span>
-              <span className="font-bold text-slate-900">{formData.name}</span>
+              <span className="text-bauhaus-black/60">簽約人</span>
+              <span className="font-bold text-bauhaus-black">{formData.name}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">講師等級</span>
-              <span className="font-bold text-slate-900">{formData.instructorRole}</span>
+              <span className="text-bauhaus-black/60">講師等級</span>
+              <span className="font-bold text-bauhaus-black">{formData.instructorRole}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">簽約時間</span>
-              <span className="font-bold text-slate-900">{new Date().toLocaleString('zh-TW')}</span>
+              <span className="text-bauhaus-black/60">簽約時間</span>
+              <span className="font-bold text-bauhaus-black">{new Date().toLocaleString('zh-TW')}</span>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button onClick={() => navigate(`/contract/view/${newContractId}`)}
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/25">
+              className="bh-btn bh-btn-blue px-6 py-3">
               查看合約
             </button>
             <button onClick={() => navigate('/profile')}
-              className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all">
+              className="bh-btn bh-btn-outline px-6 py-3">
               返回個人資料
             </button>
           </div>
@@ -443,11 +443,11 @@ const ContractSigningFlow = () => {
   if (steps.length === 0) {
     return (
       <div className="max-w-2xl mx-auto p-4 sm:p-8">
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-lg p-8 text-center">
-          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-900 mb-2">文件尚未就緒</h2>
-          <p className="text-slate-500 mb-4">合約文件尚未設定，請通知管理員。</p>
-          <button onClick={() => navigate('/profile')} className="mt-2 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all">
+        <div className="bh-card p-8 text-center">
+          <AlertCircle className="w-12 h-12 text-bauhaus-black/60 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-bauhaus-black mb-2">文件尚未就緒</h2>
+          <p className="text-bauhaus-black/60 mb-4">合約文件尚未設定，請通知管理員。</p>
+          <button onClick={() => navigate('/profile')} className="bh-btn bh-btn-outline mt-2 px-6 py-3">
             返回個人資料
           </button>
         </div>
@@ -459,14 +459,14 @@ const ContractSigningFlow = () => {
   if (missingDocs.length > 0) {
     return (
       <div className="max-w-2xl mx-auto p-4 sm:p-8">
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-lg p-8 text-center">
-          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-900 mb-2">文件尚未就緒</h2>
-          <p className="text-slate-500 mb-4">以下合約文件尚未上傳，請通知管理員：</p>
-          <ul className="text-sm text-slate-600 space-y-1">
+        <div className="bh-card p-8 text-center">
+          <AlertCircle className="w-12 h-12 text-bauhaus-black/60 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-bauhaus-black mb-2">文件尚未就緒</h2>
+          <p className="text-bauhaus-black/60 mb-4">以下合約文件尚未上傳，請通知管理員：</p>
+          <ul className="text-sm text-bauhaus-black/70 space-y-1">
             {missingDocs.map(d => <li key={d.id}>{d.title}</li>)}
           </ul>
-          <button onClick={() => navigate('/profile')} className="mt-6 px-6 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all">
+          <button onClick={() => navigate('/profile')} className="bh-btn bh-btn-outline mt-6 px-6 py-3">
             返回個人資料
           </button>
         </div>
@@ -478,7 +478,7 @@ const ContractSigningFlow = () => {
     <div className="max-w-4xl mx-auto p-4 sm:p-8">
       {/* Step progress */}
       <div className="mb-8">
-        <button onClick={() => navigate('/profile')} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 mb-4 transition-colors py-3 md:py-0">
+        <button onClick={() => navigate('/profile')} className="flex items-center gap-1 text-sm text-bauhaus-black/60 hover:text-bauhaus-black mb-4 transition-colors py-3 md:py-0">
           <ArrowLeft className="w-4 h-4" /> 返回個人資料
         </button>
         <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-2">
@@ -486,27 +486,39 @@ const ContractSigningFlow = () => {
             const StepIcon = s.icon;
             const isActive = i === step;
             const isDone = i < step;
+            const shapeIdx = i % 3;
+            const shapeClass = shapeIdx === 0 ? 'rounded-full' : shapeIdx === 1 ? 'rounded-none' : 'rounded-none rotate-45';
+            const toneClass = isActive
+              ? 'bg-bauhaus-black text-white border-bauhaus-black'
+              : isDone
+                ? 'bg-bauhaus-blue text-white border-bauhaus-black'
+                : 'bg-white text-bauhaus-black/40 border-bauhaus-black/20';
             return (
               <div key={s.id} className="flex items-center gap-2 shrink-0">
-                <div className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                  isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' :
-                  isDone ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-400'
-                }`}>
-                  {isDone ? <CheckCircle2 className="w-4 h-4" /> : <StepIcon className="w-4 h-4" />}
-                  <span className="hidden sm:inline">{s.title}</span>
-                  <span className="sm:hidden">Step {i + 1}</span>
+                <div className="flex items-center gap-2">
+                  <div className={`w-8 h-8 flex items-center justify-center border-2 shrink-0 ${shapeClass} ${toneClass}`}>
+                    <span className={shapeIdx === 2 ? 'flex -rotate-45' : 'flex'}>
+                      {isDone ? <CheckCircle2 className="w-4 h-4" /> : <StepIcon className="w-4 h-4" />}
+                    </span>
+                  </div>
+                  <span className={`text-sm font-bold uppercase tracking-wide ${
+                    isActive ? 'text-bauhaus-black' : isDone ? 'text-bauhaus-blue' : 'text-bauhaus-black/40'
+                  }`}>
+                    <span className="hidden sm:inline">{s.title}</span>
+                    <span className="sm:hidden">Step {i + 1}</span>
+                  </span>
                 </div>
-                {i < steps.length - 1 && <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />}
+                {i < steps.length - 1 && <ChevronRight className="w-4 h-4 text-bauhaus-black/20 shrink-0" />}
               </div>
             );
           })}
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
-        <div className="p-5 sm:p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900">{currentStep?.title}</h2>
-          <p className="text-sm text-slate-500 mt-1">
+      <div className="bh-card overflow-hidden">
+        <div className="p-5 sm:p-6 border-b-2 border-bauhaus-black bg-bauhaus-paper">
+          <h2 className="text-lg sm:text-xl font-bold text-bauhaus-black">{currentStep?.title}</h2>
+          <p className="text-sm text-bauhaus-black/60 mt-1">
             {isFillSign ? '請仔細閱讀文件內容，並填寫下方欄位後進行簽名' : '請仔細閱讀以下文件內容'}
           </p>
         </div>
@@ -521,17 +533,17 @@ const ContractSigningFlow = () => {
         {/* Contract form - shown on the last fill_sign step */}
         {showFormOnThisStep && (
           <div className="px-4 sm:px-6 pb-6">
-            <div className="border-t border-slate-100 pt-6 mt-2">
-              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <PenTool className="w-5 h-5 text-blue-600" /> 填寫契約資料
+            <div className="border-t-2 border-bauhaus-black/10 pt-6 mt-2">
+              <h3 className="text-lg font-bold text-bauhaus-black mb-4 flex items-center gap-2">
+                <PenTool className="w-5 h-5 text-bauhaus-blue" /> 填寫契約資料
               </h3>
 
               {roleMissing && (
-                <div className="mb-5 rounded-xl border-2 border-red-200 bg-red-50 p-4 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                <div className="mb-5 border-2 border-bauhaus-black bg-bauhaus-red p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-white shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-bold text-red-700">尚無法簽署：您的講師等級尚未設定</p>
-                    <p className="text-sm text-red-600 mt-1">
+                    <p className="text-sm font-bold text-white">尚無法簽署：您的講師等級尚未設定</p>
+                    <p className="text-sm text-white/90 mt-1">
                       講師等級由系統依您的資料自動帶入，目前為空白，屬於缺少前置資料（非您操作錯誤）。
                       請聯繫管理員設定講師等級後，再回來完成簽署。
                     </p>
@@ -540,11 +552,11 @@ const ContractSigningFlow = () => {
               )}
 
               {missingSigTitles.length > 0 && (
-                <div className="mb-5 rounded-xl border-2 border-red-200 bg-red-50 p-4 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                <div className="mb-5 border-2 border-bauhaus-black bg-bauhaus-red p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-white shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-bold text-red-700">尚無法簽署：合約尚未設定簽名欄位</p>
-                    <p className="text-sm text-red-600 mt-1">
+                    <p className="text-sm font-bold text-white">尚無法簽署：合約尚未設定簽名欄位</p>
+                    <p className="text-sm text-white/90 mt-1">
                       以下文件尚未由管理員設定簽名欄位位置，若強行簽署會產生沒有簽名的無效合約：
                       「{missingSigTitles.join('、')}」。請聯繫管理員設定後再簽署。
                     </p>
@@ -554,66 +566,66 @@ const ContractSigningFlow = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                 <div>
-                  <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <User className="w-4 h-4 text-slate-400" /> 立契約書人（甲方姓名）<span className="text-red-500">*</span>
+                  <label className="bh-label mb-1.5 flex items-center gap-1.5">
+                    <User className="w-4 h-4 text-bauhaus-black/40" /> 立契約書人（甲方姓名）<span className="text-bauhaus-red">*</span>
                   </label>
                   <input type="text" value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
                     autoComplete="name"
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    className="bh-input"
                     placeholder="請輸入姓名" />
                 </div>
                 <div>
-                  <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <Shield className="w-4 h-4 text-slate-400" /> 講師等級<span className="text-red-500">*</span>
+                  <label className="bh-label mb-1.5 flex items-center gap-1.5">
+                    <Shield className="w-4 h-4 text-bauhaus-black/40" /> 講師等級<span className="text-bauhaus-red">*</span>
                   </label>
                   <input type="text" value={formData.instructorRole} readOnly
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-600 outline-none" placeholder="由系統自動帶入" />
-                  <p className="text-xs text-slate-400 mt-1">此欄位由系統帶入，如需調整請聯繫管理員</p>
+                    className="bh-input !bg-bauhaus-muted !text-bauhaus-black/60 !cursor-not-allowed" placeholder="由系統自動帶入" />
+                  <p className="text-xs text-bauhaus-black/40 mt-1">此欄位由系統帶入，如需調整請聯繫管理員</p>
                 </div>
                 <div>
-                  <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <CreditCard className="w-4 h-4 text-slate-400" /> 身分證字號<span className="text-red-500">*</span>
+                  <label className="bh-label mb-1.5 flex items-center gap-1.5">
+                    <CreditCard className="w-4 h-4 text-bauhaus-black/40" /> 身分證字號<span className="text-bauhaus-red">*</span>
                   </label>
                   <input type="text" value={formData.idNumber}
                     onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10); setFormData(p => ({ ...p, idNumber: v })); }}
                     maxLength={10}
                     autoComplete="off"
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all font-mono tracking-wider"
+                    className="bh-input font-mono tracking-wider"
                     placeholder="A123456789" />
-                  <p className="text-xs text-slate-400 mt-1">共 10 碼英數字元（{formData.idNumber.length}/10）</p>
+                  <p className="text-xs text-bauhaus-black/40 mt-1">共 10 碼英數字元（{formData.idNumber.length}/10）</p>
                 </div>
                 <div>
-                  <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <MapPin className="w-4 h-4 text-slate-400" /> 地址<span className="text-red-500">*</span>
+                  <label className="bh-label mb-1.5 flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-bauhaus-black/40" /> 地址<span className="text-bauhaus-red">*</span>
                   </label>
                   <input type="text" value={formData.address} onChange={e => setFormData(p => ({ ...p, address: e.target.value }))}
                     autoComplete="street-address"
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    className="bh-input"
                     placeholder="請輸入通訊地址" />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <Phone className="w-4 h-4 text-slate-400" /> 電話<span className="text-red-500">*</span>
+                  <label className="bh-label mb-1.5 flex items-center gap-1.5">
+                    <Phone className="w-4 h-4 text-bauhaus-black/40" /> 電話<span className="text-bauhaus-red">*</span>
                   </label>
                   <input type="tel" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))}
                     inputMode="tel" autoComplete="tel"
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    className="bh-input"
                     placeholder="請輸入聯絡電話" />
                 </div>
               </div>
 
-              <div className="space-y-3 mb-6 bg-amber-50 rounded-xl p-4 border border-amber-100">
+              <div className="space-y-3 mb-6 bg-bauhaus-yellow border-2 border-bauhaus-black p-4">
                 <label className="flex items-start gap-3 cursor-pointer group">
                   <input type="checkbox" checked={agreedTerms} onChange={e => setAgreedTerms(e.target.checked)}
-                    className="mt-0.5 w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                  <span className="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">
+                    className="mt-0.5 w-5 h-5 rounded-none border-2 border-bauhaus-black accent-bauhaus-black focus:ring-bauhaus-black" />
+                  <span className="text-sm font-medium text-bauhaus-black">
                     清楚看過所有合約文件內容，皆可遵守並配合。
                   </span>
                 </label>
                 <label className="flex items-start gap-3 cursor-pointer group">
                   <input type="checkbox" checked={agreedElectronic} onChange={e => setAgreedElectronic(e.target.checked)}
-                    className="mt-0.5 w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                  <span className="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">
+                    className="mt-0.5 w-5 h-5 rounded-none border-2 border-bauhaus-black accent-bauhaus-black focus:ring-bauhaus-black" />
+                  <span className="text-sm font-medium text-bauhaus-black">
                     清楚且接受線上電子簽名與實體簽約具備一樣的法律效力。
                   </span>
                 </label>
@@ -626,27 +638,27 @@ const ContractSigningFlow = () => {
               />
 
               <div className="mb-6">
-                <h4 className="text-sm font-bold text-slate-700 mb-3">甲方簽名</h4>
+                <h4 className="text-sm font-bold text-bauhaus-black mb-3">甲方簽名</h4>
                 {signatureDataUrl ? (
-                  <div className="border-2 border-green-200 rounded-xl p-4 bg-green-50">
+                  <div className="border-2 border-bauhaus-black bg-white p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-bold text-green-700 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4" /> 已簽名
+                      <span className="bh-chip bg-bauhaus-blue text-white">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> 已簽名
                       </span>
                       <button onClick={() => { setSignatureDataUrl(null); setShowSignaturePad(true); }}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-bold py-3 px-2 md:py-0 md:px-0">重新簽名</button>
+                        className="text-sm text-bauhaus-blue hover:text-bauhaus-black font-bold py-3 px-2 md:py-0 md:px-0">重新簽名</button>
                     </div>
-                    <div className="bg-white rounded-lg p-3 border border-green-100">
+                    <div className="bg-white border-2 border-bauhaus-black/10 p-3">
                       <img src={signatureDataUrl} alt="簽名" className="max-h-24 mx-auto" />
                     </div>
                   </div>
                 ) : (
                   <button onClick={() => setShowSignaturePad(true)}
                     disabled={!agreedTerms || !agreedElectronic || !verified}
-                    className={`w-full py-8 border-2 border-dashed rounded-xl transition-all flex flex-col items-center gap-2 ${
+                    className={`w-full py-8 border-2 border-dashed transition-all flex flex-col items-center gap-2 ${
                       agreedTerms && agreedElectronic && verified
-                        ? 'border-blue-300 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-400 cursor-pointer text-blue-600'
-                        : 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed'
+                        ? 'border-bauhaus-blue bg-white hover:bg-bauhaus-cream cursor-pointer text-bauhaus-blue'
+                        : 'border-bauhaus-black/20 bg-bauhaus-muted text-bauhaus-black/40 cursor-not-allowed'
                     }`}>
                     <PenTool className="w-8 h-8" />
                     <span className="font-bold">
@@ -660,17 +672,13 @@ const ContractSigningFlow = () => {
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex flex-col sm:flex-row gap-3 items-center justify-between pt-4 border-t-2 border-bauhaus-black/10">
                 <button onClick={() => setStep(step - 1)}
-                  className="flex items-center gap-2 px-5 py-3 md:py-2.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all w-full sm:w-auto justify-center">
+                  className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm w-full sm:w-auto justify-center">
                   <ChevronLeft className="w-4 h-4" /> 上一步
                 </button>
                 <button onClick={handleSubmit} disabled={!isFormValid() || submitting}
-                  className={`flex items-center gap-2 px-8 py-3 text-sm font-bold rounded-xl transition-all w-full sm:w-auto justify-center ${
-                    isFormValid() && !submitting
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:-translate-y-0.5'
-                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                  }`}>
+                  className="bh-btn bh-btn-blue px-8 py-3 text-sm w-full sm:w-auto justify-center">
                   {submitting ? (
                     <><div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> 簽約中...</>
                   ) : (
@@ -685,15 +693,15 @@ const ContractSigningFlow = () => {
         {/* Non-last fill_sign step: show prev/next buttons */}
         {isFillSign && !isLastStep && (
           <div className="px-4 sm:px-6 pb-6">
-            <div className="flex justify-between pt-4 border-t border-slate-100">
+            <div className="flex justify-between pt-4 border-t-2 border-bauhaus-black/10">
               {step > 0 && (
                 <button onClick={() => setStep(step - 1)}
-                  className="flex items-center gap-2 px-5 py-3 md:py-2.5 text-sm font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all">
+                  className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm">
                   <ChevronLeft className="w-4 h-4" /> 上一步
                 </button>
               )}
               <button onClick={() => setStep(step + 1)}
-                className="flex items-center gap-2 px-5 py-3 md:py-2.5 text-sm font-bold text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-all ml-auto">
+                className="bh-btn bh-btn-blue px-5 py-3 md:py-2.5 text-sm ml-auto">
                 下一步 <ChevronRight className="w-4 h-4" />
               </button>
             </div>

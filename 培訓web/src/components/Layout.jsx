@@ -72,57 +72,79 @@ const Layout = ({ children }) => {
 
     const displayName = instructorProfile?.nickname || instructorProfile?.full_name || profile?.name || user?.email?.split('@')[0] || '';
 
+    // Bauhaus：目前頁面色塊指示（選中＝黑底白字，未選＝hover 變灰底）
+    const isActivePath = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
+    const navLinkClass = (path) =>
+        `flex items-center gap-1.5 px-3 py-2 text-sm font-bold uppercase tracking-wide transition-colors duration-200 ${
+            isActivePath(path) ? 'bg-bauhaus-black text-white' : 'text-bauhaus-black hover:bg-bauhaus-muted'
+        }`;
+    const mobileNavLinkClass = (path) =>
+        `flex items-center gap-3 px-3 py-3.5 font-bold uppercase tracking-wide text-sm transition-colors duration-200 ${
+            isActivePath(path) ? 'bg-bauhaus-black text-white' : 'text-bauhaus-black hover:bg-bauhaus-muted'
+        }`;
+    const roleChipClass = (role) => {
+        if (role === 'admin') return 'bh-chip bg-bauhaus-black text-white';
+        if (role === 'mentor') return 'bh-chip bg-bauhaus-blue text-white';
+        if (role === 'pending') return 'bh-chip bg-bauhaus-yellow text-bauhaus-black';
+        return 'bh-chip bg-bauhaus-muted text-bauhaus-black';
+    };
+
     return (
         <div className="min-h-screen flex flex-col overflow-x-hidden">
-            <header className="bg-white border-b border-slate-200 relative z-50">
+            <header className="bg-white border-b-4 border-bauhaus-black relative z-50">
                 <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-                    <Link to="/" className="flex items-center gap-2 font-bold text-xl text-blue-600 shrink-0 p-1 -m-1 min-h-[44px]">
+                    <Link to="/" className="flex items-center gap-2 font-black text-xl text-bauhaus-black tracking-tight shrink-0 p-1 -m-1 min-h-[44px]">
+                        <span className="hidden sm:flex items-center gap-1" aria-hidden="true">
+                            <span className="w-4 h-4 rounded-full bg-bauhaus-red" />
+                            <span className="w-4 h-4 bg-bauhaus-blue" />
+                            <span className="w-4 h-4 bg-bauhaus-yellow" style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />
+                        </span>
                         <img src="/logo.png" alt="夢想一號 Logo" className="w-9 h-9 object-contain" />
                         <span className="hidden sm:inline">講師資源站</span>
                     </Link>
 
                     {/* 桌面版導航 */}
-                    <nav className="hidden md:flex items-center gap-5">
+                    <nav className="hidden md:flex items-center gap-1">
                         {user ? (
                             <>
                                 {profile && profile.role !== 'pending' ? (
-                                    <Link to="/courses" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                    <Link to="/courses" className={navLinkClass('/courses')}>
                                         <BookOpen className="w-4 h-4" />
                                         我的課程
                                     </Link>
                                 ) : (
                                     <button
                                         onClick={() => alert('權限尚未開啟，如資料已填寫完，請通知夢想一號管理員協助開啟權限')}
-                                        className="flex items-center gap-1 text-slate-400 hover:text-slate-500 font-medium cursor-pointer text-sm"
+                                        className="flex items-center gap-1.5 px-3 py-2 text-sm text-bauhaus-black/40 hover:text-bauhaus-black font-bold uppercase tracking-wide cursor-pointer"
                                     >
                                         <BookOpen className="w-4 h-4" />
                                         我的課程
                                     </button>
                                 )}
                                 {profile && profile.role !== 'pending' && (
-                                    <Link to="/leaderboard" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                    <Link to="/leaderboard" className={navLinkClass('/leaderboard')}>
                                         <Trophy className="w-4 h-4" />
                                         排行榜
                                     </Link>
                                 )}
                                 {profile && profile.role !== 'pending' && (
-                                    <Link to="/cube" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                    <Link to="/cube" className={navLinkClass('/cube')}>
                                         <Timer className="w-4 h-4" />
                                         方塊競速
                                     </Link>
                                 )}
-                                <Link to="/profile" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                <Link to="/profile" className={navLinkClass('/profile')}>
                                     <UserCircle className="w-4 h-4" />
                                     個人資料
                                 </Link>
                                 {profile && profile.role !== 'pending' && (
-                                    <Link to="/my/salary" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                    <Link to="/my/salary" className={navLinkClass('/my/salary')}>
                                         <Wallet className="w-4 h-4" />
                                         我的薪資
                                     </Link>
                                 )}
                                 {(profile?.role === 'admin' || profile?.role === 'mentor') && (
-                                    <Link to="/admin" className="flex items-center gap-1 text-slate-600 hover:text-blue-600 font-medium text-sm">
+                                    <Link to="/admin" className={navLinkClass('/admin')}>
                                         <LayoutDashboard className="w-4 h-4" />
                                         後台管理
                                     </Link>
@@ -132,32 +154,27 @@ const Layout = ({ children }) => {
                                     <NotificationBell userId={user.id} />
                                 )}
 
-                                <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
+                                <div className="flex items-center gap-3 pl-4 border-l-2 border-bauhaus-black">
                                     <Link to="/profile" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-                                        <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-slate-200 shrink-0">
+                                        <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-bauhaus-black shrink-0">
                                             {avatarUrl ? (
                                                 <img src={avatarUrl} alt="大頭貼" className="w-full h-full object-cover" />
                                             ) : (
                                                 <PenguinAvatar />
                                             )}
                                         </div>
-                                        <div className="flex flex-col items-start">
-                                            <span className="text-sm font-bold text-slate-800 leading-tight max-w-[120px] truncate">
+                                        <div className="flex flex-col items-start gap-0.5">
+                                            <span className="text-sm font-bold text-bauhaus-black leading-tight max-w-[120px] truncate">
                                                 {displayName}
                                             </span>
-                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none mt-0.5 ${
-                                                profile?.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
-                                                profile?.role === 'mentor' ? 'bg-teal-50 text-teal-600' :
-                                                profile?.role === 'pending' ? 'bg-amber-50 text-amber-600' :
-                                                'bg-blue-50 text-blue-600'
-                                            }`}>
+                                            <span className={`${roleChipClass(profile?.role)} !px-1.5 !py-0 text-[9px] leading-none`}>
                                                 {ROLE_LABELS[profile?.role] || profile?.role}
                                             </span>
                                         </div>
                                     </Link>
                                     <button
                                         onClick={signOut}
-                                        className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                                        className="p-2 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-red hover:text-white transition-colors duration-200"
                                         title="登出"
                                     >
                                         <LogOut className="w-5 h-5" />
@@ -176,7 +193,7 @@ const Layout = ({ children }) => {
                         )}
                         <button
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                            className="p-3 text-slate-600 hover:text-blue-600"
+                            className="p-3 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
                         >
                             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                         </button>
@@ -185,27 +202,22 @@ const Layout = ({ children }) => {
 
                 {/* 手機版展開選單 */}
                 {mobileMenuOpen && (
-                    <div className="md:hidden bg-white border-t border-slate-100 shadow-lg">
+                    <div className="md:hidden bg-white border-t-4 border-bauhaus-black">
                         <div className="px-4 py-4 space-y-1">
                             {user ? (
                                 <>
                                     {/* 使用者資訊 */}
-                                    <Link to="/profile" className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 mb-3">
-                                        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-slate-200 shrink-0">
+                                    <Link to="/profile" className="flex items-center gap-3 p-3 border-2 border-bauhaus-black bg-bauhaus-muted mb-3">
+                                        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-bauhaus-black shrink-0">
                                             {avatarUrl ? (
                                                 <img src={avatarUrl} alt="大頭貼" className="w-full h-full object-cover" />
                                             ) : (
                                                 <PenguinAvatar />
                                             )}
                                         </div>
-                                        <div>
-                                            <div className="font-bold text-slate-800 text-sm">{displayName}</div>
-                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                                                profile?.role === 'admin' ? 'bg-indigo-50 text-indigo-600' :
-                                                profile?.role === 'mentor' ? 'bg-teal-50 text-teal-600' :
-                                                profile?.role === 'pending' ? 'bg-amber-50 text-amber-600' :
-                                                'bg-blue-50 text-blue-600'
-                                            }`}>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="font-bold text-bauhaus-black text-sm">{displayName}</div>
+                                            <span className={`${roleChipClass(profile?.role)} !px-1.5 !py-0 text-[9px] leading-none self-start`}>
                                                 {ROLE_LABELS[profile?.role] || profile?.role}
                                             </span>
                                         </div>
@@ -213,52 +225,52 @@ const Layout = ({ children }) => {
 
                                     {/* 導航連結 */}
                                     {profile && profile.role !== 'pending' ? (
-                                        <Link to="/courses" className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/courses" className={mobileNavLinkClass('/courses')}>
                                             <BookOpen className="w-5 h-5" />
                                             我的課程
                                         </Link>
                                     ) : (
                                         <button
                                             onClick={() => { alert('權限尚未開啟，如資料已填寫完，請通知夢想一號管理員協助開啟權限'); setMobileMenuOpen(false); }}
-                                            className="flex items-center gap-3 px-3 py-3.5 text-slate-400 rounded-xl font-medium text-sm w-full text-left"
+                                            className="flex items-center gap-3 px-3 py-3.5 text-bauhaus-black/40 font-bold uppercase tracking-wide text-sm w-full text-left"
                                         >
                                             <BookOpen className="w-5 h-5" />
                                             我的課程
                                         </button>
                                     )}
                                     {profile && profile.role !== 'pending' && (
-                                        <Link to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/leaderboard')}>
                                             <Trophy className="w-5 h-5" />
                                             排行榜
                                         </Link>
                                     )}
                                     {profile && profile.role !== 'pending' && (
-                                        <Link to="/cube" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/cube" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/cube')}>
                                             <Timer className="w-5 h-5" />
                                             方塊競速
                                         </Link>
                                     )}
-                                    <Link to="/profile" className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                    <Link to="/profile" className={mobileNavLinkClass('/profile')}>
                                         <UserCircle className="w-5 h-5" />
                                         個人資料
                                     </Link>
                                     {profile && profile.role !== 'pending' && (
-                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/my/salary')}>
                                             <Wallet className="w-5 h-5" />
                                             我的薪資
                                         </Link>
                                     )}
                                     {(profile?.role === 'admin' || profile?.role === 'mentor') && (
-                                        <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-3.5 text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-xl font-medium text-sm">
+                                        <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/admin')}>
                                             <LayoutDashboard className="w-5 h-5" />
                                             後台管理
                                         </Link>
                                     )}
 
-                                    <div className="border-t border-slate-100 pt-2 mt-2">
+                                    <div className="border-t-2 border-bauhaus-black pt-2 mt-2">
                                         <button
                                             onClick={() => { signOut(); setMobileMenuOpen(false); }}
-                                            className="flex items-center gap-3 px-3 py-3.5 text-red-500 hover:bg-red-50 rounded-xl font-medium text-sm w-full"
+                                            className="flex items-center gap-3 px-3 py-3.5 text-white bg-bauhaus-red hover:bg-bauhaus-red/90 font-bold uppercase tracking-wide text-sm w-full transition-colors duration-200"
                                         >
                                             <LogOut className="w-5 h-5" />
                                             登出
@@ -279,9 +291,16 @@ const Layout = ({ children }) => {
                 {children}
             </main>
 
-            <footer className="bg-white border-t border-slate-200 py-8">
-                <div className="max-w-7xl mx-auto px-4 text-center text-slate-500 text-sm">
-                    Copyright 2026 夢想一號文化教育股份有限公司, all rights reserved.
+            <footer className="bg-bauhaus-black text-white">
+                <div className="flex h-1.5 sm:h-2" aria-hidden="true">
+                    <div className="flex-1 bg-bauhaus-red" />
+                    <div className="flex-1 bg-bauhaus-blue" />
+                    <div className="flex-1 bg-bauhaus-yellow" />
+                </div>
+                <div className="py-8">
+                    <div className="max-w-7xl mx-auto px-4 text-center text-white/60 text-sm font-medium">
+                        Copyright 2026 夢想一號文化教育股份有限公司, all rights reserved.
+                    </div>
                 </div>
             </footer>
         </div>
@@ -295,10 +314,10 @@ const NOTIF_ICONS = {
     contract: FileSignature,
 };
 const NOTIF_COLORS = {
-    announcement: 'text-red-500 bg-red-50',
-    feedback: 'text-amber-500 bg-amber-50',
-    like: 'text-blue-500 bg-blue-50',
-    contract: 'text-emerald-600 bg-emerald-50',
+    announcement: 'text-white bg-bauhaus-red',
+    feedback: 'text-bauhaus-black bg-bauhaus-yellow',
+    like: 'text-white bg-bauhaus-blue',
+    contract: 'text-bauhaus-black bg-bauhaus-yellow',
 };
 
 const NotificationBell = ({ userId }) => {
@@ -371,24 +390,24 @@ const NotificationBell = ({ userId }) => {
         <div className="relative" ref={panelRef}>
             <button
                 onClick={() => setOpen(!open)}
-                className="relative p-3 md:p-2 text-slate-500 hover:text-blue-600 transition-colors"
+                className="relative p-3 md:p-2 border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
             >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-black min-w-[18px] h-[18px] flex items-center justify-center rounded-full px-1">
+                    <span className="absolute -top-1.5 -right-1.5 bg-bauhaus-red text-white text-[10px] font-black min-w-[18px] h-[18px] flex items-center justify-center px-1 border-2 border-white">
                         {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                 )}
             </button>
 
             {open && (
-                <div className="fixed left-3 right-3 top-[4.5rem] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-2rem)] bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden">
-                    <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="font-bold text-slate-900">通知</h3>
+                <div className="fixed left-3 right-3 top-[4.5rem] md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-96 md:max-w-[calc(100vw-2rem)] bg-white border-2 lg:border-4 border-bauhaus-black shadow-hard-lg z-50 overflow-hidden">
+                    <div className="px-5 py-4 bg-bauhaus-black text-white flex items-center justify-between">
+                        <h3 className="font-black uppercase tracking-wide text-sm">通知</h3>
                         {unreadCount > 0 && (
                             <button
                                 onClick={markAllRead}
-                                className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                                className="text-xs text-white/80 hover:text-white font-bold flex items-center gap-1 uppercase tracking-wide"
                             >
                                 <CheckCheck className="w-3.5 h-3.5" />
                                 全部已讀
@@ -397,36 +416,36 @@ const NotificationBell = ({ userId }) => {
                     </div>
                     <div className="max-h-[400px] overflow-y-auto">
                         {notifications.length === 0 ? (
-                            <div className="py-12 text-center text-slate-400">
-                                <Bell className="w-8 h-8 mx-auto mb-2 text-slate-200" />
-                                <p className="text-sm">目前沒有通知</p>
+                            <div className="py-12 text-center text-bauhaus-black/40">
+                                <Bell className="w-8 h-8 mx-auto mb-2 text-bauhaus-black/20" />
+                                <p className="text-sm font-medium">目前沒有通知</p>
                             </div>
                         ) : (
                             notifications.map(n => {
                                 const Icon = NOTIF_ICONS[n.type] || Bell;
-                                const colorCls = NOTIF_COLORS[n.type] || 'text-slate-500 bg-slate-50';
+                                const colorCls = NOTIF_COLORS[n.type] || 'text-bauhaus-black bg-bauhaus-muted';
                                 return (
                                     <button
                                         key={n.id}
                                         onClick={() => markAsRead(n)}
-                                        className={`w-full text-left px-5 py-3.5 flex items-start gap-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 ${!n.is_read ? 'bg-blue-50/30' : ''}`}
+                                        className={`w-full text-left px-5 py-3.5 flex items-start gap-3 hover:bg-bauhaus-muted transition-colors duration-200 border-b-2 border-bauhaus-black/10 last:border-0 ${!n.is_read ? 'bg-bauhaus-cream' : ''}`}
                                     >
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${colorCls}`}>
+                                        <div className={`w-8 h-8 flex items-center justify-center shrink-0 mt-0.5 border-2 border-bauhaus-black ${colorCls}`}>
                                             <Icon className="w-4 h-4" />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <span className={`text-sm font-semibold ${!n.is_read ? 'text-slate-900' : 'text-slate-600'}`}>
+                                                <span className={`text-sm font-bold ${!n.is_read ? 'text-bauhaus-black' : 'text-bauhaus-black/60'}`}>
                                                     {n.title}
                                                 </span>
                                                 {!n.is_read && (
-                                                    <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0" />
+                                                    <span className="w-2 h-2 bg-bauhaus-red rounded-full shrink-0" />
                                                 )}
                                             </div>
                                             {n.body && (
-                                                <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{n.body}</p>
+                                                <p className="text-xs text-bauhaus-black/60 mt-0.5 line-clamp-1">{n.body}</p>
                                             )}
-                                            <span className="text-[11px] text-slate-400 mt-1 block">{timeAgo(n.created_at)}</span>
+                                            <span className="text-[11px] text-bauhaus-black/40 mt-1 block">{timeAgo(n.created_at)}</span>
                                         </div>
                                     </button>
                                 );
@@ -455,14 +474,14 @@ const LoginForm = () => {
         <div className="flex items-center gap-3">
             <button
                 onClick={signInWithGoogle}
-                className="flex items-center gap-2 px-5 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 hover:shadow-sm transition-all text-sm font-medium text-slate-700"
+                className="bh-btn bh-btn-outline px-5 py-2 text-sm"
             >
                 <GoogleIcon />
                 使用 Google 登入
             </button>
             <Link
                 to="/dev-login"
-                className="text-xs text-slate-400 hover:text-amber-600 underline decoration-dotted underline-offset-4"
+                className="text-xs text-bauhaus-black/40 hover:text-bauhaus-red underline decoration-dotted underline-offset-4"
                 title="Google OAuth 串接前的臨時 email 登入"
             >
                 臨時登入
@@ -476,19 +495,19 @@ const MobileLoginForm = () => {
 
     return (
         <div className="space-y-3">
-            <div className="text-sm font-bold text-slate-700 mb-1">登入帳號</div>
+            <div className="bh-label mb-1">登入帳號</div>
             <button
                 type="button"
                 onClick={signInWithGoogle}
-                className="w-full flex items-center justify-center gap-2.5 px-4 py-3 border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors text-sm font-medium text-slate-700 bg-white"
+                className="bh-btn bh-btn-outline w-full px-4 py-3 text-sm"
             >
                 <GoogleIcon />
                 使用 Google 帳號登入
             </button>
-            <p className="text-center text-xs text-slate-400">首次登入即自動完成註冊</p>
+            <p className="text-center text-xs text-bauhaus-black/40">首次登入即自動完成註冊</p>
             <Link
                 to="/dev-login"
-                className="block text-center text-xs text-slate-400 hover:text-amber-600 underline decoration-dotted underline-offset-4 pt-1"
+                className="block text-center text-xs text-bauhaus-black/40 hover:text-bauhaus-red underline decoration-dotted underline-offset-4 pt-1"
             >
                 臨時 email 登入(Google OAuth 串接前)
             </Link>
