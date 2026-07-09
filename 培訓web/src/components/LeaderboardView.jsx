@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { Trophy, Crown, Medal } from 'lucide-react';
 import { toHours, highestMilestone, rankTitle } from '../lib/leaderboard';
 
-// 單一排行維度：接課時數
-const METRIC = { label: '接課時數', unit: '小時', accent: 'blue', getValue: (r) => toHours(r.total_hours) };
+// 單一排行維度：接課時數。showRankTitle＝是否顯示「教學王」稱號徽章
+// （教學專屬榮譽，方塊競速／WCA 賽事的 metric 不設此旗標，就不會顯示）。
+const METRIC = { label: '接課時數', unit: '小時', accent: 'blue', getValue: (r) => toHours(r.total_hours), showRankTitle: true };
 
 const ACCENT = {
     blue: 'from-blue-500 to-indigo-500',
@@ -147,23 +148,25 @@ const LeaderboardView = ({
                 <>
                     {/* Podium 前三名 */}
                     {top3.length > 0 && (
-                        <div key={selectedYear ?? 'all'} className="grid grid-cols-3 gap-1.5 sm:gap-4 mb-6 items-end">
+                        <div key={selectedYear ?? 'all'} className={`mb-6 items-end ${podiumOrder.length === 1 ? 'flex justify-center' : 'grid grid-cols-3 gap-1.5 sm:gap-4'}`}>
                             {podiumOrder.map((r, i) => {
                                 const rank = sorted.findIndex((x) => x.instructor_id === r.instructor_id) + 1;
                                 const p = PODIUM[rank] || PODIUM[3];
                                 const Icon = p.icon;
                                 const isMe = r.user_id && r.user_id === currentUserId;
                                 const isFirst = rank === 1;
-                                const title = rankTitle(rank, selectedYear);
+                                // 稱號徽章只在有 showRankTitle 旗標的 metric（＝教學榜）顯示，
+                                // 不可漏到方塊競速榜／WCA 賽事榜的第一名頭上。
+                                const rankName = activeTab.showRankTitle ? rankTitle(rank, selectedYear) : null;
                                 return (
                                     <div
                                         key={r.instructor_id}
-                                        className="flex flex-col items-center"
+                                        className={`flex flex-col items-center ${podiumOrder.length === 1 ? 'w-36 sm:w-44' : ''}`}
                                         style={{ animation: 'lb-fade-up 0.5s ease-out both', animationDelay: `${i * 90}ms` }}
                                     >
                                         <Icon className={`w-6 h-6 sm:w-8 sm:h-8 mb-1 ${p.iconClass}`} />
-                                        {title && (
-                                            <span className="mb-1 text-[10px] sm:text-[11px] font-black text-amber-700 bg-amber-100 ring-1 ring-amber-200 px-2 py-0.5 rounded-full text-center leading-tight">{title}</span>
+                                        {rankName && (
+                                            <span data-testid="rank-title" className="mb-1 text-[10px] sm:text-[11px] font-black text-amber-700 bg-amber-100 ring-1 ring-amber-200 px-2 py-0.5 rounded-full text-center leading-tight">{rankName}</span>
                                         )}
                                         <div className="relative flex flex-col items-center">
                                             {isFirst && <div className="pointer-events-none absolute -inset-2 rounded-full bg-amber-300/40 blur-xl" />}

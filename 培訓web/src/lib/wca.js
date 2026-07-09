@@ -1,0 +1,74 @@
+// ═══════════════════════════════════════════════════════════════
+// WCA 賽事排行榜顯示規則：項目中文對照 + 成績格式化。
+// 注意：這裡的 best_ms 單位是「百分之一秒（centiseconds）」，
+// 跟方塊競速頁面 cubeEngine.formatCubeTime 吃的「毫秒」不同單位，
+// 兩邊格式化函式不可互換使用。
+// ═══════════════════════════════════════════════════════════════
+
+// event_id → 中文名稱。下拉選單只顯示 get_wca_events() 實際回傳的項目，
+// 找不到對照的代碼就直接顯示原始 event_id。
+export const WCA_EVENT_NAMES = {
+  '333': '三階',
+  '222': '二階',
+  '444': '四階',
+  '555': '五階',
+  '666': '六階',
+  '777': '七階',
+  '333oh': '三階單手',
+  '333bf': '三階盲解',
+  '444bf': '四階盲解',
+  '555bf': '五階盲解',
+  '333fm': '三階最少步',
+  '333mbf': '三階多顆盲解',
+  pyram: '金字塔',
+  skewb: 'Skewb 斜方',
+  minx: '五魔方',
+  clock: '魔錶',
+  sq1: 'Square-1',
+};
+
+export const wcaEventName = (eventId) => WCA_EVENT_NAMES[eventId] || eventId;
+
+/**
+ * centiseconds → 顯示字串。
+ * <6000 → `S.cs`（如 1234 → "12.34"）；>=6000 → `M:SS.cs`（如 8567 → "1:25.67"）。
+ *
+ * 例外：
+ * - 333fm（最少步）：值＝步數×100，v1 顯示整數步數（如 2500 → "25 步"）。
+ *   TODO：若後端改傳其他編碼（例如平均步數含小數）需要重新確認。
+ * - 333mbf（多顆盲解）：官方用複合編碼（成功數/嘗試數/時間打包），
+ *   v1 先原始數字顯示，之後有真實資料再補正式解析。
+ */
+export function formatWcaResult(eventId, value) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return '—';
+
+  if (eventId === '333fm') {
+    return `${Math.round(v / 100)} 步`;
+  }
+  if (eventId === '333mbf') {
+    return `${v}`;
+  }
+
+  const cs = Math.round(v);
+  const totalSec = Math.floor(cs / 100);
+  const rem = String(cs % 100).padStart(2, '0');
+  if (cs < 6000) {
+    return `${totalSec}.${rem}`;
+  }
+  const min = Math.floor(totalSec / 60);
+  const sec = String(totalSec % 60).padStart(2, '0');
+  return `${min}:${sec}.${rem}`;
+}
+
+// 給 LeaderboardView 用的 metric 設定（時間/步數越小名次越前）。
+export function wcaMetric(eventId, type) {
+  return {
+    label: type === 'average' ? '平均成績' : '單次成績',
+    unit: '越快越好',
+    accent: 'blue',
+    higherIsBetter: false,
+    getValue: (r) => r.best_ms,
+    format: (v) => formatWcaResult(eventId, v),
+  };
+}
