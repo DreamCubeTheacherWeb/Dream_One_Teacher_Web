@@ -4,8 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle, Trophy, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { nextMilestone, toHours, MILESTONES } from '../lib/leaderboard';
+import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
+import BadgeIcon from '../components/BadgeIcon';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -59,6 +60,7 @@ const INITIAL_FORM = {
     instructor_role: '', teaching_freq_semester: '', teaching_freq_vacation: '',
     teaching_regions: [],
     bio_notes: '',
+    wca_id: '',
     bank_account_name: '', bank_name: '', bank_branch: '',
     bank_account_number: '', bank_code: '',
     photo_path: null, photo_mime: null, photo_size: null, photo_uploaded_at: null,
@@ -82,6 +84,7 @@ const ProfilePage = () => {
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [showClaimModal, setShowClaimModal] = useState(false);
     const [existingClaim, setExistingClaim] = useState(null);
+    const [instructorId, setInstructorId] = useState(null);
 
     useEffect(() => {
         if (user) {
@@ -148,6 +151,7 @@ const ProfilePage = () => {
 
         if (data) {
             setIsFirstTime(false);
+            setInstructorId(data.id || null);
             const formData = {};
             for (const key of Object.keys(INITIAL_FORM)) {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
@@ -167,6 +171,7 @@ const ProfilePage = () => {
             setFilePreviews(previews);
         } else {
             setIsFirstTime(true);
+            setInstructorId(null);
             setForm(prev => ({
                 ...prev,
                 full_name: profile?.name || '',
@@ -290,6 +295,7 @@ const ProfilePage = () => {
             user_id: user.id,
             ...form,
             instructor_role: form.instructor_role || null,
+            wca_id: form.wca_id?.trim() || null,
         };
 
         const { error } = await supabase
@@ -425,7 +431,7 @@ const ProfilePage = () => {
 
             {/* ── 我的成就（僅非首次註冊時顯示）── */}
             {!isFirstTime && user && (
-                <AchievementsSection userId={user.id} certName={form.full_name || profile?.name || ''} />
+                <AchievementsSection userId={user.id} instructorId={instructorId} certName={form.full_name || profile?.name || ''} />
             )}
 
             {/* ── 基本資料 ── */}
@@ -451,6 +457,25 @@ const ProfilePage = () => {
                     <Field label="身分證字號" required>
                         <input type="text" value={form.id_number} onChange={e => handleChange('id_number', e.target.value)} className={inputCls} placeholder="A123456789" />
                     </Field>
+                </div>
+            </Section>
+
+            {/* ── WCA 世界賽成績（選填）── */}
+            <Section icon={Trophy} title="WCA 世界賽成績">
+                <p className="text-sm text-bauhaus-black/60 font-medium mb-4 leading-relaxed">
+                    WCA（世界方塊協會，World Cube Association）是全球魔術方塊比賽的官方組織。
+                    填入你的 WCA 選手編號後，你在正式比賽的各項目成績就會顯示在排行榜的「WCA 賽事」榜上
+                    （成績由管理員定期更新匯入）。沒有參加過 WCA 比賽可以留空。
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field label="WCA 選手編號（WCA ID，選填）">
+                        <input type="text" value={form.wca_id || ''} onChange={e => handleChange('wca_id', e.target.value)} className={inputCls} placeholder="例如 2012WUZH01" />
+                    </Field>
+                    <div className="flex items-end">
+                        <a href="https://www.worldcubeassociation.org/persons" target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline inline-flex items-center justify-center gap-2 text-sm w-full md:w-auto">
+                            <Trophy className="w-4 h-4" /> 到 WCA 官網查我的編號
+                        </a>
+                    </div>
                 </div>
             </Section>
 
@@ -809,29 +834,65 @@ const ProfilePage = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// 我的成就：徽章牆 + 完成培訓證明下載
-// 資料來源：get_teacher_stats() RPC（SQL 上線後才有真資料）
+// 我的成就：38 徽章成就牆 + 完成培訓證明下載
+// 資料來源：src/lib/badges.js 的 fetchTeacherBadges()（背後呼叫 get_teacher_badge_stats RPC）
 // ═══════════════════════════════════════════════════════════════
-const AchievementsSection = ({ userId, certName }) => {
-    const [hours, setHours] = useState(0);
-    const [sessions, setSessions] = useState(0);
+// 分類 → Bauhaus 三原色循環（不採 badges.js 的 color 十六進位色碼──那是後台用的任意色，
+// 前台一律照 DESIGN.md §2/§4 只用三原色 + 黑/白，不散寫色碼、不出現綠色）
+const CATEGORY_ACCENTS = ['bg-bauhaus-red', 'bg-bauhaus-blue', 'bg-bauhaus-yellow'];
+const categoryAccent = (key) => CATEGORY_ACCENTS[Math.max(0, CATEGORY_ORDER.indexOf(key)) % 3];
+
+const fmtHours = (v) => Math.round((Number(v) || 0) * 10) / 10;
+
+const BadgeCircle = ({ badge, accentClass }) => (
+    <div className="flex flex-col items-center text-center w-[72px] sm:w-20">
+        <div
+            className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-bauhaus-black flex items-center justify-center p-1.5 sm:p-2 mb-1.5 shrink-0 ${
+                badge.earned ? `${accentClass} shadow-hard-sm` : 'bg-bauhaus-muted'
+            }`}
+        >
+            <BadgeIcon
+                badgeKey={badge.key}
+                size={64}
+                className={`w-full h-full ${badge.earned ? '' : 'grayscale opacity-40'}`}
+            />
+            {!badge.earned && (
+                <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-bauhaus-black border-2 border-white flex items-center justify-center">
+                    <Lock className="w-2.5 h-2.5 text-white" />
+                </span>
+            )}
+        </div>
+        <div className={`text-[10px] sm:text-[11px] font-black leading-tight ${badge.earned ? 'text-bauhaus-black' : 'text-bauhaus-black/30'}`}>
+            {badge.name}
+        </div>
+        {!badge.earned && (
+            <div className="text-[9px] text-bauhaus-black/40 font-bold leading-tight mt-0.5" title={badge.description}>
+                {badge.description}
+            </div>
+        )}
+    </div>
+);
+
+const AchievementsSection = ({ userId, instructorId, certName }) => {
+    const [badges, setBadges] = useState([]);
+    const [stats, setStats] = useState(null);
     const [completedCourses, setCompletedCourses] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [downloading, setDownloading] = useState(false);
 
     useEffect(() => {
+        if (!instructorId) { setLoading(false); return undefined; }
         let cancelled = false;
         (async () => {
             setLoading(true);
             setError(false);
             try {
-                const { data, error: rpcErr } = await supabase.rpc('get_teaching_leaderboard');
-                if (rpcErr) throw rpcErr;
+                const { badges: b, stats: s, error: fetchErr } = await fetchTeacherBadges(supabase, instructorId);
+                if (fetchErr) throw fetchErr;
                 if (cancelled) return;
-                const mine = (data || []).find((r) => r.user_id === userId);
-                setHours(Number(mine?.total_hours || 0));
-                setSessions(Number(mine?.session_count || 0));
+                setBadges(b);
+                setStats(s);
                 // 完訓數（給證書解鎖用）：讀自己的 course_training_status；失敗不影響成就顯示
                 try {
                     const { count } = await supabase
@@ -849,10 +910,11 @@ const AchievementsSection = ({ userId, certName }) => {
             }
         })();
         return () => { cancelled = true; };
-    }, [userId]);
+    }, [instructorId, userId]);
 
-    const earnedCount = MILESTONES.filter((m) => hours >= m.hours).length;
-    const next = nextMilestone(hours);
+    const grouped = groupByCategory(badges);
+    const earnedCount = badges.filter((b) => b.earned).length;
+    const totalCount = badges.length;
     const canDownloadCert = completedCourses >= 1;
 
     const handleDownloadCert = async () => {
@@ -867,8 +929,6 @@ const AchievementsSection = ({ userId, certName }) => {
         }
     };
 
-    const BADGE_COLORS = ['bg-bauhaus-red', 'bg-bauhaus-blue', 'bg-bauhaus-yellow'];
-
     return (
         <div className="bh-card p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -880,71 +940,79 @@ const AchievementsSection = ({ userId, certName }) => {
                 </h2>
                 {!loading && !error && (
                     <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
-                        里程碑 {earnedCount} / {MILESTONES.length}
+                        成就 {earnedCount} / {totalCount}
                     </span>
                 )}
             </div>
 
             {loading ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[...Array(8)].map((_, i) => (
-                        <div key={i} className="h-28 bg-bauhaus-muted animate-pulse" />
-                    ))}
+                <div>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
+                        {[...Array(3)].map((_, i) => (
+                            <div key={i} className="h-14 bg-bauhaus-muted animate-pulse" />
+                        ))}
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                        {[...Array(10)].map((_, i) => (
+                            <div key={i} className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-bauhaus-muted animate-pulse" />
+                        ))}
+                    </div>
                 </div>
             ) : error ? (
                 <div className="py-8 text-center">
                     <AlertCircle className="w-8 h-8 text-bauhaus-red/50 mx-auto mb-2" />
                     <p className="text-sm text-bauhaus-black/60 font-medium">成就載入失敗，請稍後再試。</p>
                 </div>
+            ) : totalCount === 0 ? (
+                <div className="py-8 text-center">
+                    <div className="flex items-center justify-center gap-2 mb-3">
+                        <span className="w-6 h-6 rounded-full bg-bauhaus-red border-2 border-bauhaus-black" />
+                        <span className="w-6 h-6 bg-bauhaus-blue border-2 border-bauhaus-black" />
+                        <span className="w-6 h-6 bg-bauhaus-yellow border-2 border-bauhaus-black" style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />
+                    </div>
+                    <p className="text-sm text-bauhaus-black/60 font-medium">成就系統準備中，尚未有可解鎖的徽章。</p>
+                </div>
             ) : (
                 <>
                     {/* 教學數據摘要 */}
-                    <div className="grid grid-cols-2 gap-3 mb-5">
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-5">
                         {[
-                            { label: '接課時數', value: toHours(hours), unit: '小時' },
-                            { label: '接課場次', value: sessions, unit: '場' },
+                            { label: '接課時數', value: fmtHours(stats?.total_hours), unit: '小時' },
+                            { label: '接課場次', value: stats?.session_count ?? 0, unit: '場' },
+                            { label: '觸及人次', value: stats?.student_reach ?? 0, unit: '人次' },
                         ].map((s) => (
-                            <div key={s.label} className="border-2 border-bauhaus-black bg-white p-3 text-center">
-                                <div className="text-xl sm:text-2xl font-black text-bauhaus-black tabular-nums">{s.value}</div>
-                                <div className="text-[11px] text-bauhaus-black/60 mt-0.5 font-bold">{s.label}（{s.unit}）</div>
+                            <div key={s.label} className="border-2 border-bauhaus-black bg-white p-2.5 sm:p-3 text-center">
+                                <div className="text-lg sm:text-2xl font-black text-bauhaus-black tabular-nums">
+                                    {s.value}<span className="text-[10px] sm:text-xs font-bold ml-0.5">{s.unit}</span>
+                                </div>
+                                <div className="text-[10px] sm:text-[11px] text-bauhaus-black/60 mt-0.5 font-bold">{s.label}</div>
                             </div>
                         ))}
                     </div>
 
-                    {/* 接課里程碑 */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {MILESTONES.map((m, idx) => {
-                            const earned = hours >= m.hours;
+                    {/* 38 徽章成就牆：依分類分區 */}
+                    <div className="space-y-5">
+                        {grouped.map((group) => {
+                            const accentClass = categoryAccent(group.key);
+                            const groupEarned = group.badges.filter((b) => b.earned).length;
                             return (
-                                <div
-                                    key={m.hours}
-                                    className={`relative border-2 p-3 flex flex-col items-center text-center transition-all ${
-                                        earned
-                                            ? 'border-bauhaus-black bg-white'
-                                            : 'border-bauhaus-black/20 bg-bauhaus-muted grayscale'
-                                    }`}
-                                >
-                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 text-2xl border-2 border-bauhaus-black ${
-                                        earned ? BADGE_COLORS[idx % 3] : 'bg-bauhaus-muted'
-                                    }`}>
-                                        {earned ? m.emoji : <Lock className="w-5 h-5 text-bauhaus-black/40" />}
-                                    </div>
-                                    <div className={`text-sm font-black ${earned ? 'text-bauhaus-black' : 'text-bauhaus-black/30'}`}>
-                                        {m.name}
-                                    </div>
-                                    <div className={`text-[11px] mt-0.5 leading-tight font-bold ${earned ? 'text-bauhaus-black/70' : 'text-bauhaus-black/30'}`}>
-                                        {earned ? '已達成' : `接課滿 ${m.hours} 小時`}
+                                <div key={group.key}>
+                                    <h3 className="bh-label mb-2 flex items-center gap-2">
+                                        <span className={`w-3 h-3 border border-bauhaus-black shrink-0 ${accentClass}`} />
+                                        {group.label}
+                                        <span className="text-bauhaus-black/40 font-bold normal-case tracking-normal">
+                                            {groupEarned}/{group.badges.length}
+                                        </span>
+                                    </h3>
+                                    <div className="flex flex-wrap gap-x-3 gap-y-4 sm:gap-4">
+                                        {group.badges.map((b) => (
+                                            <BadgeCircle key={b.key} badge={b} accentClass={accentClass} />
+                                        ))}
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
-
-                    {next && (
-                        <p className="mt-3 text-xs text-center text-bauhaus-black/60 font-medium">
-                            再接課 <b className="text-bauhaus-black font-black tabular-nums">{next.remain}</b> 小時，即可解鎖「{next.emoji} {next.name}」
-                        </p>
-                    )}
 
                     {/* 完成培訓證明 */}
                     {canDownloadCert && (

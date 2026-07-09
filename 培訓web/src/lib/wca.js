@@ -66,7 +66,7 @@ export function formatWcaResult(eventId, value) {
 export function wcaMetric(eventId, type) {
   return {
     label: type === 'average' ? '平均成績' : '單次成績',
-    unit: '越快越好',
+    unit: '',
     accent: 'blue',
     higherIsBetter: false,
     getValue: (r) => r.best_ms,

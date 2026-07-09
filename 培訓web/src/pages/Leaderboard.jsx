@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { AlertTriangle, Timer, Globe, Heart } from 'lucide-react';
+import { AlertTriangle, Timer, Globe, Heart, Award } from 'lucide-react';
 import LeaderboardView from '../components/LeaderboardView';
 import { formatCubeTime } from '../lib/cubeEngine';
 import { toHours } from '../lib/leaderboard';
@@ -273,8 +273,10 @@ const Leaderboard = () => {
                 setWcaEvents(list);
                 setWcaEventsState('ok');
                 if (list.length > 0) {
-                    setWcaEvent(list[0].event_id);
-                    setWcaType(list[0].single_count > 0 ? 'single' : 'average');
+                    // 預設看 3x3（333）——最常見的方塊；沒有 333 資料才退回第一個項目
+                    const preferred = list.find((e) => e.event_id === '333') || list[0];
+                    setWcaEvent(preferred.event_id);
+                    setWcaType(preferred.single_count > 0 ? 'single' : 'average');
                 }
             } catch (err) {
                 console.error('WCA events load failed:', err);
@@ -387,12 +389,19 @@ const Leaderboard = () => {
 
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
+            <div className="mb-6 flex items-start gap-3 bg-bauhaus-yellow border-2 lg:border-4 border-bauhaus-black px-4 py-3 shadow-hard">
+                <span aria-hidden="true" className="mt-1 shrink-0 w-0 h-0 border-l-[9px] border-r-[9px] border-b-[15px] border-l-transparent border-r-transparent border-b-bauhaus-black" />
+                <p className="text-sm sm:text-base font-bold text-bauhaus-black leading-relaxed">
+                    資料陸續整理中，當前數據很可能會不準，僅供參考
+                </p>
+            </div>
             <div className="mb-6 overflow-x-auto">
                 <div className="inline-flex border-2 lg:border-4 border-bauhaus-black divide-x-2 divide-bauhaus-black">
                     <TabButton active={tab === 'teaching'} onClick={() => setTab('teaching')}>教學時數</TabButton>
                     <TabButton active={tab === 'cube'} onClick={() => setTab('cube')}>方塊競速</TabButton>
                     <TabButton active={tab === 'wca'} onClick={() => setTab('wca')}>WCA 賽事</TabButton>
                     <TabButton active={tab === 'interaction'} onClick={() => setTab('interaction')}>人氣互動</TabButton>
+                    <TabButton active={tab === 'cert'} onClick={() => setTab('cert')}>認證分數</TabButton>
                 </div>
             </div>
 
@@ -588,6 +597,16 @@ const Leaderboard = () => {
                             emptyDesc="被學員按讚後就會出現在這裡！"
                         />
                     )}
+                </div>
+            )}
+
+            {tab === 'cert' && (
+                <div>
+                    <EmptyState
+                        icon={Award}
+                        title="魔術方塊綜合能力認證"
+                        desc="敬請期待——認證分數排行即將開放，資料整理中。"
+                    />
                 </div>
             )}
         </div>
