@@ -61,7 +61,16 @@ const SalaryRegister = () => {
     }, [filtered]);
 
     return (
-        <div className="p-4 sm:p-8">
+        <div className="relative max-h-[calc(100vh-5rem)] overflow-hidden">
+            {/* 尚未啟用遮罩（2026-07-09 業主指示）：要重新啟用時，刪除這個 overlay div，
+                並把下方內容 div 的 class 還原為 "p-4 sm:p-8"、移除 aria-hidden，
+                外層 div 還原為無 class */}
+            <div className="absolute inset-0 z-40 bg-bauhaus-black/60 flex items-center justify-center">
+                <p className="text-white text-2xl sm:text-4xl font-black tracking-widest text-center px-4">
+                    尚未啟用，敬請期待
+                </p>
+            </div>
+            <div className="p-4 sm:p-8 grayscale opacity-60 pointer-events-none select-none" aria-hidden="true">
             <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
                 <div>
                     <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">薪資登記</h1>
@@ -166,6 +175,7 @@ const SalaryRegister = () => {
             {editing && (
                 <EditSalaryModal session={editing} profile={profile} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
             )}
+            </div>
         </div>
     );
 };

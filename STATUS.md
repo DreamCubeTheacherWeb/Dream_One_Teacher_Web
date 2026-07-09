@@ -1,7 +1,62 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（認領自動核准＋身分證末四碼＋等級自動帶入 已 commit＋push、兩份 SQL 已由業主套用；Fable 5）。
+> 最後更新：2026-07-09（表單下載中心新增獨立表單模板管理，已改完＋build 綠燈、未 commit；Opus 4.8）。
+
+---
+
+## 📄 2026-07-09 深夜：表單下載中心「獨立表單模板管理」（✅ 已改完＋build/lint 綠燈；⏳ 未 commit/push，端到端待業主登入測）
+
+**業主回報**：想在「表單下載中心」自己設定要下載的文件，但目前新增文件的入口只在「合約管理」，
+且分類預設是 contract → 新增的文件都跑去合約，表單中心獨立不了。
+
+**根因**：合約與表單共用同一張表 `contract_documents`，靠 `doc_category`（contract/form）區分；
+「新增文件」只存在 ContractAdmin，預設 `doc_category='contract'`，忘了改下拉就落到合約。表單下載
+中心舊「管理模板」按鈕其實是連去合約頁。
+
+**做了什麼（只動 `src/pages/admin/DownloadCenter.jsx`，一支檔）**：頁內內建獨立「表單模板管理」面板——
+新增表單／上傳 PDF／定位欄位／刪除都在表單中心完成，**新增的文件一律 `doc_category='form'` 固定**
+（無下拉、不會漏到合約）、`doc_mode='fill_sign'`（可定位欄位）。表單是後台下載用，**上傳不發講師通知**
+（與合約版上傳的差異）。撤掉連去合約頁的「管理模板」連結，改成頁內展開／收合。共用既有
+`FieldPositionEditor` 與 `formGenerator`。
+
+**✅ 證據**：`npm run build` 綠燈（11.46s）；`eslint DownloadCenter.jsx` 0 errors（1 warning 為既有
+useEffect/loadData，非新增）。
+
+**⚠️ 未驗 / 待業主**：admin 頁在 Google OAuth 後自動化無法登入實測——需業主登入走一次：管理表單模板
+→新增表單→上傳 PDF→定位欄位→回下載中心確認該表單出現、批次下載產檔正確。（`contract_documents`
+的 admin INSERT/DELETE RLS 沿用 ContractAdmin 既有可用路徑，同權限。）
+
+---
+
+## 🐛 2026-07-09 深夜：認領審核清單「徽章有數字、清單空白」修復（✅ 已改完＋build/lint/線上探測驗證；未 commit、未部署）
+
+**業主回報**：/admin/claims 分頁「待審核 1」但清單顯示「目前沒有待審核的申請」。
+**根因（線上 PostgREST 探測實證）**：`ClaimRequests.jsx` 清單查詢用嵌入語法
+`requester:requester_user_id(id,name,email,role)` 取申請人資料，但該 FK 指向 `auth.users`
+（非 public.users），PostgREST 找不到 public schema 內的關聯 → 整條查詢回 **400 PGRST200**
+→ `setClaims([])` → 清單全空；計數查詢（無嵌入）正常 → 徽章照顯示。
+**＝這個審核清單其實從來沒成功渲染過任何一筆 claim**，先前多為自動核准、少有 pending 停留才沒被發現。
+**修法（純前端，不動 SQL）**：清單查詢改抓純欄位 `requester_user_id`，另查 `public.users`
+（admin 依 RLS 可讀全表）補回 name/role/email 併回每筆；instructor 嵌入正常保留。
+**✅ 證據**：線上 anon 探測——舊寫法回 400、新寫法回 200；`npm run build` 綠燈；
+本檔 lint 1 問題＝既有基線（useEffect 呼叫 load，非本次改動）零新增。
+**⚠️ 下一步**：真渲染需 admin 部署後開頁確認（RLS 擋 anon 讀該表，自動化測不到）。尚未 commit／部署——等業主點頭。
+
+---
+
+## 🚧 2026-07-09 深夜：薪資登記頁整頁反灰「尚未啟用，敬請期待」（✅ 業主拍板已 push 上線）
+
+**業主指示**：薪資登記的地方整頁反灰，加遮罩＋白字「尚未啟用，敬請期待」。
+**做了什麼**：只動 `src/pages/admin/SalaryRegister.jsx`（`/admin/salary`）——內容層加
+`grayscale + opacity-60 + pointer-events-none`（反灰且點不到任何按鈕），上面蓋半透明黑遮罩
+＋白色粗體置中文字；頁面鎖高不捲動。**要重新啟用時照檔內註解還原三個 class 即可**（一分鐘的事）。
+**✅ 證據**：確定性腳本 12/12 PASS（遮罩文字可見且純白、頁面中心點擊命中遮罩非按鈕、
+「新增薪資紀錄」按鈕 pointer-events=none、375px 手機無破版）；截圖
+`培訓web/scripts/shots/salary-mask-desktop.png`／`salary-mask-mobile375.png`，agent 判讀
+兩張 4 項全過（導覽列不被蓋、內容反灰、文字置中可讀、無破版）；build 綠燈、lint 零新增。
+**⚠️ 殘留範圍**：老師端「我的薪資」`/my/salary` 與後台 Dashboard 的「薪資登記中心」入口卡
+**都還沒遮**（業主尚未回覆要不要一併處理）。
 
 ---
 
