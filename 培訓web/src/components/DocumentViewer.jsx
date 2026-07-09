@@ -12,7 +12,11 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
   const [hasReachedEnd, setHasReachedEnd] = useState(false);
   const [zoomPage, setZoomPage] = useState(null);
   const [pageWidth, setPageWidth] = useState(600);
+  // 記錄上一頁渲染完成後的實際高度，換頁瞬間（舊頁已拆、新頁未畫完）用來撐住容器，
+  // 避免容器高度塌陷把整頁 scrollY 夾回頂端（react-pdf 換 pageNumber 時會有短暫空窗）。
+  const [pageHeight, setPageHeight] = useState(null);
   const containerRef = useRef(null);
+  const pdfBoxRef = useRef(null);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -32,10 +36,20 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
     setHasReachedEnd(n === 1);
   }, []);
 
+  // 每頁渲染完成（含換頁後的新頁）都更新一次高度基準
+  const onPageRenderSuccess = useCallback((page) => {
+    setPageHeight(page.height);
+  }, []);
+
   const goToPage = (page) => {
     if (page < 1 || page > numPages) return;
     setCurrentPage(page);
     if (page === numPages) setHasReachedEnd(true);
+    // 使用者主動翻頁（箭頭或頁碼圓點）：把文件容器頂端捲回視窗內，讓新頁從頭開始讀，
+    // 不必等使用者自己往上滑。初始載入（onDocumentLoadSuccess）不會走到這裡，不受影響。
+    requestAnimationFrame(() => {
+      pdfBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   if (!fileUrl) {
@@ -74,7 +88,10 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
         </button>
 
         {/* Page container with peek effect */}
-        <div className="relative overflow-hidden border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard bg-white cursor-pointer group"
+        <div
+          ref={pdfBoxRef}
+          className="relative overflow-hidden border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard bg-white cursor-pointer group"
+          style={pageHeight ? { minHeight: pageHeight, scrollMarginTop: 16 } : { scrollMarginTop: 16 }}
           onClick={() => setZoomPage(currentPage)}
         >
           <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess} loading={
@@ -87,6 +104,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
               width={pageWidth}
               renderTextLayer={true}
               renderAnnotationLayer={true}
+              onRenderSuccess={onPageRenderSuccess}
             />
           </Document>
 
