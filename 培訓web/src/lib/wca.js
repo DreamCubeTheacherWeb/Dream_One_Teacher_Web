@@ -62,6 +62,7 @@ export function formatWcaResult(eventId, value) {
 }
 
 // 給 LeaderboardView 用的 metric 設定（時間/步數越小名次越前）。
+// championTitle：「台灣最速傳說」只在三階（333）出現，其餘項目不設稱號（值為 null）。
 export function wcaMetric(eventId, type) {
   return {
     label: type === 'average' ? '平均成績' : '單次成績',
@@ -70,5 +71,21 @@ export function wcaMetric(eventId, type) {
     higherIsBetter: false,
     getValue: (r) => r.best_ms,
     format: (v) => formatWcaResult(eventId, v),
+    championTitle: eventId === '333' ? '台灣最速傳說' : null,
   };
 }
+
+// WCA 全能王排行榜（get_wca_allaround_leaderboard）的 metric 設定。
+// score 越大越好；沒有 event/type 區分，因此是單一常數而非工廠函式。
+export const WCA_ALLAROUND_METRIC = {
+  label: '全能積分',
+  unit: '分',
+  accent: 'blue',
+  higherIsBetter: true,
+  getValue: (r) => r.score,
+  format: (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : '—';
+  },
+  championTitle: '六面全能之神',
+};
