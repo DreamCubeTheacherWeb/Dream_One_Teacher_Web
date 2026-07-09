@@ -5,7 +5,7 @@
 
 ---
 
-## 🎨 2026-07-09：表單下載中心講師列排版優化＋「還缺什麼資料」（✅ 已改完＋build/lint 綠燈＋桌機/手機截圖驗證；⏳ 未 commit/push，真站待業主登入看）
+## 🎨 2026-07-09：表單下載中心講師列排版優化＋「還缺什麼資料」（✅ 已上線 commit f4d5b95；線上 bundle index-BSy0C_BU.js 已驗含本次字串；真實資料渲染待業主登入看）
 
 **業主指示**：講師清單排版有點亂想優化；完成率希望能「就地看到還缺什麼資料」。
 
@@ -16,7 +16,8 @@
 
 **✅ 證據**：`npm run build` 綠燈（4.6s）；`eslint DownloadCenter.jsx` 0 error（1 warning＝既有 useEffect/loadData 基線）；還原真實 class 的 HTML mock 經 Playwright 桌機 1280＋手機 375 截圖，agent 判讀六項驗收全過、無破版無水平溢出（`scratchpad/dc-desktop.png`、`dc-mobile375.png`）。
 
-**⚠️ 未驗/待業主**：admin 頁 Google OAuth 自動化登不進，真實資料渲染需業主登入 /admin/download 看一眼（尤其確認缺項標籤對得上真人資料）。尚未 commit／部署——等業主點頭。
+**✅ 已上線**：2026-07-10 push main → Zeabur 換版，正式站 bundle `index-BSy0C_BU.js` 固定字串檢查命中「接課頻率(學期)/(寒暑假)、還缺、資料齊全」。
+**⚠️ 待業主**：admin 頁 Google OAuth 自動化登不進，真實資料渲染需業主登入 https://dream-one-teacher.zeabur.app/admin/download 看一眼（確認缺項標籤對得上真人資料、%數字合理）。
 
 ---
 
