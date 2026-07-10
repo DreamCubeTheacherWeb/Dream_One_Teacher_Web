@@ -138,7 +138,7 @@ const HomePage = () => {
                             <p className="text-base sm:text-lg text-white/85 mb-4 leading-relaxed max-w-xl mx-auto lg:mx-0">
                                 不是為了教而教，而是我們透過魔術方塊也對教育有所貢獻。
                             </p>
-                            <p className="text-base text-white/60 mb-10 max-w-xl mx-auto lg:mx-0 font-medium">
+                            <p className="text-base text-white/60 mb-8 sm:mb-10 max-w-xl mx-auto lg:mx-0 font-medium">
                                 提供完整的線上培訓資源、進度追蹤與專家回饋，助您在教學領域更上一層樓。
                             </p>
                             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
@@ -172,8 +172,8 @@ const HomePage = () => {
                         </div>
                     </div>
 
-                    <div className="mt-20 pt-12 border-t-2 border-white/20">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+                    <div className="mt-12 pt-8 sm:mt-20 sm:pt-12 border-t-2 border-white/20">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 sm:gap-8 text-center">
                             <div>
                                 <div className="text-3xl font-black text-bauhaus-yellow mb-1 tabular-nums">100+</div>
                                 <div className="text-sm text-white/60 font-bold uppercase tracking-wide">培訓教師人數</div>
@@ -192,9 +192,9 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ VISION & MISSION ══════════ */}
-            <section className="py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
-                <div className="max-w-6xl mx-auto px-6">
-                    <div className="text-center mb-12">
+            <section className="py-14 md:py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6">
+                    <div className="text-center mb-8 md:mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg">
                             <Target className="w-4 h-4" />
                             願景與使命
@@ -208,7 +208,7 @@ const HomePage = () => {
                         </p>
                     </div>
 
-                    <div className="flex justify-center mb-10">
+                    <div className="flex justify-center mb-8 md:mb-10">
                         <div className="inline-flex border-2 lg:border-4 border-bauhaus-black rounded-xl overflow-hidden divide-x-2 lg:divide-x-4 divide-bauhaus-black">
                             <button
                                 onClick={() => setActiveTab('ideal')}
@@ -239,7 +239,7 @@ const HomePage = () => {
                         {VISION_ITEMS.map((item) => (
                             <div
                                 key={item.layer}
-                                className="bh-card bh-card-hover p-8"
+                                className="bh-card bh-card-hover p-6 md:p-8"
                             >
                                 <div className={`inline-flex items-center justify-center w-14 h-14 rounded-lg border-2 border-bauhaus-black ${item.accent} ${item.accentText} font-black text-lg mb-5`}>
                                     {item.layer}
@@ -257,9 +257,9 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ BULLETIN BOARD（最新消息，接在願景使命之後） ══════════ */}
-            <section className="py-20 bg-white border-b-4 border-bauhaus-black">
-                <div className="max-w-6xl mx-auto px-6">
-                    <div className="text-center mb-12">
+            <section className="py-14 md:py-20 bg-white border-b-4 border-bauhaus-black">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6">
+                    <div className="text-center mb-8 md:mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-lg">
                             <Megaphone className="w-4 h-4" />
                             最新消息
@@ -326,9 +326,9 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ TEAM GALLERY ══════════ */}
-            <section className="py-20 bg-white">
-                <div className="max-w-6xl mx-auto px-6">
-                    <div className="text-center mb-12">
+            <section className="py-14 md:py-20 bg-white">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6">
+                    <div className="text-center mb-8 md:mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-lg">
                             <Users className="w-4 h-4" />
                             我們的團隊
@@ -372,9 +372,9 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ EVENT REVIEWS ══════════ */}
-            <section className="py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
-                <div className="max-w-6xl mx-auto px-6">
-                    <div className="text-center mb-12">
+            <section className="py-14 md:py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6">
+                    <div className="text-center mb-8 md:mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black rounded-lg">
                             <History className="w-4 h-4" />
                             活動回顧
@@ -448,9 +448,9 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ PHYSICAL LOCATIONS ══════════ */}
-            <section className="py-20 bg-white">
-                <div className="max-w-6xl mx-auto px-6">
-                    <div className="text-center mb-12">
+            <section className="py-14 md:py-20 bg-white">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6">
+                    <div className="text-center mb-8 md:mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg">
                             <MapPin className="w-4 h-4" />
                             實體據點
@@ -463,7 +463,7 @@ const HomePage = () => {
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
                         {LOCATIONS.map((loc, idx) => {
                             const deco = CORNER_DECOS[idx % 3];
                             return (
@@ -510,8 +510,8 @@ const HomePage = () => {
             </section>
 
             {/* ══════════ CTA ══════════ */}
-            <section className="py-20 bg-white border-t-4 border-bauhaus-black">
-                <div className="max-w-4xl mx-auto px-6">
+            <section className="py-14 md:py-20 bg-white border-t-4 border-bauhaus-black">
+                <div className="max-w-4xl mx-auto px-4 sm:px-6">
                     <div className="relative bg-bauhaus-black border-4 border-bauhaus-black rounded-2xl p-8 sm:p-12 lg:p-16 text-center overflow-hidden">
                         <div className="absolute top-0 left-0 w-32 h-32 sm:w-48 sm:h-48 bg-bauhaus-yellow/90 rounded-full -translate-x-1/2 -translate-y-1/2" aria-hidden="true" />
                         <div className="absolute bottom-0 right-0 w-28 h-28 sm:w-40 sm:h-40 bg-bauhaus-blue/90 translate-x-1/3 translate-y-1/3 rotate-45" aria-hidden="true" />
@@ -524,7 +524,7 @@ const HomePage = () => {
                             <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white mb-4 tracking-tight">
                                 開始你的教師培訓之旅
                             </h2>
-                            <p className="text-white/70 mb-10 max-w-lg mx-auto font-medium">
+                            <p className="text-white/70 mb-8 sm:mb-10 max-w-lg mx-auto font-medium">
                                 加入我們的培訓計劃，成為一位能夠啟發學生、傳遞魔術方塊魅力的專業教師。
                             </p>
                             {user ? (
