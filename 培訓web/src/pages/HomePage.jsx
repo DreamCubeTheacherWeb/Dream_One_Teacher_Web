@@ -256,6 +256,75 @@ const HomePage = () => {
                 </div>
             </section>
 
+            {/* ══════════ BULLETIN BOARD（最新消息，接在願景使命之後） ══════════ */}
+            <section className="py-20 bg-white border-b-4 border-bauhaus-black">
+                <div className="max-w-6xl mx-auto px-6">
+                    <div className="text-center mb-12">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-lg">
+                            <Megaphone className="w-4 h-4" />
+                            最新消息
+                        </div>
+                        <h2 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-4 tracking-tight">
+                            佈告欄
+                        </h2>
+                        <p className="text-bauhaus-black/60 max-w-2xl mx-auto font-medium">
+                            課程更新、活動與重要通知都會公告在這裡。
+                        </p>
+                    </div>
+
+                    {announcements.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {announcements.map((a, idx) => {
+                                const deco = CORNER_DECOS[idx % 3];
+                                return (
+                                    <Link
+                                        to={`/announcements/${a.id}`}
+                                        key={a.id}
+                                        className="bh-card bh-card-hover relative p-6 block"
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className={`absolute top-2 left-2 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
+                                            style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
+                                        />
+                                        {a.pinned && (
+                                            <div className="absolute -top-3 -right-3">
+                                                <div className="bg-bauhaus-red text-white p-1.5 rounded-lg border-2 border-bauhaus-black">
+                                                    <Pin className="w-3.5 h-3.5" />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <span className={`text-[10px] font-black px-2.5 py-1 uppercase tracking-wider rounded-lg border-2 border-bauhaus-black ${
+                                                a.tag === '重要公告' ? 'bg-bauhaus-red text-white'
+                                                    : a.tag === '課程更新' ? 'bg-bauhaus-blue text-white'
+                                                        : a.tag === '提醒' ? 'bg-bauhaus-yellow text-bauhaus-black'
+                                                            : 'bg-bauhaus-muted text-bauhaus-black'
+                                            }`}>
+                                                {a.tag}
+                                            </span>
+                                            <span className="flex items-center gap-1 text-[11px] text-bauhaus-black/50 font-bold">
+                                                <Calendar className="w-3 h-3" />
+                                                {new Date(a.created_at).toLocaleDateString()}
+                                            </span>
+                                        </div>
+
+                                        <h3 className="font-black text-bauhaus-black mb-2 leading-snug line-clamp-2 md:line-clamp-none">{a.title}</h3>
+                                        <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-3 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
+                                        <span className="inline-block mt-3 text-xs font-bold text-bauhaus-blue">閱讀更多 →</span>
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="bh-card py-12 text-center">
+                            <p className="text-bauhaus-black/50 font-bold">目前沒有公告</p>
+                        </div>
+                    )}
+                </div>
+            </section>
+
             {/* ══════════ TEAM GALLERY ══════════ */}
             <section className="py-20 bg-white">
                 <div className="max-w-6xl mx-auto px-6">
@@ -437,75 +506,6 @@ const HomePage = () => {
                             );
                         })}
                     </div>
-                </div>
-            </section>
-
-            {/* ══════════ BULLETIN BOARD（最新消息，移到頁尾） ══════════ */}
-            <section className="py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
-                <div className="max-w-6xl mx-auto px-6">
-                    <div className="text-center mb-12">
-                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-lg">
-                            <Megaphone className="w-4 h-4" />
-                            最新消息
-                        </div>
-                        <h2 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-4 tracking-tight">
-                            佈告欄
-                        </h2>
-                        <p className="text-bauhaus-black/60 max-w-2xl mx-auto font-medium">
-                            課程更新、活動與重要通知都會公告在這裡。
-                        </p>
-                    </div>
-
-                    {announcements.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {announcements.map((a, idx) => {
-                                const deco = CORNER_DECOS[idx % 3];
-                                return (
-                                    <Link
-                                        to={`/announcements/${a.id}`}
-                                        key={a.id}
-                                        className="bh-card bh-card-hover relative p-6 block"
-                                    >
-                                        <span
-                                            aria-hidden="true"
-                                            className={`absolute top-2 left-2 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
-                                            style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
-                                        />
-                                        {a.pinned && (
-                                            <div className="absolute -top-3 -right-3">
-                                                <div className="bg-bauhaus-red text-white p-1.5 rounded-lg border-2 border-bauhaus-black">
-                                                    <Pin className="w-3.5 h-3.5" />
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <div className="flex items-center gap-2 mb-3">
-                                            <span className={`text-[10px] font-black px-2.5 py-1 uppercase tracking-wider rounded-lg border-2 border-bauhaus-black ${
-                                                a.tag === '重要公告' ? 'bg-bauhaus-red text-white'
-                                                    : a.tag === '課程更新' ? 'bg-bauhaus-blue text-white'
-                                                        : a.tag === '提醒' ? 'bg-bauhaus-yellow text-bauhaus-black'
-                                                            : 'bg-bauhaus-muted text-bauhaus-black'
-                                            }`}>
-                                                {a.tag}
-                                            </span>
-                                            <span className="flex items-center gap-1 text-[11px] text-bauhaus-black/50 font-bold">
-                                                <Calendar className="w-3 h-3" />
-                                                {new Date(a.created_at).toLocaleDateString()}
-                                            </span>
-                                        </div>
-
-                                        <h3 className="font-black text-bauhaus-black mb-2 leading-snug line-clamp-2 md:line-clamp-none">{a.title}</h3>
-                                        <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-3 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
-                                        <span className="inline-block mt-3 text-xs font-bold text-bauhaus-blue">閱讀更多 →</span>
-                                    </Link>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div className="bh-card py-12 text-center">
-                            <p className="text-bauhaus-black/50 font-bold">目前沒有公告</p>
-                        </div>
-                    )}
                 </div>
             </section>
 
