@@ -1,11 +1,13 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-10（WCA 頁改「後台代填成績」——講師只填 WCA ID，項目/成績改由 admin 後台管理，已改完＋build/lint 綠燈、未 commit、SQL 未套用；Opus 4.8）。
+> 最後更新：2026-07-10（WCA 頁改「後台代填成績」——講師只填 WCA ID，項目/成績改由 admin 後台管理，已 commit＋push 上線＝473a55c、SQL 業主已套用、線上 bundle 已驗；端到端待業主登入操作；Opus 4.8）。
 
 ---
 
-## 🏆 2026-07-10：WCA 成績改「後台代填」，關閉老師自填（✅ 前端改完＋build/lint 綠燈；⏳ SQL 未套用、未 commit、端到端未驗）
+## 🏆 2026-07-10：WCA 成績改「後台代填」，關閉老師自填（✅ 已 commit＋push 上線＝473a55c＋SQL 業主已套用＋線上 bundle 已驗；端到端待業主登入操作）
+**線上驗證（bundle index-DJsVYg90.js）**：✅ 含「後台代填」「由管理員在後台為你登錄」「admin_upsert_wca_results」；
+✅ 舊自填空狀態「尚未新增任何項目」與舊 RPC 呼叫「upsert_my_wca_results」皆已從 bundle 消失（正是預期）。
 **業主指示（2026-07-10）**：個人頁 WCA 區塊，講師只能填「WCA 選手編號」，不再自己新增項目與成績；
 各項目成績改由 admin 在後台針對每位講師個別登錄。
 
