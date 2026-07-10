@@ -1,7 +1,20 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-10（首頁新增「活動回顧」＋「實體據點」兩區塊 ✅ 已上線驗證；WCA 自動同步前端 ✅ 已上線＝db1a30b，但 autosync SQL 探測發現業主尚未跑、自動抓取仍休眠；Opus 4.8）。
+> 最後更新：2026-07-10 深夜（WCA 自動同步端到端跑通＝117 人/900 筆已寫入正式庫；首頁佈告欄移頁尾重排 ✅ 已上線；認領清單修復 ✅ 已上線；Opus 4.8）。
+
+---
+
+## 🏠 2026-07-10 深夜：首頁佈告欄移頁尾重排（✅ 已上線＝b0d70aa，線上 bundle index-66yVdgq1.js 已驗）
+**業主回報**：佈告欄緊接 Hero 看起來突兀。**重排**（只動 HomePage.jsx）：Hero→願景使命→團隊→活動回顧→實體據點→**佈告欄（頁尾、置中徽章「最新消息」、paper 底）**→CTA＝品牌敘事優先、行政訊息殿後。
+**證據**：build/lint 綠；Playwright 桌機 1280＋手機 375 全頁截圖 agent 判讀 0 問題（Hero/願景交界單黑線不疊框、無溢出、佈告欄樣式與他區一致）；線上 bundle 含「最新消息」新副標。
+
+## 🏆 2026-07-10 深夜：WCA 自動同步端到端跑通（✅ 資料已進正式庫）
+業主跑完 autosync SQL＋主對話代生密鑰（`openssl rand -hex 32`，業主以 upsert 存入 wca_sync_config；第一次貼歪、重貼後驗證通過）。**主對話手動執行 sync.mjs（業主授權）：117 位有 WCA ID 講師全數抓取成功（0 查無 0 失敗），sync_wca_results 回報寫入 900 筆**。讀回驗證：get_wca_leaderboard 對 anon 回 authentication required（RLS 正常），畫面待業主登入 /leaderboard 看。
+**⏳ 唯一殘留**：GitHub 3 密鑰未設（gh token 無權代設）→ 排程自動重跑尚未生效，目前資料已最新、不設不會壞。`WCA_SYNC_SECRET=c88788466d1a0aa32ea76a884aa5efb70cc8095b6e1fdead26deafab3e2f2ece`（另兩個值=.env 的 URL/anon key）。說明文件已交付業主：`/Users/lazylazy/Desktop/夢想一號/WCA自動同步說明.pdf`。
+
+## 🐛 2026-07-10 深夜：認領清單修復上線（✅＝5dc2f71）
+7/9 已修好的「徽章有數字、清單空白」（PGRST200 嵌入失敗）獲業主點頭隨本批上線。端到端待業主登入 /admin/claims 看清單有渲染。
 
 ---
 
