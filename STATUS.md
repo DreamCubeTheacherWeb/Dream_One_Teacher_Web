@@ -1,7 +1,62 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-10（WCA 頁改「後台代填成績」——講師只填 WCA ID，項目/成績改由 admin 後台管理，已 commit＋push 上線＝473a55c、SQL 業主已套用、線上 bundle 已驗；端到端待業主登入操作；Opus 4.8）。
+> 最後更新：2026-07-10（首頁新增「活動回顧」＋「實體據點」兩區塊 ✅ 已上線驗證；WCA 自動同步前端 ✅ 已上線＝db1a30b，但 autosync SQL 探測發現業主尚未跑、自動抓取仍休眠；Opus 4.8）。
+
+---
+
+## 🏠 2026-07-10：首頁新增「活動回顧」＋「實體據點」兩區塊（✅ 已 commit＋push 上線＝24a4fd1，線上 bundle index-nlo15c0J.js＋6 圖 200 已驗）
+**業主指示**：把官網 Google Sites 的「實體據點」與「活動回顧」內容搬到自建培訓網站首頁，排版不同沒關係、好看為主、風格要一致；照片可截圖、地圖放 Google Maps 連結。
+**做了什麼（只動 `src/pages/HomePage.jsx`＋新增 6 張圖）**：TEAM 相簿與 CTA 之間插入兩段——
+1. **活動回顧**（bauhaus-paper 底）：4 張卡片。第三屆學員賽＝真照片；形象廣告／進駐科教館／規模最大學員賽＝**原官網是 YouTube 影片**，故用官方封面縮圖＋紅色播放鍵，整卡連去 YouTube（J9SAYtSQiZk／KxuKryrr9Ak／Gu9B3hjm9FE）。
+2. **實體據點**（白底）：科教館、自然科學博物館兩卡＝照片＋名稱＋「（開放參觀，歡迎來玩）」＋地址＋黑底「地圖位置」鈕（Google Maps search API 連結，新分頁）。
+**照片來源**：Google Sites 圖 curl 直抓 403（CSP），改用 Playwright 開已發布頁面 element screenshot，再 sips 縮 1200px＋轉 JPEG（6 張共 1.2MB，原 ~10MB）。
+**✅ 證據**：build 綠、HomePage lint 0；Playwright 桌機 1280＋手機 375 截 4 張經 agent 判讀 0 問題（圖片皆載入、播放鍵正確、無橫向溢出、Bauhaus 一致）；線上 bundle 含「實體據點/活動回顧/觀看影片」＋3 YouTube 連結，6 圖皆 200。
+**⚠️ 文案初稿待業主過目**：活動說明我修了原站錯字並微調語氣；地址為公開資訊（科教館 台北士林士商路189號、科博館 台中北區館前路1號）。要改字直接說。
+
+---
+
+## ✅ 2026-07-10：WCA 自動同步「前端已上線」，但探測發現 SQL 未套用（前端＝db1a30b，線上 bundle index-C8CamFg6.js 已驗）
+業主 2026-07-10 說「幫我上線＋測試，SQL 應該都跑了」。**手術式 commit db1a30b**（只含 WCA 線：sync.mjs＋workflow＋autosync SQL＋TeacherManager 篩選/wca_id 編輯＋移除 WcaManager／路由／NavCard＋ProfilePage 文案；**排除**同工作區的 ClaimRequests bug 線與 course-first-station）→ push 上線。
+**測試發現（關鍵）**：線上探測 `get_wca_sync_targets` PGRST202、`instructors.wca_synced_at` 42703 → **`2026-07-10_wca_autosync.sql` 業主其實還沒跑**，自動抓取目前休眠。前端非破壞性（只讀既有 wca_results／寫既有 wca_id，不依賴新 RPC），既有成績照常顯示。
+**引擎已驗**：dry-run 打真 WCA API，Feliks Zemdegs 15 項、centiseconds 正確。
+**⚠️ 待業主 3 步才會真的自動跑**：(1) Supabase 跑 `2026-07-10_wca_autosync.sql`；(2) `SELECT secret FROM wca_sync_config;` 讀密鑰；(3) GitHub → Settings → Secrets → Actions 設 `SUPABASE_URL`／`SUPABASE_ANON_KEY`（值在 .env）／`WCA_SYNC_SECRET`（=步驟2）。**主對話 gh token 無 secrets 權限（403）代設不了**。設完可在 Actions 手動 Run 一次、或找主對話幫觸發驗端到端。
+
+---
+
+## 🪪 2026-07-10：後台講師姓名顯示舊名修復（✅ SQL 已建置；⏳ 未套用／未 commit，待業主跑 1 步 SQL）
+**業主回報**：個人頁把姓名從「大大」改成「懶懶」，後台「講師名單管理」(TeacherManager) 仍顯示舊名「大大」。
+**根因（agent 追資料流＋主對話核對 schema）**：姓名存兩處且無同步——`users.name`（Google OAuth
+首次登入由 handle_new_user 帶入，之後永不更新；後台講師表 TeacherManager.jsx:699/499 與認領審核
+ClaimRequests.jsx:153 讀這份）vs `instructors.full_name`（個人頁 ProfilePage.jsx:363 存檔唯一寫入的
+姓名欄）。個人頁只 upsert instructors.full_name、從不寫 users.name，兩者無 trigger/RPC 同步 →
+users.name 永遠停在註冊時舊名。**系統性問題**：任何登入過又改過名字的帳號都會對不上。
+**修法（純 SQL，不動前端）**：新檔 `培訓web/supabase/2026-07-10_sync_instructor_name.sql`——
+(1) AFTER INSERT/UPDATE OF full_name trigger 把 instructors.full_name 同步進 users.name（只在非空白
+且值有變時寫）；(2) 一次性回填修正現有所有對不上的帳號。冪等可重跑。同步好後後台/認領清單自動顯示
+正確名，前端零改動零部署。
+**驗證**：欄位名已對 setup.sql（users.name）/instructors_setup.sql（instructors.full_name、user_id
+UNIQUE）核實無誤；SQL 未在真 DB 跑（碰線上，待業主）。
+**⚠️ 待業主 1 步**：Supabase SQL Editor 貼上該檔執行 → 檔尾三段驗證查詢確認（trigger 存在、業主帳號
+回「懶懶」、殘留對不上 0 列）。**副作用（預期內）**：回填會把所有登入帳號的後台顯示名改成各自個人頁
+填的姓名（多數是修正、少數若 Google 名與正式姓名本就不同者會一起被統一為 full_name）。
+
+---
+
+## 🤖 2026-07-10：WCA 成績改「自動同步官方資料」（✅ 已建置＋核心引擎實測正確；⏳ 未 commit／未上線；待業主 3 步設定）
+業主 2026-07-10 再轉向：不要手動代填，改由程式**每兩個月自動抓 WCA 官方最新成績**（正確性優先，不用 AI＝用官方數字原封搬）；收進講師資料頁、可移除舊 WCA 管理頁；決定「每兩個月、不要手動按鈕」。
+
+**可行性已查證（researcher 實打 API）**：WCA persons API 公開免驗證，`GET /api/v0/persons/{id}` 回 personal_records（single/average per event），單位＝centiseconds 與本專案 DB 一致。**引擎已實測**：何俊霖三階抓回 19.08/23.27＝與先前手動填的完全一致；Mats Valk 13 項正確。
+
+**已建置（未 commit）**：
+- `scripts/wca-sync/sync.mjs` — 抓取+解析引擎（只同步 15 標準時間項目；--dry-run 可本機測）。
+- `.github/workflows/wca-sync.yml` — 每兩個月（cron `0 3 1 */2 *`）＋手動觸發。
+- `培訓web/supabase/2026-07-10_wca_autosync.sql`（**未套用**）— 秘鑰保護的 `get_wca_sync_targets` / `sync_wca_results`（覆蓋制）＋ `wca_sync_config`（RLS 全鎖、自動產生隨機秘鑰）＋ `instructors.wca_synced_at`。刻意不用 service_role，改共用秘鑰（資安審過：無「無秘鑰可利用」漏洞；已修預設秘鑰 footgun＋fail-open）。
+- 前端：`TeacherManager.jsx` 加「有 WCA 成績」篩選＋可編輯 wca_id（含匯入無登入講師）；移除 `WcaManager.jsx`＋`/admin/wca` 路由＋Dashboard NavCard；`ProfilePage.jsx` 文案改「系統自動抓取」。
+
+**驗證**：build ✓、eslint 綠（改動檔）、引擎 dry-run 對真實 API 正確、無殘留 WcaManager 引用。**未驗**：SQL 未在真 DB 跑、端到端排程未實跑、前端畫面待業主登入看。
+
+**⚠️ 業主要做的 3 步（上線後）**：(1) Supabase SQL Editor 跑 `2026-07-10_wca_autosync.sql`；(2) `SELECT secret FROM wca_sync_config;` 讀出隨機秘鑰；(3) GitHub repo → Settings → Secrets → Actions 設三個：`SUPABASE_URL`、`SUPABASE_ANON_KEY`（值在 培訓web/.env）、`WCA_SYNC_SECRET`（= 步驟 2 讀到的）。設完可在 GitHub Actions 手動 Run 一次驗證。
 
 ---
 
