@@ -20,12 +20,14 @@ const ClaimRequests = () => {
     const load = useCallback(async () => {
         setLoading(true);
 
+        // 注意：requester_user_id 的外鍵指向 auth.users（非 public.users），PostgREST
+        // 無法用嵌入語法 requester:requester_user_id(...) 取回申請人的 name/role
+        // （會回 PGRST200 讓整條查詢失敗、清單全空）。改成先取純欄位，再另查 public.users。
         const { data, error } = await supabase
             .from('instructor_claim_requests')
             .select(`
-                id, status, requester_email, proposed_phone, message,
+                id, status, requester_user_id, requester_email, proposed_phone, message,
                 review_notes, reviewed_at, created_at,
-                requester:requester_user_id ( id, name, email, role ),
                 instructor:instructor_id (
                     id, full_name, email_primary, phone_mobile,
                     employment_status, instructor_role, user_id
@@ -38,7 +40,18 @@ const ClaimRequests = () => {
             console.error(error);
             setClaims([]);
         } else {
-            setClaims(data || []);
+            let rows = data || [];
+            // 補上申請人資料（name/role），admin 依 RLS 可讀全表 users
+            const ids = [...new Set(rows.map(r => r.requester_user_id).filter(Boolean))];
+            if (ids.length > 0) {
+                const { data: users } = await supabase
+                    .from('users')
+                    .select('id, name, email, role')
+                    .in('id', ids);
+                const userMap = Object.fromEntries((users || []).map(u => [u.id, u]));
+                rows = rows.map(r => ({ ...r, requester: userMap[r.requester_user_id] || null }));
+            }
+            setClaims(rows);
         }
 
         // counts
