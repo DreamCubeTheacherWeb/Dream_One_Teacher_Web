@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import {
     BookOpen, Target, Heart, Sparkles, ChevronRight,
-    Megaphone, Pin, Calendar, Users, Star, ArrowRight
+    Megaphone, Pin, Calendar, Users, Star, ArrowRight,
+    MapPin, History, ExternalLink, Play
 } from 'lucide-react';
 
 const VISION_ITEMS = [
@@ -45,6 +46,49 @@ const CORNER_DECOS = [
     { shape: 'circle', color: 'bg-bauhaus-red' },
     { shape: 'square', color: 'bg-bauhaus-blue' },
     { shape: 'triangle', color: 'bg-bauhaus-yellow' },
+];
+
+// 活動回顧（內容取自官網 Google Sites「關於夢想一號」）
+const EVENT_REVIEWS = [
+    {
+        img: '/images/event-1.jpg',
+        title: '第三屆學員賽',
+        desc: '學員賽舉辦了三屆了！這屆我們有更酷的主題，希望夢想一號有朝一日能飛向宇宙！',
+    },
+    {
+        img: '/images/event-2.jpg',
+        title: '夢想一號首部形象廣告',
+        desc: '由專業影像團隊編劇、優秀的學員擔任小演員，一同展現六大指標能力。',
+        video: 'https://www.youtube.com/watch?v=J9SAYtSQiZk',
+    },
+    {
+        img: '/images/event-3.jpg',
+        title: '進駐科教館實體教室',
+        desc: '2022 年的暑假我們入駐科教館，成為全台灣第一個魔術方塊實體教室！',
+        video: 'https://www.youtube.com/watch?v=KxuKryrr9Ak',
+    },
+    {
+        img: '/images/event-4.jpg',
+        title: '規模最大的學員賽 × 認證考試',
+        desc: '一同舉辦全台規模最大的學員競賽！首創認證制度，讓魔術方塊不再只有一種進步方向。',
+        video: 'https://www.youtube.com/watch?v=Gu9B3hjm9FE',
+    },
+];
+
+// 實體據點（地圖連結去 Google Maps 查證後放上）
+const LOCATIONS = [
+    {
+        img: '/images/location-scieduc.jpg',
+        name: '國立臺灣科學教育館',
+        address: '台北市士林區士商路 189 號',
+        map: 'https://www.google.com/maps/search/?api=1&query=%E5%9C%8B%E7%AB%8B%E8%87%BA%E7%81%A3%E7%A7%91%E5%AD%B8%E6%95%99%E8%82%B2%E9%A4%A8',
+    },
+    {
+        img: '/images/location-nmns.jpg',
+        name: '國立自然科學博物館',
+        address: '台中市北區館前路 1 號',
+        map: 'https://www.google.com/maps/search/?api=1&query=%E5%9C%8B%E7%AB%8B%E8%87%AA%E7%84%B6%E7%A7%91%E5%AD%B8%E5%8D%9A%E7%89%A9%E9%A4%A8',
+    },
 ];
 
 const HomePage = () => {
@@ -318,6 +362,144 @@ const HomePage = () => {
                                         <p className="text-white font-bold text-sm">{photo.alt}</p>
                                     </div>
                                 </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </section>
+
+            {/* ══════════ EVENT REVIEWS ══════════ */}
+            <section className="py-20 bg-bauhaus-paper border-y-4 border-bauhaus-black">
+                <div className="max-w-6xl mx-auto px-6">
+                    <div className="text-center mb-12">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black rounded-lg">
+                            <History className="w-4 h-4" />
+                            活動回顧
+                        </div>
+                        <h2 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-4 tracking-tight">
+                            我們一起走過的精彩時刻
+                        </h2>
+                        <p className="text-bauhaus-black/60 max-w-2xl mx-auto font-medium">
+                            從學員賽、形象廣告，到全台第一間魔術方塊實體教室——每一步都是夢想的延伸。
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {EVENT_REVIEWS.map((ev, idx) => {
+                            const deco = CORNER_DECOS[idx % 3];
+                            const inner = (
+                                <>
+                                    <span
+                                        aria-hidden="true"
+                                        className={`absolute top-2 left-2 z-10 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
+                                        style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
+                                    />
+                                    <div className="relative aspect-video border-b-2 border-bauhaus-black overflow-hidden bg-bauhaus-muted">
+                                        <img
+                                            src={ev.img}
+                                            alt={ev.title}
+                                            loading="lazy"
+                                            className="w-full h-full object-cover"
+                                        />
+                                        {ev.video && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-bauhaus-black/15 group-hover:bg-bauhaus-black/5 transition-colors">
+                                                <span className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-bauhaus-red border-2 border-bauhaus-black shadow-hard group-hover:scale-110 transition-transform">
+                                                    <Play className="w-6 h-6 text-white fill-white ml-0.5" />
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="p-5 flex-1 flex flex-col">
+                                        <h3 className="font-black text-bauhaus-black mb-2 leading-snug">{ev.title}</h3>
+                                        <p className="text-sm text-bauhaus-black/60 leading-relaxed font-medium">{ev.desc}</p>
+                                        {ev.video && (
+                                            <span className="inline-flex items-center gap-1 mt-3 text-xs font-bold text-bauhaus-red">
+                                                觀看影片
+                                                <ExternalLink className="w-3 h-3" />
+                                            </span>
+                                        )}
+                                    </div>
+                                </>
+                            );
+                            return ev.video ? (
+                                <a
+                                    key={idx}
+                                    href={ev.video}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="group bh-card bh-card-hover relative overflow-hidden flex flex-col"
+                                >
+                                    {inner}
+                                </a>
+                            ) : (
+                                <article
+                                    key={idx}
+                                    className="group bh-card bh-card-hover relative overflow-hidden flex flex-col"
+                                >
+                                    {inner}
+                                </article>
+                            );
+                        })}
+                    </div>
+                </div>
+            </section>
+
+            {/* ══════════ PHYSICAL LOCATIONS ══════════ */}
+            <section className="py-20 bg-white">
+                <div className="max-w-6xl mx-auto px-6">
+                    <div className="text-center mb-12">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg">
+                            <MapPin className="w-4 h-4" />
+                            實體據點
+                        </div>
+                        <h2 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-4 tracking-tight">
+                            我們還有實體據點喔！
+                        </h2>
+                        <p className="text-bauhaus-black/60 max-w-2xl mx-auto font-medium">
+                            歡迎親自來玩，近距離感受魔術方塊的魅力。
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {LOCATIONS.map((loc, idx) => {
+                            const deco = CORNER_DECOS[idx % 3];
+                            return (
+                                <article
+                                    key={idx}
+                                    className="bh-card bh-card-hover relative overflow-hidden flex flex-col"
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={`absolute top-2 left-2 z-10 w-4 h-4 ${deco.color} ${deco.shape === 'circle' ? 'rounded-full' : ''}`}
+                                        style={deco.shape === 'triangle' ? { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' } : undefined}
+                                    />
+                                    <div className="aspect-[16/10] border-b-2 border-bauhaus-black overflow-hidden bg-bauhaus-muted">
+                                        <img
+                                            src={loc.img}
+                                            alt={loc.name}
+                                            loading="lazy"
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </div>
+                                    <div className="p-6 flex-1 flex flex-col items-center text-center">
+                                        <h3 className="text-xl font-black text-bauhaus-black mb-1">{loc.name}</h3>
+                                        <p className="text-sm font-bold text-bauhaus-blue mb-2">（開放參觀，歡迎來玩）</p>
+                                        <p className="text-xs text-bauhaus-black/50 font-medium mb-5 flex items-center gap-1">
+                                            <MapPin className="w-3 h-3 shrink-0" />
+                                            {loc.address}
+                                        </p>
+                                        <a
+                                            href={loc.map}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="bh-btn bg-bauhaus-black text-white hover:bg-bauhaus-black/90 w-full mt-auto px-5 py-3 text-sm"
+                                        >
+                                            <MapPin className="w-4 h-4" />
+                                            地圖位置
+                                            <ExternalLink className="w-4 h-4" />
+                                        </a>
+                                    </div>
+                                </article>
                             );
                         })}
                     </div>
