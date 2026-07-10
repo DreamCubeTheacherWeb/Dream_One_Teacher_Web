@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import {
-    Trophy, Search, ChevronDown, Trash2, Ban, RotateCcw, ShieldAlert,
+    Trophy, Search, ChevronDown, Trash2, Ban, RotateCcw, ShieldAlert, Plus, X, Save,
 } from 'lucide-react';
+import { WCA_SELF_EVENTS, parseTimeToCs, formatWcaResult } from '../../lib/wca';
 
 const WcaManager = () => {
     const [instructors, setInstructors] = useState([]);
@@ -14,6 +15,9 @@ const WcaManager = () => {
     const [detailLoading, setDetailLoading] = useState(false);
     const [acting, setActing] = useState(false);
     const [errMsg, setErrMsg] = useState('');
+    // 各項目成績（後台代填）：[{ event_id, single, average }]，single/average 為時間字串
+    const [wcaRows, setWcaRows] = useState([]);
+    const [savingResults, setSavingResults] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -42,7 +46,65 @@ const WcaManager = () => {
             .select('*', { count: 'exact', head: true })
             .eq('instructor_id', inst.id);
         setResultCount(count || 0);
+        // 讀出可管理項目的成績，轉回可編輯的時間字串（與 parseTimeToCs 為往返組）。
+        // 特殊格式匯入項目（333fm/333mbf）不在白名單、不在此顯示，也不會被覆蓋。
+        const allowed = new Set(WCA_SELF_EVENTS.map((e) => e.id));
+        const { data: wr } = await supabase
+            .from('wca_results')
+            .select('event_id, best_single, best_average')
+            .eq('instructor_id', inst.id);
+        const rows = (wr || [])
+            .filter((r) => allowed.has(r.event_id))
+            .sort((a, b) =>
+                WCA_SELF_EVENTS.findIndex((e) => e.id === a.event_id) -
+                WCA_SELF_EVENTS.findIndex((e) => e.id === b.event_id))
+            .map((r) => ({
+                event_id: r.event_id,
+                single: r.best_single != null ? formatWcaResult(r.event_id, r.best_single) : '',
+                average: r.best_average != null ? formatWcaResult(r.event_id, r.best_average) : '',
+            }));
+        setWcaRows(rows);
         setDetailLoading(false);
+    };
+
+    // 各項目成績列操作
+    const addWcaRow = () => setWcaRows((prev) => {
+        const used = new Set(prev.map((r) => r.event_id));
+        const next = WCA_SELF_EVENTS.find((e) => !used.has(e.id));
+        if (!next) return prev;
+        return [...prev, { event_id: next.id, single: '', average: '' }];
+    });
+    const updateWcaRow = (idx, field, value) =>
+        setWcaRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+    const removeWcaRow = (idx) => setWcaRows((prev) => prev.filter((_, i) => i !== idx));
+
+    const handleSaveResults = async () => {
+        if (!selectedInstructor) return;
+        const invalid = [];
+        const payload = [];
+        for (const row of wcaRows) {
+            if (!row.event_id) continue;
+            const evName = WCA_SELF_EVENTS.find((e) => e.id === row.event_id)?.name || row.event_id;
+            const single = parseTimeToCs(row.single);
+            const average = parseTimeToCs(row.average);
+            if (Number.isNaN(single)) invalid.push(`${evName}單次`);
+            if (Number.isNaN(average)) invalid.push(`${evName}平均`);
+            if (single == null && average == null) continue; // 兩格皆空的列略過
+            payload.push({ event_id: row.event_id, best_single: single ?? null, best_average: average ?? null });
+        }
+        if (invalid.length) {
+            setErrMsg('以下成績格式不正確（範例：12.34 或 1:23.45）：' + invalid.join('、'));
+            return;
+        }
+        setSavingResults(true);
+        setErrMsg('');
+        const { error } = await supabase.rpc('admin_upsert_wca_results', {
+            p_instructor_id: selectedInstructor.id,
+            p_results: payload,
+        });
+        setSavingResults(false);
+        if (error) { setErrMsg('成績儲存失敗：' + error.message); return; }
+        await loadDetail(selectedInstructor);
     };
 
     const selectInstructor = (inst) => {
@@ -214,6 +276,57 @@ const WcaManager = () => {
                                     <Ban className="w-4 h-4" /> 停權
                                 </button>
                             )}
+                        </div>
+
+                        <div className="pt-4 mt-2 border-t-2 border-bauhaus-black/15">
+                            <div className="bh-label mb-1">各項目成績（後台代填）</div>
+                            <p className="text-xs text-bauhaus-black/50 font-medium mb-3 leading-relaxed">
+                                替這位講師登錄各項目最佳成績，「單次」「平均」可擇一或都填。
+                                時間格式：<b>12.34</b>（秒）或 <b>1:23.45</b>（分:秒）。儲存採覆蓋制（以此清單取代其可管理項目的舊成績）。
+                            </p>
+                            <div className="space-y-3">
+                                {wcaRows.length === 0 && (
+                                    <p className="text-sm text-bauhaus-black/40 font-bold">尚無項目，點「新增項目」開始登錄。</p>
+                                )}
+                                {wcaRows.map((row, idx) => {
+                                    const used = new Set(wcaRows.map((r) => r.event_id));
+                                    return (
+                                        <div key={idx} data-testid={`wca-result-row-${idx}`} className="border-2 border-bauhaus-black rounded-lg bg-white p-3 grid grid-cols-2 sm:grid-cols-[1.3fr_1fr_1fr_auto] gap-2 sm:items-end">
+                                            <div className="col-span-2 sm:col-span-1">
+                                                <label className="bh-label text-[10px] block mb-1">項目</label>
+                                                <select value={row.event_id} onChange={(e) => updateWcaRow(idx, 'event_id', e.target.value)} className="bh-input bg-white">
+                                                    {WCA_SELF_EVENTS.filter((e) => e.id === row.event_id || !used.has(e.id)).map((e) => (
+                                                        <option key={e.id} value={e.id}>{e.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="bh-label text-[10px] block mb-1">單次</label>
+                                                <input inputMode="decimal" value={row.single} onChange={(e) => updateWcaRow(idx, 'single', e.target.value)} className="bh-input" placeholder="12.34" />
+                                            </div>
+                                            <div>
+                                                <label className="bh-label text-[10px] block mb-1">平均</label>
+                                                <input inputMode="decimal" value={row.average} onChange={(e) => updateWcaRow(idx, 'average', e.target.value)} className="bh-input" placeholder="13.50" />
+                                            </div>
+                                            <div className="col-span-2 sm:col-span-1 flex sm:block justify-end">
+                                                <button type="button" onClick={() => removeWcaRow(idx)} className="bh-btn bh-btn-outline p-2.5" aria-label="移除項目" title="移除項目">
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <div className="flex flex-wrap gap-3 mt-3">
+                                {wcaRows.length < WCA_SELF_EVENTS.length && (
+                                    <button type="button" onClick={addWcaRow} className="bh-btn bh-btn-outline text-sm">
+                                        <Plus className="w-4 h-4" /> 新增項目
+                                    </button>
+                                )}
+                                <button type="button" data-testid="wca-save-results" disabled={savingResults} onClick={handleSaveResults} className="bh-btn bh-btn-blue text-sm disabled:opacity-50">
+                                    <Save className="w-4 h-4" /> {savingResults ? '儲存中…' : '儲存成績'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

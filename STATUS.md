@@ -1,7 +1,30 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-09（表單下載中心講師列排版優化＋「還缺什麼資料」顯示，已改完＋build/lint 綠燈＋mock 截圖驗證、未 commit；Opus 4.8）。
+> 最後更新：2026-07-10（WCA 頁改「後台代填成績」——講師只填 WCA ID，項目/成績改由 admin 後台管理，已改完＋build/lint 綠燈、未 commit、SQL 未套用；Opus 4.8）。
+
+---
+
+## 🏆 2026-07-10：WCA 成績改「後台代填」，關閉老師自填（✅ 前端改完＋build/lint 綠燈；⏳ SQL 未套用、未 commit、端到端未驗）
+**業主指示（2026-07-10）**：個人頁 WCA 區塊，講師只能填「WCA 選手編號」，不再自己新增項目與成績；
+各項目成績改由 admin 在後台針對每位講師個別登錄。
+
+**改了三處**：
+1. `培訓web/src/pages/ProfilePage.jsx` — 移除「各項目成績」自填表格＋送出邏輯＋相關 state/handler/import；
+   只留 WCA ID 欄位，文案改「成績由後台登錄」。停權（hide_from_leaderboard）鎖定行為保留。
+2. `培訓web/src/pages/admin/WcaManager.jsx` — 在既有「搜尋講師→明細」面板加「各項目成績（後台代填）」
+   編輯區：新增/修改/刪除列＋儲存（項目下拉沿用 15 個時間制項目 WCA_SELF_EVENTS；覆蓋制）。
+3. `培訓web/supabase/2026-07-10_wca_admin_manage.sql`（**新檔，尚未套用**）— (a) 新增 admin 專用寫入
+   函式 `admin_upsert_wca_results(instructor,results)`（含 admin 角色守衛、replace 語意）；
+   (b) **撤銷** `upsert_my_wca_results` 對 authenticated 的執行權（安全關鍵：光移前端不夠，
+   登入者仍可直接呼叫該 RPC 塞成績，必須從後端斷）。
+
+**驗證**：`npm run build` ✓（4.18s）、`eslint` 兩檔皆綠（ProfilePage 只剩既有的函式 hoisting 舊警告，
+非本次新增）。**未驗**：頁面視覺/端到端（OAuth-only + 真實 Supabase 資料，自動化登入不到，需業主登入看）。
+
+**⚠️ 上線順序（重要）**：SQL 要先在 Supabase SQL Editor 跑，再部署前端。若前端先上，後台「儲存成績」
+會因函式不存在而失敗。SQL 由業主（或授權後）套用——碰線上資料庫，未自行執行。
+**⚠️ commit 注意**：ProfilePage.jsx 歷史上有並行線改動，commit 前 `git status`/`git diff` 只挑本次 WCA 改動。
 
 ---
 
