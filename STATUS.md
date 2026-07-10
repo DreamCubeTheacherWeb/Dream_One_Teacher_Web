@@ -1,13 +1,14 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-10 深夜（WCA 自動同步端到端跑通＝117 人/900 筆已寫入正式庫；首頁佈告欄移頁尾重排 ✅ 已上線；認領清單修復 ✅ 已上線；Opus 4.8）。
+> 最後更新：2026-07-10 深夜（本日全收尾：首頁佈告欄定位＋手機視覺優化上線＝667dde7；WCA 自動同步端到端跑通＝117 人/900 筆已寫入正式庫；認領清單修復上線；Opus 4.8）。
 
 ---
 
-## 🏠 2026-07-10 深夜：首頁佈告欄移頁尾重排（✅ 已上線＝b0d70aa，線上 bundle index-66yVdgq1.js 已驗）
-**業主回報**：佈告欄緊接 Hero 看起來突兀。**重排**（只動 HomePage.jsx）：Hero→願景使命→團隊→活動回顧→實體據點→**佈告欄（頁尾、置中徽章「最新消息」、paper 底）**→CTA＝品牌敘事優先、行政訊息殿後。
-**證據**：build/lint 綠；Playwright 桌機 1280＋手機 375 全頁截圖 agent 判讀 0 問題（Hero/願景交界單黑線不疊框、無溢出、佈告欄樣式與他區一致）；線上 bundle 含「最新消息」新副標。
+## 🏠 2026-07-10 深夜：首頁佈告欄重排（兩次迭代）＋手機視覺優化（✅ 全部上線，最終 bundle index-B3iMwuhO.js 已驗）
+**業主回報**：佈告欄緊接 Hero 突兀。第一版移頁尾（b0d70aa）後業主指定改放「願景與使命」正下方＝**最終順序 Hero→願景使命→佈告欄→團隊→活動回顧→實體據點→CTA**（b3dc7af，佈告欄白底＋底部黑框、置中徽章「最新消息」）。
+**手機視覺優化（業主指示「優化一下手機視覺」，667dde7）**：ui-designer agent 執行、主對話抽查——六區塊 py-20→py-14 md:py-20、標題群 mb-12→mb-8 md:mb-12、容器 px-6→px-4 sm:px-6、Hero 統計區收緊；**375px 頁長 7601→7173px，桌機（md:+）零變化**；純間距 24 行、無違禁樣式（DESIGN.md 合規）。
+**證據**：全站手機稽核 44 檢查 0 溢出/0 錯誤/0 空白（僅存 6 旗標＝已知 20px 勾選框基線）；兩輪 Playwright 截圖 agent 判讀通過＋主對話親手 ls/diff/grep 抽查；build/lint 綠；線上 bundle index-B3iMwuhO.js 含 6 處 `py-14 md:py-20`。
 
 ## 🏆 2026-07-10 深夜：WCA 自動同步端到端跑通（✅ 資料已進正式庫）
 業主跑完 autosync SQL＋主對話代生密鑰（`openssl rand -hex 32`，業主以 upsert 存入 wca_sync_config；第一次貼歪、重貼後驗證通過）。**主對話手動執行 sync.mjs（業主授權）：117 位有 WCA ID 講師全數抓取成功（0 查無 0 失敗），sync_wca_results 回報寫入 900 筆**。讀回驗證：get_wca_leaderboard 對 anon 回 authentication required（RLS 正常），畫面待業主登入 /leaderboard 看。
