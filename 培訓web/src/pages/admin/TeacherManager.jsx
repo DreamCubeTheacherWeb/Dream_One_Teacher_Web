@@ -3,7 +3,7 @@ import { supabase, createIsolatedClient } from '../../lib/supabaseClient';
 import {
     Users, UserPlus, ShieldCheck, Trash2, Search,
     Clock, CheckCircle, AlertCircle, Loader2,
-    ChevronDown, ChevronUp, Eye, MapPin
+    ChevronDown, ChevronUp, Eye, MapPin, Trophy
 } from 'lucide-react';
 
 const DEFAULT_MENTORS = ['懶懶', '叮叮', '樹懶'];
@@ -42,6 +42,8 @@ const TeacherManager = () => {
     const [showDetail, setShowDetail] = useState(false);
     const [instructorMap, setInstructorMap] = useState({});
     const [expandedId, setExpandedId] = useState(null);
+    const [wcaCountMap, setWcaCountMap] = useState({}); // instructor_id → WCA 成績筆數（每兩個月自動抓）
+    const [onlyWca, setOnlyWca] = useState(false); // 只看「有 WCA 成績」的講師
 
     useEffect(() => {
         fetchData();
@@ -49,10 +51,11 @@ const TeacherManager = () => {
 
     const fetchData = async () => {
         setLoading(true);
-        const [usersRes, invitesRes, instructorsRes] = await Promise.all([
+        const [usersRes, invitesRes, instructorsRes, wcaResultsRes] = await Promise.all([
             supabase.from('users').select('*').order('created_at', { ascending: false }),
             supabase.from('teacher_invites').select('*').order('created_at', { ascending: false }),
             supabase.from('instructors').select('*'),
+            supabase.from('wca_results').select('instructor_id'),
         ]);
         const fetchedUsers = usersRes.data || [];
         setUsers(fetchedUsers);
@@ -65,9 +68,28 @@ const TeacherManager = () => {
         });
         setInstructorMap(iMap);
 
+        const wMap = {};
+        (wcaResultsRes.data || []).forEach(r => { wMap[r.instructor_id] = (wMap[r.instructor_id] || 0) + 1; });
+        setWcaCountMap(wMap);
+
         const dbMentors = fetchedUsers.map(u => u.mentor_name).filter(Boolean);
         setMentorOptions([...new Set([...DEFAULT_MENTORS, ...dbMentors])]);
         setLoading(false);
+    };
+
+    // WCA 選手編號：admin 修正/清空講師自填錯誤的入口（成績本身由排程自動抓取，不再手動登錄）
+    const handleWcaIdChange = async (inst, rawValue) => {
+        const trimmed = rawValue.trim();
+        if (trimmed === (inst.wca_id || '')) return; // 未變更不打 API
+        const { error } = await supabase.from('instructors').update({ wca_id: trimmed || null }).eq('id', inst.id);
+        if (error) { alert('WCA 選手編號更新失敗：' + error.message); return; }
+        setInstructorMap(prev => {
+            const cur = prev[inst.id] || inst;
+            const next = { ...cur, wca_id: trimmed || null };
+            const nextMap = { ...prev, [next.id]: next };
+            if (next.user_id) nextMap[`user:${next.user_id}`] = next;
+            return nextMap;
+        });
     };
 
     const handleMentorChange = async (userId, value) => {
@@ -289,9 +311,17 @@ const TeacherManager = () => {
             })),
         ];
 
-        if (!search) return combined;
+        let result = combined;
+        if (onlyWca) {
+            result = result.filter(item => {
+                if (item._type === 'invite') return false;
+                const instId = item._type === 'instructor' ? item.id : instructorMap[`user:${item.id}`]?.id;
+                return instId ? (wcaCountMap[instId] || 0) > 0 : false;
+            });
+        }
+        if (!search) return result;
         const q = search.toLowerCase();
-        return combined.filter(item =>
+        return result.filter(item =>
             item.name?.toLowerCase().includes(q) || item.email?.toLowerCase().includes(q)
         );
     };
@@ -412,6 +442,16 @@ const TeacherManager = () => {
                     </span>
                 </label>
 
+                <label className="flex items-center gap-2 cursor-pointer select-none shrink-0"
+                    onClick={() => setOnlyWca(v => !v)}>
+                    <div className={`relative w-9 h-5 rounded-full border-2 border-bauhaus-black transition-colors ${onlyWca ? 'bg-bauhaus-blue' : 'bg-white'}`}>
+                        <div className={`absolute top-0 left-0 w-3.5 h-3.5 rounded-full bg-bauhaus-black transition-transform ${onlyWca ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                    </div>
+                    <span className="text-sm font-bold text-bauhaus-black flex items-center gap-1">
+                        <Trophy className="w-3.5 h-3.5" /> 有 WCA 成績
+                    </span>
+                </label>
+
                 <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bauhaus-black/40" />
                     <input type="text" placeholder="搜尋姓名或 Email..." value={search}
@@ -447,7 +487,7 @@ const TeacherManager = () => {
                     </div>
                 )}
                 {filteredList.map(item => {
-                    const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : null;
+                    const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : (item._type === 'instructor' ? item : null);
                     const isExpanded = showDetail && expandedId === `${item._type}-${item.id}`;
                     return (
                         <div key={`m-${item._type}-${item.id}`} className="bh-card overflow-hidden">
@@ -609,6 +649,17 @@ const TeacherManager = () => {
                                             </div>
                                         ) : <span className="text-xs text-bauhaus-black/40">未設定</span>}
                                     </div>
+                                    <div className="space-y-1.5 text-sm" onClick={e => e.stopPropagation()}>
+                                        <h4 className="bh-label flex items-center gap-1"><Trophy className="w-3 h-3" /> WCA 選手編號</h4>
+                                        <input
+                                            type="text"
+                                            defaultValue={inst.wca_id || ''}
+                                            onBlur={e => handleWcaIdChange(inst, e.target.value)}
+                                            placeholder="未填（例：2015XXXX01）"
+                                            className="bh-input py-1.5 px-2 text-xs w-full max-w-[220px]"
+                                        />
+                                        <p className="text-[11px] text-bauhaus-black/40">系統每兩個月自動抓 WCA 官方成績，此欄僅供修正編號填錯的情況。</p>
+                                    </div>
                                 </div>
                             )}
                             {isExpanded && !inst && (
@@ -637,7 +688,7 @@ const TeacherManager = () => {
                     </thead>
                     <tbody className="divide-y-2 divide-bauhaus-black/20">
                         {filteredList.map(item => {
-                            const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : null;
+                            const inst = item._type === 'user' ? instructorMap[`user:${item.id}`] : (item._type === 'instructor' ? item : null);
                             const isExpanded = showDetail && expandedId === `${item._type}-${item.id}`;
                             const totalCols = 5 + (showMentorCol ? 1 : 0) + 1;
                             return (
@@ -799,6 +850,17 @@ const TeacherManager = () => {
                                                         <DetailRow label="地址" value={inst.address} />
                                                         <DetailRow label="學期接課" value={inst.teaching_freq_semester} />
                                                         <DetailRow label="寒暑接課" value={inst.teaching_freq_vacation} />
+                                                        <div className="pt-2" onClick={e => e.stopPropagation()}>
+                                                            <h4 className="bh-label mb-1 flex items-center gap-1"><Trophy className="w-3 h-3" /> WCA 選手編號</h4>
+                                                            <input
+                                                                type="text"
+                                                                defaultValue={inst.wca_id || ''}
+                                                                onBlur={e => handleWcaIdChange(inst, e.target.value)}
+                                                                placeholder="未填（例：2015XXXX01）"
+                                                                className="bh-input py-1.5 px-2 text-xs w-full max-w-[220px]"
+                                                            />
+                                                            <p className="text-[11px] text-bauhaus-black/40 mt-1">系統每兩個月自動抓 WCA 官方成績，此欄僅供修正編號填錯的情況。</p>
+                                                        </div>
                                                     </div>
                                                     <div className="space-y-2">
                                                         <h4 className="bh-label mb-2">接課地區</h4>

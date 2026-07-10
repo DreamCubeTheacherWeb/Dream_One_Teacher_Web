@@ -25,7 +25,6 @@ import DevLogin from './pages/DevLogin';
 import ClaimRequests from './pages/admin/ClaimRequests';
 import DownloadCenter from './pages/admin/DownloadCenter';
 import BadgeManager from './pages/admin/BadgeManager';
-import WcaManager from './pages/admin/WcaManager';
 import Leaderboard from './pages/Leaderboard';
 import CubeTimer from './pages/CubeTimer';
 import SalaryLinksManager from './pages/admin/SalaryLinksManager';
@@ -212,14 +211,6 @@ function App() {
             element={
               <ProtectedRoute adminOnly={true}>
                 <Layout><BadgeManager /></Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/wca"
-            element={
-              <ProtectedRoute adminOnly={true}>
-                <Layout><WcaManager /></Layout>
               </ProtectedRoute>
             }
           />

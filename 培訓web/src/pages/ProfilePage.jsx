@@ -770,8 +770,9 @@ const ProfilePage = () => {
             <Section icon={Trophy} title="WCA 世界賽成績（選填）">
                 <p className="text-sm text-bauhaus-black/60 font-medium mb-3 leading-relaxed">
                     WCA（世界方塊協會，World Cube Association）是全球魔術方塊比賽的官方組織。
-                    若你參加過 WCA 正式比賽，填入你的 WCA 選手編號即可；各項目成績會由管理員在後台為你登錄，
-                    並顯示在排行榜的「WCA 賽事」榜上。沒有 WCA 比賽紀錄可以留空。
+                    若你參加過 WCA 正式比賽，填入你的 WCA 選手編號即可；系統會定期依你填的編號，
+                    自動抓取 WCA 官方最新成績並顯示在排行榜的「WCA 賽事」榜，你不需自行填寫成績。
+                    沒有 WCA 比賽紀錄可以留空。
                 </p>
                 <div className="bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 mb-4 text-sm font-bold text-bauhaus-black flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -797,8 +798,8 @@ const ProfilePage = () => {
                 <div className="mt-6 pt-5 border-t-2 border-bauhaus-black">
                     <div className="bh-label mb-1">各項目成績</div>
                     <p className="text-xs text-bauhaus-black/50 font-medium leading-relaxed">
-                        各項目的最佳成績（單次／平均）由管理員在後台依你的 WCA 編號登錄，這裡不需自行填寫。
-                        成績登錄後會自動顯示在排行榜的「WCA 賽事」榜。
+                        系統會定期依你填的 WCA 選手編號，自動抓取 WCA 官方最新成績並顯示在排行榜的「WCA 賽事」榜，
+                        你不需自行填寫；請確認編號正確即可。
                     </p>
                 </div>
             </Section>
