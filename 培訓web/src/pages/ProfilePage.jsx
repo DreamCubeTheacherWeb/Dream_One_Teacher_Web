@@ -976,7 +976,7 @@ const AchievementsSection = ({ userId, instructorId, certName }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [downloading, setDownloading] = useState(false);
-    const [collapsed, setCollapsed] = useState(false);
+    const [collapsed, setCollapsed] = useState(true);
 
     useEffect(() => {
         if (!instructorId) { setLoading(false); return undefined; }
