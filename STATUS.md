@@ -1,9 +1,12 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-14（個人資料頁成就牆改為預設收合並上線；最終程式提交 5150bda，bundle index-CzAB1z8r.js 已驗）。
+> 最後更新：2026-07-14（個人資料頁上傳文件跨頁保留已上線＝4239939，bundle index-CestCUpL.js 已驗；成就牆預設收合已上線）。
 
 ---
+
+## 📎 2026-07-14：個人資料頁上傳文件跨頁保留（✅ 已上線）
+本機草稿改為一併保存大頭照與證件的 Storage metadata，重新進入頁面時依「DB＋草稿」合併結果重建簽名預覽；資料載入 effect 僅依 `user.id` 觸發，避免 token refresh 用 DB 舊值覆蓋尚未送出的表單。程式提交 `4239939` 已在 `main`；乾淨環境 `npm run build` 通過，正式站已換為 `index-CestCUpL.js`，線上資產 HTTP 200 且大小與本地建置一致（2,212,006 bytes）。
 
 ## 🏆 2026-07-14：個人資料頁成就牆預設收合（✅ 已上線）
 「我的教學成就」的 `collapsed` 初始狀態由 `false` 改為 `true`，進入個人資料頁時預設收起，原有點擊展開／收合行為不變。最終 `main` 程式提交為 `5150bda`；相對前一正式版的淨程式差異僅此一行。乾淨環境 `npm ci`＋`npm run build` 通過，正式站已換為 `index-CzAB1z8r.js`，線上資產 HTTP 200 且大小與本地建置一致（2,212,184 bytes）。
