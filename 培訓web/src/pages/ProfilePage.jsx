@@ -347,7 +347,7 @@ const ProfilePage = () => {
         const wcaVal = form.wca_id?.trim() || '';
         if (wcaVal && wcaVal !== originalWcaId.current) {
             const ok = window.confirm(
-                `你填寫的 WCA 選手編號：${wcaVal}\n\n送出前請再次確認這是「你本人」的真實編號。填寫不實者，管理員有權刪除。\n\n確定照實填寫並送出嗎？`
+                `你填寫的 WCA 選手編號：${wcaVal}\n\n送出前請再次確認這是「你本人」的真實編號。填寫不實者，管理員有權刪除；累計三次故意不實，將取消你參與排名的資格。\n\n確定照實填寫並送出嗎？`
             );
             if (!ok) return;
         }
@@ -776,7 +776,7 @@ const ProfilePage = () => {
                 </p>
                 <div className="bg-bauhaus-yellow border-2 border-bauhaus-black px-3 py-2 mb-4 text-sm font-bold text-bauhaus-black flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>請務必照實填寫自己的 WCA 選手編號。管理員有權刪除不實資料。</span>
+                    <span>請務必照實填寫自己的 WCA 選手編號。管理員有權刪除不實資料；累計三次故意填寫不實，將取消你參與排名的資格。</span>
                 </div>
                 {wcaLocked && (
                     <div data-testid="wca-locked-warning" className="bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 mb-4 text-sm font-bold text-white flex items-start gap-2">
@@ -789,7 +789,7 @@ const ProfilePage = () => {
                         <input type="text" disabled={wcaLocked} value={form.wca_id || ''} onChange={e => handleChange('wca_id', e.target.value)} className={`${inputCls} disabled:opacity-50 disabled:cursor-not-allowed`} placeholder="例如 2012WUZH01" />
                     </Field>
                     <div className="flex items-end">
-                        <a href="https://www.worldcubeassociation.org/" target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline inline-flex min-h-[46px] w-full items-center justify-center gap-2 whitespace-nowrap px-6 py-3 text-sm md:w-auto">
+                        <a href="https://www.worldcubeassociation.org/" target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline inline-flex items-center justify-center gap-2 text-sm w-full md:w-auto">
                             <Trophy className="w-4 h-4" /> WCA 網站
                         </a>
                     </div>
