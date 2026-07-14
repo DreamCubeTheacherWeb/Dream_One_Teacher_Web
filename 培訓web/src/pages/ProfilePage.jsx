@@ -70,18 +70,10 @@ const INITIAL_FORM = {
 };
 
 // ── 草稿暫存（防「填一填換頁整個不見」）──
-// 只暫存文字類欄位；檔案（大頭照/證件）在選檔時已即時上傳 Storage，另循原邏輯，不進草稿。
-const FILE_FIELD_KEYS = new Set(
-    ['photo', 'id_front', 'id_back', 'bankbook'].flatMap(k => [
-        `${k}_path`, `${k}_mime`, `${k}_size`, `${k}_uploaded_at`,
-    ])
-);
+// 圖片本體已即時上傳 Storage，但路徑等 metadata 要等整份表單送出才會寫入 DB；
+// 因此檔案欄位也必須進草稿，否則切頁或重新掛載後會看起來像是證件消失。
 const draftKeyFor = (uid) => `profile_draft_${uid}`;
-const pickDraftFields = (form) => {
-    const out = {};
-    for (const k of Object.keys(form)) if (!FILE_FIELD_KEYS.has(k)) out[k] = form[k];
-    return out;
-};
+const pickDraftFields = (form) => ({ ...form });
 const readDraft = (uid) => {
     try { return JSON.parse(localStorage.getItem(draftKeyFor(uid)) || 'null'); }
     catch { return null; }
@@ -109,14 +101,6 @@ const ProfilePage = () => {
     const [existingClaim, setExistingClaim] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
     const [wcaLocked, setWcaLocked] = useState(false);
-
-    useEffect(() => {
-        if (user) {
-            loadProfile();
-            loadContractStatus();
-            loadExistingClaim();
-        }
-    }, [user]);
 
     const loadExistingClaim = async () => {
         const { data } = await supabase
@@ -173,6 +157,8 @@ const ProfilePage = () => {
             }
         }
 
+        let nextForm;
+
         if (data) {
             setIsFirstTime(false);
             setInstructorId(data.id || null);
@@ -183,21 +169,9 @@ const ProfilePage = () => {
             // 記下「已存進 DB 的文字欄位版本」，並套用未儲存的本機草稿（若有）
             savedSnapshot.current = JSON.stringify(pickDraftFields(formData));
             const draft = readDraft(user.id);
-            setForm(draft ? { ...formData, ...draft } : formData);
+            nextForm = draft ? { ...formData, ...draft } : formData;
             originalWcaId.current = formData.wca_id || '';
             setWcaLocked(!!data.hide_from_leaderboard);
-
-            const previews = {};
-            const allDocKeys = ['photo', ...DOC_TYPES.map(d => d.key)];
-            for (const key of allDocKeys) {
-                if (data[`${key}_path`]) {
-                    const { data: urlData } = await supabase.storage
-                        .from('instructor_uploads')
-                        .createSignedUrl(data[`${key}_path`], 3600);
-                    if (urlData?.signedUrl) previews[key] = urlData.signedUrl;
-                }
-            }
-            setFilePreviews(previews);
         } else {
             setIsFirstTime(true);
             setInstructorId(null);
@@ -208,13 +182,43 @@ const ProfilePage = () => {
             };
             savedSnapshot.current = JSON.stringify(pickDraftFields(base));
             const draft = readDraft(user.id);
-            setForm(draft ? { ...base, ...draft } : base);
+            nextForm = draft ? { ...base, ...draft } : base;
         }
+
+        setForm(nextForm);
+
+        // 預覽要依「DB + 本機草稿」的合併結果建立；首次填寫、尚未送出時
+        // 檔案只存在 Storage 與草稿，若只看 DB 就會誤判為未上傳。
+        const previews = {};
+        const allDocKeys = ['photo', ...DOC_TYPES.map(d => d.key)];
+        for (const key of allDocKeys) {
+            const storedPath = nextForm[`${key}_path`];
+            if (storedPath) {
+                const { data: urlData } = await supabase.storage
+                    .from('instructor_uploads')
+                    .createSignedUrl(storedPath, 3600);
+                if (urlData?.signedUrl) previews[key] = urlData.signedUrl;
+            }
+        }
+        setFilePreviews(previews);
+
         hydrated.current = true; // 載入完成後才允許草稿自動寫入
         setLoading(false);
     };
 
-    // 草稿自動暫存：hydrated 後，表單一有變動就寫入 localStorage（只存文字欄位）
+    useEffect(() => {
+        if (user?.id) {
+            loadProfile();
+            loadContractStatus();
+            loadExistingClaim();
+        }
+        // Supabase 會在 TOKEN_REFRESHED 時提供新的 user 物件；只依 user id 載入，
+        // 避免 token 更新把使用者尚未送出的表單重新以 DB 舊值覆蓋。
+        // 這三個 loader 刻意不放進 dependency，否則每次 render 都會重新查詢。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
+
+    // 草稿自動暫存：hydrated 後，表單一有變動就寫入 localStorage（包含已上傳檔案的 metadata）
     useEffect(() => {
         if (!hydrated.current || !user) return;
         try {
