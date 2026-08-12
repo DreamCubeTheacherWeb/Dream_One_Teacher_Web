@@ -6,6 +6,7 @@ import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Came
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
+import { stripAdminManagedInstructorFields } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
 
 const TW_REGIONS = {
@@ -73,9 +74,12 @@ const INITIAL_FORM = {
 // 圖片本體已即時上傳 Storage，但路徑等 metadata 要等整份表單送出才會寫入 DB；
 // 因此檔案欄位也必須進草稿，否則切頁或重新掛載後會看起來像是證件消失。
 const draftKeyFor = (uid) => `profile_draft_${uid}`;
-const pickDraftFields = (form) => ({ ...form });
+const pickDraftFields = (form) => stripAdminManagedInstructorFields(form);
 const readDraft = (uid) => {
-    try { return JSON.parse(localStorage.getItem(draftKeyFor(uid)) || 'null'); }
+    try {
+        const draft = JSON.parse(localStorage.getItem(draftKeyFor(uid)) || 'null');
+        return draft ? stripAdminManagedInstructorFields(draft) : null;
+    }
     catch { return null; }
 };
 
@@ -359,8 +363,7 @@ const ProfilePage = () => {
         setSaving(true);
         const payload = {
             user_id: user.id,
-            ...form,
-            instructor_role: form.instructor_role || null,
+            ...stripAdminManagedInstructorFields(form),
             wca_id: form.wca_id?.trim() || null,
         };
 

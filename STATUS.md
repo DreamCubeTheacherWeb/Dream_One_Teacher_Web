@@ -1,9 +1,14 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-07-14（個人資料頁上傳文件跨頁保留已上線＝4239939，bundle index-CestCUpL.js 已驗；成就牆預設收合已上線）。
+> 最後更新：2026-08-12（講師等級權限再加固完成，已通過權限／草稿／建置檢查；尚未部署）。
 
 ---
+
+## 🔒 2026-08-12：講師等級僅限管理員設定（✅ 本機加固完成；⏳ 尚未部署）
+**需求**：首次註冊或剛登入的講師只能看到系統帶入的講師等級，不可選擇或修改；只有管理員可設定。**盤點結果**：正式站目前的個人頁已是唯讀標籤，管理端 `InstructorList`／`TeacherManager` 的等級選單也有 admin 限制；既有 `2026-07-09_claim_id_and_role.sql` 定義 `trg_guard_instructor_role`，非 admin 新增時強制實習、更新時保留舊值。此次再把 `instructor_role` 從講師端草稿與 upsert payload 完全剔除，避免手改 localStorage 或攔截前端請求夾帶等級。新增 `src/lib/instructorProfile.js` 與 `scripts/verify-instructor-role-guard.mjs` 作為回歸防線。
+
+**證據**：專項權限檢查 5/5、個人資料草稿瀏覽器回歸 9/9、針對性 ESLint 0 錯誤、`npm run build` 成功。正式站 bundle `index-CestCUpL.js` 已讀到「如需變更請聯繫管理員／首次註冊預設」字串；本次嘗試用唯讀 Supabase 結構查詢確認正式 trigger 時，連線帳號回 `You do not have permission to perform this action`，因此即時 DB 結構未重新確認，只能引用 2026-07-09 已套 SQL 的既有紀錄。**尚未 push／部署，也未改正式資料庫。**
 
 ## 📎 2026-07-14：個人資料頁上傳文件跨頁保留（✅ 已上線）
 本機草稿改為一併保存大頭照與證件的 Storage metadata，重新進入頁面時依「DB＋草稿」合併結果重建簽名預覽；資料載入 effect 僅依 `user.id` 觸發，避免 token refresh 用 DB 舊值覆蓋尚未送出的表單。程式提交 `4239939` 已在 `main`；乾淨環境 `npm run build` 通過，正式站已換為 `index-CestCUpL.js`，線上資產 HTTP 200 且大小與本地建置一致（2,212,006 bytes）。
