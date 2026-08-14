@@ -17,6 +17,12 @@ import {
   getSelectionBounds,
   normalizeRect,
 } from '../lib/canvasSelection';
+import {
+  CANVAS_AUTOSAVE_DELAY_MS,
+  buildCanvasElementPayload,
+  createCanvasSavedFingerprints,
+  getDirtyCanvasElements,
+} from '../lib/canvasPersistence';
 
 const CANVAS_WIDTH = 960;
 const MIN_CANVAS_HEIGHT = 600;
@@ -279,6 +285,9 @@ const TextBoxContent = ({ body, isEditing, onContentChange, onStartEdit }) => {
       className="w-full h-full p-3 overflow-auto rounded-lg canvas-text-content"
       contentEditable={isEditing} suppressContentEditableWarning
       onKeyDown={isEditing ? handleKeyDown : undefined}
+      onInput={() => {
+        if (ref.current) onContentChange(ref.current.innerHTML);
+      }}
       onBlur={() => {
         if (ref.current) onContentChange(ref.current.innerHTML);
       }}
@@ -312,6 +321,7 @@ const ButtonContent = ({ body, isEditing, onContentChange, onStartEdit, fillColo
       }}>
       <span ref={ref}
         contentEditable={isEditing} suppressContentEditableWarning
+        onInput={() => { if (ref.current) onContentChange(ref.current.textContent); }}
         onBlur={() => { if (ref.current) onContentChange(ref.current.textContent); }}
         onDoubleClick={(e) => { e.stopPropagation(); onStartEdit(); }}
         className="font-bold text-center px-2"
@@ -385,6 +395,9 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const [lessonTitle, setLessonTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('saved');
+  const [saveError, setSaveError] = useState('');
+  const [lastSavedAt, setLastSavedAt] = useState(null);
   const [fontPxInput, setFontPxInput] = useState('16');
   const [canvasHeight, setCanvasHeight] = useState(MIN_CANVAS_HEIGHT);
   const [showGrid, setShowGrid] = useState(true);
@@ -401,6 +414,13 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const ignoreNextClickRef = useRef(false);
   const clipboardRef = useRef([]);
   const pasteCountRef = useRef(0);
+  const elementsRef = useRef([]);
+  const savedFingerprintsRef = useRef(new Map());
+  const persistedIdByClientIdRef = useRef(new Map());
+  const loadedLessonIdRef = useRef(null);
+  const saveQueueRef = useRef(Promise.resolve(true));
+
+  elementsRef.current = elements;
 
   const selectedId = selectedIds.at(-1) || null;
 
@@ -476,6 +496,9 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      loadedLessonIdRef.current = null;
+      setSaveStatus('saved');
+      setSaveError('');
       try {
         const { data: lesson } = await supabase.from('lessons').select('title').eq('id', lessonId).single();
         if (lesson) setLessonTitle(lesson.title);
@@ -518,9 +541,16 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             textColor: pos.textColor || '#ffffff',
           };
         });
+        elementsRef.current = mapped;
+        savedFingerprintsRef.current = createCanvasSavedFingerprints(mapped, lessonId);
+        persistedIdByClientIdRef.current = new Map(
+          mapped.filter((element) => element.dbId).map((element) => [element.id, element.dbId]),
+        );
+        loadedLessonIdRef.current = lessonId;
         setElements(mapped);
         setSelectedIds([]);
         setEditingId(null);
+        setLastSavedAt(null);
       } catch (err) { console.error('載入失敗:', err); }
       finally { setLoading(false); }
     };
@@ -570,7 +600,9 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
       : `確定要刪除選取的 ${targets.length} 個元素嗎？`;
     if (!window.confirm(message)) return;
 
-    const dbIds = targets.map((element) => element.dbId).filter(Boolean);
+    const dbIds = targets.map((element) => (
+      element.dbId || persistedIdByClientIdRef.current.get(element.id)
+    )).filter(Boolean);
     if (dbIds.length > 0) {
       const { error } = await supabase.from('contents').delete().in('id', dbIds);
       if (error) {
@@ -591,6 +623,10 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
       if (error) console.error('圖片檔案清理失敗:', error);
     }
 
+    idSet.forEach((id) => {
+      savedFingerprintsRef.current.delete(id);
+      persistedIdByClientIdRef.current.delete(id);
+    });
     setElements((prev) => prev.filter((element) => !idSet.has(element.id)));
     setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
     if (editingId && idSet.has(editingId)) setEditingId(null);
@@ -675,47 +711,119 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   };
 
   // ── Save ──
-  const handleSave = async () => {
+  const hasUnsavedChanges = useCallback((snapshot = elementsRef.current) => (
+    loadedLessonIdRef.current === lessonId
+    && getDirtyCanvasElements(snapshot, savedFingerprintsRef.current, lessonId).length > 0
+  ), [lessonId]);
+
+  const persistCanvasSnapshot = useCallback(async (requestedElements) => {
+    if (loadedLessonIdRef.current !== lessonId) return false;
+
+    const currentIds = new Set(elementsRef.current.map((element) => element.id));
+    const snapshot = requestedElements.filter((element) => currentIds.has(element.id));
+    const dirtyElements = getDirtyCanvasElements(snapshot, savedFingerprintsRef.current, lessonId);
+    if (dirtyElements.length === 0) {
+      if (!hasUnsavedChanges()) setSaveStatus('saved');
+      return true;
+    }
+
     setSaving(true);
+    setSaveStatus('saving');
+    setSaveError('');
     try {
-      for (let i = 0; i < elements.length; i++) {
-        const el = elements[i];
-        const positionData = {
-          x: el.x, y: el.y, width: el.width, height: el.height,
-          opacity: el.opacity ?? 1,
-          locked: el.locked ?? false,
-        };
-        if (el.type === 'shape') {
-          positionData.shapeType = el.shapeType;
-          positionData.fillColor = el.fillColor;
-          positionData.borderColor = el.borderColor;
-          positionData.borderWidth = el.borderWidth;
-          positionData.borderRadius = el.borderRadius;
-          if (el.linkUrl) positionData.linkUrl = el.linkUrl;
-          if (el.shapeType === 'button') positionData.textColor = el.textColor || '#ffffff';
-        }
-        const dbType = el.type === 'text_box' ? 'article' : el.type === 'image' ? 'image_text' : el.type === 'shape' ? 'article' : el.type;
-        const payload = {
-          lesson_id: lessonId, type: dbType,
-          title: el.title || ({ text_box: '文字框', image: '圖片', video: '影片', shape: '圖形' }[el.type] || '元素'),
-          body: el.body || '', video_url: el.type === 'image' ? (el.storagePath || null) : (el.videoUrl || null),
-          order: i, status: 'draft', position_data: positionData,
-        };
-        if (el.dbId) {
-          const { error } = await supabase.from('contents').update(payload).eq('id', el.dbId);
+      const insertedIds = new Map();
+      for (const { element, index, fingerprint } of dirtyElements) {
+        const payload = buildCanvasElementPayload(element, index, lessonId);
+        const persistedId = element.dbId || persistedIdByClientIdRef.current.get(element.id);
+        if (persistedId) {
+          const { error } = await supabase.from('contents').update(payload).eq('id', persistedId);
           if (error) throw error;
         } else {
           const { data, error } = await supabase.from('contents').insert(payload).select('id').single();
           if (error) throw error;
-          if (data) updateElement(el.id, { dbId: data.id });
+          if (data?.id) {
+            const stillExists = elementsRef.current.some((current) => current.id === element.id);
+            if (!stillExists) {
+              const { error: cleanupError } = await supabase.from('contents').delete().eq('id', data.id);
+              if (cleanupError) throw cleanupError;
+              continue;
+            }
+            persistedIdByClientIdRef.current.set(element.id, data.id);
+            insertedIds.set(element.id, data.id);
+          }
         }
+        savedFingerprintsRef.current.set(element.id, fingerprint);
       }
-      alert('畫布內容已儲存！');
+
+      if (insertedIds.size > 0) {
+        setElements((current) => {
+          const next = current.map((element) => insertedIds.has(element.id)
+            ? { ...element, dbId: insertedIds.get(element.id) }
+            : element);
+          elementsRef.current = next;
+          return next;
+        });
+      }
+
+      setLastSavedAt(new Date());
+      setSaveStatus('saved');
+      return true;
     } catch (err) {
       console.error('儲存失敗:', err);
-      alert('儲存失敗：' + (err?.message || JSON.stringify(err)));
-    } finally { setSaving(false); }
-  };
+      setSaveError(err?.message || JSON.stringify(err));
+      setSaveStatus('error');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [hasUnsavedChanges, lessonId]);
+
+  const queueCanvasSave = useCallback((snapshot = elementsRef.current) => {
+    const requestedElements = snapshot.map((element) => ({ ...element }));
+    const task = saveQueueRef.current.then(
+      () => persistCanvasSnapshot(requestedElements),
+      () => persistCanvasSnapshot(requestedElements),
+    );
+    saveQueueRef.current = task;
+    return task;
+  }, [persistCanvasSnapshot]);
+
+  const handleSave = useCallback(() => queueCanvasSave(elementsRef.current), [queueCanvasSave]);
+
+  useEffect(() => {
+    if (loading || loadedLessonIdRef.current !== lessonId) return undefined;
+    if (!hasUnsavedChanges(elements)) return undefined;
+
+    const timer = window.setTimeout(() => {
+      void queueCanvasSave(elementsRef.current);
+    }, CANVAS_AUTOSAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [elements, hasUnsavedChanges, lessonId, loading, queueCanvasSave]);
+
+  useEffect(() => {
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden' && hasUnsavedChanges()) {
+        void queueCanvasSave(elementsRef.current);
+      }
+    };
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    return () => document.removeEventListener('visibilitychange', flushWhenHidden);
+  }, [hasUnsavedChanges, queueCanvasSave]);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event) => {
+      if (!saving && !hasUnsavedChanges()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [hasUnsavedChanges, saving]);
+
+  const saveBeforeLeaving = useCallback(async (callback) => {
+    const saved = await queueCanvasSave(elementsRef.current);
+    if (saved && !hasUnsavedChanges()) callback?.();
+  }, [hasUnsavedChanges, queueCanvasSave]);
 
   const execCommand = (cmd, value = null) => document.execCommand(cmd, false, value);
 
@@ -1058,6 +1166,25 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const showOpacity = !isMultiSelection && selected && (selected.type === 'image' || selected.type === 'shape');
   const showShapeProps = !isMultiSelection && selected && selected.type === 'shape';
   const isButton = !isMultiSelection && selected?.type === 'shape' && selected?.shapeType === 'button';
+  const effectiveSaveStatus = saveStatus === 'saving' || saveStatus === 'error'
+    ? saveStatus
+    : hasUnsavedChanges(elements)
+      ? 'pending'
+      : 'saved';
+  const saveStatusText = effectiveSaveStatus === 'saving'
+    ? '自動儲存中...'
+    : effectiveSaveStatus === 'pending'
+      ? '有變更，準備自動儲存'
+      : effectiveSaveStatus === 'error'
+        ? `自動儲存失敗${saveError ? `：${saveError}` : ''}`
+        : lastSavedAt
+          ? `已儲存 ${lastSavedAt.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+          : '所有變更已儲存';
+  const saveStatusClass = effectiveSaveStatus === 'error'
+    ? 'text-bauhaus-red'
+    : effectiveSaveStatus === 'saved'
+      ? 'text-emerald-700'
+      : 'text-bauhaus-black/60';
 
   return (
     <div className="min-h-screen bg-bauhaus-paper pb-20">
@@ -1069,13 +1196,13 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
       <div className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b-2 lg:border-b-4 border-bauhaus-black px-4 py-3">
         <div className="max-w-[1100px] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-bauhaus-black text-sm font-bold text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
+            <button onClick={() => { void saveBeforeLeaving(onBack); }} className="flex items-center gap-1 px-3 py-2 rounded-xl border-2 border-bauhaus-black text-sm font-bold text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
               <ChevronLeft className="w-4 h-4" /> 返回
             </button>
             <span className="text-lg font-black text-bauhaus-black truncate max-w-[220px]">{lessonTitle}</span>
             <span className="text-xs bg-bauhaus-black text-white px-2 py-0.5 rounded-lg border-2 border-bauhaus-black font-bold uppercase tracking-wide">畫布模式</span>
             {onSwitchToClassic && (
-              <button onClick={onSwitchToClassic} className="text-xs text-bauhaus-black/50 hover:text-bauhaus-blue underline ml-1 transition-colors duration-200">傳統模式</button>
+              <button onClick={() => { void saveBeforeLeaving(onSwitchToClassic); }} className="text-xs text-bauhaus-black/50 hover:text-bauhaus-blue underline ml-1 transition-colors duration-200">傳統模式</button>
             )}
           </div>
           <div className="flex items-center gap-1.5">
@@ -1116,9 +1243,14 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
               )}
             </div>
             <div className="w-px h-6 bg-bauhaus-black/20 mx-1" />
+            <div role="status" aria-live="polite" data-testid="canvas-autosave-status"
+              className={`max-w-[210px] truncate text-xs font-bold ${saveStatusClass}`}
+              title={saveStatusText}>
+              {saveStatusText}
+            </div>
             <button onClick={handleSave} disabled={saving}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-bauhaus-blue text-white border-2 border-bauhaus-black text-sm font-bold hover:bg-bauhaus-blue/90 shadow-hard transition-colors duration-200 disabled:opacity-40 min-h-[44px] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
-              <Save className="w-4 h-4" /> {saving ? '儲存中...' : '儲存'}</button>
+              <Save className="w-4 h-4" /> {saving ? '儲存中...' : saveStatus === 'error' ? '重試儲存' : '立即儲存'}</button>
           </div>
         </div>
       </div>
