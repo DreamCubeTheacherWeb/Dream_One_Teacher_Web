@@ -1,14 +1,14 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-12（講師等級權限再加固已推送至 `main`；Zeabur 專案權限阻擋正式部署，線上仍為舊版）。
+> 最後更新：2026-08-14（講師等級的正式資料庫防線已實機驗證；Zeabur 依業主指示暫不處理）。
 
 ---
 
-## 🔒 2026-08-12：講師等級僅限管理員設定（✅ 已推送；⚠️ Zeabur 尚未部署）
+## 🔒 2026-08-12：講師等級僅限管理員設定（✅ 程式已推送＋正式 DB 已驗；⚠️ Zeabur 暫不處理）
 **需求**：首次註冊或剛登入的講師只能看到系統帶入的講師等級，不可選擇或修改；只有管理員可設定。**盤點結果**：正式站目前的個人頁已是唯讀標籤，管理端 `InstructorList`／`TeacherManager` 的等級選單也有 admin 限制；既有 `2026-07-09_claim_id_and_role.sql` 定義 `trg_guard_instructor_role`，非 admin 新增時強制實習、更新時保留舊值。此次再把 `instructor_role` 從講師端草稿與 upsert payload 完全剔除，避免手改 localStorage 或攔截前端請求夾帶等級。新增 `src/lib/instructorProfile.js` 與 `scripts/verify-instructor-role-guard.mjs` 作為回歸防線。
 
-**證據**：專項權限檢查 5/5、個人資料草稿瀏覽器回歸 9/9、針對性 ESLint 0 錯誤、`npm run build` 成功；程式提交 `66e2788` 已推送至 `main`。正式站仍回傳 2026-07-14 的 bundle `index-CestCUpL.js`，GitHub Deployment API 最後一筆 Zeabur 部署也仍是 2026-07-14 的 `25632b3`。已由舊部署紀錄反查 Zeabur 專案／服務 ID，但目前登入的 DropOut 團隊直接開啟顯示「找不到專案」，因此無法安全觸發重新部署。另以唯讀 Supabase 結構查詢確認正式 trigger 時，連線帳號回 `You do not have permission to perform this action`，即時 DB 結構未重新確認，只引用 2026-07-09 已套 SQL 的既有紀錄。**本次未改正式資料庫；需切換到擁有該 Zeabur 專案的帳號／團隊後才能完成上線。**
+**證據**：專項權限檢查 5/5、個人資料草稿瀏覽器回歸 9/9、針對性 ESLint 0 錯誤、`npm run build` 成功；程式提交 `66e2788` 已推送至 `main`。2026-08-14 已登入正確的正式 Supabase 專案 `DreamCube_teacher` 實機確認：`instructors` RLS 已啟用、`trg_guard_instructor_role` 為啟用狀態，函式內容與版控 SQL 一致；另以子交易回滾測試證明非 admin 更新等級會保留原值、admin 更新則會放行，測試更新已全數回滾，沒有留下正式資料變更。盤點同時發現 `public.users` 現有 15 帳號皆為 admin，其中 12 個已綁講師主檔；若這 12 人中有人實際只是一般講師，必須先確認名單再降權，不能直接猜測修改。正式站仍是 2026-07-14 bundle；Zeabur 依業主指示暫不處理。
 
 ## 📎 2026-07-14：個人資料頁上傳文件跨頁保留（✅ 已上線）
 本機草稿改為一併保存大頭照與證件的 Storage metadata，重新進入頁面時依「DB＋草稿」合併結果重建簽名預覽；資料載入 effect 僅依 `user.id` 觸發，避免 token refresh 用 DB 舊值覆蓋尚未送出的表單。程式提交 `4239939` 已在 `main`；乾淨環境 `npm run build` 通過，正式站已換為 `index-CestCUpL.js`，線上資產 HTTP 200 且大小與本地建置一致（2,212,006 bytes）。
