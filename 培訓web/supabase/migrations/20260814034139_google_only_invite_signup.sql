@@ -57,6 +57,7 @@ $$;
 REVOKE ALL ON FUNCTION public.hook_allow_known_google_signup(jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.hook_allow_known_google_signup(jsonb) FROM anon;
 REVOKE ALL ON FUNCTION public.hook_allow_known_google_signup(jsonb) FROM authenticated;
+GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
 GRANT EXECUTE ON FUNCTION public.hook_allow_known_google_signup(jsonb) TO supabase_auth_admin;
 
 COMMENT ON FUNCTION public.hook_allow_known_google_signup(jsonb) IS

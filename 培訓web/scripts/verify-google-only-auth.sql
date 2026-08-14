@@ -66,10 +66,13 @@ BEGIN
   IF has_function_privilege('authenticated', 'public.hook_allow_known_google_signup(jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated must not execute Auth hook';
   END IF;
+  IF NOT has_schema_privilege('supabase_auth_admin', 'public', 'USAGE') THEN
+    RAISE EXCEPTION 'supabase_auth_admin must use public schema';
+  END IF;
   IF NOT has_function_privilege('supabase_auth_admin', 'public.hook_allow_known_google_signup(jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'supabase_auth_admin must execute Auth hook';
   END IF;
 END;
 $$;
 
-SELECT 'google-only Auth hook: 8/8 PASS' AS result;
+SELECT 'google-only Auth hook: 9/9 PASS' AS result;
