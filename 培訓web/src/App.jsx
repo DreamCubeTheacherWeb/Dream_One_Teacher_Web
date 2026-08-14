@@ -21,7 +21,6 @@ import ContractAdmin from './pages/admin/ContractAdmin';
 import SalaryRegister from './pages/admin/SalaryRegister';
 import MySalary from './pages/MySalary';
 import MySalaryNew from './pages/MySalaryNew';
-import DevLogin from './pages/DevLogin';
 import ClaimRequests from './pages/admin/ClaimRequests';
 import DownloadCenter from './pages/admin/DownloadCenter';
 import BadgeManager from './pages/admin/BadgeManager';
@@ -62,7 +61,6 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<Layout><HomePage /></Layout>} />
-          <Route path="/dev-login" element={<DevLogin />} />
           <Route path="/pending" element={<Layout><PendingApproval /></Layout>} />
           <Route path="/announcements/:id" element={<Layout><AnnouncementDetail /></Layout>} />
           <Route

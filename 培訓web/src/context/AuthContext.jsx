@@ -194,20 +194,6 @@ export const AuthProvider = ({ children }) => {
         if (error) throw error;
     };
 
-    const signUpWithEmail = async (email, password, name) => {
-        const { data, error } = await supabase.auth.signUp({
-            email, password,
-            options: { data: { full_name: name } },
-        });
-        if (error) throw error;
-        return data;
-    };
-
-    const signInWithEmail = async (email, password) => {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-    };
-
     const signOut = async () => {
         try {
             await supabase.auth.signOut();
@@ -221,7 +207,7 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{
             user, profile, instructorProfile, avatarUrl,
-            signInWithGoogle, signUpWithEmail, signInWithEmail, signOut,
+            signInWithGoogle, signOut,
             refreshProfile: () => { fetchingRef.current = false; return fetchProfile(user); },
             loading,
         }}>

@@ -30,7 +30,7 @@ const isComplete = (inst) => {
 };
 
 // 允許未填完資料時仍可進入的路徑
-const ALLOWED_PATHS = ['/profile', '/dev-login'];
+const ALLOWED_PATHS = ['/profile'];
 const isAllowedPath = (path) => {
   if (ALLOWED_PATHS.includes(path)) return true;
   if (path.startsWith('/announcements')) return true;

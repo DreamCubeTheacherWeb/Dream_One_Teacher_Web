@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, createIsolatedClient } from '../../lib/supabaseClient';
+import { supabase } from '../../lib/supabaseClient';
 import {
     Users, UserPlus, ShieldCheck, Trash2, Search,
     Clock, CheckCircle, AlertCircle, Loader2,
@@ -16,6 +16,8 @@ const ROLE_CONFIG = {
 };
 
 const INSTRUCTOR_ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習', '職員': '職員', '工讀生': '工讀生' };
+const EMPTY_ACCOUNT_FORM = { name: '', email: '', role: 'teacher' };
+const normalizeEmail = (value) => value.trim().toLowerCase();
 
 // 未登入講師（instructors 表無 user_id）的 employment_status 中文對照，
 // 供「其他狀態」分頁與既有分頁的身份標籤共用；未落在此表的狀態（含 NULL/空字串）一律顯示「未填狀態」。
@@ -36,7 +38,7 @@ const TeacherManager = () => {
     const [tab, setTab] = useState('pending');
     const [search, setSearch] = useState('');
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ name: '', email: '', password: '', role: 'teacher' });
+    const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
     const [creating, setCreating] = useState(false);
     const [mentorOptions, setMentorOptions] = useState(DEFAULT_MENTORS);
     const [showDetail, setShowDetail] = useState(false);
@@ -111,89 +113,58 @@ const TeacherManager = () => {
     };
 
     const handleDirectCreate = async () => {
-        if (!form.name || !form.email || !form.password) {
-            alert('請填寫姓名、Email 與密碼');
+        const name = form.name.trim();
+        const email = normalizeEmail(form.email);
+
+        if (!name || !email) {
+            alert('請填寫姓名與 Email');
             return;
         }
-        if (form.password.length < 6) {
-            alert('密碼至少需要 6 個字元');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            alert('請輸入有效的 Email');
             return;
         }
 
         setCreating(true);
         try {
-            const { data: existingUser } = await supabase
-                .from('users')
-                .select('id')
-                .eq('email', form.email)
-                .maybeSingle();
+            const existingUser = users.find(user => normalizeEmail(user.email || '') === email);
 
             if (existingUser) {
-                await supabase.from('users').update({ role: form.role, name: form.name }).eq('id', existingUser.id);
-                setForm({ name: '', email: '', password: '', role: 'teacher' });
+                const { error: updateError } = await supabase
+                    .from('users')
+                    .update({ role: form.role, name })
+                    .eq('id', existingUser.id);
+                if (updateError) {
+                    alert('帳號更新失敗：' + updateError.message);
+                    return;
+                }
+
+                setForm(EMPTY_ACCOUNT_FORM);
                 setShowForm(false);
-                alert('此帳號已存在，已更新角色設定。');
-                fetchData();
+                alert('此帳號已存在，已更新姓名與角色。對方請使用相同 Email 的 Google 帳號登入。');
+                await fetchData();
                 return;
             }
 
-            await supabase.from('teacher_invites').delete().eq('email', form.email);
-            const { error: inviteErr } = await supabase.from('teacher_invites').insert({
-                name: form.name,
-                email: form.email,
-                role: form.role,
-            });
+            const existingInvite = invites.find(invite => normalizeEmail(invite.email || '') === email);
+            const inviteQuery = existingInvite
+                ? supabase.from('teacher_invites').update({ name, email, role: form.role }).eq('id', existingInvite.id)
+                : supabase.from('teacher_invites').insert({ name, email, role: form.role });
+            const { error: inviteErr } = await inviteQuery;
+
             if (inviteErr) {
                 alert('建檔失敗：' + inviteErr.message);
                 return;
             }
 
-            const isolated = createIsolatedClient();
-            const signUpPromise = isolated.auth.signUp({
-                email: form.email,
-                password: form.password,
-                options: { data: { full_name: form.name } },
-            });
-            const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('操作逾時（超過 20 秒），請確認 Supabase Auth 設定或稍後再試')), 20000)
-            );
-            const { data: signUpData, error: signUpErr } = await Promise.race([signUpPromise, timeout]);
-
-            if (signUpErr) {
-                if (signUpErr.message.includes('rate limit')) {
-                    alert(
-                        '建立失敗：驗證信發送頻率超過限制。\n\n' +
-                        '請到 Supabase Dashboard → Authentication\n' +
-                        '→ 左側選「Sign In / Providers」\n' +
-                        '→ 展開 Email 區塊\n' +
-                        '→ 關閉「Confirm email」\n\n' +
-                        '關閉後再試一次即可。'
-                    );
-                } else if (signUpErr.message.includes('already registered')) {
-                    alert('帳號已重新建檔完成！對方用原本的密碼登入即可獲得新角色。\n（如需重設密碼，請對方使用忘記密碼功能）');
-                } else {
-                    await supabase.from('teacher_invites').delete().eq('email', form.email);
-                    alert('帳號建立失敗：' + signUpErr.message);
-                    return;
-                }
-                setForm({ name: '', email: '', password: '', role: 'teacher' });
-                setShowForm(false);
-                fetchData();
-                return;
-            }
-
-            if (signUpData?.user?.identities?.length === 0) {
-                alert('帳號已重新建檔完成！對方登入後即可獲得新角色。');
-                setForm({ name: '', email: '', password: '', role: 'teacher' });
-                setShowForm(false);
-                fetchData();
-                return;
-            }
-
-            setForm({ name: '', email: '', password: '', role: 'teacher' });
+            setForm(EMPTY_ACCOUNT_FORM);
             setShowForm(false);
-            alert('帳號建立成功！對方可以直接使用 Email 與密碼登入。');
-            fetchData();
+            alert(existingInvite
+                ? '登入名單已更新！對方請使用相同 Email 的 Google 帳號登入。'
+                : '建檔完成！對方請使用相同 Email 的 Google 帳號登入。');
+            await fetchData();
+        } catch (error) {
+            alert('建檔失敗：' + (error?.message || '未知錯誤'));
         } finally {
             setCreating(false);
         }
@@ -359,7 +330,7 @@ const TeacherManager = () => {
                     <div className="w-10 h-10 rounded-lg border-2 border-bauhaus-black bg-bauhaus-muted text-bauhaus-black flex items-center justify-center shrink-0"><Users className="w-5 h-5" /></div>
                     <div>
                         <div className="text-2xl font-black text-bauhaus-black tabular-nums">{teacherUsers.length + teacherInvites.length}</div>
-                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">已登入講師</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-bauhaus-black/50">講師名單</div>
                     </div>
                 </div>
                 <div className="bh-card p-4 flex items-center gap-3">
@@ -385,17 +356,14 @@ const TeacherManager = () => {
                         <UserPlus className="w-5 h-5 text-bauhaus-blue" /> 直接建立帳號
                     </h3>
                     <p className="text-sm text-bauhaus-black/60 mb-4 font-medium">
-                        建立完成後，對方可以直接用 Email 和密碼登入，不需要自己註冊。
+                        建立完成後，對方可直接使用此 Email 對應的 Google 帳號登入，無需另外設定密碼。
                     </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                         <input type="text" placeholder="姓名" value={form.name}
                             onChange={e => setForm({ ...form, name: e.target.value })}
                             className="bh-input" />
                         <input type="email" placeholder="Email" value={form.email}
                             onChange={e => setForm({ ...form, email: e.target.value })}
-                            className="bh-input" />
-                        <input type="text" placeholder="登入密碼（至少 6 碼）" value={form.password}
-                            onChange={e => setForm({ ...form, password: e.target.value })}
                             className="bh-input" />
                         <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
                             className="bh-input">

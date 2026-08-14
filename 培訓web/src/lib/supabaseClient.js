@@ -8,8 +8,3 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-export const createIsolatedClient = () =>
-    createClient(supabaseUrl, supabaseAnonKey, {
-        auth: { storageKey: 'sb-admin-create-user', persistSession: false },
-    })

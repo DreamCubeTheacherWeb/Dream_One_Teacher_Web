@@ -475,7 +475,7 @@ const LoginForm = () => {
     const { signInWithGoogle } = useAuth();
 
     return (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center">
             <button
                 onClick={signInWithGoogle}
                 className="bh-btn bh-btn-outline px-5 py-2 text-sm"
@@ -483,13 +483,6 @@ const LoginForm = () => {
                 <GoogleIcon />
                 使用 Google 登入
             </button>
-            <Link
-                to="/dev-login"
-                className="text-xs text-bauhaus-black/40 hover:text-bauhaus-red underline decoration-dotted underline-offset-4"
-                title="Google OAuth 串接前的臨時 email 登入"
-            >
-                臨時登入
-            </Link>
         </div>
     );
 };
@@ -508,13 +501,7 @@ const MobileLoginForm = () => {
                 <GoogleIcon />
                 使用 Google 帳號登入
             </button>
-            <p className="text-center text-xs text-bauhaus-black/40">首次登入即自動完成註冊</p>
-            <Link
-                to="/dev-login"
-                className="block text-center text-xs text-bauhaus-black/40 hover:text-bauhaus-red underline decoration-dotted underline-offset-4 pt-1"
-            >
-                臨時 email 登入(Google OAuth 串接前)
-            </Link>
+            <p className="text-center text-xs text-bauhaus-black/40">請使用後台建檔的相同 Email 登入</p>
         </div>
     );
 };
