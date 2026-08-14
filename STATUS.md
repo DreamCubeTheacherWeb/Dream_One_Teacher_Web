@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-14（講師前台簽約功能已驗證完成，業主已授權部署）。
+> 最後更新：2026-08-14（講師前台簽約功能已部署至 Zeabur 正式站並完成驗證）。
 
 ---
 
-## 🚧 2026-08-14：講師前台簽約功能暫停（✅ 已驗證；🚀 已授權部署）
+## 🚧 2026-08-14：講師前台簽約功能暫停（✅ 已上線）
 **需求**：合約內容調整期間，前台講師暫時不能使用簽約功能，後台管理仍保留。
 
 **做法**：新增集中開關 `src/lib/featureFlags.js`，目前設為關閉。講師個人頁不再
@@ -17,15 +17,19 @@
 **證據**：`npm run build` 通過；本次改動檔案的針對性 ESLint 與 `git diff --check` 通過；
 `scripts/verify-contract-feature-paused.mjs` 真瀏覽器回歸 **9/9** 通過，覆蓋入口隱藏、通知過濾、
 直連封鎖、講師端零合約查詢／通知寫入，以及管理員檢視與後台保留。視覺截圖人工檢查通過；
-既有個人資料草稿與 DB 載入回歸也是 **9/9** 通過。
+既有個人資料草稿與 DB 載入回歸也是 **9/9** 通過。程式提交 `2f56844`，測試依賴補齊提交
+`205f1b4` 已推送至 `main`；GitHub deployment `5899886227` 由 Zeabur 回報 production success。
+正式站已換成 `index-D9zYHs1H.js`，線上與本機通過測試的 bundle 皆為 2,211,450 bytes，
+SHA-256 同為 `78af9e98b78e6dfad265a118291a87a9d5c19631881874b7307080362d3fc0d5`，並命中
+「前台簽約功能暫停中／未通知講師」新字串。
 
-**正式環境邊界**：業主已授權 push／Zeabur 部署；本次不修改 Supabase 資料或權限。這是前台功能暫停，
+**正式環境邊界**：已完成 push／Zeabur 部署；本次未修改 Supabase 資料或權限。這是前台功能暫停，
 不是後端權限撤銷；若未來要把合約 API 也強制停用，需另行設計並授權套用正式資料庫變更。
 
-## 🔒 2026-08-12：講師等級僅限管理員設定（✅ 程式已推送＋正式 DB 已驗；⚠️ Zeabur 暫不處理）
+## 🔒 2026-08-12：講師等級僅限管理員設定（✅ 程式已推送＋正式 DB 已驗＋前端已上線）
 **需求**：首次註冊或剛登入的講師只能看到系統帶入的講師等級，不可選擇或修改；只有管理員可設定。**盤點結果**：正式站目前的個人頁已是唯讀標籤，管理端 `InstructorList`／`TeacherManager` 的等級選單也有 admin 限制；既有 `2026-07-09_claim_id_and_role.sql` 定義 `trg_guard_instructor_role`，非 admin 新增時強制實習、更新時保留舊值。此次再把 `instructor_role` 從講師端草稿與 upsert payload 完全剔除，避免手改 localStorage 或攔截前端請求夾帶等級。新增 `src/lib/instructorProfile.js` 與 `scripts/verify-instructor-role-guard.mjs` 作為回歸防線。
 
-**證據**：專項權限檢查 5/5、個人資料草稿瀏覽器回歸 9/9、針對性 ESLint 0 錯誤、`npm run build` 成功；程式提交 `66e2788` 已推送至 `main`。2026-08-14 已登入正確的正式 Supabase 專案 `DreamCube_teacher` 實機確認：`instructors` RLS 已啟用、`trg_guard_instructor_role` 為啟用狀態，函式內容與版控 SQL 一致；另以子交易回滾測試證明非 admin 更新等級會保留原值、admin 更新則會放行，測試更新已全數回滾，沒有留下正式資料變更。`public.users` 現有 15 帳號皆為 admin，其中 12 個已綁講師主檔；業主已確認這 15 個帳號確實全部都是管理員，角色資料無須校正。正式站仍是 2026-07-14 bundle；Zeabur 依業主指示暫不處理。
+**證據**：專項權限檢查 5/5、個人資料草稿瀏覽器回歸 9/9、針對性 ESLint 0 錯誤、`npm run build` 成功；程式提交 `66e2788` 已推送至 `main`。2026-08-14 已登入正確的正式 Supabase 專案 `DreamCube_teacher` 實機確認：`instructors` RLS 已啟用、`trg_guard_instructor_role` 為啟用狀態，函式內容與版控 SQL 一致；另以子交易回滾測試證明非 admin 更新等級會保留原值、admin 更新則會放行，測試更新已全數回滾，沒有留下正式資料變更。`public.users` 現有 15 帳號皆為 admin，其中 12 個已綁講師主檔；業主已確認這 15 個帳號確實全部都是管理員，角色資料無須校正。2026-08-14 正式站已隨簽約暫停版更新為 `index-D9zYHs1H.js`，實機確認 bundle 仍含「如需變更請聯繫管理員／首次註冊預設」。
 
 ## 📎 2026-07-14：個人資料頁上傳文件跨頁保留（✅ 已上線）
 本機草稿改為一併保存大頭照與證件的 Storage metadata，重新進入頁面時依「DB＋草稿」合併結果重建簽名預覽；資料載入 effect 僅依 `user.id` 觸發，避免 token refresh 用 DB 舊值覆蓋尚未送出的表單。程式提交 `4239939` 已在 `main`；乾淨環境 `npm run build` 通過，正式站已換為 `index-CestCUpL.js`，線上資產 HTTP 200 且大小與本地建置一致（2,212,006 bytes）。
