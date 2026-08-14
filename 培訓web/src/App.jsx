@@ -29,6 +29,7 @@ import Leaderboard from './pages/Leaderboard';
 import CubeTimer from './pages/CubeTimer';
 import SalaryLinksManager from './pages/admin/SalaryLinksManager';
 import NotificationManager from './pages/admin/NotificationManager';
+import { canAccessInstructorContracts } from './lib/featureFlags';
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false }) => {
   const { user, profile, loading } = useAuth();
@@ -41,6 +42,16 @@ const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowP
   if (!allowPending && !isPrivileged && profile.role === 'pending') return <Navigate to="/pending" />;
   if (adminOnly && profile.role !== 'admin') return <Navigate to="/" />;
   if (staffOnly && profile.role !== 'admin' && profile.role !== 'mentor') return <Navigate to="/" />;
+
+  return children;
+};
+
+const InstructorContractRoute = ({ children }) => {
+  const { profile } = useAuth();
+
+  if (!canAccessInstructorContracts(profile?.role)) {
+    return <Navigate to="/profile" replace />;
+  }
 
   return children;
 };
@@ -170,7 +181,9 @@ function App() {
             path="/contract"
             element={
               <ProtectedRoute>
-                <Layout><ContractSigningFlow /></Layout>
+                <InstructorContractRoute>
+                  <Layout><ContractSigningFlow /></Layout>
+                </InstructorContractRoute>
               </ProtectedRoute>
             }
           />
@@ -178,7 +191,9 @@ function App() {
             path="/contract/view/:contractId"
             element={
               <ProtectedRoute>
-                <Layout><ContractView /></Layout>
+                <InstructorContractRoute>
+                  <Layout><ContractView /></Layout>
+                </InstructorContractRoute>
               </ProtectedRoute>
             }
           />

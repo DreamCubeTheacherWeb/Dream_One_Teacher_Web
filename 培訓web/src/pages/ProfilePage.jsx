@@ -8,6 +8,7 @@ import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badg
 import { downloadCertificate } from '../lib/certificate';
 import { stripAdminManagedInstructorFields } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
+import { canAccessInstructorContracts } from '../lib/featureFlags';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -105,6 +106,7 @@ const ProfilePage = () => {
     const [existingClaim, setExistingClaim] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
     const [wcaLocked, setWcaLocked] = useState(false);
+    const canUseContracts = canAccessInstructorContracts(profile?.role);
 
     const loadExistingClaim = async () => {
         const { data } = await supabase
@@ -213,14 +215,14 @@ const ProfilePage = () => {
     useEffect(() => {
         if (user?.id) {
             loadProfile();
-            loadContractStatus();
+            if (canUseContracts) loadContractStatus();
             loadExistingClaim();
         }
         // Supabase 會在 TOKEN_REFRESHED 時提供新的 user 物件；只依 user id 載入，
         // 避免 token 更新把使用者尚未送出的表單重新以 DB 舊值覆蓋。
         // 這三個 loader 刻意不放進 dependency，否則每次 render 都會重新查詢。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
+    }, [user?.id, canUseContracts]);
 
     // 草稿自動暫存：hydrated 後，表單一有變動就寫入 localStorage（包含已上傳檔案的 metadata）
     useEffect(() => {
@@ -824,7 +826,7 @@ const ProfilePage = () => {
             </div>
 
             {/* ── 簽約狀態 ── */}
-            {!isFirstTime && (
+            {canUseContracts && !isFirstTime && (
                 <Section icon={FileSignature} title="合約簽署">
                     {contractInfo ? (
                         <div>

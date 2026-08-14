@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Trophy, Timer } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ProfileCompleteGate from './ProfileCompleteGate';
+import { INSTRUCTOR_CONTRACTS_ENABLED } from '../lib/featureFlags';
 
 const ROLE_LABELS = { admin: '管理員', mentor: '輔導員', teacher: '講師', pending: '待審核' };
 
@@ -39,7 +40,7 @@ const Layout = ({ children }) => {
 
     // 每次登入檢查是否尚未簽約，未簽約則發送提醒通知
     useEffect(() => {
-        if (loading || !user || !profile || profile.role === 'pending') return;
+        if (loading || !user || !profile || !INSTRUCTOR_CONTRACTS_ENABLED || profile.role === 'pending') return;
         const key = `contract_reminder_${user.id}`;
         if (sessionStorage.getItem(key)) return;
         sessionStorage.setItem(key, '1');
@@ -350,8 +351,11 @@ const NotificationBell = ({ userId }) => {
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(30);
-        setNotifications(data || []);
-        setUnreadCount((data || []).filter(n => !n.is_read).length);
+        const visibleNotifications = (data || []).filter(
+            n => INSTRUCTOR_CONTRACTS_ENABLED || n.type !== 'contract'
+        );
+        setNotifications(visibleNotifications);
+        setUnreadCount(visibleNotifications.filter(n => !n.is_read).length);
     };
 
     const markAsRead = async (notif) => {

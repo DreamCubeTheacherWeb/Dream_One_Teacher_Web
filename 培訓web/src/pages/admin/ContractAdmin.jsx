@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import { Link } from 'react-router-dom';
 import FieldPositionEditor from '../../components/FieldPositionEditor';
+import { INSTRUCTOR_CONTRACTS_ENABLED } from '../../lib/featureFlags';
 import {
   Upload, FileText, CheckCircle2, XCircle, Eye, Plus,
   AlertTriangle, Clock, Users, Search, ChevronUp, ChevronDown,
@@ -145,7 +146,10 @@ const ContractAdmin = () => {
     if (!file) return;
 
     if (file.type !== 'application/pdf') { alert('請上傳 PDF 格式的文件'); return; }
-    if (!window.confirm(`確定要上傳新版「${displayName}」嗎？\n此操作將通知所有講師文件已更新。`)) return;
+    const notificationNote = INSTRUCTOR_CONTRACTS_ENABLED
+      ? '\n此操作將通知所有講師文件已更新。'
+      : '\n前台簽約功能目前暫停，本次不會通知講師。';
+    if (!window.confirm(`確定要上傳新版「${displayName}」嗎？${notificationNote}`)) return;
 
     setUploading(p => ({ ...p, [docType]: true }));
     try {
@@ -178,29 +182,33 @@ const ContractAdmin = () => {
       });
       if (insertErr) throw insertErr;
 
-      const { data: nonPendingUsers } = await supabase
-        .from('users')
-        .select('id')
-        .neq('role', 'pending');
+      if (INSTRUCTOR_CONTRACTS_ENABLED) {
+        const { data: nonPendingUsers } = await supabase
+          .from('users')
+          .select('id')
+          .neq('role', 'pending');
 
-      if (nonPendingUsers?.length) {
-        const notifications = nonPendingUsers.map(u => ({
-          user_id: u.id,
-          type: 'contract',
-          title: '合約文件已更新',
-          body: `${displayName} 已更新為第 ${newVersion} 版，請前往查看`,
-          link: '/contract',
-          is_read: false,
-        }));
-        const batchSize = 500;
-        for (let i = 0; i < notifications.length; i += batchSize) {
-          await supabase.from('notifications').insert(notifications.slice(i, i + batchSize));
+        if (nonPendingUsers?.length) {
+          const notifications = nonPendingUsers.map(u => ({
+            user_id: u.id,
+            type: 'contract',
+            title: '合約文件已更新',
+            body: `${displayName} 已更新為第 ${newVersion} 版，請前往查看`,
+            link: '/contract',
+            is_read: false,
+          }));
+          const batchSize = 500;
+          for (let i = 0; i < notifications.length; i += batchSize) {
+            await supabase.from('notifications').insert(notifications.slice(i, i + batchSize));
+          }
         }
       }
 
       fileRefs.current[docType].value = '';
       await loadData();
-      alert('上傳成功！已通知所有講師。');
+      alert(INSTRUCTOR_CONTRACTS_ENABLED
+        ? '上傳成功！已通知所有講師。'
+        : '上傳成功！前台簽約功能暫停中，未通知講師。');
     } catch (err) {
       alert('上傳失敗：' + (err.message || '未知錯誤'));
     }
