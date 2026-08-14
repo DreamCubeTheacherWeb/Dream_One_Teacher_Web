@@ -7,6 +7,7 @@ import {
   getSelectionBounds,
   normalizeRect,
   rectanglesIntersect,
+  resizeSelectionFromHandle,
 } from './canvasSelection.js';
 
 const elements = [
@@ -60,6 +61,58 @@ test('selection bounds and clamped movement keep the whole group on canvas', () 
     deltaX: 760,
     deltaY: 30,
   });
+});
+
+test('east and south handles resize one axis while preserving the other', () => {
+  const bounds = getSelectionBounds(elements, ['a', 'b']);
+  const wider = resizeSelectionFromHandle(elements, ['a', 'b'], bounds, 'e', 190, 0, 960);
+  assert.deepEqual(wider.slice(0, 2).map(({ x, y, width, height }) => ({ x, y, width, height })), [
+    { x: 10, y: 20, width: 200, height: 80 },
+    { x: 270, y: 50, width: 120, height: 40 },
+  ]);
+
+  const taller = resizeSelectionFromHandle(elements, ['a', 'b'], bounds, 's', 0, 80, 960);
+  assert.deepEqual(taller.slice(0, 2).map(({ x, y, width, height }) => ({ x, y, width, height })), [
+    { x: 10, y: 20, width: 100, height: 160 },
+    { x: 140, y: 80, width: 60, height: 80 },
+  ]);
+});
+
+test('west and north handles keep the opposite selection edges anchored', () => {
+  const bounds = getSelectionBounds(elements, ['a', 'b']);
+  const widerFromLeft = resizeSelectionFromHandle(elements, ['a', 'b'], bounds, 'w', -10, 0, 960);
+  const widerBounds = getSelectionBounds(widerFromLeft, ['a', 'b']);
+  assert.equal(widerBounds.left, 0);
+  assert.equal(widerBounds.right, bounds.right);
+  assert.equal(widerBounds.height, bounds.height);
+
+  const tallerFromTop = resizeSelectionFromHandle(elements, ['a', 'b'], bounds, 'n', 0, -20, 960);
+  const tallerBounds = getSelectionBounds(tallerFromTop, ['a', 'b']);
+  assert.equal(tallerBounds.top, 0);
+  assert.equal(tallerBounds.bottom, bounds.bottom);
+  assert.equal(tallerBounds.width, bounds.width);
+});
+
+test('corner handles scale positions and sizes proportionally', () => {
+  const bounds = getSelectionBounds(elements, ['a', 'b']);
+  const resized = resizeSelectionFromHandle(elements, ['a', 'b'], bounds, 'se', 190, 80, 960);
+
+  assert.deepEqual(resized.slice(0, 2).map(({ x, y, width, height }) => ({ x, y, width, height })), [
+    { x: 10, y: 20, width: 200, height: 160 },
+    { x: 270, y: 80, width: 120, height: 80 },
+  ]);
+});
+
+test('group resizing respects canvas edges and per-element minimum sizes', () => {
+  const bounds = getSelectionBounds(elements, ['a', 'b']);
+  const againstTopLeft = resizeSelectionFromHandle(elements, ['a', 'b'], bounds, 'nw', -500, -500, 960);
+  const constrainedBounds = getSelectionBounds(againstTopLeft, ['a', 'b']);
+  assert.equal(constrainedBounds.left, 0);
+  assert.ok(constrainedBounds.top >= 0);
+
+  const compressed = resizeSelectionFromHandle(elements, ['a', 'b'], bounds, 'e', -1000, 0, 960);
+  assert.equal(compressed.find((element) => element.id === 'b').width, 30);
+  assert.equal(compressed.find((element) => element.id === 'a').height, 80);
 });
 
 test('pasting preserves relative positions and creates editable unsaved copies', () => {

@@ -16,6 +16,7 @@ import {
   getMarqueeSelectionIds,
   getSelectionBounds,
   normalizeRect,
+  resizeSelectionFromHandle,
 } from '../lib/canvasSelection';
 import {
   CANVAS_AUTOSAVE_DELAY_MS,
@@ -47,6 +48,41 @@ const SHAPE_TYPES = [
   { key: 'line', label: '線條', Icon: Minus },
   { key: 'arrow', label: '箭頭', Icon: ArrowRight },
   { key: 'button', label: '按鈕', Icon: MousePointer },
+];
+
+const GROUP_RESIZE_HANDLES = [
+  {
+    key: 'nw', label: '從左上角等比例縮放', cursor: 'nwse-resize',
+    buttonClass: '-left-3 -top-3', handleClass: 'h-3 w-3 rounded-full',
+  },
+  {
+    key: 'n', label: '調整整組高度（上方）', cursor: 'ns-resize',
+    buttonClass: 'left-1/2 -top-3 -translate-x-1/2', handleClass: 'h-2.5 w-5 rounded-full',
+  },
+  {
+    key: 'ne', label: '從右上角等比例縮放', cursor: 'nesw-resize',
+    buttonClass: '-right-3 -top-3', handleClass: 'h-3 w-3 rounded-full',
+  },
+  {
+    key: 'e', label: '調整整組寬度（右側）', cursor: 'ew-resize',
+    buttonClass: '-right-3 top-1/2 -translate-y-1/2', handleClass: 'h-5 w-2.5 rounded-full',
+  },
+  {
+    key: 'se', label: '從右下角等比例縮放', cursor: 'nwse-resize',
+    buttonClass: '-bottom-3 -right-3', handleClass: 'h-3 w-3 rounded-full',
+  },
+  {
+    key: 's', label: '調整整組高度（下方）', cursor: 'ns-resize',
+    buttonClass: '-bottom-3 left-1/2 -translate-x-1/2', handleClass: 'h-2.5 w-5 rounded-full',
+  },
+  {
+    key: 'sw', label: '從左下角等比例縮放', cursor: 'nesw-resize',
+    buttonClass: '-bottom-3 -left-3', handleClass: 'h-3 w-3 rounded-full',
+  },
+  {
+    key: 'w', label: '調整整組寬度（左側）', cursor: 'ew-resize',
+    buttonClass: '-left-3 top-1/2 -translate-y-1/2', handleClass: 'h-5 w-2.5 rounded-full',
+  },
 ];
 
 const DEFAULT_SHAPE_PROPS = {
@@ -404,6 +440,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const [showGuides, setShowGuides] = useState(true);
   const [snapGuides, setSnapGuides] = useState({ vertical: [], horizontal: [] });
   const [isDragging, setIsDragging] = useState(false);
+  const [isGroupResizing, setIsGroupResizing] = useState(false);
   const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
   const [recentColors, setRecentColors] = useState(loadRecentColors);
   const canvasRef = useRef(null);
@@ -411,6 +448,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const selectionRef = useRef(null);
   const marqueeStateRef = useRef(null);
   const dragStateRef = useRef(null);
+  const groupResizeStateRef = useRef(null);
   const ignoreNextClickRef = useRef(false);
   const clipboardRef = useRef([]);
   const pasteCountRef = useRef(0);
@@ -951,6 +989,13 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
       return;
     }
     if (editingId && editingId !== elementId) exitEditing();
+    const element = elements.find((item) => item.id === elementId);
+    if (element?.locked) {
+      setSelectedIds((current) => event.shiftKey && current.length === 1 && current[0] === elementId
+        ? []
+        : [elementId]);
+      return;
+    }
     if (event.shiftKey) {
       setSelectedIds((current) => current.includes(elementId)
         ? current.filter((id) => id !== elementId)
@@ -958,7 +1003,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     } else {
       setSelectedIds([elementId]);
     }
-  }, [editingId, exitEditing]);
+  }, [editingId, elements, exitEditing]);
 
   const handleDragStart = useCallback((event, elementId) => {
     const element = elements.find((item) => item.id === elementId);
@@ -1081,14 +1126,106 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     [elements, selectedIds],
   );
 
+  const applyGroupResize = useCallback((event) => {
+    const state = groupResizeStateRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    const currentPoint = getCanvasPoint(event);
+    if (!currentPoint) return;
+
+    const resizedElements = resizeSelectionFromHandle(
+      state.originElements,
+      state.selectedIds,
+      state.bounds,
+      state.handle,
+      currentPoint.x - state.start.x,
+      currentPoint.y - state.start.y,
+      CANVAS_WIDTH,
+    );
+    const geometryById = new Map(resizedElements.map((element) => [element.id, {
+      x: element.x,
+      y: element.y,
+      width: element.width,
+      height: element.height,
+    }]));
+
+    setElements((current) => current.map((element) => {
+      const geometry = geometryById.get(element.id);
+      return geometry ? { ...element, ...geometry } : element;
+    }));
+  }, [getCanvasPoint]);
+
+  const cancelGroupResize = useCallback(() => {
+    const state = groupResizeStateRef.current;
+    if (!state) return false;
+
+    setElements((current) => current.map((element) => {
+      const origin = state.origins.get(element.id);
+      return origin ? {
+        ...element,
+        x: origin.x,
+        y: origin.y,
+        width: origin.width,
+        height: origin.height,
+      } : element;
+    }));
+    groupResizeStateRef.current = null;
+    setIsGroupResizing(false);
+    setCanvasHeight(MIN_CANVAS_HEIGHT);
+    setSnapGuides({ vertical: [], horizontal: [] });
+    try { state.captureTarget.releasePointerCapture(state.pointerId); } catch { /* noop */ }
+    return true;
+  }, []);
+
+  const startGroupResize = useCallback((event, handle) => {
+    if (event.button !== 0 || !selectionBounds || selectedIds.length < 2) return;
+    const start = getCanvasPoint(event);
+    if (!start) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    exitEditing();
+    const selectedSet = new Set(selectedIds);
+    const originElements = elements
+      .filter((element) => selectedSet.has(element.id) && !element.locked)
+      .map((element) => ({ ...element }));
+    if (originElements.length < 2) return;
+
+    groupResizeStateRef.current = {
+      pointerId: event.pointerId,
+      captureTarget: event.currentTarget,
+      handle,
+      start,
+      bounds: { ...selectionBounds },
+      selectedIds: selectedSet,
+      originElements,
+      origins: new Map(originElements.map((element) => [element.id, element])),
+    };
+    setIsGroupResizing(true);
+    setSnapGuides({ vertical: [], horizontal: [] });
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* noop */ }
+  }, [elements, exitEditing, getCanvasPoint, selectedIds, selectionBounds]);
+
+  const finishGroupResize = useCallback((event, cancelled = false) => {
+    const state = groupResizeStateRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (cancelled) cancelGroupResize();
+    else {
+      applyGroupResize(event);
+      groupResizeStateRef.current = null;
+      setIsGroupResizing(false);
+      setCanvasHeight(MIN_CANVAS_HEIGHT);
+    }
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* noop */ }
+  }, [applyGroupResize, cancelGroupResize]);
+
   const distances = useMemo(() => {
-    if (!selectionBounds || isDragging) return [];
+    if (!selectionBounds || isDragging || isGroupResizing) return [];
     const selectedSet = new Set(selectedIds);
     const measurementTarget = selectedIds.length === 1
       ? elements.find((element) => element.id === selectedId)
       : { ...selectionBounds, x: selectionBounds.left, y: selectionBounds.top, id: '__selection__' };
     return computeDistances(measurementTarget, elements.filter((element) => !selectedSet.has(element.id)));
-  }, [selectedId, selectedIds, selectionBounds, elements, isDragging]);
+  }, [selectedId, selectedIds, selectionBounds, elements, isDragging, isGroupResizing]);
 
   const moveSelectedBy = useCallback((deltaX, deltaY) => {
     const movableIds = selectedIds.filter(
@@ -1107,12 +1244,14 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     const handler = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        if (cancelGroupResize()) return;
         if (editingId) exitEditing();
         marqueeStateRef.current = null;
         setMarqueeRect(null);
         setSelectedIds([]);
         return;
       }
+      if (isGroupResizing) return;
       if (editingId || isEditableTarget(event.target)) return;
 
       const modifier = event.metaKey || event.ctrlKey;
@@ -1149,7 +1288,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     return () => window.removeEventListener('keydown', handler);
     // Keyboard actions intentionally read the latest selection and element snapshots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, elements, selectedIds, moveSelectedBy, exitEditing]);
+  }, [editingId, elements, selectedIds, moveSelectedBy, exitEditing, cancelGroupResize, isGroupResizing]);
 
   if (loading) {
     return (
@@ -1361,6 +1500,14 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                 ? `x:${Math.round(selectionBounds.left)} y:${Math.round(selectionBounds.top)} | ${Math.round(selectionBounds.width)}x${Math.round(selectionBounds.height)}`
                 : `x:${Math.round(selected.x)} y:${Math.round(selected.y)} | ${Math.round(selected.width)}x${Math.round(selected.height)}`}
             </span>
+            {isMultiSelection && (
+              <>
+                <div className="w-px h-5 bg-bauhaus-black/20" />
+                <span className="text-bauhaus-black/50 text-xs">
+                  拖曳邊線調整寬高，拖曳角落等比例縮放
+                </span>
+              </>
+            )}
 
             {showOpacity && (
               <>
@@ -1507,6 +1654,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
 
             {isMultiSelection && selectionBounds && (
               <div className="absolute pointer-events-none z-30 border-2 border-dashed border-blue-600"
+                data-testid="group-selection-bounds"
                 style={{
                   left: selectionBounds.left,
                   top: selectionBounds.top,
@@ -1516,6 +1664,22 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                 <div className="absolute -top-7 left-0 bg-blue-600 text-white text-[10px] px-2 py-1 rounded-md font-bold whitespace-nowrap">
                   {selectedIds.length} 個元素
                 </div>
+                {GROUP_RESIZE_HANDLES.map((handle) => (
+                  <button key={handle.key}
+                    type="button"
+                    aria-label={handle.label}
+                    title={handle.label}
+                    data-group-resize-handle={handle.key}
+                    className={`absolute pointer-events-auto flex h-6 w-6 items-center justify-center touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bauhaus-blue ${handle.buttonClass}`}
+                    style={{ cursor: handle.cursor }}
+                    onPointerDown={(event) => startGroupResize(event, handle.key)}
+                    onPointerMove={applyGroupResize}
+                    onPointerUp={(event) => finishGroupResize(event)}
+                    onPointerCancel={(event) => finishGroupResize(event, true)}>
+                    <span aria-hidden="true"
+                      className={`block border-2 border-blue-600 bg-white ${handle.handleClass}`} />
+                  </button>
+                ))}
               </div>
             )}
 
@@ -1538,7 +1702,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                 data-canvas-element-locked={el.locked ? 'true' : 'false'}
                 position={{ x: el.x, y: el.y }} size={{ width: el.width, height: el.height }}
                 minWidth={30} minHeight={el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'arrow') ? 10 : 30}
-                disableDragging={el.locked || editingId === el.id}
+                disableDragging={el.locked || editingId === el.id || isGroupResizing}
                 enableResizing={!isMultiSelection && !el.locked && editingId !== el.id}
                 dragGrid={[GRID_SIZE, GRID_SIZE]} resizeGrid={[GRID_SIZE, GRID_SIZE]}
                 onDragStart={(event) => handleDragStart(event, el.id)}

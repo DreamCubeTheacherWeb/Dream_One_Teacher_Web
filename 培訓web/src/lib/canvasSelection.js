@@ -75,6 +75,109 @@ export function clampSelectionDelta(bounds, deltaX, deltaY, canvasWidth) {
   };
 }
 
+const DEFAULT_ELEMENT_MIN_SIZE = 30;
+const LINE_ELEMENT_MIN_HEIGHT = 10;
+
+function clamp(value, min, max = Number.POSITIVE_INFINITY) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundCanvasValue(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function getElementMinimumHeight(element) {
+  return element.type === 'shape' && ['line', 'arrow'].includes(element.shapeType)
+    ? LINE_ELEMENT_MIN_HEIGHT
+    : DEFAULT_ELEMENT_MIN_SIZE;
+}
+
+function getMinimumScale(selectedElements, axis) {
+  return Math.max(...selectedElements.map((element) => {
+    const size = axis === 'x' ? element.width : element.height;
+    const minimum = axis === 'x' ? DEFAULT_ELEMENT_MIN_SIZE : getElementMinimumHeight(element);
+    return size > 0 ? minimum / size : 1;
+  }));
+}
+
+export function resizeSelectionFromHandle(
+  elements,
+  selectedIds,
+  bounds,
+  handle,
+  deltaX,
+  deltaY,
+  canvasWidth,
+) {
+  const idSet = selectedIds instanceof Set ? selectedIds : new Set(selectedIds);
+  const selectedElements = elements.filter((element) => idSet.has(element.id));
+  if (!bounds || selectedElements.length === 0 || bounds.width <= 0 || bounds.height <= 0) {
+    return elements;
+  }
+
+  const minimumScaleX = getMinimumScale(selectedElements, 'x');
+  const minimumScaleY = getMinimumScale(selectedElements, 'y');
+  let anchorX = bounds.left;
+  let anchorY = bounds.top;
+  let scaleX = 1;
+  let scaleY = 1;
+
+  if (handle.length === 2) {
+    const movesEast = handle.includes('e');
+    const movesSouth = handle.includes('s');
+    anchorX = movesEast ? bounds.left : bounds.right;
+    anchorY = movesSouth ? bounds.top : bounds.bottom;
+    const vectorX = movesEast ? bounds.width : -bounds.width;
+    const vectorY = movesSouth ? bounds.height : -bounds.height;
+    const projectedScale = (
+      ((vectorX + deltaX) * vectorX) + ((vectorY + deltaY) * vectorY)
+    ) / ((vectorX ** 2) + (vectorY ** 2));
+
+    const horizontalMaximum = movesEast
+      ? (canvasWidth - anchorX) / bounds.width
+      : anchorX / bounds.width;
+    const verticalMaximum = movesSouth
+      ? Number.POSITIVE_INFINITY
+      : anchorY / bounds.height;
+    const scale = clamp(
+      projectedScale,
+      Math.max(minimumScaleX, minimumScaleY),
+      Math.min(horizontalMaximum, verticalMaximum),
+    );
+    scaleX = scale;
+    scaleY = scale;
+  } else if (handle === 'e' || handle === 'w') {
+    const movesEast = handle === 'e';
+    anchorX = movesEast ? bounds.left : bounds.right;
+    const requestedWidth = movesEast
+      ? bounds.width + deltaX
+      : bounds.width - deltaX;
+    const maximumWidth = movesEast ? canvasWidth - anchorX : anchorX;
+    scaleX = clamp(requestedWidth, bounds.width * minimumScaleX, maximumWidth) / bounds.width;
+  } else if (handle === 's' || handle === 'n') {
+    const movesSouth = handle === 's';
+    anchorY = movesSouth ? bounds.top : bounds.bottom;
+    const requestedHeight = movesSouth
+      ? bounds.height + deltaY
+      : bounds.height - deltaY;
+    const maximumHeight = movesSouth ? Number.POSITIVE_INFINITY : anchorY;
+    scaleY = clamp(requestedHeight, bounds.height * minimumScaleY, maximumHeight) / bounds.height;
+  } else {
+    return elements;
+  }
+
+  return elements.map((element) => {
+    if (!idSet.has(element.id)) return element;
+    return {
+      ...element,
+      x: roundCanvasValue(anchorX + ((element.x - anchorX) * scaleX)),
+      y: roundCanvasValue(anchorY + ((element.y - anchorY) * scaleY)),
+      width: roundCanvasValue(element.width * scaleX),
+      height: roundCanvasValue(element.height * scaleY),
+    };
+  });
+}
+
 export function createPastedElements(sourceElements, {
   offset,
   canvasWidth,
