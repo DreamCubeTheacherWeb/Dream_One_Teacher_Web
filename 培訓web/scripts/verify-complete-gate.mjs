@@ -6,6 +6,9 @@
  *  R1 teacher + 無 instructors 列          → 應導回 /profile
  *  R2 teacher + 文字欄齊但缺照片(似認領列) → 應導回 /profile
  *  R3 teacher + 全齊(含4張照片路徑)        → 應留在 /courses
+ *  R4 teacher + 只缺戶籍地址               → 應導回 /profile
+ *  R5 teacher + 未完成但開公告              → 依產品例外留在公告頁
+ *  R6 在 /profile 補齊後第一次點課程        → 不可被舊狀態彈回
  * 用法：node scripts/verify-complete-gate.mjs
  */
 import { readFileSync } from 'fs';
@@ -42,7 +45,7 @@ const SELF = { id: UID, name: '關卡復現員', email: 'gate@test.local', role:
 
 // Gate 的必填清單（與 ProfileCompleteGate.jsx 對齊；instructor_role 已移除）
 const TEXT_KEYS = ['full_name','nickname','gender','birth_date','id_number','phone_mobile','line_id',
-    'address','email_primary','teaching_freq_semester','teaching_freq_vacation','bio_notes',
+    'address','household_address','email_primary','teaching_freq_semester','teaching_freq_vacation','bio_notes',
     'bank_account_name','bank_name','bank_branch','bank_account_number','bank_code'];
 
 let instructorRow = null; // 每情境切換
@@ -97,21 +100,35 @@ async function waitForServer(url, timeoutMs) {
 const results = [];
 const assert = (name, cond, detail = '') => { results.push({ name, pass: !!cond, detail }); console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); };
 
-async function landing(browser) {
+async function landing(browser, routePath = '/courses') {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
     await ctx.route('**/*', handleRoute);
     const page = await ctx.newPage();
     const errs = [];
     page.on('pageerror', (e) => errs.push(e.message.slice(0, 100)));
-    await page.goto(`${BASE}/courses`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${BASE}${routePath}`, { waitUntil: 'networkidle', timeout: 20000 });
     await page.waitForTimeout(1500); // 等 gate 的 fetch + navigate
-    const url = page.url();
+    const pathname = new URL(page.url()).pathname;
     if (errs.length) console.log('   pageerrors:', errs.slice(0, 3).join(' | '));
     await page.close(); await ctx.close();
-    if (url.includes('/profile')) return 'profile';
-    if (url.includes('/courses')) return 'courses';
-    return url;
+    return pathname;
+}
+
+async function completeThenOpenCourses(browser) {
+    instructorRow = { ...allComplete, nickname: '' };
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
+    await ctx.route('**/*', handleRoute);
+    const page = await ctx.newPage();
+    await page.goto(`${BASE}/profile`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.getByPlaceholder('留言區顯示用暱稱').waitFor({ state: 'visible', timeout: 10000 });
+    instructorRow = allComplete;
+    await page.getByRole('link', { name: '我的課程', exact: true }).click();
+    await page.waitForTimeout(1500);
+    const pathname = new URL(page.url()).pathname;
+    await ctx.close();
+    return pathname;
 }
 
 async function main() {
@@ -124,11 +141,17 @@ async function main() {
         browser = await chromium.launch();
         let L;
         instructorRow = null; L = await landing(browser);
-        assert('R1 無 instructors 列 → 導回 /profile', L === 'profile', `landed=${L}`);
+        assert('R1 無 instructors 列 → 導回 /profile', L === '/profile', `landed=${L}`);
         instructorRow = textFilled; L = await landing(browser);
-        assert('R2 文字齊但缺 4 照片(似認領列) → 導回 /profile', L === 'profile', `landed=${L}`);
+        assert('R2 文字齊但缺 4 照片(似認領列) → 導回 /profile', L === '/profile', `landed=${L}`);
         instructorRow = allComplete; L = await landing(browser);
-        assert('R3 全齊 → 留在 /courses', L === 'courses', `landed=${L}`);
+        assert('R3 全齊 → 留在 /courses', L === '/courses', `landed=${L}`);
+        instructorRow = { ...allComplete, household_address: '' }; L = await landing(browser);
+        assert('R4 只缺戶籍地址 → 導回 /profile', L === '/profile', `landed=${L}`);
+        instructorRow = { ...allComplete, nickname: '' }; L = await landing(browser, '/announcements/audit');
+        assert('R5 公告頁維持產品例外', L === '/announcements/audit', `landed=${L}`);
+        L = await completeThenOpenCourses(browser);
+        assert('R6 補齊後第一次點課程不被彈回', L === '/courses', `landed=${L}`);
     } finally {
         if (browser) await browser.close();
         preview.kill('SIGTERM');

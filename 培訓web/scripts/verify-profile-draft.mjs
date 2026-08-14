@@ -6,7 +6,10 @@
  *  T2 「同通訊地址」按鈕：填通訊地址 → 按鈕 → 戶籍地址 = 通訊地址
  *  T3 戶籍地址欄存在且為必填標記
  *  T4 既有講師（無草稿、新 context）：表單顯示 DB 值，草稿合併不干擾正常載入
- *  T5 每欄變動即寫入 localStorage 草稿鍵
+ *  T5 每欄變動即寫入帶基準快照的 localStorage 草稿
+ *  T6 DB 已更新時，舊草稿不可覆蓋新資料
+ *  T7 檔案替換失敗不刪舊檔；成功替換則 DB 儲存後才刪舊檔
+ *  T8 只按移除但尚未儲存時，不可先刪 Storage 舊檔
  * 用法：node scripts/verify-profile-draft.mjs
  */
 import { readFileSync } from 'fs';
@@ -44,6 +47,10 @@ const SELF = { id: UID, name: '草稿測試員', email: 'draft@test.local', role
 
 // 每個測試情境可切換：instructors 這一列回什麼（null = 首次填寫者）
 let instructorRow = null;
+let storageMode = 'default';
+let requestEvents = [];
+
+const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=';
 
 function jsonRes(route, data, extra = {}) {
     const headers = { 'content-type': 'application/json', ...extra };
@@ -64,12 +71,31 @@ async function handleRoute(route) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     }
     if (p.startsWith('/rest/v1/rpc/')) return jsonRes(route, []);
+    if (p.startsWith('/storage/v1/object/sign/')) return jsonRes(route, { signedURL: PIXEL });
+    if (p.startsWith('/storage/v1/')) {
+        if (req.method() === 'DELETE') {
+            requestEvents.push('delete-old');
+            return jsonRes(route, []);
+        }
+        if (req.method() === 'POST') {
+            if (storageMode === 'upload-fail') {
+                requestEvents.push('upload-new-failed');
+                return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'forced upload failure' }) });
+            }
+            requestEvents.push('upload-new');
+            return jsonRes(route, { Key: 'mock-upload' });
+        }
+        return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+    }
     if (p.startsWith('/rest/v1/')) {
         const table = p.replace('/rest/v1/', '').split('/')[0];
         const method = req.method();
         const accept = (await req.allHeaders()).accept || '';
         const wantsObject = accept.includes('vnd.pgrst.object+json');
-        if (method !== 'GET') return route.fulfill({ status: 201, headers: { 'content-type': 'application/json' }, body: wantsObject ? '{}' : '[]' });
+        if (method !== 'GET') {
+            if (table === 'instructors') requestEvents.push('db-save');
+            return route.fulfill({ status: 201, headers: { 'content-type': 'application/json' }, body: wantsObject ? '{}' : '[]' });
+        }
         let data;
         switch (table) {
             case 'users': data = wantsObject ? SELF : [SELF]; break;
@@ -78,7 +104,6 @@ async function handleRoute(route) {
         }
         return jsonRes(route, data);
     }
-    // storage sign 等其餘一律空，讓 previews 靜默略過
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
 }
 
@@ -98,9 +123,12 @@ const ADDR = '請輸入通訊地址';
 const HOUSE = '請輸入戶籍地址';
 const BRANCH = '例：仁愛分行';
 
-async function newCtx(browser) {
+async function newCtx(browser, initialDraft = null) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-    await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
+    await ctx.addInitScript(({ key, session, uid, draft }) => {
+        window.localStorage.setItem(key, JSON.stringify(session));
+        if (draft) window.localStorage.setItem(`profile_draft_${uid}`, JSON.stringify(draft));
+    }, { key: STORAGE_KEY, session: FAKE_SESSION, uid: UID, draft: initialDraft });
     await ctx.route('**/*', handleRoute);
     return ctx;
 }
@@ -139,7 +167,7 @@ async function main() {
         // T5：localStorage 有草稿且含剛填的值
         const draftRaw = await page.evaluate((uid) => window.localStorage.getItem(`profile_draft_${uid}`), UID);
         let draft = null; try { draft = JSON.parse(draftRaw); } catch { /* ignore */ }
-        assert('T5 草稿寫入 localStorage', draft && draft.address === '台北市信義區通訊路 1 號' && draft.household_address === '新北市板橋區戶籍街 2 號' && draft.bank_branch === '仁愛分行測試', draftRaw ? 'draft 已寫入' : 'draft 為空');
+        assert('T5 草稿寫入 localStorage', draft?.version === 2 && draft.data?.address === '台北市信義區通訊路 1 號' && draft.data?.household_address === '新北市板橋區戶籍街 2 號' && draft.data?.bank_branch === '仁愛分行測試' && typeof draft.baseSnapshot === 'string', draftRaw ? 'v2 draft 已寫入' : 'draft 為空');
 
         // T1：重整 /profile（等同換頁走開再回來，且更嚴格＝整頁 reload）
         await gotoProfile(page);
@@ -187,6 +215,76 @@ async function main() {
         // 無草稿時戶籍地址（DB null）應為空
         const houseDb = await page.inputValue(`input[placeholder="${HOUSE}"]`);
         assert('T4c 既有講師戶籍地址（DB null）為空', houseDb === '', `got="${houseDb}"`);
+        await page.close(); await ctx.close();
+
+        // ── T6：舊草稿不得覆蓋較新的 DB ──
+        instructorRow = { ...instructorRow, address: 'DB 最新通訊地址' };
+        ctx = await newCtx(browser, { address: '舊版未送出草稿地址' });
+        page = await ctx.newPage();
+        await gotoProfile(page);
+        const legacyShown = await page.inputValue(`input[placeholder="${ADDR}"]`);
+        assert('T6a 舊版草稿不覆蓋既有 DB', legacyShown === 'DB 最新通訊地址', `got="${legacyShown}"`);
+        await page.close(); await ctx.close();
+
+        instructorRow = { ...instructorRow, address: 'DB 基準地址' };
+        ctx = await newCtx(browser);
+        page = await ctx.newPage();
+        page.on('dialog', (dialog) => dialog.accept());
+        await gotoProfile(page);
+        await page.fill(`input[placeholder="${ADDR}"]`, '目前未送出草稿');
+        await page.waitForTimeout(400);
+        instructorRow = { ...instructorRow, address: 'DB 後來更新地址' };
+        await gotoProfile(page);
+        const updatedShown = await page.inputValue(`input[placeholder="${ADDR}"]`);
+        assert('T6b DB 基準改變時丟棄版本化舊草稿', updatedShown === 'DB 後來更新地址', `got="${updatedShown}"`);
+        await page.close(); await ctx.close();
+
+        const completeRow = {
+            ...instructorRow,
+            full_name: '既有講師', nickname: '阿存', gender: '男', birth_date: '1990-01-01',
+            id_number: 'A123456789', phone_mobile: '0912345678', line_id: 'existing',
+            address: 'DB通訊地址', household_address: 'DB戶籍地址', email_primary: 'exist@test.local',
+            teaching_freq_semester: '每週2', teaching_freq_vacation: '每週5',
+            teaching_regions: ['臺北市'], bio_notes: '完整介紹', bank_account_name: '既有講師',
+            bank_name: '華南', bank_branch: 'DB分行值', bank_account_number: '123456789',
+            bank_code: '0080012', photo_path: 'old/photo.png', id_front_path: 'old/front.png',
+            id_back_path: 'old/back.png', bankbook_path: 'old/bankbook.png',
+        };
+        const replacement = {
+            name: 'replacement.png', mimeType: 'image/png',
+            buffer: Buffer.from(PIXEL.split(',')[1], 'base64'),
+        };
+
+        // ── T7a：新檔失敗，舊檔不可先刪 ──
+        instructorRow = completeRow;
+        storageMode = 'upload-fail'; requestEvents = [];
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        page.on('dialog', (dialog) => dialog.dismiss());
+        await gotoProfile(page);
+        await page.locator('input[type="file"]').first().setInputFiles(replacement);
+        await page.waitForTimeout(500);
+        assert('T7a 替換上傳失敗不刪舊檔', requestEvents.join(' > ') === 'upload-new-failed', `events=${requestEvents.join(' > ')}`);
+        await page.close(); await ctx.close();
+
+        // ── T7b：上傳成功後，需先存 DB 再刪舊檔 ──
+        storageMode = 'upload-success'; requestEvents = [];
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        page.on('dialog', (dialog) => dialog.accept());
+        await gotoProfile(page);
+        await page.locator('input[type="file"]').first().setInputFiles(replacement);
+        await page.waitForTimeout(300);
+        await page.getByRole('button', { name: '儲存個人資料' }).click();
+        await page.waitForTimeout(500);
+        assert('T7b 成功替換順序為上傳 → DB → 刪舊檔', requestEvents.join(' > ') === 'upload-new > db-save > delete-old', `events=${requestEvents.join(' > ')}`);
+        await page.close(); await ctx.close();
+
+        // ── T8：只按移除、未存檔，不應刪除 DB 仍指向的舊檔 ──
+        requestEvents = [];
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        await page.locator('img[alt="大頭照"]').locator('xpath=../..').locator('button').last().click();
+        await page.waitForTimeout(300);
+        assert('T8 移除後尚未儲存不刪 Storage 舊檔', !requestEvents.includes('delete-old'), `events=${requestEvents.join(' > ') || '(none)'}`);
         await page.close(); await ctx.close();
 
     } finally {

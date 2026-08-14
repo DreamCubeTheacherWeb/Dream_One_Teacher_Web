@@ -2,32 +2,10 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-
-const REQUIRED_KEYS = [
-  'full_name', 'nickname', 'gender', 'birth_date', 'id_number',
-  'phone_mobile', 'line_id', 'address', 'email_primary',
-  // ⚠️ instructor_role（等級）2026-07-09 起改為「系統/管理員指派、老師不可自填」
-  //   （見 guard_instructor_role trigger）。老師既然填不了它，就不能拿它當完成度門檻，
-  //   否則名冊等級為空的列被認領後會永遠卡在資料頁（老師改不了、trigger 又保留空值）。
-  'teaching_freq_semester', 'teaching_freq_vacation',
-  'bio_notes',
-  'bank_account_name', 'bank_name', 'bank_branch',
-  'bank_account_number', 'bank_code',
-];
-const REQUIRED_PATHS = ['photo_path', 'id_front_path', 'id_back_path', 'bankbook_path'];
-
-const isComplete = (inst) => {
-  if (!inst) return false;
-  if (!inst.teaching_regions?.length) return false;
-  for (const k of REQUIRED_KEYS) {
-    const v = inst[k];
-    if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) return false;
-  }
-  for (const p of REQUIRED_PATHS) {
-    if (!inst[p]) return false;
-  }
-  return true;
-};
+import {
+  isInstructorProfileComplete,
+  PROFILE_SAVED_EVENT,
+} from '../lib/profileCompletion';
 
 // 允許未填完資料時仍可進入的路徑
 const ALLOWED_PATHS = ['/profile'];
@@ -45,16 +23,23 @@ const ProfileCompleteGate = () => {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [complete, setComplete] = useState(null); // null = unknown, true/false 確認後
+  const [completion, setCompletion] = useState({ userId: null, path: null, complete: null });
   const [createdAt, setCreatedAt] = useState(null);
+  const [mountedAt] = useState(Date.now);
+
+  const isExemptRole = profile?.role === 'admin' || profile?.role === 'mentor';
+  const completionIsCurrent = completion.userId === user?.id
+    && completion.path === location.pathname;
+  const complete = isExemptRole ? true : completionIsCurrent ? completion.complete : null;
 
   // 載入 instructors 完整度 + 註冊時間
   useEffect(() => {
-    if (loading || !user || !profile) { setComplete(null); return; }
+    if (loading || !user || !profile) return;
     // 管理員 / 輔導員不檢查
-    if (profile.role === 'admin' || profile.role === 'mentor') { setComplete(true); return; }
+    if (isExemptRole) return;
 
     let cancelled = false;
+    const checkedPath = location.pathname;
     (async () => {
       const { data: inst } = await supabase
         .from('instructors')
@@ -62,12 +47,30 @@ const ProfileCompleteGate = () => {
         .eq('user_id', user.id)
         .maybeSingle();
       if (cancelled) return;
-      setComplete(isComplete(inst));
+      setCompletion({
+        userId: user.id,
+        path: checkedPath,
+        complete: isInstructorProfileComplete(inst),
+      });
       // 用 auth.user.created_at 作為三天倒數起點
       setCreatedAt(user.created_at || profile.created_at || null);
     })();
     return () => { cancelled = true; };
-  }, [loading, user, profile, location.pathname]);
+  }, [isExemptRole, loading, user, profile, location.pathname]);
+
+  // ProfilePage 儲存成功時立即更新目前頁面的完成度，避免成功訊息後仍顯示舊警告。
+  useEffect(() => {
+    const handleProfileSaved = (event) => {
+      if (!user?.id) return;
+      setCompletion({
+        userId: user.id,
+        path: location.pathname,
+        complete: isInstructorProfileComplete(event.detail),
+      });
+    };
+    window.addEventListener(PROFILE_SAVED_EVENT, handleProfileSaved);
+    return () => window.removeEventListener(PROFILE_SAVED_EVENT, handleProfileSaved);
+  }, [location.pathname, user?.id]);
 
   // 強制導頁
   useEffect(() => {
@@ -82,7 +85,7 @@ const ProfileCompleteGate = () => {
   if (location.pathname !== '/profile') return null;
   if (!createdAt) return null;
 
-  const elapsedMs = Date.now() - new Date(createdAt).getTime();
+  const elapsedMs = mountedAt - new Date(createdAt).getTime();
   const elapsedDays = Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
   const remaining = 3 - elapsedDays;
   const overdue = remaining < 0;

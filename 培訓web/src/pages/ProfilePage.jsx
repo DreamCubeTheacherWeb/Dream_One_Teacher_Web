@@ -9,6 +9,7 @@ import { downloadCertificate } from '../lib/certificate';
 import { stripAdminManagedInstructorFields } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
 import { canAccessInstructorContracts } from '../lib/featureFlags';
+import { PROFILE_SAVED_EVENT, REQUIRED_PROFILE_FIELDS } from '../lib/profileCompletion';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -34,27 +35,6 @@ const DOC_TYPES = [
     { key: 'bankbook', label: '存摺封面', Icon: Landmark },
 ];
 
-const REQUIRED_FIELDS = [
-    { key: 'full_name', label: '姓名' },
-    { key: 'nickname', label: '講師暱稱' },
-    { key: 'gender', label: '性別' },
-    { key: 'birth_date', label: '出生年月日' },
-    { key: 'id_number', label: '身分證字號' },
-    { key: 'phone_mobile', label: '手機號碼' },
-    { key: 'line_id', label: 'Line ID' },
-    { key: 'address', label: '通訊地址' },
-    { key: 'household_address', label: '戶籍地址' },
-    { key: 'email_primary', label: '主要 Email' },
-    { key: 'teaching_freq_semester', label: '接課頻率（學期間）' },
-    { key: 'teaching_freq_vacation', label: '接課頻率（寒暑假）' },
-    { key: 'bio_notes', label: '經歷 / 理念' },
-    { key: 'bank_account_name', label: '匯款戶名' },
-    { key: 'bank_name', label: '銀行別' },
-    { key: 'bank_branch', label: '分行別' },
-    { key: 'bank_account_number', label: '銀行帳號' },
-    { key: 'bank_code', label: '銀行代碼' },
-];
-
 const INITIAL_FORM = {
     full_name: '', nickname: '', gender: '', birth_date: '', id_number: '',
     phone_mobile: '', phone_home: '', line_id: '', address: '', household_address: '',
@@ -75,11 +55,28 @@ const INITIAL_FORM = {
 // 圖片本體已即時上傳 Storage，但路徑等 metadata 要等整份表單送出才會寫入 DB；
 // 因此檔案欄位也必須進草稿，否則切頁或重新掛載後會看起來像是證件消失。
 const draftKeyFor = (uid) => `profile_draft_${uid}`;
+const DRAFT_VERSION = 2;
 const pickDraftFields = (form) => stripAdminManagedInstructorFields(form);
-const readDraft = (uid) => {
+const clearDraft = (uid) => {
+    try { localStorage.removeItem(draftKeyFor(uid)); } catch { /* 略過 */ }
+};
+const readDraft = (uid, baseSnapshot, allowLegacyDraft) => {
     try {
         const draft = JSON.parse(localStorage.getItem(draftKeyFor(uid)) || 'null');
-        return draft ? stripAdminManagedInstructorFields(draft) : null;
+        if (!draft) return null;
+
+        if (draft.version === DRAFT_VERSION && draft.data) {
+            if (draft.baseSnapshot !== baseSnapshot) {
+                clearDraft(uid);
+                return null;
+            }
+            return stripAdminManagedInstructorFields(draft.data);
+        }
+
+        // 舊版草稿沒有基準快照：首次建檔仍可保留；已有 DB 資料時不可冒險覆蓋較新的值。
+        if (allowLegacyDraft) return stripAdminManagedInstructorFields(draft);
+        clearDraft(uid);
+        return null;
     }
     catch { return null; }
 };
@@ -95,6 +92,7 @@ const ProfilePage = () => {
     const [filePreviews, setFilePreviews] = useState({});
     const [uploading, setUploading] = useState({});
     const fileRefs = useRef({});
+    const pendingStorageDeletes = useRef(new Set());
     const originalWcaId = useRef('');
     // 草稿暫存：hydrated 為 true 後才寫 localStorage（避免載入中的空表覆蓋既有草稿）；
     // savedSnapshot 記「已存進 DB 的文字欄位版本」，用來判斷是否有未儲存變更。
@@ -174,7 +172,7 @@ const ProfilePage = () => {
             }
             // 記下「已存進 DB 的文字欄位版本」，並套用未儲存的本機草稿（若有）
             savedSnapshot.current = JSON.stringify(pickDraftFields(formData));
-            const draft = readDraft(user.id);
+            const draft = readDraft(user.id, savedSnapshot.current, false);
             nextForm = draft ? { ...formData, ...draft } : formData;
             originalWcaId.current = formData.wca_id || '';
             setWcaLocked(!!data.hide_from_leaderboard);
@@ -187,7 +185,7 @@ const ProfilePage = () => {
                 email_primary: user.email || '',
             };
             savedSnapshot.current = JSON.stringify(pickDraftFields(base));
-            const draft = readDraft(user.id);
+            const draft = readDraft(user.id, savedSnapshot.current, true);
             nextForm = draft ? { ...base, ...draft } : base;
         }
 
@@ -228,7 +226,11 @@ const ProfilePage = () => {
     useEffect(() => {
         if (!hydrated.current || !user) return;
         try {
-            localStorage.setItem(draftKeyFor(user.id), JSON.stringify(pickDraftFields(form)));
+            localStorage.setItem(draftKeyFor(user.id), JSON.stringify({
+                version: DRAFT_VERSION,
+                baseSnapshot: savedSnapshot.current,
+                data: pickDraftFields(form),
+            }));
         } catch { /* localStorage 滿了或被停用就略過，不影響填寫 */ }
     }, [form, user]);
 
@@ -277,10 +279,6 @@ const ProfilePage = () => {
 
         setUploading(prev => ({ ...prev, [docType]: true }));
 
-        if (form[`${docType}_path`]) {
-            await supabase.storage.from('instructor_uploads').remove([form[`${docType}_path`]]);
-        }
-
         const ext = file.name.split('.').pop();
         const path = `instructors/${user.id}/${docType}/${crypto.randomUUID()}.${ext}`;
 
@@ -294,6 +292,11 @@ const ProfilePage = () => {
             return;
         }
 
+        const previousPath = form[`${docType}_path`];
+        if (previousPath && previousPath !== path) {
+            pendingStorageDeletes.current.add(previousPath);
+        }
+
         setForm(prev => ({
             ...prev,
             [`${docType}_path`]: path,
@@ -305,10 +308,9 @@ const ProfilePage = () => {
         setUploading(prev => ({ ...prev, [docType]: false }));
     };
 
-    const handleRemoveFile = async (docType) => {
-        if (form[`${docType}_path`]) {
-            await supabase.storage.from('instructor_uploads').remove([form[`${docType}_path`]]);
-        }
+    const handleRemoveFile = (docType) => {
+        const previousPath = form[`${docType}_path`];
+        if (previousPath) pendingStorageDeletes.current.add(previousPath);
         setForm(prev => ({
             ...prev,
             [`${docType}_path`]: null, [`${docType}_mime`]: null,
@@ -322,7 +324,7 @@ const ProfilePage = () => {
     };
 
     const handleSave = async () => {
-        const missing = REQUIRED_FIELDS.filter(f => !form[f.key]?.toString().trim());
+        const missing = REQUIRED_PROFILE_FIELDS.filter(f => !form[f.key]?.toString().trim());
         if (missing.length > 0) {
             alert('以下欄位為必填：\n' + missing.map(f => `• ${f.label}`).join('\n'));
             return;
@@ -380,9 +382,23 @@ const ProfilePage = () => {
         }
 
 
+        // DB 已指向新路徑後才清理舊檔。清理失敗只留下孤兒檔，不會破壞已儲存的資料。
+        const obsoletePaths = [...pendingStorageDeletes.current];
+        if (obsoletePaths.length) {
+            const { error: cleanupError } = await supabase.storage
+                .from('instructor_uploads')
+                .remove(obsoletePaths);
+            if (cleanupError) {
+                console.error('Failed to clean up replaced profile files:', cleanupError);
+            } else {
+                pendingStorageDeletes.current.clear();
+            }
+        }
+
         // 儲存成功：清掉本機草稿、更新「已存版本」快照（避免離開時誤跳未儲存警告）
-        try { localStorage.removeItem(draftKeyFor(user.id)); } catch { /* 略過 */ }
+        clearDraft(user.id);
         savedSnapshot.current = JSON.stringify(pickDraftFields(form));
+        window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: payload }));
 
         if (profile?.role === 'pending' && isFirstTime) {
             setShowSuccess(true);
