@@ -9,6 +9,14 @@ import {
   List, ListOrdered,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import {
+  MARQUEE_DRAG_THRESHOLD,
+  clampSelectionDelta,
+  createPastedElements,
+  getMarqueeSelectionIds,
+  getSelectionBounds,
+  normalizeRect,
+} from '../lib/canvasSelection';
 
 const CANVAS_WIDTH = 960;
 const MIN_CANVAS_HEIGHT = 600;
@@ -17,6 +25,10 @@ const COL_COUNT = 12;
 const COL_WIDTH = CANVAS_WIDTH / COL_COUNT;
 const SNAP_THRESHOLD = 6;
 const GUIDE_PADDING = 20;
+
+const createCanvasElementId = () => `new_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const isEditableTarget = (target) => Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
 
 const SHAPE_TYPES = [
   { key: 'rect', label: '矩形', Icon: Square },
@@ -367,7 +379,8 @@ function computeDistances(selected, allElements) {
 
 const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const [elements, setElements] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [marqueeRect, setMarqueeRect] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [lessonTitle, setLessonTitle] = useState('');
   const [loading, setLoading] = useState(true);
@@ -383,6 +396,13 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   const canvasRef = useRef(null);
   const shapeMenuRef = useRef(null);
   const selectionRef = useRef(null);
+  const marqueeStateRef = useRef(null);
+  const dragStateRef = useRef(null);
+  const ignoreNextClickRef = useRef(false);
+  const clipboardRef = useRef([]);
+  const pasteCountRef = useRef(0);
+
+  const selectedId = selectedIds.at(-1) || null;
 
   const saveSelection = useCallback(() => {
     const sel = window.getSelection();
@@ -487,7 +507,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             body: c.body || '', title: c.title || '',
             videoUrl: c.video_url || '',
             storagePath: c.type === 'image_text' ? c.video_url : '',
-            imageUrl, order: c.order ?? 0, locked: false,
+            imageUrl, order: c.order ?? 0, locked: pos.locked ?? false,
             opacity: pos.opacity ?? 1,
             shapeType: pos.shapeType || 'rect',
             fillColor: pos.fillColor || '#3b82f6',
@@ -499,6 +519,8 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
           };
         });
         setElements(mapped);
+        setSelectedIds([]);
+        setEditingId(null);
       } catch (err) { console.error('載入失敗:', err); }
       finally { setLoading(false); }
     };
@@ -506,7 +528,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   }, [lessonId]);
 
   const addElement = (type, extraProps = {}) => {
-    const id = `new_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const id = createCanvasElementId();
     let nextY = 40;
     for (const el of elements) {
       const bottom = (el.y || 0) + (el.height || 100) + 30;
@@ -524,7 +546,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     };
     const next = [...elements, base];
     setElements(next);
-    setSelectedId(id);
+    setSelectedIds([id]);
     // Scroll the new element into view after React renders
     requestAnimationFrame(() => {
       const canvasTop = canvasRef.current?.getBoundingClientRect().top ?? 0;
@@ -538,26 +560,67 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...patch } : el)));
   };
 
-  const deleteElement = async (id) => {
-    const el = elements.find((e) => e.id === id);
-    if (!el || !window.confirm('確定要刪除此元素嗎？')) return;
-    if (el.storagePath) await supabase.storage.from('content-images').remove([el.storagePath]);
-    if (el.dbId) await supabase.from('contents').delete().eq('id', el.dbId);
-    setElements((prev) => prev.filter((e) => e.id !== id));
-    if (selectedId === id) setSelectedId(null);
-    if (editingId === id) setEditingId(null);
+  const deleteElements = async (ids) => {
+    const idSet = new Set(ids);
+    const targets = elements.filter((element) => idSet.has(element.id));
+    if (targets.length === 0) return;
+
+    const message = targets.length === 1
+      ? '確定要刪除此元素嗎？'
+      : `確定要刪除選取的 ${targets.length} 個元素嗎？`;
+    if (!window.confirm(message)) return;
+
+    const dbIds = targets.map((element) => element.dbId).filter(Boolean);
+    if (dbIds.length > 0) {
+      const { error } = await supabase.from('contents').delete().in('id', dbIds);
+      if (error) {
+        console.error('刪除元素失敗:', error);
+        alert('刪除失敗：' + error.message);
+        return;
+      }
+    }
+
+    const remainingStoragePaths = new Set(
+      elements.filter((element) => !idSet.has(element.id)).map((element) => element.storagePath).filter(Boolean),
+    );
+    const removablePaths = [...new Set(
+      targets.map((element) => element.storagePath).filter((path) => path && !remainingStoragePaths.has(path)),
+    )];
+    if (removablePaths.length > 0) {
+      const { error } = await supabase.storage.from('content-images').remove(removablePaths);
+      if (error) console.error('圖片檔案清理失敗:', error);
+    }
+
+    setElements((prev) => prev.filter((element) => !idSet.has(element.id)));
+    setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
+    if (editingId && idSet.has(editingId)) setEditingId(null);
   };
 
-  const duplicateElement = (id) => {
-    const src = elements.find((e) => e.id === id);
-    if (!src) return;
-    addElement(src.type, {
-      x: src.x + 30, y: src.y + 30, width: src.width, height: src.height,
-      body: src.body, title: src.title, videoUrl: src.videoUrl, imageUrl: src.imageUrl,
-      storagePath: '', opacity: src.opacity, linkUrl: src.linkUrl, textColor: src.textColor,
-      shapeType: src.shapeType, fillColor: src.fillColor, borderColor: src.borderColor,
-      borderWidth: src.borderWidth, borderRadius: src.borderRadius,
+  const copyElements = (ids = selectedIds) => {
+    const idSet = new Set(ids);
+    const copied = elements.filter((element) => idSet.has(element.id)).map((element) => ({ ...element }));
+    clipboardRef.current = copied;
+    pasteCountRef.current = 0;
+    return copied;
+  };
+
+  const pasteElements = (sourceElements = clipboardRef.current) => {
+    if (sourceElements.length === 0) return;
+    pasteCountRef.current += 1;
+    const pasted = createPastedElements(sourceElements, {
+      offset: pasteCountRef.current * 20,
+      canvasWidth: CANVAS_WIDTH,
+      orderStart: elements.length,
+      createId: createCanvasElementId,
     });
+    setElements((prev) => [...prev, ...pasted]);
+    setSelectedIds(pasted.map((element) => element.id));
+    setEditingId(null);
+  };
+
+  const duplicateElements = (ids) => {
+    const copied = copyElements(ids);
+    pasteElements(copied);
   };
 
   const handleImageUpload = async (file, elementId) => {
@@ -620,6 +683,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
         const positionData = {
           x: el.x, y: el.y, width: el.width, height: el.height,
           opacity: el.opacity ?? 1,
+          locked: el.locked ?? false,
         };
         if (el.type === 'shape') {
           positionData.shapeType = el.shapeType;
@@ -715,74 +779,269 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     }
   };
 
-  const handleCanvasClick = (e) => {
-    if (e.target === canvasRef.current || e.target.classList.contains('canvas-grid') || e.target.classList.contains('col-line')) {
-      setSelectedId(null);
-      exitEditing();
-    }
-  };
+  const getCanvasPoint = useCallback((event) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: Math.max(0, Math.min(event.clientX - rect.left, CANVAS_WIDTH)),
+      y: Math.max(0, Math.min(event.clientY - rect.top, renderedHeight)),
+    };
+  }, [renderedHeight]);
 
-  const handleElementClick = useCallback((e, elId) => {
-    e.stopPropagation();
-    if (editingId && editingId !== elId) exitEditing();
-    setSelectedId(elId);
+  const handleCanvasPointerDown = useCallback((event) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || event.target !== event.currentTarget) return;
+    const start = getCanvasPoint(event);
+    if (!start) return;
+
+    event.preventDefault();
+    exitEditing();
+    const initialIds = event.shiftKey ? selectedIds : [];
+    marqueeStateRef.current = {
+      pointerId: event.pointerId,
+      start,
+      initialIds,
+      additive: event.shiftKey,
+      moved: false,
+    };
+    setMarqueeRect(null);
+    if (!event.shiftKey) setSelectedIds([]);
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* noop */ }
+  }, [exitEditing, getCanvasPoint, selectedIds]);
+
+  const handleCanvasPointerMove = useCallback((event) => {
+    const state = marqueeStateRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    const current = getCanvasPoint(event);
+    if (!current) return;
+
+    const moved = Math.hypot(current.x - state.start.x, current.y - state.start.y) >= MARQUEE_DRAG_THRESHOLD;
+    if (!state.moved && !moved) return;
+    state.moved = true;
+    const rect = normalizeRect(state.start, current);
+    const intersectingIds = getMarqueeSelectionIds(elements, rect);
+    const nextIds = state.additive
+      ? [...new Set([...state.initialIds, ...intersectingIds])]
+      : intersectingIds;
+    setMarqueeRect(rect);
+    setSelectedIds(nextIds);
+  }, [elements, getCanvasPoint]);
+
+  const finishMarquee = useCallback((event, cancelled = false) => {
+    const state = marqueeStateRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (cancelled) setSelectedIds(state.initialIds);
+    else if (!state.moved && !state.additive) setSelectedIds([]);
+    marqueeStateRef.current = null;
+    setMarqueeRect(null);
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* noop */ }
+  }, []);
+
+  const handleElementClick = useCallback((event, elementId) => {
+    event.stopPropagation();
+    if (ignoreNextClickRef.current) {
+      ignoreNextClickRef.current = false;
+      return;
+    }
+    if (editingId && editingId !== elementId) exitEditing();
+    if (event.shiftKey) {
+      setSelectedIds((current) => current.includes(elementId)
+        ? current.filter((id) => id !== elementId)
+        : [...current, elementId]);
+    } else {
+      setSelectedIds([elementId]);
+    }
   }, [editingId, exitEditing]);
 
-  const handleDrag = useCallback((elId, x, y) => {
-    const el = elements.find((e) => e.id === elId);
-    if (!el) return;
-    // Functional updater avoids stale closure – always reads latest canvasHeight
-    const bottom = y + (el.height || 100) + 400;
-    setCanvasHeight((prev) => Math.max(prev, bottom));
-    if (showGuides) {
-      setSnapGuides(computeSnapGuides({ ...el, x, y }, elements, CANVAS_WIDTH));
-    }
-  }, [elements, showGuides]);
+  const handleDragStart = useCallback((event, elementId) => {
+    const element = elements.find((item) => item.id === elementId);
+    if (!element || element.locked) return false;
 
-  const handleDragStop = useCallback((elId, x, y) => {
-    setIsDragging(false);
-    const el = elements.find((e) => e.id === elId);
-    if (!el) return;
-    let finalX = x, finalY = y;
+    exitEditing();
+    const nextSelectionIds = selectedIds.includes(elementId)
+      ? selectedIds
+      : (event.shiftKey ? [...selectedIds, elementId] : [elementId]);
+    const groupIds = nextSelectionIds.filter(
+      (id) => !elements.find((item) => item.id === id)?.locked,
+    );
+
+    const idSet = new Set(groupIds);
+    const origins = new Map(
+      elements.filter((item) => idSet.has(item.id)).map((item) => [item.id, { ...item }]),
+    );
+    dragStateRef.current = {
+      anchorId: elementId,
+      anchorStart: { x: element.x, y: element.y },
+      bounds: getSelectionBounds(elements, idSet),
+      groupIds: idSet,
+      origins,
+      otherElements: elements.filter((item) => !idSet.has(item.id)),
+      nextSelectionIds,
+      selectionApplied: false,
+      moved: false,
+    };
+    ignoreNextClickRef.current = false;
+    setIsDragging(true);
+    return true;
+  }, [elements, exitEditing, selectedIds]);
+
+  const handleDrag = useCallback((elementId, x, y) => {
+    const state = dragStateRef.current;
+    if (!state || state.anchorId !== elementId) return;
+    const delta = clampSelectionDelta(
+      state.bounds,
+      x - state.anchorStart.x,
+      y - state.anchorStart.y,
+      CANVAS_WIDTH,
+    );
+    if (delta.deltaX !== 0 || delta.deltaY !== 0) {
+      state.moved = true;
+      if (!state.selectionApplied) {
+        state.selectionApplied = true;
+        setSelectedIds(state.nextSelectionIds);
+      }
+    }
+
+    setElements((current) => current.map((element) => {
+      const origin = state.origins.get(element.id);
+      return origin
+        ? { ...element, x: origin.x + delta.deltaX, y: origin.y + delta.deltaY }
+        : element;
+    }));
+
+    const maxBottom = Math.max(...[...state.origins.values()].map(
+      (element) => element.y + delta.deltaY + (element.height || 100) + 400,
+    ));
+    setCanvasHeight((current) => Math.max(current, maxBottom));
+
     if (showGuides) {
-      const guides = computeSnapGuides({ ...el, x, y }, elements, CANVAS_WIDTH);
-      finalX = guides.snapX ?? x;
-      finalY = guides.snapY ?? y;
+      const anchor = state.origins.get(elementId);
+      setSnapGuides(computeSnapGuides({
+        ...anchor,
+        x: anchor.x + delta.deltaX,
+        y: anchor.y + delta.deltaY,
+      }, state.otherElements, CANVAS_WIDTH));
+    }
+  }, [showGuides]);
+
+  const handleDragStop = useCallback((elementId, x, y) => {
+    const state = dragStateRef.current;
+    if (!state || state.anchorId !== elementId) return;
+
+    let delta = clampSelectionDelta(
+      state.bounds,
+      x - state.anchorStart.x,
+      y - state.anchorStart.y,
+      CANVAS_WIDTH,
+    );
+    if (showGuides) {
+      const anchor = state.origins.get(elementId);
+      const guides = computeSnapGuides({
+        ...anchor,
+        x: anchor.x + delta.deltaX,
+        y: anchor.y + delta.deltaY,
+      }, state.otherElements, CANVAS_WIDTH);
+      delta = clampSelectionDelta(
+        state.bounds,
+        (guides.snapX ?? (anchor.x + delta.deltaX)) - anchor.x,
+        (guides.snapY ?? (anchor.y + delta.deltaY)) - anchor.y,
+        CANVAS_WIDTH,
+      );
       setTimeout(() => setSnapGuides({ vertical: [], horizontal: [] }), 300);
     } else {
       setSnapGuides({ vertical: [], horizontal: [] });
     }
-    finalX = Math.max(0, Math.min(finalX, CANVAS_WIDTH - el.width));
-    finalY = Math.max(0, finalY);
-    updateElement(elId, { x: finalX, y: finalY });
-    // Reset drag-time height; computedMinHeight (useMemo) takes over from here
+
+    setElements((current) => current.map((element) => {
+      const origin = state.origins.get(element.id);
+      return origin
+        ? { ...element, x: origin.x + delta.deltaX, y: origin.y + delta.deltaY }
+        : element;
+    }));
+    setIsDragging(false);
     setCanvasHeight(MIN_CANVAS_HEIGHT);
-  }, [elements, showGuides]);
+    dragStateRef.current = null;
+
+    if (state.moved) {
+      if (!state.selectionApplied) setSelectedIds(state.nextSelectionIds);
+      ignoreNextClickRef.current = true;
+      setTimeout(() => { ignoreNextClickRef.current = false; }, 0);
+    }
+  }, [showGuides]);
+
+  const selectionBounds = useMemo(
+    () => getSelectionBounds(elements, selectedIds),
+    [elements, selectedIds],
+  );
 
   const distances = useMemo(() => {
-    if (!selectedId || isDragging) return [];
-    return computeDistances(elements.find((e) => e.id === selectedId), elements);
-  }, [selectedId, elements, isDragging]);
+    if (!selectionBounds || isDragging) return [];
+    const selectedSet = new Set(selectedIds);
+    const measurementTarget = selectedIds.length === 1
+      ? elements.find((element) => element.id === selectedId)
+      : { ...selectionBounds, x: selectionBounds.left, y: selectionBounds.top, id: '__selection__' };
+    return computeDistances(measurementTarget, elements.filter((element) => !selectedSet.has(element.id)));
+  }, [selectedId, selectedIds, selectionBounds, elements, isDragging]);
+
+  const moveSelectedBy = useCallback((deltaX, deltaY) => {
+    const movableIds = selectedIds.filter(
+      (id) => !elements.find((element) => element.id === id)?.locked,
+    );
+    if (movableIds.length === 0) return;
+    const movableSet = new Set(movableIds);
+    const bounds = getSelectionBounds(elements, movableSet);
+    const delta = clampSelectionDelta(bounds, deltaX, deltaY, CANVAS_WIDTH);
+    setElements((current) => current.map((element) => movableSet.has(element.id)
+      ? { ...element, x: element.x + delta.deltaX, y: element.y + delta.deltaY }
+      : element));
+  }, [elements, selectedIds]);
 
   useEffect(() => {
-    const handler = (e) => {
-      if (e.key === 'Escape' && editingId) { e.preventDefault(); exitEditing(); return; }
-      if (!selectedId || editingId) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteElement(selectedId); }
-      const sel = elements.find((el) => el.id === selectedId);
-      if (!sel || sel.locked) return;
-      const step = e.shiftKey ? 1 : GRID_SIZE;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); updateElement(selectedId, { x: sel.x - step }); }
-      if (e.key === 'ArrowRight') { e.preventDefault(); updateElement(selectedId, { x: sel.x + step }); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); updateElement(selectedId, { y: sel.y - step }); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); updateElement(selectedId, { y: sel.y + step }); }
+    const handler = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (editingId) exitEditing();
+        marqueeStateRef.current = null;
+        setMarqueeRect(null);
+        setSelectedIds([]);
+        return;
+      }
+      if (editingId || isEditableTarget(event.target)) return;
+
+      const modifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (modifier && key === 'a') {
+        event.preventDefault();
+        setSelectedIds(elements.filter((element) => !element.locked).map((element) => element.id));
+        return;
+      }
+      if (modifier && key === 'c' && selectedIds.length > 0) {
+        event.preventDefault();
+        copyElements();
+        return;
+      }
+      if (modifier && key === 'v' && clipboardRef.current.length > 0) {
+        event.preventDefault();
+        pasteElements();
+        return;
+      }
+      if (selectedIds.length === 0) return;
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        deleteElements(selectedIds);
+        return;
+      }
+
+      const step = event.shiftKey ? 1 : GRID_SIZE;
+      if (event.key === 'ArrowLeft') { event.preventDefault(); moveSelectedBy(-step, 0); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); moveSelectedBy(step, 0); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); moveSelectedBy(0, -step); }
+      if (event.key === 'ArrowDown') { event.preventDefault(); moveSelectedBy(0, step); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-    // handler 內用到的 updateElement/deleteElement/exitEditing 皆以 functional setState
-    // 或閉包讀取下列狀態，identity 變動不帶新資訊，故僅依賴狀態值即可（安全省略函式）。
+    // Keyboard actions intentionally read the latest selection and element snapshots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, selectedId, elements]);
+  }, [editingId, elements, selectedIds, moveSelectedBy, exitEditing]);
 
   if (loading) {
     return (
@@ -794,10 +1053,11 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   }
 
   const selected = elements.find((el) => el.id === selectedId);
+  const isMultiSelection = selectedIds.length > 1;
   const elLabel = (t) => ({ text_box: '文字框', image: '圖片', video: '影片', shape: '圖形' }[t] || t);
-  const showOpacity = selected && (selected.type === 'image' || selected.type === 'shape');
-  const showShapeProps = selected && selected.type === 'shape';
-  const isButton = selected?.type === 'shape' && selected?.shapeType === 'button';
+  const showOpacity = !isMultiSelection && selected && (selected.type === 'image' || selected.type === 'shape');
+  const showShapeProps = !isMultiSelection && selected && selected.type === 'shape';
+  const isButton = !isMultiSelection && selected?.type === 'shape' && selected?.shapeType === 'button';
 
   return (
     <div className="min-h-screen bg-bauhaus-paper pb-20">
@@ -960,10 +1220,14 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
       {selected && !editingId && (
         <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t-2 border-bauhaus-black rounded-t-xl px-4 py-2">
           <div className="max-w-[1100px] mx-auto flex items-center gap-2 text-sm flex-wrap">
-            <span className="text-bauhaus-black font-bold">{isButton ? '按鈕' : elLabel(selected.type)}</span>
+            <span className="text-bauhaus-black font-bold">
+              {isMultiSelection ? `已選取 ${selectedIds.length} 個元素` : (isButton ? '按鈕' : elLabel(selected.type))}
+            </span>
             <div className="w-px h-5 bg-bauhaus-black/20" />
             <span className="text-bauhaus-black/50 font-mono text-xs">
-              x:{Math.round(selected.x)} y:{Math.round(selected.y)} | {Math.round(selected.width)}x{Math.round(selected.height)}
+              {isMultiSelection && selectionBounds
+                ? `x:${Math.round(selectionBounds.left)} y:${Math.round(selectionBounds.top)} | ${Math.round(selectionBounds.width)}x${Math.round(selectionBounds.height)}`
+                : `x:${Math.round(selected.x)} y:${Math.round(selected.y)} | ${Math.round(selected.width)}x${Math.round(selected.height)}`}
             </span>
 
             {showOpacity && (
@@ -1029,23 +1293,29 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             )}
 
             <div className="flex-1" />
-            {selected.type === 'image' && (
+            {!isMultiSelection && selected.type === 'image' && (
               <button onClick={() => triggerImageUpload(selected.id)} className="px-3 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
                 <ImagePlus className="w-3.5 h-3.5 inline mr-1" />更換</button>
             )}
-            {selected.type === 'video' && (
+            {!isMultiSelection && selected.type === 'video' && (
               <button onClick={() => { const u = window.prompt('YouTube 網址：', selected.videoUrl); if (u !== null) updateElement(selected.id, { videoUrl: u }); }}
                 className="px-3 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px]">
                 <Video className="w-3.5 h-3.5 inline mr-1" />網址</button>
             )}
-            <button onClick={() => updateElement(selected.id, { locked: !selected.locked })}
-              className="px-2 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]">
-              {selected.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}</button>
-            <button onClick={() => duplicateElement(selected.id)}
-              className="px-2 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]">
+            {!isMultiSelection && (
+              <button onClick={() => updateElement(selected.id, { locked: !selected.locked })}
+                className="px-2 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]"
+                title={selected.locked ? '解除鎖定' : '鎖定元素'}>
+                {selected.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+              </button>
+            )}
+            <button onClick={() => duplicateElements(selectedIds)}
+              className="px-2 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-black font-bold hover:bg-bauhaus-muted transition-colors duration-200 min-h-[44px] min-w-[44px]"
+              title={isMultiSelection ? '複製選取元素' : '複製元素'}>
               <Copy className="w-3.5 h-3.5" /></button>
-            <button onClick={() => deleteElement(selected.id)}
-              className="px-2 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-red font-bold hover:bg-bauhaus-red hover:text-white transition-colors duration-200 min-h-[44px] min-w-[44px]">
+            <button onClick={() => deleteElements(selectedIds)}
+              className="px-2 py-1.5 rounded-xl bg-white border-2 border-bauhaus-black text-bauhaus-red font-bold hover:bg-bauhaus-red hover:text-white transition-colors duration-200 min-h-[44px] min-w-[44px]"
+              title={isMultiSelection ? '刪除選取元素' : '刪除元素'}>
               <Trash2 className="w-3.5 h-3.5" /></button>
           </div>
         </div>
@@ -1063,7 +1333,12 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
           )}
 
           <div ref={canvasRef} className="relative bg-white shadow-2xl rounded-xl"
-            style={{ width: CANVAS_WIDTH, height: renderedHeight }} onClick={handleCanvasClick}>
+            style={{ width: CANVAS_WIDTH, height: renderedHeight, cursor: marqueeRect ? 'crosshair' : 'default' }}
+            role="region" aria-label="畫布編輯區" data-testid="canvas-editor-surface"
+            onPointerDown={handleCanvasPointerDown}
+            onPointerMove={handleCanvasPointerMove}
+            onPointerUp={(event) => finishMarquee(event)}
+            onPointerCancel={(event) => finishMarquee(event, true)}>
 
             <div className="canvas-grid absolute left-0 top-0 pointer-events-none" style={{
               width: CANVAS_WIDTH, height: renderedHeight,
@@ -1098,15 +1373,43 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
               </div>
             ))}
 
+            {isMultiSelection && selectionBounds && (
+              <div className="absolute pointer-events-none z-30 border-2 border-dashed border-blue-600"
+                style={{
+                  left: selectionBounds.left,
+                  top: selectionBounds.top,
+                  width: selectionBounds.width,
+                  height: selectionBounds.height,
+                }}>
+                <div className="absolute -top-7 left-0 bg-blue-600 text-white text-[10px] px-2 py-1 rounded-md font-bold whitespace-nowrap">
+                  {selectedIds.length} 個元素
+                </div>
+              </div>
+            )}
+
+            {marqueeRect && (
+              <div className="absolute pointer-events-none z-40 border-2 border-blue-600 bg-blue-500/15"
+                style={{
+                  left: marqueeRect.left,
+                  top: marqueeRect.top,
+                  width: marqueeRect.width,
+                  height: marqueeRect.height,
+                }} />
+            )}
+
             {/* ── Elements ── */}
-            {elements.map((el) => (
+            {elements.map((el) => {
+              const isSelected = selectedIds.includes(el.id);
+              return (
               <Rnd key={el.id}
+                data-canvas-element-id={el.id}
+                data-canvas-element-locked={el.locked ? 'true' : 'false'}
                 position={{ x: el.x, y: el.y }} size={{ width: el.width, height: el.height }}
                 minWidth={30} minHeight={el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'arrow') ? 10 : 30}
                 disableDragging={el.locked || editingId === el.id}
-                enableResizing={!el.locked && editingId !== el.id}
+                enableResizing={!isMultiSelection && !el.locked && editingId !== el.id}
                 dragGrid={[GRID_SIZE, GRID_SIZE]} resizeGrid={[GRID_SIZE, GRID_SIZE]}
-                onDragStart={() => setIsDragging(true)}
+                onDragStart={(event) => handleDragStart(event, el.id)}
                 onDrag={(e, d) => handleDrag(el.id, d.x, d.y)}
                 onDragStop={(e, d) => handleDragStop(el.id, d.x, d.y)}
                 onResizeStop={(e, dir, ref, delta, pos) => {
@@ -1117,16 +1420,16 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                 }}
                 onClick={(e) => handleElementClick(e, el.id)}
                 onDoubleClick={() => { if (el.type === 'text_box' || (el.type === 'shape' && el.shapeType === 'button')) setEditingId(el.id); }}
-                className={`group ${selectedId === el.id ? 'z-20' : 'z-10'}`}
+                className={`group ${isSelected ? 'z-20' : 'z-10'}`}
                 style={{
-                  outline: selectedId === el.id ? '2px solid #3b82f6' : '1px solid transparent',
+                  outline: isSelected ? '2px solid #3b82f6' : '1px solid transparent',
                   borderRadius: el.type === 'shape' ? 0 : 8,
                   transition: editingId === el.id ? 'none' : 'outline 0.15s',
                   cursor: el.locked ? 'default' : (editingId === el.id ? 'text' : 'move'),
                   opacity: el.opacity ?? 1,
                 }}
               >
-                {selectedId === el.id && !el.locked && editingId !== el.id && (
+                {selectedIds.length === 1 && isSelected && !el.locked && editingId !== el.id && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-t-md font-bold whitespace-nowrap flex items-center gap-1">
                     <Move className="w-3 h-3" />
                     {el.type === 'shape' && el.shapeType === 'button' ? '按鈕' : elLabel(el.type)}
@@ -1160,7 +1463,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                   <div className="w-full h-full rounded-lg overflow-hidden bg-black">
                     {el.videoUrl ? (
                       <iframe src={toEmbedUrl(el.videoUrl)} title="Video" className="w-full h-full" allowFullScreen
-                        style={{ pointerEvents: selectedId === el.id ? 'none' : 'auto' }} />
+                        style={{ pointerEvents: isSelected ? 'none' : 'auto' }} />
                     ) : <div className="w-full h-full flex items-center justify-center text-white/50"><Video className="w-10 h-10" /></div>}
                   </div>
                 )}
@@ -1185,7 +1488,8 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                   </div>
                 )}
               </Rnd>
-            ))}
+              );
+            })}
 
             {elements.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 pointer-events-none">
