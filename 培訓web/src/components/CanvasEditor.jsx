@@ -24,6 +24,12 @@ import {
   createCanvasSavedFingerprints,
   getDirtyCanvasElements,
 } from '../lib/canvasPersistence';
+import { applyTextSelectionIndent } from '../lib/canvasTextIndent';
+import {
+  captureTextSelection,
+  normalizeCanvasFontSizePx,
+  restoreTextSelection,
+} from '../lib/canvasTextFormatting';
 
 const CANVAS_WIDTH = 960;
 const MIN_CANVAS_HEIGHT = 600;
@@ -240,79 +246,15 @@ const TextBoxContent = ({ body, isEditing, onContentChange, onStartEdit }) => {
     if (ref.current) ref.current.innerHTML = body || '';
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const getBlockParent = (node) => {
-    while (node && node !== ref.current) {
-      if (node.nodeType === 1 && /^(P|DIV|H[1-6]|BLOCKQUOTE)$/i.test(node.nodeName)) return node;
-      node = node.parentNode;
-    }
-    return null;
-  };
-
-  const findParentLi = (node) => {
-    while (node && node !== ref.current) {
-      if (node.nodeName === 'LI') return node;
-      node = node.parentNode;
-    }
-    return null;
-  };
-
-  const indentListItem = (li) => {
-    const prev = li.previousElementSibling;
-    if (!prev || prev.nodeName !== 'LI') return;
-    const parentList = li.parentNode;
-    const tag = parentList.nodeName;
-    let subList = prev.lastElementChild;
-    if (!subList || (subList.nodeName !== 'UL' && subList.nodeName !== 'OL')) {
-      subList = document.createElement(tag);
-      prev.appendChild(subList);
-    }
-    subList.appendChild(li);
-  };
-
-  const outdentListItem = (li) => {
-    const parentList = li.parentNode;
-    const grandLi = parentList.parentNode;
-    if (!grandLi || grandLi.nodeName !== 'LI') return;
-    const outerList = grandLi.parentNode;
-    const trailing = [];
-    let sib = li.nextElementSibling;
-    while (sib) { trailing.push(sib); sib = sib.nextElementSibling; }
-    if (trailing.length > 0) {
-      const carry = document.createElement(parentList.nodeName);
-      trailing.forEach((s) => carry.appendChild(s));
-      li.appendChild(carry);
-    }
-    outerList.insertBefore(li, grandLi.nextSibling);
-    if (parentList.children.length === 0) parentList.remove();
-  };
-
   const handleKeyDown = (e) => {
     if (e.key !== 'Tab') return;
     e.preventDefault();
     e.stopPropagation();
 
     const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0).cloneRange();
-
-    const li = findParentLi(sel.anchorNode);
-    if (li) {
-      if (e.shiftKey) { outdentListItem(li); } else { indentListItem(li); }
-      try { sel.removeAllRanges(); sel.addRange(range); } catch { /* noop */ }
-    } else {
-      let block = getBlockParent(sel.anchorNode);
-      if (!block) {
-        document.execCommand('formatBlock', false, 'div');
-        block = getBlockParent(sel.anchorNode);
-      }
-      if (block) {
-        const cur = parseFloat(block.style.textIndent) || 0;
-        if (e.shiftKey) {
-          block.style.textIndent = cur <= 2 ? '' : `${cur - 2}em`;
-        } else {
-          block.style.textIndent = `${cur + 2}em`;
-        }
-      }
+    const changed = applyTextSelectionIndent(ref.current, sel, e.shiftKey ? 'outdent' : 'indent');
+    if (changed && ref.current) {
+      onContentChange(ref.current.innerHTML);
     }
   };
 
@@ -891,8 +833,12 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
   };
 
   const applyPxToSelection = (root, px) => {
-    const v = Math.max(8, Math.min(200, Math.round(Number(px))));
-    if (!v) return;
+    const v = normalizeCanvasFontSizePx(px);
+    if (!v) return false;
+    const selection = window.getSelection();
+    const bookmark = captureTextSelection(root, selection);
+    if (!bookmark) return false;
+
     // 標記既有的 size=7，避免被誤換
     root.querySelectorAll('font[size="7"]').forEach(f => f.setAttribute('data-orig', '1'));
     execCommand('fontSize', '7');
@@ -903,8 +849,12 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
       f.replaceWith(span);
     });
     root.querySelectorAll('font[data-orig]').forEach(f => f.removeAttribute('data-orig'));
-    root.focus();   // 焦點還給編輯框，之後 blur 才會回存內容
+    root.focus({ preventScroll: true });
+    restoreTextSelection(root, selection, bookmark);
+    if (selection.rangeCount > 0) selectionRef.current = selection.getRangeAt(0).cloneRange();
+    if (editingId) updateElement(editingId, { body: root.innerHTML });
     setFontPxInput(String(v));
+    return true;
   };
 
   const withTextSelection = (fn) => {
@@ -913,8 +863,19 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     if (root) fn(root);
   };
 
-  const applyFontSizePx = (px) => withTextSelection((root) => applyPxToSelection(root, px));
-  const applyFontSizeDelta = (d) => withTextSelection((root) => applyPxToSelection(root, getSelectionFontPx() + d));
+  const applyIndent = (direction) => withTextSelection((root) => {
+    const changed = applyTextSelectionIndent(root, window.getSelection(), direction);
+    if (changed && editingId) updateElement(editingId, { body: root.innerHTML });
+  });
+
+  const applyFontSizePx = (px) => {
+    restoreSelection();
+    withTextSelection((root) => applyPxToSelection(root, px));
+  };
+  const applyFontSizeDelta = (d) => {
+    restoreSelection();
+    withTextSelection((root) => applyPxToSelection(root, getSelectionFontPx() + d));
+  };
 
   const handleCreateLink = () => {
     saveSelection();
@@ -1419,11 +1380,11 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             <button onMouseDown={(e) => { e.preventDefault(); execCommand('insertOrderedList'); }} className="p-2 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black transition-colors duration-200" title="編號列表">
               <ListOrdered className="w-4 h-4" />
             </button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('indent'); }}
+            <button onMouseDown={(e) => { e.preventDefault(); applyIndent('indent'); }}
               className="p-1.5 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black/70 text-[11px] font-bold transition-colors duration-200" title="增加縮排">
               →|
             </button>
-            <button onMouseDown={(e) => { e.preventDefault(); execCommand('outdent'); }}
+            <button onMouseDown={(e) => { e.preventDefault(); applyIndent('outdent'); }}
               className="p-1.5 border-2 border-transparent hover:border-bauhaus-black hover:bg-bauhaus-muted text-bauhaus-black/70 text-[11px] font-bold transition-colors duration-200" title="減少縮排">
               |←
             </button>
@@ -1442,7 +1403,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
 
             {/* Font size：任意 px（A−／A＋、直接輸入、常用尺寸） */}
             <div className="flex items-center rounded-xl overflow-hidden border-2 border-bauhaus-black bg-white">
-              <button onMouseDown={(e) => { e.preventDefault(); applyFontSizeDelta(-2); }}
+              <button onMouseDown={(e) => { e.preventDefault(); saveSelection(); applyFontSizeDelta(-2); }}
                 className="px-2 py-1 text-xs font-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200" title="縮小字級 −2px">A−</button>
               <input type="number" min="8" max="200" value={fontPxInput}
                 onMouseDown={() => saveSelection()}
@@ -1451,7 +1412,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
                 className="w-12 px-1 py-1 text-sm text-center text-bauhaus-black outline-none border-x-2 border-bauhaus-black/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 title="字級 px（輸入後按 Enter 套用）" />
               <span className="text-[10px] text-bauhaus-black/40 px-0.5">px</span>
-              <button onMouseDown={(e) => { e.preventDefault(); applyFontSizeDelta(2); }}
+              <button onMouseDown={(e) => { e.preventDefault(); saveSelection(); applyFontSizeDelta(2); }}
                 className="px-2 py-1 text-xs font-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200" title="放大字級 +2px">A＋</button>
             </div>
             <select
