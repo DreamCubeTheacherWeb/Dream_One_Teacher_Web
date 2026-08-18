@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "vite preview --host 0.0.0.0 --port ${PORT:-3000}"
+    "start": "vite preview --host 0.0.0.0 --port ${PORT:-3000}",
+    "verify:bankbook-lock": "node scripts/verify-bankbook-lock.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

@@ -56,6 +56,7 @@ const INITIAL_FORM = {
 // 因此檔案欄位也必須進草稿，否則切頁或重新掛載後會看起來像是證件消失。
 const draftKeyFor = (uid) => `profile_draft_${uid}`;
 const DRAFT_VERSION = 2;
+const BANKBOOK_FIELDS = ['bankbook_path', 'bankbook_mime', 'bankbook_size', 'bankbook_uploaded_at'];
 const pickDraftFields = (form) => stripAdminManagedInstructorFields(form);
 const clearDraft = (uid) => {
     try { localStorage.removeItem(draftKeyFor(uid)); } catch { /* 略過 */ }
@@ -89,6 +90,7 @@ const ProfilePage = () => {
     const [isFirstTime, setIsFirstTime] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [form, setForm] = useState(INITIAL_FORM);
+    const [savedBankbookPath, setSavedBankbookPath] = useState(null);
     const [filePreviews, setFilePreviews] = useState({});
     const [uploading, setUploading] = useState({});
     const fileRefs = useRef({});
@@ -166,6 +168,7 @@ const ProfilePage = () => {
         if (data) {
             setIsFirstTime(false);
             setInstructorId(data.id || null);
+            setSavedBankbookPath(data.bankbook_path?.trim() || null);
             const formData = {};
             for (const key of Object.keys(INITIAL_FORM)) {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
@@ -174,11 +177,17 @@ const ProfilePage = () => {
             savedSnapshot.current = JSON.stringify(pickDraftFields(formData));
             const draft = readDraft(user.id, savedSnapshot.current, false);
             nextForm = draft ? { ...formData, ...draft } : formData;
+            // 功能上線前若瀏覽器留有「已儲存存摺的替換草稿」，不可讓草稿蓋過 DB 正本，
+            // 否則畫面會顯示未送出的檔案，儲存時也會被後端鎖定規則拒絕。
+            if (data.bankbook_path?.trim() && profile?.role !== 'admin') {
+                for (const field of BANKBOOK_FIELDS) nextForm[field] = formData[field];
+            }
             originalWcaId.current = formData.wca_id || '';
             setWcaLocked(!!data.hide_from_leaderboard);
         } else {
             setIsFirstTime(true);
             setInstructorId(null);
+            setSavedBankbookPath(null);
             const base = {
                 ...INITIAL_FORM,
                 full_name: profile?.name || '',
@@ -268,6 +277,10 @@ const ProfilePage = () => {
     };
 
     const handleFileUpload = async (docType, file) => {
+        if (docType === 'bankbook' && savedBankbookPath && profile?.role !== 'admin') {
+            alert('存摺封面已鎖定，如需更換請聯繫管理員。');
+            return;
+        }
         if (!file.type.startsWith('image/')) {
             alert('僅接受圖片檔案（JPEG、PNG、GIF、WebP）');
             return;
@@ -309,6 +322,10 @@ const ProfilePage = () => {
     };
 
     const handleRemoveFile = (docType) => {
+        if (docType === 'bankbook' && savedBankbookPath && profile?.role !== 'admin') {
+            alert('存摺封面已鎖定，如需更換請聯繫管理員。');
+            return;
+        }
         const previousPath = form[`${docType}_path`];
         if (previousPath) pendingStorageDeletes.current.add(previousPath);
         setForm(prev => ({
@@ -398,6 +415,7 @@ const ProfilePage = () => {
         // 儲存成功：清掉本機草稿、更新「已存版本」快照（避免離開時誤跳未儲存警告）
         clearDraft(user.id);
         savedSnapshot.current = JSON.stringify(pickDraftFields(form));
+        setSavedBankbookPath(form.bankbook_path?.trim() || null);
         window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: payload }));
 
         if (profile?.role === 'pending' && isFirstTime) {
@@ -733,8 +751,19 @@ const ProfilePage = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {DOC_TYPES.map(({ key, label, Icon: docIcon }) => {
                         const Icon = docIcon;
+                        const isBankbookLocked = key === 'bankbook'
+                            && Boolean(savedBankbookPath)
+                            && profile?.role !== 'admin';
                         return (
-                        <div key={key} className="border-2 border-dashed border-bauhaus-black/30 rounded-xl p-4 text-center hover:border-bauhaus-blue transition-colors">
+                        <div
+                            key={key}
+                            data-testid={`document-upload-${key}`}
+                            className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors ${
+                                isBankbookLocked
+                                    ? 'border-bauhaus-black bg-bauhaus-muted/40'
+                                    : 'border-bauhaus-black/30 hover:border-bauhaus-blue'
+                            }`}
+                        >
                             <div className="text-sm font-bold text-bauhaus-black mb-3 flex items-center justify-center gap-1.5">
                                 <Icon className="w-4 h-4 text-bauhaus-black/40" /> {label} <span className="text-bauhaus-red">*</span>
                             </div>
@@ -742,17 +771,26 @@ const ProfilePage = () => {
                             {filePreviews[key] ? (
                                 <div className="relative group">
                                     <img src={filePreviews[key]} alt={label} className="w-full h-32 object-cover border-2 border-bauhaus-black rounded-xl" />
-                                    <button
-                                        onClick={() => handleRemoveFile(key)}
-                                        className="absolute top-1 right-1 bg-bauhaus-red hover:bg-bauhaus-red/90 text-white rounded-full p-3 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border-2 border-bauhaus-black flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
+                                    {!isBankbookLocked && (
+                                        <button
+                                            type="button"
+                                            aria-label={`移除${label}`}
+                                            onClick={() => handleRemoveFile(key)}
+                                            className="absolute top-1 right-1 bg-bauhaus-red hover:bg-bauhaus-red/90 text-white rounded-full p-3 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border-2 border-bauhaus-black flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    )}
                                     {form[`${key}_size`] && (
                                         <div className="text-[10px] text-bauhaus-black/50 mt-1 font-bold">
                                             {(form[`${key}_size`] / 1024 / 1024).toFixed(1)} MB
                                         </div>
                                     )}
+                                </div>
+                            ) : isBankbookLocked ? (
+                                <div className="h-32 border-2 border-bauhaus-black rounded-xl bg-white flex flex-col items-center justify-center gap-2 px-3 text-bauhaus-black/60">
+                                    <Lock className="w-7 h-7" />
+                                    <span className="text-xs font-bold leading-relaxed">檔案已儲存，預覽目前無法載入</span>
                                 </div>
                             ) : (
                                 <button
@@ -775,16 +813,29 @@ const ProfilePage = () => {
                                 </button>
                             )}
 
-                            <input
-                                ref={el => (fileRefs.current[key] = el)}
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={e => {
-                                    if (e.target.files[0]) handleFileUpload(key, e.target.files[0]);
-                                    e.target.value = '';
-                                }}
-                            />
+                            {isBankbookLocked ? (
+                                <div
+                                    data-testid="bankbook-locked-notice"
+                                    className="mt-3 border-2 border-bauhaus-black rounded-xl bg-bauhaus-yellow px-3 py-2 text-left text-xs font-bold text-bauhaus-black leading-relaxed"
+                                >
+                                    <div className="flex items-start gap-2">
+                                        <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                                        <span>存摺封面已提交並鎖定。為保護匯款資料，如需更換請聯繫管理員協助。</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <input
+                                    ref={el => (fileRefs.current[key] = el)}
+                                    data-testid={`${key}-file-input`}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={e => {
+                                        if (e.target.files[0]) handleFileUpload(key, e.target.files[0]);
+                                        e.target.value = '';
+                                    }}
+                                />
+                            )}
                         </div>
                         );
                     })}

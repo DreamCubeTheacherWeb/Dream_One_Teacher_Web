@@ -10,6 +10,7 @@
  *  T6 DB 已更新時，舊草稿不可覆蓋新資料
  *  T7 檔案替換失敗不刪舊檔；成功替換則 DB 儲存後才刪舊檔
  *  T8 只按移除但尚未儲存時，不可先刪 Storage 舊檔
+ *  T9 存摺首次送出前可調整；講師送出後只能預覽並聯繫管理員，舊替換草稿不覆蓋正本，管理員仍可更換
  * 用法：node scripts/verify-profile-draft.mjs
  */
 import { readFileSync } from 'fs';
@@ -49,6 +50,9 @@ const SELF = { id: UID, name: '草稿測試員', email: 'draft@test.local', role
 let instructorRow = null;
 let storageMode = 'default';
 let requestEvents = [];
+let currentRole = 'teacher';
+let lastInstructorSaveBody = null;
+let signMode = 'success';
 
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=';
 
@@ -71,7 +75,19 @@ async function handleRoute(route) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     }
     if (p.startsWith('/rest/v1/rpc/')) return jsonRes(route, []);
-    if (p.startsWith('/storage/v1/object/sign/')) return jsonRes(route, { signedURL: PIXEL });
+    if (p.startsWith('/storage/v1/object/sign/')) {
+        if (signMode === 'fail') {
+            return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'forced sign failure' }) });
+        }
+        return jsonRes(route, { signedURL: '/object/public/mock-profile-pixel' });
+    }
+    if (p === '/storage/v1/object/public/mock-profile-pixel') {
+        return route.fulfill({
+            status: 200,
+            contentType: 'image/png',
+            body: Buffer.from(PIXEL.split(',')[1], 'base64'),
+        });
+    }
     if (p.startsWith('/storage/v1/')) {
         if (req.method() === 'DELETE') {
             requestEvents.push('delete-old');
@@ -93,12 +109,19 @@ async function handleRoute(route) {
         const accept = (await req.allHeaders()).accept || '';
         const wantsObject = accept.includes('vnd.pgrst.object+json');
         if (method !== 'GET') {
-            if (table === 'instructors') requestEvents.push('db-save');
+            if (table === 'instructors') {
+                requestEvents.push('db-save');
+                try { lastInstructorSaveBody = JSON.parse(req.postData() || '{}'); } catch { lastInstructorSaveBody = null; }
+            }
             return route.fulfill({ status: 201, headers: { 'content-type': 'application/json' }, body: wantsObject ? '{}' : '[]' });
         }
         let data;
         switch (table) {
-            case 'users': data = wantsObject ? SELF : [SELF]; break;
+            case 'users': {
+                const self = { ...SELF, role: currentRole };
+                data = wantsObject ? self : [self];
+                break;
+            }
             case 'instructors': data = wantsObject ? instructorRow : (instructorRow ? [instructorRow] : []); break;
             default: data = wantsObject ? null : [];
         }
@@ -286,6 +309,73 @@ async function main() {
         await page.waitForTimeout(300);
         assert('T8 移除後尚未儲存不刪 Storage 舊檔', !requestEvents.includes('delete-old'), `events=${requestEvents.join(' > ') || '(none)'}`);
         await page.close(); await ctx.close();
+
+        // ── T9a：一般講師載入已儲存存摺 → 預覽成功，但不可更換或移除 ──
+        currentRole = 'teacher'; instructorRow = completeRow;
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        const bankbookImageLoaded = await page.locator('img[alt="存摺封面"]').evaluate((img) => img.complete && img.naturalWidth > 0);
+        const bankbookLockedNotice = await page.getByTestId('bankbook-locked-notice').count();
+        const teacherBankbookInput = await page.getByTestId('bankbook-file-input').count();
+        const teacherBankbookRemove = await page.getByRole('button', { name: '移除存摺封面' }).count();
+        assert('T9a 已儲存存摺可正確載入預覽', bankbookImageLoaded === true);
+        assert('T9b 一般講師的已儲存存摺鎖定', bankbookLockedNotice === 1 && teacherBankbookInput === 0 && teacherBankbookRemove === 0,
+            `notice=${bankbookLockedNotice}, input=${teacherBankbookInput}, remove=${teacherBankbookRemove}`);
+
+        await page.fill(`input[placeholder="${ADDR}"]`, 'DB通訊地址暫存');
+        await page.waitForTimeout(300);
+        const persistedDraft = await page.evaluate((uid) => JSON.parse(window.localStorage.getItem(`profile_draft_${uid}`)), UID);
+        persistedDraft.data.bankbook_path = 'draft/rogue-bankbook.png';
+        persistedDraft.data.bankbook_mime = 'image/png';
+        persistedDraft.data.bankbook_size = 999;
+        await page.evaluate(({ uid, draft }) => {
+            window.localStorage.setItem(`profile_draft_${uid}`, JSON.stringify(draft));
+        }, { uid: UID, draft: persistedDraft });
+        page.on('dialog', (dialog) => dialog.accept());
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.waitForSelector(`input[placeholder="${ADDR}"]`, { timeout: 10000 });
+        await page.waitForTimeout(350);
+        lastInstructorSaveBody = null;
+        await page.getByRole('button', { name: '儲存個人資料' }).click();
+        await page.waitForTimeout(250);
+        assert('T9c 舊的存摺替換草稿不覆蓋 DB 正本', lastInstructorSaveBody?.bankbook_path === completeRow.bankbook_path,
+            `path=${lastInstructorSaveBody?.bankbook_path}`);
+        await page.close(); await ctx.close();
+
+        // ── T9d：簽署網址暫時失敗時，仍不可誤開更換入口 ──
+        signMode = 'fail'; instructorRow = completeRow;
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        const failedPreviewStaysLocked = await page.getByText('檔案已儲存，預覽目前無法載入', { exact: true }).count() === 1
+            && await page.getByTestId('bankbook-locked-notice').count() === 1
+            && await page.getByTestId('bankbook-file-input').count() === 0;
+        assert('T9d 存摺預覽失敗時仍維持鎖定並說明狀態', failedPreviewStaysLocked);
+        await page.close(); await ctx.close();
+        signMode = 'success';
+
+        // ── T9e：首次存摺尚未寫入 DB → 選檔後仍可在送出前移除/重選 ──
+        instructorRow = { ...completeRow, bankbook_path: null, bankbook_mime: null, bankbook_size: null, bankbook_uploaded_at: null };
+        storageMode = 'upload-success'; requestEvents = [];
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        await page.getByTestId('bankbook-file-input').setInputFiles(replacement);
+        await page.waitForTimeout(250);
+        const firstUploadStillEditable = await page.getByTestId('bankbook-file-input').count() === 1
+            && await page.getByRole('button', { name: '移除存摺封面' }).count() === 1
+            && await page.getByTestId('bankbook-locked-notice').count() === 0;
+        assert('T9e 首次存摺送出前仍可重選或移除', firstUploadStillEditable, `events=${requestEvents.join(' > ')}`);
+        await page.close(); await ctx.close();
+
+        // ── T9f：管理員保留更換既有存摺的入口 ──
+        currentRole = 'admin'; instructorRow = completeRow;
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        const adminCanManageBankbook = await page.getByTestId('bankbook-file-input').count() === 1
+            && await page.getByRole('button', { name: '移除存摺封面' }).count() === 1
+            && await page.getByTestId('bankbook-locked-notice').count() === 0;
+        assert('T9f 管理員可更換既有存摺', adminCanManageBankbook);
+        await page.close(); await ctx.close();
+        currentRole = 'teacher';
 
     } finally {
         if (browser) await browser.close();

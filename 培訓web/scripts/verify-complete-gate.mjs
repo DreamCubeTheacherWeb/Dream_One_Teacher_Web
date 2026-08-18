@@ -9,7 +9,10 @@
  *  R4 teacher + 只缺戶籍地址               → 應導回 /profile
  *  R5 teacher + 未完成但開公告              → 依產品例外留在公告頁
  *  R6 在 /profile 補齊後第一次點課程        → 不可被舊狀態彈回
- * 用法：node scripts/verify-complete-gate.mjs
+ *  R7 六位匿名未註冊樣本的缺漏分布           → 四個受保護頁面全部導回 /profile
+ * 用法：
+ *   本地最新 build：node scripts/verify-complete-gate.mjs
+ *   正式站 bundle：VERIFY_BASE_URL=https://example.com node scripts/verify-complete-gate.mjs
  */
 import { readFileSync } from 'fs';
 import path from 'path';
@@ -21,7 +24,9 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.resolve(__dirname, '..');
 const PORT = 4215;
-const BASE = `http://localhost:${PORT}`;
+const BASE = process.env.VERIFY_BASE_URL?.replace(/\/$/, '') || `http://localhost:${PORT}`;
+const BASE_ORIGIN = new URL(BASE).origin;
+const IS_REMOTE = Boolean(process.env.VERIFY_BASE_URL);
 const { chromium } = require(path.join(APP_DIR, 'node_modules/playwright-core'));
 
 const envMap = Object.fromEntries(readFileSync(path.join(APP_DIR, '.env'), 'utf8')
@@ -54,6 +59,21 @@ const textFilled = { id: 'inst-1', user_id: UID, teaching_regions: ['臺北市']
     photo_path: null, id_front_path: null, id_back_path: null, bankbook_path: null, hide_from_leaderboard: false };
 for (const k of TEXT_KEYS) textFilled[k] = '有值';
 const allComplete = { ...textFilled, photo_path: 'u/p.jpg', id_front_path: 'u/f.jpg', id_back_path: 'u/b.jpg', bankbook_path: 'u/k.jpg' };
+const SAMPLE_MISSING_COUNTS = [12, 13, 13, 14, 14, 20];
+const PROTECTED_ROUTES = ['/courses', '/leaderboard', '/cube', '/my/salary'];
+const MISSING_ORDER = [
+    'bankbook_path', 'photo_path', 'id_front_path', 'id_back_path', 'household_address',
+    'nickname', 'gender', 'birth_date', 'id_number', 'phone_mobile', 'line_id', 'address',
+    'teaching_freq_semester', 'teaching_freq_vacation', 'bio_notes', 'bank_account_name',
+    'bank_name', 'bank_branch', 'bank_account_number', 'bank_code', 'teaching_regions',
+];
+const sampleWithMissingCount = (count, index) => {
+    const sample = { ...allComplete, id: `unregistered-sample-${index + 1}`, teaching_regions: [...allComplete.teaching_regions] };
+    for (const key of MISSING_ORDER.slice(0, count)) {
+        sample[key] = key === 'teaching_regions' ? [] : null;
+    }
+    return sample;
+};
 
 function jsonRes(route, data, extra = {}) {
     const headers = { 'content-type': 'application/json', ...extra };
@@ -63,7 +83,7 @@ function jsonRes(route, data, extra = {}) {
 async function handleRoute(route) {
     const req = route.request();
     const url = new URL(req.url());
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return route.continue();
+    if (url.origin === BASE_ORIGIN) return route.continue();
     if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') return route.continue();
     if (!url.hostname.endsWith('.supabase.co')) return route.abort();
     const p = url.pathname;
@@ -108,7 +128,7 @@ async function landing(browser, routePath = '/courses') {
     const errs = [];
     page.on('pageerror', (e) => errs.push(e.message.slice(0, 100)));
     await page.goto(`${BASE}${routePath}`, { waitUntil: 'networkidle', timeout: 20000 });
-    await page.waitForTimeout(1500); // 等 gate 的 fetch + navigate
+    await page.waitForTimeout(700); // 等 gate 的 fetch + navigate
     const pathname = new URL(page.url()).pathname;
     if (errs.length) console.log('   pageerrors:', errs.slice(0, 3).join(' | '));
     await page.close(); await ctx.close();
@@ -132,9 +152,14 @@ async function completeThenOpenCourses(browser) {
 }
 
 async function main() {
-    console.log('── npm run build ──');
-    execSync('npm run build', { cwd: APP_DIR, stdio: 'inherit' });
-    const preview = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: APP_DIR, stdio: ['ignore', 'pipe', 'pipe'] });
+    let preview = null;
+    if (IS_REMOTE) {
+        console.log(`── remote bundle: ${BASE} ──`);
+    } else {
+        console.log('── npm run build ──');
+        execSync('npm run build', { cwd: APP_DIR, stdio: 'inherit' });
+        preview = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: APP_DIR, stdio: ['ignore', 'pipe', 'pipe'] });
+    }
     let browser;
     try {
         await waitForServer(BASE, 15000);
@@ -152,9 +177,21 @@ async function main() {
         assert('R5 公告頁維持產品例外', L === '/announcements/audit', `landed=${L}`);
         L = await completeThenOpenCourses(browser);
         assert('R6 補齊後第一次點課程不被彈回', L === '/courses', `landed=${L}`);
+
+        for (const [index, missingCount] of SAMPLE_MISSING_COUNTS.entries()) {
+            instructorRow = sampleWithMissingCount(missingCount, index);
+            for (const routePath of PROTECTED_ROUTES) {
+                L = await landing(browser, routePath);
+                assert(
+                    `R7-${index + 1} 匿名樣本缺 ${missingCount} 項，${routePath} 導回 /profile`,
+                    L === '/profile',
+                    `landed=${L}`,
+                );
+            }
+        }
     } finally {
         if (browser) await browser.close();
-        preview.kill('SIGTERM');
+        preview?.kill('SIGTERM');
     }
     const passed = results.filter((r) => r.pass).length;
     console.log(`\n=== ${passed}/${results.length} PASS ===`);
