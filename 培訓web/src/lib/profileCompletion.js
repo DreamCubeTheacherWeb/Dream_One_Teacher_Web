@@ -20,7 +20,6 @@ export const REQUIRED_PROFILE_FIELDS = [
 ];
 
 export const REQUIRED_PROFILE_PATHS = [
-  'photo_path',
   'id_front_path',
   'id_back_path',
   'bankbook_path',

@@ -4,12 +4,13 @@
  * 假 session + mock Supabase（手法借 verify-profile-draft.mjs），真瀏覽器。
  * 情境（開 /courses 看最終落點）：
  *  R1 teacher + 無 instructors 列          → 應導回 /profile
- *  R2 teacher + 文字欄齊但缺照片(似認領列) → 應導回 /profile
- *  R3 teacher + 全齊(含4張照片路徑)        → 應留在 /courses
- *  R4 teacher + 只缺戶籍地址               → 應導回 /profile
- *  R5 teacher + 未完成但開公告              → 依產品例外留在公告頁
- *  R6 在 /profile 補齊後第一次點課程        → 不可被舊狀態彈回
- *  R7 六位匿名未註冊樣本的缺漏分布           → 四個受保護頁面全部導回 /profile
+ *  R2 teacher + 文字齊但缺三份必填文件       → 應導回 /profile
+ *  R3 teacher + 只缺選填大頭照               → 應留在 /courses，且個人頁可儲存
+ *  R4 teacher + 必填資料全齊                 → 應留在 /courses
+ *  R5 teacher + 只缺戶籍地址                 → 應導回 /profile
+ *  R6 teacher + 未完成但開公告               → 依產品例外留在公告頁
+ *  R7 在 /profile 補齊後第一次點課程         → 不可被舊狀態彈回
+ *  R8 六位匿名未註冊樣本的缺漏分布           → 四個受保護頁面全部導回 /profile
  * 用法：
  *   本地最新 build：node scripts/verify-complete-gate.mjs
  *   正式站 bundle：VERIFY_BASE_URL=https://example.com node scripts/verify-complete-gate.mjs
@@ -59,10 +60,11 @@ const textFilled = { id: 'inst-1', user_id: UID, teaching_regions: ['臺北市']
     photo_path: null, id_front_path: null, id_back_path: null, bankbook_path: null, hide_from_leaderboard: false };
 for (const k of TEXT_KEYS) textFilled[k] = '有值';
 const allComplete = { ...textFilled, photo_path: 'u/p.jpg', id_front_path: 'u/f.jpg', id_back_path: 'u/b.jpg', bankbook_path: 'u/k.jpg' };
+const photoOptionalComplete = { ...allComplete, photo_path: null };
 const SAMPLE_MISSING_COUNTS = [12, 13, 13, 14, 14, 20];
 const PROTECTED_ROUTES = ['/courses', '/leaderboard', '/cube', '/my/salary'];
 const MISSING_ORDER = [
-    'bankbook_path', 'photo_path', 'id_front_path', 'id_back_path', 'household_address',
+    'bankbook_path', 'id_front_path', 'id_back_path', 'household_address',
     'nickname', 'gender', 'birth_date', 'id_number', 'phone_mobile', 'line_id', 'address',
     'teaching_freq_semester', 'teaching_freq_vacation', 'bio_notes', 'bank_account_name',
     'bank_name', 'bank_branch', 'bank_account_number', 'bank_code', 'teaching_regions',
@@ -151,6 +153,25 @@ async function completeThenOpenCourses(browser) {
     return pathname;
 }
 
+async function verifyOptionalPhotoProfile(browser) {
+    instructorRow = { ...photoOptionalComplete, bank_code: '1234567', wca_id: '' };
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
+    await ctx.route('**/*', handleRoute);
+    const page = await ctx.newPage();
+    const dialogMessages = [];
+    page.on('dialog', async (dialog) => {
+        dialogMessages.push(dialog.message());
+        await dialog.dismiss();
+    });
+    await page.goto(`${BASE}/profile`, { waitUntil: 'networkidle', timeout: 20000 });
+    const optionalHint = await page.getByText('大頭照為選填，可稍後補上', { exact: false }).isVisible();
+    await page.getByRole('button', { name: '儲存個人資料', exact: true }).click();
+    await page.waitForTimeout(500);
+    await ctx.close();
+    return { optionalHint, dialogMessages };
+}
+
 async function main() {
     let preview = null;
     if (IS_REMOTE) {
@@ -168,22 +189,31 @@ async function main() {
         instructorRow = null; L = await landing(browser);
         assert('R1 無 instructors 列 → 導回 /profile', L === '/profile', `landed=${L}`);
         instructorRow = textFilled; L = await landing(browser);
-        assert('R2 文字齊但缺 4 照片(似認領列) → 導回 /profile', L === '/profile', `landed=${L}`);
+        assert('R2 文字齊但缺三份必填文件 → 導回 /profile', L === '/profile', `landed=${L}`);
+        instructorRow = photoOptionalComplete; L = await landing(browser);
+        assert('R3a 只缺選填大頭照 → 留在 /courses', L === '/courses', `landed=${L}`);
+        const optionalProfile = await verifyOptionalPhotoProfile(browser);
+        assert('R3b 個人頁清楚標示大頭照為選填', optionalProfile.optionalHint);
+        assert(
+            'R3c 無大頭照仍可儲存個人資料',
+            optionalProfile.dialogMessages.includes('個人資料已儲存！'),
+            `dialogs=${optionalProfile.dialogMessages.join(' | ') || '(none)'}`,
+        );
         instructorRow = allComplete; L = await landing(browser);
-        assert('R3 全齊 → 留在 /courses', L === '/courses', `landed=${L}`);
+        assert('R4 必填資料全齊 → 留在 /courses', L === '/courses', `landed=${L}`);
         instructorRow = { ...allComplete, household_address: '' }; L = await landing(browser);
-        assert('R4 只缺戶籍地址 → 導回 /profile', L === '/profile', `landed=${L}`);
+        assert('R5 只缺戶籍地址 → 導回 /profile', L === '/profile', `landed=${L}`);
         instructorRow = { ...allComplete, nickname: '' }; L = await landing(browser, '/announcements/audit');
-        assert('R5 公告頁維持產品例外', L === '/announcements/audit', `landed=${L}`);
+        assert('R6 公告頁維持產品例外', L === '/announcements/audit', `landed=${L}`);
         L = await completeThenOpenCourses(browser);
-        assert('R6 補齊後第一次點課程不被彈回', L === '/courses', `landed=${L}`);
+        assert('R7 補齊後第一次點課程不被彈回', L === '/courses', `landed=${L}`);
 
         for (const [index, missingCount] of SAMPLE_MISSING_COUNTS.entries()) {
             instructorRow = sampleWithMissingCount(missingCount, index);
             for (const routePath of PROTECTED_ROUTES) {
                 L = await landing(browser, routePath);
                 assert(
-                    `R7-${index + 1} 匿名樣本缺 ${missingCount} 項，${routePath} 導回 /profile`,
+                    `R8-${index + 1} 匿名樣本缺 ${missingCount} 項，${routePath} 導回 /profile`,
                     L === '/profile',
                     `landed=${L}`,
                 );

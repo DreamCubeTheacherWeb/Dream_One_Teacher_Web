@@ -350,10 +350,6 @@ const ProfilePage = () => {
             alert('請至少選擇一個接課地區');
             return;
         }
-        if (!form.photo_path) {
-            alert('請上傳大頭照 / 自拍照');
-            return;
-        }
         const missingDocs = DOC_TYPES.filter(d => !form[`${d.key}_path`]);
         if (missingDocs.length > 0) {
             alert('以下文件尚未上傳：\n' + missingDocs.map(d => `• ${d.label}`).join('\n'));
@@ -530,11 +526,11 @@ const ProfilePage = () => {
                     </h1>
                     <p className="text-bauhaus-black/60 mt-1 font-medium">
                         {isFirstTime
-                            ? '請先上傳大頭照並填寫以下完整資料，完成後即可送出審核。'
-                            : '查看與編輯您的個人資料，所有欄位皆為必填。'}
+                            ? '請填寫以下必填資料，完成後即可送出審核；大頭照可稍後補上。'
+                            : '查看與編輯您的個人資料，標示必填的欄位需完整填寫。'}
                     </p>
                     {!filePreviews.photo && (
-                        <p className="text-bauhaus-red text-sm mt-1 font-bold">← 請先上傳大頭照 / 自拍照</p>
+                        <p className="text-bauhaus-black/50 text-sm mt-1 font-medium">← 大頭照為選填，可稍後補上</p>
                     )}
                 </div>
             </div>
