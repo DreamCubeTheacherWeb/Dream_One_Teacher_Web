@@ -81,6 +81,50 @@ RETURNS SETOF uuid LANGUAGE sql SECURITY DEFINER AS $$ SELECT NULL::uuid WHERE f
 CREATE OR REPLACE FUNCTION public.sync_wca_results(text, jsonb)
 RETURNS jsonb LANGUAGE sql SECURITY DEFINER AS $$ SELECT '{}'::jsonb $$;
 
+CREATE OR REPLACE FUNCTION public.admin_link_instructor(uuid, uuid)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.admin_unlink_instructor(uuid)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.approve_claim_request(uuid)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.reject_claim_request(uuid, text)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.find_unlinked_instructor_by_my_email()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_cube_leaderboard(text)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_interaction_leaderboard()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_teacher_badge_stats(uuid)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_teacher_stats()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_teaching_leaderboard_v2(integer, text)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_teaching_leaderboard(integer)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_teaching_years()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_wca_allaround_leaderboard()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_wca_events()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+CREATE OR REPLACE FUNCTION public.get_wca_leaderboard(text, text)
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$ SELECT $$;
+
+CREATE OR REPLACE FUNCTION public.guard_instructor_role()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN RETURN NEW; END $$;
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN RETURN NEW; END $$;
+CREATE OR REPLACE FUNCTION public.sync_instructor_name_to_users()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN RETURN NEW; END $$;
+CREATE OR REPLACE FUNCTION public.update_instructors_updated_at()
+RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+CREATE OR REPLACE FUNCTION public.set_class_sessions_updated_at()
+RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+CREATE OR REPLACE FUNCTION public.detect_session_anomaly()
+RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
+
 ALTER TABLE public.instructors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.class_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
@@ -139,6 +183,10 @@ CREATE POLICY "Users can view own instructor files" ON storage.objects
     bucket_id = 'instructor_uploads'
     AND (storage.foldername(name))[2] = auth.uid()::text
   );
+CREATE POLICY "badge_icons public read" ON storage.objects
+  FOR SELECT USING (bucket_id = 'badge_icons');
+CREATE POLICY "Anyone can view content images" ON storage.objects
+  FOR SELECT USING (bucket_id = 'content-images');
 CREATE POLICY "Users can insert own likes" ON public.lesson_comment_likes
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can view own contracts" ON public.instructor_contracts
@@ -155,6 +203,7 @@ INSERT INTO public.wca_sync_config (id, secret) VALUES (1, 'old-test-secret');
 
 \ir ../supabase/migrations/20260819140407_security_hardening_release.sql
 \ir ../supabase/migrations/20260819153000_enable_core_rls.sql
+\ir ../supabase/migrations/20260819160000_restrict_definer_and_public_listing.sql
 
 DO $$
 BEGIN
@@ -166,6 +215,32 @@ BEGIN
   END IF;
   IF NOT has_function_privilege('anon', 'public.get_wca_sync_targets(text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon WCA RPC capability missing';
+  END IF;
+  IF has_function_privilege('anon', 'public.admin_link_instructor(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_teacher_stats()', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_wca_leaderboard(text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon retained a non-WCA SECURITY DEFINER capability';
+  END IF;
+  IF NOT has_function_privilege('authenticated', 'public.admin_link_instructor(uuid,uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.get_teacher_stats()', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.get_wca_leaderboard(text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated application RPC capability missing';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.guard_instructor_role()', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.handle_new_user()', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.sync_instructor_name_to_users()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'client retained direct trigger-function execution';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects'
+      AND policyname IN ('badge_icons public read', 'Anyone can view content images')
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects'
+      AND policyname = 'badge_icons admin read'
+  ) THEN
+    RAISE EXCEPTION 'public bucket listing policy was not narrowed';
   END IF;
   IF EXISTS (
     SELECT 1
