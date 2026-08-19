@@ -6,11 +6,17 @@
 -- ═══════════════════════════════════════════════════════════════════
 
 -- 1. 更新 delete_user_completely：刪除帳號時一併清除 teacher_invites
-CREATE OR REPLACE FUNCTION delete_user_completely(target_user_id uuid)
+CREATE OR REPLACE FUNCTION public.delete_user_completely(target_user_id uuid)
 RETURNS void AS $$
 DECLARE
   target_email text;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'permission denied: admin only';
+  END IF;
+
   SELECT email INTO target_email FROM auth.users WHERE id = target_user_id;
 
   DELETE FROM public.instructors WHERE user_id = target_user_id;
@@ -25,7 +31,10 @@ BEGIN
 
   DELETE FROM auth.users WHERE id = target_user_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+REVOKE ALL ON FUNCTION public.delete_user_completely(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_user_completely(uuid) TO authenticated;
 
 -- 2. 立即修正 lazydragon0247@gmail.com：清除殘留 invite 並重設為 pending
 DELETE FROM public.teacher_invites WHERE email = 'lazydragon0247@gmail.com';

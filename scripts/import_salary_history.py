@@ -27,8 +27,6 @@ SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 COMMIT = "--commit" in sys.argv
 
 SSL_CTX = ssl.create_default_context()
-SSL_CTX.check_hostname = False
-SSL_CTX.verify_mode = ssl.CERT_NONE
 
 
 # 課程種類 → course_type + role

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Trophy, Timer } from 'lucide-react';
@@ -47,21 +47,8 @@ const Layout = ({ children }) => {
 
         (async () => {
             try {
-                const { data } = await supabase
-                    .from('instructor_contracts')
-                    .select('id')
-                    .eq('user_id', user.id)
-                    .eq('status', 'signed')
-                    .limit(1);
-                if (data && data.length > 0) return;
-
-                await supabase.from('notifications').insert({
-                    user_id: user.id,
-                    type: 'contract',
-                    title: '尚未完成合約簽署',
-                    body: '請盡快前往簽署合約，完成後才算正式生效。',
-                    link: '/contract',
-                });
+                const { error } = await supabase.rpc('ensure_my_contract_reminder');
+                if (error) throw error;
             } catch (err) {
                 console.error('Contract reminder check failed:', err);
             }
@@ -325,26 +312,11 @@ const NotificationBell = ({ userId }) => {
     const [open, setOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [clockNow, setClockNow] = useState(0);
     const panelRef = useRef(null);
     const navigate = useNavigate();
 
-    useEffect(() => {
-        fetchNotifications();
-        const interval = setInterval(fetchNotifications, 30000);
-        return () => clearInterval(interval);
-    }, [userId]);
-
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (panelRef.current && !panelRef.current.contains(e.target)) {
-                setOpen(false);
-            }
-        };
-        if (open) document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [open]);
-
-    const fetchNotifications = async () => {
+    const fetchNotifications = useCallback(async () => {
         const { data } = await supabase
             .from('notifications')
             .select('*')
@@ -356,7 +328,27 @@ const NotificationBell = ({ userId }) => {
         );
         setNotifications(visibleNotifications);
         setUnreadCount(visibleNotifications.filter(n => !n.is_read).length);
-    };
+        setClockNow(Date.now());
+    }, [userId]);
+
+    useEffect(() => {
+        const initialFrame = window.requestAnimationFrame(fetchNotifications);
+        const interval = setInterval(fetchNotifications, 30000);
+        return () => {
+            window.cancelAnimationFrame(initialFrame);
+            clearInterval(interval);
+        };
+    }, [fetchNotifications]);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (panelRef.current && !panelRef.current.contains(e.target)) {
+                setOpen(false);
+            }
+        };
+        if (open) document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [open]);
 
     const markAsRead = async (notif) => {
         if (!notif.is_read) {
@@ -379,7 +371,7 @@ const NotificationBell = ({ userId }) => {
     };
 
     const timeAgo = (ts) => {
-        const diff = Date.now() - new Date(ts).getTime();
+        const diff = clockNow - new Date(ts).getTime();
         const mins = Math.floor(diff / 60000);
         if (mins < 1) return '剛剛';
         if (mins < 60) return `${mins} 分鐘前`;

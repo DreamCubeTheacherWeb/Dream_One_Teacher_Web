@@ -6,7 +6,7 @@ import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Came
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
-import { stripAdminManagedInstructorFields } from '../lib/instructorProfile';
+import { pickInstructorProfileDraftFields, stripAdminManagedInstructorFields } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
 import { canAccessInstructorContracts } from '../lib/featureFlags';
 import { PROFILE_SAVED_EVENT, REQUIRED_PROFILE_FIELDS } from '../lib/profileCompletion';
@@ -35,6 +35,11 @@ const DOC_TYPES = [
     { key: 'bankbook', label: '存摺封面', Icon: Landmark },
 ];
 
+const ALLOWED_IMAGE_TYPES = new Set([
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif',
+]);
+const IMAGE_ACCEPT = [...ALLOWED_IMAGE_TYPES].join(',');
+
 const INITIAL_FORM = {
     full_name: '', nickname: '', gender: '', birth_date: '', id_number: '',
     phone_mobile: '', phone_home: '', line_id: '', address: '', household_address: '',
@@ -52,34 +57,35 @@ const INITIAL_FORM = {
 };
 
 // ── 草稿暫存（防「填一填換頁整個不見」）──
-// 圖片本體已即時上傳 Storage，但路徑等 metadata 要等整份表單送出才會寫入 DB；
-// 因此檔案欄位也必須進草稿，否則切頁或重新掛載後會看起來像是證件消失。
-const draftKeyFor = (uid) => `profile_draft_${uid}`;
-const DRAFT_VERSION = 2;
+// 敏感文字草稿存進受 RLS 保護的資料表；檔案只在按下儲存時上傳，避免瀏覽器
+// localStorage 殘留身分證、銀行資料，或離開頁面時留下未被資料列引用的物件。
+const legacyDraftKeyFor = (uid) => `profile_draft_${uid}`;
 const BANKBOOK_FIELDS = ['bankbook_path', 'bankbook_mime', 'bankbook_size', 'bankbook_uploaded_at'];
-const pickDraftFields = (form) => stripAdminManagedInstructorFields(form);
-const clearDraft = (uid) => {
-    try { localStorage.removeItem(draftKeyFor(uid)); } catch { /* 略過 */ }
+const profileSnapshot = (form) => JSON.stringify(stripAdminManagedInstructorFields(form));
+const clearLegacyBrowserDraft = (uid) => {
+    try { localStorage.removeItem(legacyDraftKeyFor(uid)); } catch { /* 略過 */ }
 };
-const readDraft = (uid, baseSnapshot, allowLegacyDraft) => {
-    try {
-        const draft = JSON.parse(localStorage.getItem(draftKeyFor(uid)) || 'null');
-        if (!draft) return null;
+const clearDraft = async (uid) => {
+    clearLegacyBrowserDraft(uid);
+    const { error } = await supabase.from('instructor_profile_drafts').delete().eq('user_id', uid);
+    if (error && error.code !== '42P01') console.warn('Failed to clear profile draft:', error.message);
+};
+const readDraft = async (uid, baseUpdatedAt) => {
+    clearLegacyBrowserDraft(uid);
+    const { data: draft, error } = await supabase
+        .from('instructor_profile_drafts')
+        .select('data, base_updated_at')
+        .eq('user_id', uid)
+        .maybeSingle();
+    if (error || !draft?.data) return null;
 
-        if (draft.version === DRAFT_VERSION && draft.data) {
-            if (draft.baseSnapshot !== baseSnapshot) {
-                clearDraft(uid);
-                return null;
-            }
-            return stripAdminManagedInstructorFields(draft.data);
-        }
-
-        // 舊版草稿沒有基準快照：首次建檔仍可保留；已有 DB 資料時不可冒險覆蓋較新的值。
-        if (allowLegacyDraft) return stripAdminManagedInstructorFields(draft);
-        clearDraft(uid);
+    const savedBase = baseUpdatedAt ? new Date(baseUpdatedAt).toISOString() : null;
+    const draftBase = draft.base_updated_at ? new Date(draft.base_updated_at).toISOString() : null;
+    if (savedBase !== draftBase) {
+        await clearDraft(uid);
         return null;
     }
-    catch { return null; }
+    return pickInstructorProfileDraftFields(draft.data);
 };
 
 const ProfilePage = () => {
@@ -92,14 +98,17 @@ const ProfilePage = () => {
     const [form, setForm] = useState(INITIAL_FORM);
     const [savedBankbookPath, setSavedBankbookPath] = useState(null);
     const [filePreviews, setFilePreviews] = useState({});
+    const [pendingFiles, setPendingFiles] = useState({});
     const [uploading, setUploading] = useState({});
     const fileRefs = useRef({});
     const pendingStorageDeletes = useRef(new Set());
+    const pendingPreviewUrls = useRef({});
     const originalWcaId = useRef('');
-    // 草稿暫存：hydrated 為 true 後才寫 localStorage（避免載入中的空表覆蓋既有草稿）；
+    // 草稿暫存：hydrated 為 true 後才寫 server-side draft，避免載入中的空表覆蓋既有草稿；
     // savedSnapshot 記「已存進 DB 的文字欄位版本」，用來判斷是否有未儲存變更。
     const hydrated = useRef(false);
     const savedSnapshot = useRef('');
+    const savedBaseUpdatedAt = useRef(null);
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [showClaimModal, setShowClaimModal] = useState(false);
@@ -143,6 +152,9 @@ const ProfilePage = () => {
     };
 
     const loadProfile = async () => {
+        pendingStorageDeletes.current.clear();
+        Object.values(pendingPreviewUrls.current).forEach((url) => URL.revokeObjectURL(url));
+        pendingPreviewUrls.current = {};
         let { data } = await supabase
             .from('instructors')
             .select('*')
@@ -173,9 +185,10 @@ const ProfilePage = () => {
             for (const key of Object.keys(INITIAL_FORM)) {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
             }
-            // 記下「已存進 DB 的文字欄位版本」，並套用未儲存的本機草稿（若有）
-            savedSnapshot.current = JSON.stringify(pickDraftFields(formData));
-            const draft = readDraft(user.id, savedSnapshot.current, false);
+            // 記下「已存進 DB 的文字欄位版本」，並套用未儲存的伺服器草稿（若有）
+            savedSnapshot.current = profileSnapshot(formData);
+            savedBaseUpdatedAt.current = data.updated_at || null;
+            const draft = await readDraft(user.id, savedBaseUpdatedAt.current);
             nextForm = draft ? { ...formData, ...draft } : formData;
             // 功能上線前若瀏覽器留有「已儲存存摺的替換草稿」，不可讓草稿蓋過 DB 正本，
             // 否則畫面會顯示未送出的檔案，儲存時也會被後端鎖定規則拒絕。
@@ -193,15 +206,16 @@ const ProfilePage = () => {
                 full_name: profile?.name || '',
                 email_primary: user.email || '',
             };
-            savedSnapshot.current = JSON.stringify(pickDraftFields(base));
-            const draft = readDraft(user.id, savedSnapshot.current, true);
+            savedSnapshot.current = profileSnapshot(base);
+            savedBaseUpdatedAt.current = null;
+            const draft = await readDraft(user.id, null);
             nextForm = draft ? { ...base, ...draft } : base;
         }
 
         setForm(nextForm);
+        setPendingFiles({});
 
-        // 預覽要依「DB + 本機草稿」的合併結果建立；首次填寫、尚未送出時
-        // 檔案只存在 Storage 與草稿，若只看 DB 就會誤判為未上傳。
+        // 預覽依 DB 正本建立；未儲存的新檔只存在當前頁面記憶體，由選檔時另設 blob 預覽。
         const previews = {};
         const allDocKeys = ['photo', ...DOC_TYPES.map(d => d.key)];
         for (const key of allDocKeys) {
@@ -231,29 +245,41 @@ const ProfilePage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, canUseContracts]);
 
-    // 草稿自動暫存：hydrated 後，表單一有變動就寫入 localStorage（包含已上傳檔案的 metadata）
+    // 草稿自動暫存：只寫入受 RLS 保護的 server-side draft，不寫瀏覽器持久儲存。
     useEffect(() => {
-        if (!hydrated.current || !user) return;
-        try {
-            localStorage.setItem(draftKeyFor(user.id), JSON.stringify({
-                version: DRAFT_VERSION,
-                baseSnapshot: savedSnapshot.current,
-                data: pickDraftFields(form),
-            }));
-        } catch { /* localStorage 滿了或被停用就略過，不影響填寫 */ }
-    }, [form, user]);
+        if (!hydrated.current || !user || saving) return;
+        if (profileSnapshot(form) === savedSnapshot.current) return;
+        const timeout = window.setTimeout(async () => {
+            const { error } = await supabase.from('instructor_profile_drafts').upsert({
+                user_id: user.id,
+                data: pickInstructorProfileDraftFields(form),
+                base_updated_at: savedBaseUpdatedAt.current,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'user_id' });
+            if (error && error.code !== '42P01') console.warn('Failed to save profile draft:', error.message);
+        }, 700);
+        return () => window.clearTimeout(timeout);
+    }, [form, saving, user]);
 
     // 關閉分頁 / 強制重整時，若有未儲存變更，跳原生確認（站內換頁靠上面的草稿還原，不會掉資料）
     useEffect(() => {
         const handler = (e) => {
-            if (JSON.stringify(pickDraftFields(form)) !== savedSnapshot.current) {
+            if (
+                profileSnapshot(form) !== savedSnapshot.current
+                || Object.keys(pendingFiles).length > 0
+                || pendingStorageDeletes.current.size > 0
+            ) {
                 e.preventDefault();
                 e.returnValue = '';
             }
         };
         window.addEventListener('beforeunload', handler);
         return () => window.removeEventListener('beforeunload', handler);
-    }, [form]);
+    }, [form, pendingFiles]);
+
+    useEffect(() => () => {
+        Object.values(pendingPreviewUrls.current).forEach((url) => URL.revokeObjectURL(url));
+    }, []);
 
     const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -276,12 +302,12 @@ const ProfilePage = () => {
         });
     };
 
-    const handleFileUpload = async (docType, file) => {
+    const handleFileUpload = (docType, file) => {
         if (docType === 'bankbook' && savedBankbookPath && profile?.role !== 'admin') {
             alert('存摺封面已鎖定，如需更換請聯繫管理員。');
             return;
         }
-        if (!file.type.startsWith('image/')) {
+        if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
             alert('僅接受圖片檔案（JPEG、PNG、GIF、WebP）');
             return;
         }
@@ -290,35 +316,12 @@ const ProfilePage = () => {
             return;
         }
 
-        setUploading(prev => ({ ...prev, [docType]: true }));
-
-        const ext = file.name.split('.').pop();
-        const path = `instructors/${user.id}/${docType}/${crypto.randomUUID()}.${ext}`;
-
-        const { error } = await supabase.storage
-            .from('instructor_uploads')
-            .upload(path, file);
-
-        if (error) {
-            alert('上傳失敗：' + error.message);
-            setUploading(prev => ({ ...prev, [docType]: false }));
-            return;
-        }
-
-        const previousPath = form[`${docType}_path`];
-        if (previousPath && previousPath !== path) {
-            pendingStorageDeletes.current.add(previousPath);
-        }
-
-        setForm(prev => ({
-            ...prev,
-            [`${docType}_path`]: path,
-            [`${docType}_mime`]: file.type,
-            [`${docType}_size`]: file.size,
-            [`${docType}_uploaded_at`]: new Date().toISOString(),
-        }));
-        setFilePreviews(prev => ({ ...prev, [docType]: URL.createObjectURL(file) }));
-        setUploading(prev => ({ ...prev, [docType]: false }));
+        const previousPreview = pendingPreviewUrls.current[docType];
+        if (previousPreview) URL.revokeObjectURL(previousPreview);
+        const previewUrl = URL.createObjectURL(file);
+        pendingPreviewUrls.current[docType] = previewUrl;
+        setPendingFiles(prev => ({ ...prev, [docType]: file }));
+        setFilePreviews(prev => ({ ...prev, [docType]: previewUrl }));
     };
 
     const handleRemoveFile = (docType) => {
@@ -328,6 +331,14 @@ const ProfilePage = () => {
         }
         const previousPath = form[`${docType}_path`];
         if (previousPath) pendingStorageDeletes.current.add(previousPath);
+        const pendingPreview = pendingPreviewUrls.current[docType];
+        if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+        delete pendingPreviewUrls.current[docType];
+        setPendingFiles(prev => {
+            const next = { ...prev };
+            delete next[docType];
+            return next;
+        });
         setForm(prev => ({
             ...prev,
             [`${docType}_path`]: null, [`${docType}_mime`]: null,
@@ -350,7 +361,7 @@ const ProfilePage = () => {
             alert('請至少選擇一個接課地區');
             return;
         }
-        const missingDocs = DOC_TYPES.filter(d => !form[`${d.key}_path`]);
+        const missingDocs = DOC_TYPES.filter(d => !form[`${d.key}_path`] && !pendingFiles[d.key]);
         if (missingDocs.length > 0) {
             alert('以下文件尚未上傳：\n' + missingDocs.map(d => `• ${d.label}`).join('\n'));
             return;
@@ -378,18 +389,56 @@ const ProfilePage = () => {
         }
 
         setSaving(true);
-        const payload = {
-            user_id: user.id,
-            ...stripAdminManagedInstructorFields(form),
-            wca_id: form.wca_id?.trim() || null,
-        };
+        setUploading(Object.fromEntries(Object.keys(pendingFiles).map((key) => [key, true])));
+        const uploadedThisSave = [];
+        const nextForm = { ...form };
+        let savedRow = null;
+        let payload = null;
 
-        const { error } = await supabase
-            .from('instructors')
-            .upsert(payload, { onConflict: 'user_id' });
+        try {
+            for (const [docType, file] of Object.entries(pendingFiles)) {
+                const extByMime = {
+                    'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif',
+                    'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif',
+                };
+                const ext = extByMime[file.type] || 'img';
+                const path = `instructors/${user.id}/${docType}/${crypto.randomUUID()}.${ext}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('instructor_uploads')
+                    .upload(path, file);
+                if (uploadError) throw uploadError;
+                uploadedThisSave.push(path);
 
-        if (error) {
+                const previousPath = nextForm[`${docType}_path`];
+                if (previousPath && previousPath !== path) pendingStorageDeletes.current.add(previousPath);
+                nextForm[`${docType}_path`] = path;
+                nextForm[`${docType}_mime`] = file.type;
+                nextForm[`${docType}_size`] = file.size;
+                nextForm[`${docType}_uploaded_at`] = new Date().toISOString();
+            }
+
+            payload = {
+                user_id: user.id,
+                ...stripAdminManagedInstructorFields(nextForm),
+                wca_id: nextForm.wca_id?.trim() || null,
+            };
+
+            const { data, error } = await supabase
+                .from('instructors')
+                .upsert(payload, { onConflict: 'user_id' })
+                .select('updated_at')
+                .single();
+            if (error) throw error;
+            savedRow = data;
+        } catch (error) {
+            if (uploadedThisSave.length) {
+                const { error: rollbackError } = await supabase.storage
+                    .from('instructor_uploads')
+                    .remove(uploadedThisSave);
+                if (rollbackError) console.error('Failed to roll back profile uploads:', rollbackError);
+            }
             alert('儲存失敗：' + error.message);
+            setUploading({});
             setSaving(false);
             return;
         }
@@ -408,10 +457,14 @@ const ProfilePage = () => {
             }
         }
 
-        // 儲存成功：清掉本機草稿、更新「已存版本」快照（避免離開時誤跳未儲存警告）
-        clearDraft(user.id);
-        savedSnapshot.current = JSON.stringify(pickDraftFields(form));
-        setSavedBankbookPath(form.bankbook_path?.trim() || null);
+        // 儲存成功：清掉伺服器草稿、更新「已存版本」快照（避免離開時誤跳未儲存警告）
+        await clearDraft(user.id);
+        setForm(nextForm);
+        setPendingFiles({});
+        setUploading({});
+        savedSnapshot.current = profileSnapshot(nextForm);
+        savedBaseUpdatedAt.current = savedRow?.updated_at || null;
+        setSavedBankbookPath(nextForm.bankbook_path?.trim() || null);
         window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: payload }));
 
         if (profile?.role === 'pending' && isFirstTime) {
@@ -504,7 +557,7 @@ const ProfilePage = () => {
                     <input
                         ref={el => (fileRefs.current.photo = el)}
                         type="file"
-                        accept="image/*"
+                        accept={IMAGE_ACCEPT}
                         className="hidden"
                         onChange={e => {
                             if (e.target.files[0]) handleFileUpload('photo', e.target.files[0]);
@@ -777,9 +830,9 @@ const ProfilePage = () => {
                                             <X className="w-3 h-3" />
                                         </button>
                                     )}
-                                    {form[`${key}_size`] && (
+                                    {(pendingFiles[key]?.size || form[`${key}_size`]) && (
                                         <div className="text-[10px] text-bauhaus-black/50 mt-1 font-bold">
-                                            {(form[`${key}_size`] / 1024 / 1024).toFixed(1)} MB
+                                            {((pendingFiles[key]?.size || form[`${key}_size`]) / 1024 / 1024).toFixed(1)} MB
                                         </div>
                                     )}
                                 </div>
@@ -824,7 +877,7 @@ const ProfilePage = () => {
                                     ref={el => (fileRefs.current[key] = el)}
                                     data-testid={`${key}-file-input`}
                                     type="file"
-                                    accept="image/*"
+                                    accept={IMAGE_ACCEPT}
                                     className="hidden"
                                     onChange={e => {
                                         if (e.target.files[0]) handleFileUpload(key, e.target.files[0]);

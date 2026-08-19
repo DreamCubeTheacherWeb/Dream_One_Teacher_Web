@@ -62,8 +62,12 @@ DO $$ BEGIN
 END $$;
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'notifications' AND policyname = 'Staff can insert notifications') THEN
-    CREATE POLICY "Staff can insert notifications" ON public.notifications
-      FOR INSERT WITH CHECK (true);
-  END IF;
+  DROP POLICY IF EXISTS "Staff can insert notifications" ON public.notifications;
+  CREATE POLICY "Staff can insert notifications" ON public.notifications
+    FOR INSERT TO authenticated WITH CHECK (
+      EXISTS (
+        SELECT 1 FROM public.users
+        WHERE id = auth.uid() AND role IN ('admin', 'mentor')
+      )
+    );
 END $$;

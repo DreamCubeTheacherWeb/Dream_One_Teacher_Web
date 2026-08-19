@@ -30,6 +30,7 @@ import {
   normalizeCanvasFontSizePx,
   restoreTextSelection,
 } from '../lib/canvasTextFormatting';
+import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
 
 const CANVAS_WIDTH = 960;
 const MIN_CANVAS_HEIGHT = 600;
@@ -238,12 +239,12 @@ const TextBoxContent = ({ body, isEditing, onContentChange, onStartEdit }) => {
 
   useEffect(() => {
     if (ref.current && !isEditing) {
-      ref.current.innerHTML = body || '';
+      ref.current.innerHTML = sanitizeRichHtml(body || '');
     }
   }, [body, isEditing]);
 
   useEffect(() => {
-    if (ref.current) ref.current.innerHTML = body || '';
+    if (ref.current) ref.current.innerHTML = sanitizeRichHtml(body || '');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleKeyDown = (e) => {
@@ -507,7 +508,7 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
             id: c.id, dbId: c.id,
             type: isShape ? 'shape' : (c.type === 'article' ? 'text_box' : c.type === 'image_text' ? 'image' : c.type),
             x, y, width: w, height: h,
-            body: c.body || '', title: c.title || '',
+            body: sanitizeRichHtml(c.body || ''), title: c.title || '',
             videoUrl: c.video_url || '',
             storagePath: c.type === 'image_text' ? c.video_url : '',
             imageUrl, order: c.order ?? 0, locked: pos.locked ?? false,
@@ -713,7 +714,8 @@ const CanvasEditor = ({ lessonId, onBack, onSwitchToClassic }) => {
     try {
       const insertedIds = new Map();
       for (const { element, index, fingerprint } of dirtyElements) {
-        const payload = buildCanvasElementPayload(element, index, lessonId);
+        const basePayload = buildCanvasElementPayload(element, index, lessonId);
+        const payload = { ...basePayload, body: sanitizeRichHtml(basePayload.body) };
         const persistedId = element.dbId || persistedIdByClientIdRef.current.get(element.id);
         if (persistedId) {
           const { error } = await supabase.from('contents').update(payload).eq('id', persistedId);

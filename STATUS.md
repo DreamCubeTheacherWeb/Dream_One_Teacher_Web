@@ -1,9 +1,26 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-19（講師大頭照改為選填，並完成 production 缺漏名單核對）。
+> 最後更新：2026-08-19（Codex Security 正式發布：資料庫已套用，前端與 WCA 排程仍在發布流程）。
 
 ---
+
+## 🛡️ 2026-08-19：Codex Security 全專案修復（🚀 正式發布中）
+
+**完成**：新增 canonical migration `20260819140407_security_hardening_release.sql`，把個人資料完整度
+改為 DB authorization，限制講師更動管理欄位、作業回饋讀取範圍、合約與通知 client 偽造，並用
+trigger／受控 RPC 建立通知。已存存摺不得由講師覆寫或刪除；文字草稿改存受 RLS 保護的 server-side
+table，檔案延後到按下儲存才上傳。大頭照維持選填，身分證正反面與存摺仍為必填關卡。
+
+富文本儲存與顯示加入 DOMPurify allowlist，私密 PDF worker 改用同版本同源 bundle；Docker build
+context 改 allowlist 並加 CSP／安全 headers；高權限匯入工具恢復 TLS 驗證。正式 Supabase 已在每日
+備份可用的前提下，以單一 transaction 套用 migration；catalog 驗證確認 RLS、trigger、Storage
+policy、合約與 WCA grants 已生效。WCA 新值已安全擷取，但 GitHub Actions Secret 的瀏覽器更新仍待
+完成；在完成前排程同步會暫時失敗，不得恢復 Git 歷史中的舊值。
+
+**本機證據**：`npm test` 29/29；完整度／富文本真瀏覽器、草稿／檔案／存摺、管理欄位過濾與
+`npm run verify:security` 均通過。Production build 與本次檔案針對性 ESLint 通過；全專案 lint 的
+既有錯誤另行追蹤。合約功能繼續維持關閉，重開前仍需可信任 OTP、文件 hash 與簽署證據流程。
 
 ## 👤 2026-08-19：講師大頭照改為選填＋銀行資料缺漏核對（✅ 已上線）
 **需求**：大頭照不可再作為首次填寫完成或跨頁瀏覽的必填條件；同時要找出 production 最多人缺漏的
@@ -173,7 +190,7 @@ SHA-256 同為 `78af9e98b78e6dfad265a118291a87a9d5c19631881874b7307080362d3fc0d5
 
 ## 🏆 2026-07-10 深夜：WCA 自動同步端到端跑通（✅ 資料已進正式庫）
 業主跑完 autosync SQL＋主對話代生密鑰（`openssl rand -hex 32`，業主以 upsert 存入 wca_sync_config；第一次貼歪、重貼後驗證通過）。**主對話手動執行 sync.mjs（業主授權）：117 位有 WCA ID 講師全數抓取成功（0 查無 0 失敗），sync_wca_results 回報寫入 900 筆**。讀回驗證：get_wca_leaderboard 對 anon 回 authentication required（RLS 正常），畫面待業主登入 /leaderboard 看。
-**⏳ 唯一殘留**：GitHub 3 密鑰未設（gh token 無權代設）→ 排程自動重跑尚未生效，目前資料已最新、不設不會壞。`WCA_SYNC_SECRET=c88788466d1a0aa32ea76a884aa5efb70cc8095b6e1fdead26deafab3e2f2ece`（另兩個值=.env 的 URL/anon key）。說明文件已交付業主：`/Users/lazylazy/Desktop/夢想一號/WCA自動同步說明.pdf`。
+**⏳ 唯一殘留**：GitHub 3 密鑰未設（gh token 無權代設）→ 排程自動重跑尚未生效，目前資料已最新、不設不會壞。`WCA_SYNC_SECRET=[REDACTED - store only in Supabase and CI secrets]`（另兩個值=.env 的 URL/anon key）。說明文件已交付業主：`/Users/lazylazy/Desktop/夢想一號/WCA自動同步說明.pdf`。
 
 ## 🐛 2026-07-10 深夜：認領清單修復上線（✅＝5dc2f71）
 7/9 已修好的「徽章有數字、清單空白」（PGRST200 嵌入失敗）獲業主點頭隨本批上線。端到端待業主登入 /admin/claims 看清單有渲染。
@@ -1070,8 +1087,8 @@ Playwright 實測 307 個文字框放大後的真實高度 → 欄位感知堆�
 - [ ] 剩餘 18 個 lint error（immutability/set-state-in-effect/purity）逐一評估修復。
 - [ ] 採用 `src/lib/roles.js`：把 9 處散落的 `role === 'admin'` 字串比對換成 helper
       （有安全含義，改完要測）。
-- [ ] npm audit 的 5 個漏洞（react-router 等 4 high）：`npm audit fix` 會升 react-router-dom
-      主版本，**需測 23 條路由沒壞**才能上，別盲修。
+- [ ] npm audit 剩 1 個 Quill low（上游尚無新 Quill 版本）；現階段已對儲存與顯示 HTML
+      加 DOMPurify。上游釋出修復後再升級並重跑編輯器回歸。
 - [ ] 部署設定三份收斂成一份（Dockerfile／根 zbpack／培訓web zbpack），對齊 Zeabur 後台。
 - [ ] 補 `docs/`：合約、薪資、匯款、認領流程都停在開案期沒文件。
 

@@ -4,7 +4,11 @@ import { ChevronLeft, ChevronRight, ZoomIn, X, Maximize2 } from 'lucide-react';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// 私密合約由同版本、同源 bundle worker 處理，不在執行時信任第三方 CDN 程式碼。
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已完整看完且清楚這份文件的所有內容' }) => {
   const [numPages, setNumPages] = useState(null);

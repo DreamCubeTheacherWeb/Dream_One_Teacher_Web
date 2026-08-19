@@ -42,7 +42,7 @@ BEGIN
 
   DELETE FROM auth.users WHERE id = target_user_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 -- 收回 PUBLIC 的預設執行權，只留給 authenticated（真正的守衛是上面函式內的 admin 檢查）
 REVOKE ALL ON FUNCTION public.delete_user_completely(uuid) FROM PUBLIC;
@@ -90,10 +90,8 @@ CREATE POLICY "read contract documents scoped"
 -- 站內信任介面看到假的「請重新簽約」並點擊。屬釣魚放大器。
 -- 難點：不能單純「只有職員能發」，因為一般使用者對留言按讚時會合法地
 -- 發通知給留言作者（LessonDetail.jsx）；也會發合約提醒給自己（Layout.jsx）。
--- 修法（防禦式，不破壞既有流程）：職員可發任意通知；一般使用者只能發給自己、
--- 或發 type='like' 的社群通知 → 擋掉偽造 contract/system 等敏感類型的釣魚。
--- ★ 長期正解：把通知建立改成資料庫 trigger / SECURITY DEFINER 函式（server 端
---   產生），前端完全禁止 INSERT。見 STATUS.md 分階段計畫。此處為過渡加固。
+-- 修法：client 只允許職員新增；按讚與本人合約提醒由後續 canonical migration
+-- 的 trigger / SECURITY DEFINER RPC 依真實資料建立，client 不可指定收件人或內容。
 
 DROP POLICY IF EXISTS "notifications insert guarded" ON public.notifications;        -- 先清新政策自己，確保可重複執行
 DROP POLICY IF EXISTS "Staff can insert notifications" ON public.notifications;
@@ -102,12 +100,7 @@ CREATE POLICY "notifications insert guarded"
   ON public.notifications FOR INSERT
   TO authenticated
   WITH CHECK (
-    -- 職員（admin/mentor）可發任意通知
     EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('admin','mentor'))
-    -- 或：發給自己的提醒
-    OR user_id = auth.uid()
-    -- 或：一般使用者對留言按讚的社群通知
-    OR type = 'like'
   );
 
 

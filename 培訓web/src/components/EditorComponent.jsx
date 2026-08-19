@@ -4,6 +4,7 @@ import 'react-quill-new/dist/quill.snow.css';
 import { Save, ChevronLeft, Plus, Trash2, FileText, Video, Edit3, GripVertical, ImagePlus, X, Link2, LayoutGrid, List } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import CanvasEditor from './CanvasEditor';
+import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
 
 // ─── 擴展 Quill Image blot：支援 width / style 以實現自由縮放 ────────────
 const BaseImage = Quill.import('formats/image');
@@ -181,9 +182,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                     .order('order', { ascending: true });
 
                 const hasCanvasData = (contents || []).some(c => c.position_data != null);
-                if (editorMode === null) {
-                    setEditorMode(hasCanvasData ? 'canvas' : 'classic');
-                }
+                setEditorMode((currentMode) => currentMode ?? (hasCanvasData ? 'canvas' : 'classic'));
 
                 const processed = (contents || []).map(b => {
                     if (b.type === 'image_text') {
@@ -192,7 +191,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                             return { ...b, caption: parsed.caption || '', captionLink: parsed.captionLink || '' };
                         } catch { return { ...b, caption: '', captionLink: '' }; }
                     }
-                    return b;
+                    return b.type === 'article' ? { ...b, body: sanitizeRichHtml(b.body || '') } : b;
                 });
                 setBlocks(processed);
             } catch (err) {
@@ -293,7 +292,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                     title: b.title || '',
                     body: b.type === 'image_text'
                         ? JSON.stringify({ caption: b.caption || '', captionLink: b.captionLink || '' })
-                        : (b.body || ''),
+                        : sanitizeRichHtml(b.body || ''),
                     video_url: b.video_url || null,
                     order: b.order,
                     status: 'draft',
@@ -312,7 +311,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                     title: b.title || '',
                     body: b.type === 'image_text'
                         ? JSON.stringify({ caption: b.caption || '', captionLink: b.captionLink || '' })
-                        : (b.body || ''),
+                        : sanitizeRichHtml(b.body || ''),
                     video_url: b.video_url || null,
                     order: b.order,
                 };
@@ -339,7 +338,7 @@ const EditorComponent = ({ lessonId, onBack }) => {
                         return { ...b, caption: parsed.caption || '', captionLink: parsed.captionLink || '' };
                     } catch { return { ...b, caption: '', captionLink: '' }; }
                 }
-                return b;
+                    return b.type === 'article' ? { ...b, body: sanitizeRichHtml(b.body || '') } : b;
             });
             setBlocks(processedRefresh);
             alert('所有內容已儲存成功！');

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
 import { ArrowLeft, Calendar, Pin } from 'lucide-react';
 
 const TAG_COLORS = {
@@ -75,7 +76,7 @@ const AnnouncementDetail = () => {
 
                 <div
                     className="prose prose-slate max-w-none prose-img:rounded-xl prose-img:border-2 prose-img:border-bauhaus-black prose-a:text-bauhaus-blue prose-headings:font-black prose-p:leading-relaxed [&_img]:max-w-full [&_img]:h-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
-                    dangerouslySetInnerHTML={{ __html: announcement.content }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(announcement.content) }}
                 />
             </article>
 

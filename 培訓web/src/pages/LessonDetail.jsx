@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
+import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
 import { useAuth } from '../context/AuthContext';
 import { ChevronLeft, ChevronRight, Play, FileText, CheckCircle, Circle, Image as ImageIcon, MessageSquare, Send, Clock, Star, ThumbsUp, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
@@ -308,16 +309,8 @@ const LessonDetail = () => {
             setMyLikes((prev) => new Set(prev).add(commentId));
             setCommentLikes((prev) => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 }));
 
-            const comment = comments.find(c => c.id === commentId);
-            if (comment && comment.user_id !== currentUser.id) {
-                await supabase.from('notifications').insert({
-                    user_id: comment.user_id,
-                    type: 'like',
-                    title: '你的留言被按讚了',
-                    body: comment.body?.substring(0, 50) || '你的留言',
-                    link: `/courses/${courseId}/lessons/${lessonId}`,
-                });
-            }
+            // 通知由 lesson_comment_likes 的資料庫 trigger 依真實留言與課程資料建立，
+            // client 不可自行指定收件人、文案或連結。
         }
     };
 
@@ -441,7 +434,7 @@ const LessonDetail = () => {
                                 ) : (
                                     <div
                                         className="prose prose-slate prose-lg max-w-none prose-headings:font-black prose-p:leading-relaxed prose-a:text-bauhaus-blue font-medium text-bauhaus-black ql-editor lesson-content"
-                                        dangerouslySetInnerHTML={{ __html: item.body }}
+                                        dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(item.body) }}
                                     />
                                 )}
                             </div>
@@ -752,9 +745,12 @@ const CanvasViewer = ({ contents }) => {
     }, []);
 
     useEffect(() => {
-        updateScale();
+        const initialFrame = window.requestAnimationFrame(updateScale);
         window.addEventListener('resize', updateScale);
-        return () => window.removeEventListener('resize', updateScale);
+        return () => {
+            window.cancelAnimationFrame(initialFrame);
+            window.removeEventListener('resize', updateScale);
+        };
     }, [updateScale]);
 
     let canvasHeight = 600;
@@ -802,7 +798,7 @@ const CanvasViewer = ({ contents }) => {
                             {displayType === 'text_box' && (
                                 <div className="w-full h-full overflow-auto canvas-text-view"
                                     style={{ fontSize: 16, lineHeight: 1.6, wordBreak: 'break-word', padding: 12 }}
-                                    dangerouslySetInnerHTML={{ __html: item.body }} />
+                                    dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(item.body) }} />
                             )}
                             {displayType === 'image' && (() => {
                                 const imgUrl = item.video_url

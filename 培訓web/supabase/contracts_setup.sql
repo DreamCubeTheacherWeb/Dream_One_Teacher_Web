@@ -182,13 +182,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
-DO $$ BEGIN
-  CREATE POLICY "Users can insert own contracts"
-    ON public.instructor_contracts FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = user_id);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- 合約完成紀錄屬法律／稽核資料，不接受 client 直接 INSERT。
+-- 前台簽約功能恢復前，必須改由可信 RPC / Edge Function 驗證 OTP 與文件 hash 後建立。
+DROP POLICY IF EXISTS "Users can insert own contracts" ON public.instructor_contracts;
 
 DO $$ BEGIN
   CREATE POLICY "Admins can do everything on contracts"
@@ -215,13 +211,22 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Storage Policies
 
-DO $$ BEGIN
-  CREATE POLICY "Authenticated can read contract documents storage"
-    ON storage.objects FOR SELECT
-    TO authenticated
-    USING (bucket_id = 'contract-documents');
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+DROP POLICY IF EXISTS "Authenticated can read contract documents storage" ON storage.objects;
+DROP POLICY IF EXISTS "read contract documents scoped" ON storage.objects;
+CREATE POLICY "read contract documents scoped"
+  ON storage.objects FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'contract-documents'
+    AND (
+      EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('admin', 'mentor'))
+      OR (
+        (storage.foldername(name))[1] = 'signed'
+        AND (storage.foldername(name))[2] = auth.uid()::text
+      )
+      OR (storage.foldername(name))[1] IS DISTINCT FROM 'signed'
+    )
+  );
 
 DO $$ BEGIN
   CREATE POLICY "Admins can upload contract documents"
@@ -277,6 +282,12 @@ RETURNS void AS $$
 DECLARE
   target_email text;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'permission denied: admin only';
+  END IF;
+
   SELECT email INTO target_email FROM auth.users WHERE id = target_user_id;
 
   DELETE FROM public.instructor_contracts WHERE user_id = target_user_id;
@@ -293,4 +304,7 @@ BEGIN
 
   DELETE FROM auth.users WHERE id = target_user_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+REVOKE ALL ON FUNCTION public.delete_user_completely(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_user_completely(uuid) TO authenticated;

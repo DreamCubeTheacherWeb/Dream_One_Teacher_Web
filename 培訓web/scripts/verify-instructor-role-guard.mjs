@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripAdminManagedInstructorFields } from '../src/lib/instructorProfile.js';
+import { pickInstructorProfileDraftFields, stripAdminManagedInstructorFields } from '../src/lib/instructorProfile.js';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relativePath) => readFileSync(path.join(appDir, relativePath), 'utf8');
@@ -27,6 +27,17 @@ check('講師端 payload 會移除 instructor_role', () => {
     assert.equal(original.instructor_role, 'S', '不可改動原始表單物件');
 });
 
+check('伺服器端草稿不留檔案路徑或管理欄位', () => {
+    const filtered = pickInstructorProfileDraftFields({
+        full_name: '測試講師',
+        id_front_path: 'private/id-front.png',
+        bankbook_mime: 'image/png',
+        instructor_role: 'S',
+        note_internal: '不可寫入',
+    });
+    assert.deepEqual(filtered, { full_name: '測試講師' });
+});
+
 const profilePage = read('src/pages/ProfilePage.jsx');
 const roleFieldStart = profilePage.indexOf('<Field label="講師等級">');
 const roleFieldEnd = profilePage.indexOf('<Field label="接課頻率（學期間）"', roleFieldStart);
@@ -39,8 +50,8 @@ check('講師個人頁的等級欄沒有下拉選單', () => {
 });
 
 check('講師端草稿與儲存請求都套用管理欄位過濾', () => {
-    assert.match(profilePage, /pickDraftFields\s*=\s*\(form\)\s*=>\s*stripAdminManagedInstructorFields\(form\)/);
-    assert.match(profilePage, /\.\.\.stripAdminManagedInstructorFields\(form\)/);
+    assert.match(profilePage, /data:\s*pickInstructorProfileDraftFields\(form\)/);
+    assert.match(profilePage, /\.\.\.stripAdminManagedInstructorFields\(nextForm\)/);
     assert.doesNotMatch(profilePage, /instructor_role:\s*form\.instructor_role/);
 });
 

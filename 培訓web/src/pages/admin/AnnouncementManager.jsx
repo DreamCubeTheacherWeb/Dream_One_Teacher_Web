@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { Megaphone, Plus, Edit2, Trash2, Pin, PinOff, Eye, EyeOff, X, Save } from 'lucide-react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
+import { sanitizeRichHtml } from '../../lib/sanitizeRichHtml';
 
 const QUILL_MODULES = {
     toolbar: [
@@ -25,11 +26,7 @@ const AnnouncementManager = () => {
     const [editing, setEditing] = useState(null);
     const [form, setForm] = useState(EMPTY_FORM);
 
-    useEffect(() => {
-        fetchAnnouncements();
-    }, []);
-
-    const fetchAnnouncements = async () => {
+    const fetchAnnouncements = useCallback(async () => {
         setLoading(true);
         const { data } = await supabase
             .from('announcements')
@@ -38,7 +35,12 @@ const AnnouncementManager = () => {
             .order('created_at', { ascending: false });
         setAnnouncements(data || []);
         setLoading(false);
-    };
+    }, []);
+
+    useEffect(() => {
+        const initialFrame = window.requestAnimationFrame(fetchAnnouncements);
+        return () => window.cancelAnimationFrame(initialFrame);
+    }, [fetchAnnouncements]);
 
     const openCreate = () => {
         setEditing('new');
@@ -60,11 +62,16 @@ const AnnouncementManager = () => {
             alert('請填寫標題與內容');
             return;
         }
+        const sanitizedContent = sanitizeRichHtml(form.content);
+        if (!sanitizedContent.trim()) {
+            alert('公告內容清理後為空白，請重新輸入');
+            return;
+        }
 
         if (editing === 'new') {
             const { data: inserted, error } = await supabase.from('announcements').insert({
                 title: form.title,
-                content: form.content,
+                content: sanitizedContent,
                 tag: form.tag,
                 pinned: form.pinned,
                 published: form.published,
@@ -90,7 +97,7 @@ const AnnouncementManager = () => {
         } else {
             const { error } = await supabase.from('announcements').update({
                 title: form.title,
-                content: form.content,
+                content: sanitizedContent,
                 tag: form.tag,
                 pinned: form.pinned,
                 published: form.published,
@@ -253,7 +260,7 @@ const AnnouncementManager = () => {
                                     </span>
                                 </div>
                                 <h3 className="font-black text-bauhaus-black mb-1">{a.title}</h3>
-                                <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-2 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
+                                <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-2 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(a.content) }} />
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
                                 <button onClick={() => togglePinned(a)} className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-bauhaus-black/30 hover:text-bauhaus-red transition-colors" title={a.pinned ? '取消置頂' : '置頂'}>

@@ -149,7 +149,9 @@ CREATE POLICY "Users can insert own instructor profile"
 
 CREATE POLICY "Users can update own instructor profile"
   ON public.instructors FOR UPDATE
-  USING (auth.uid() = user_id);
+  TO authenticated
+  USING ((SELECT auth.uid()) = user_id)
+  WITH CHECK ((SELECT auth.uid()) = user_id);
 
 CREATE POLICY "Admins can do everything on instructors"
   ON public.instructors FOR ALL
@@ -201,6 +203,19 @@ CREATE POLICY "Users can update own instructor files"
     bucket_id = 'instructor_uploads'
     AND (storage.foldername(name))[1] = 'instructors'
     AND (storage.foldername(name))[2] = auth.uid()::text
+    AND NOT EXISTS (
+      SELECT 1 FROM public.instructors i
+      WHERE i.user_id = auth.uid() AND NULLIF(BTRIM(i.bankbook_path), '') = name
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'instructor_uploads'
+    AND (storage.foldername(name))[1] = 'instructors'
+    AND (storage.foldername(name))[2] = auth.uid()::text
+    AND NOT EXISTS (
+      SELECT 1 FROM public.instructors i
+      WHERE i.user_id = auth.uid() AND NULLIF(BTRIM(i.bankbook_path), '') = name
+    )
   );
 
 CREATE POLICY "Users can delete own instructor files"
@@ -210,6 +225,10 @@ CREATE POLICY "Users can delete own instructor files"
     bucket_id = 'instructor_uploads'
     AND (storage.foldername(name))[1] = 'instructors'
     AND (storage.foldername(name))[2] = auth.uid()::text
+    AND NOT EXISTS (
+      SELECT 1 FROM public.instructors i
+      WHERE i.user_id = auth.uid() AND NULLIF(BTRIM(i.bankbook_path), '') = name
+    )
   );
 
 CREATE POLICY "Admins can view all instructor files"
@@ -274,11 +293,17 @@ CREATE POLICY "Admins can delete all instructor files"
 -- ═══════════════════════════════════════════════════════════════════
 -- 管理員從後台刪除講師時，同時清除 auth 帳號，避免「帳號已註冊」的殘留問題
 
-CREATE OR REPLACE FUNCTION delete_user_completely(target_user_id uuid)
+CREATE OR REPLACE FUNCTION public.delete_user_completely(target_user_id uuid)
 RETURNS void AS $$
 DECLARE
   target_email text;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'permission denied: admin only';
+  END IF;
+
   SELECT email INTO target_email FROM auth.users WHERE id = target_user_id;
 
   DELETE FROM public.instructors WHERE user_id = target_user_id;
@@ -293,4 +318,7 @@ BEGIN
 
   DELETE FROM auth.users WHERE id = target_user_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+REVOKE ALL ON FUNCTION public.delete_user_completely(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_user_completely(uuid) TO authenticated;

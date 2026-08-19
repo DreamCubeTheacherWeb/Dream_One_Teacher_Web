@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
 import {
     BookOpen, Target, Heart, Sparkles, ChevronRight,
     Megaphone, Pin, Calendar, Users, Star, ArrowRight,
@@ -311,7 +312,7 @@ const HomePage = () => {
                                         </div>
 
                                         <h3 className="font-black text-bauhaus-black mb-2 leading-snug line-clamp-2 md:line-clamp-none">{a.title}</h3>
-                                        <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-3 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: a.content }} />
+                                        <div className="text-sm text-bauhaus-black/60 leading-relaxed line-clamp-3 [&_img]:hidden [&_p]:m-0" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(a.content) }} />
                                         <span className="inline-block mt-3 text-xs font-bold text-bauhaus-blue">閱讀更多 →</span>
                                     </Link>
                                 );

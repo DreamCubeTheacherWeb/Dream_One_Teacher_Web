@@ -6,7 +6,7 @@
  *  T2 「同通訊地址」按鈕：填通訊地址 → 按鈕 → 戶籍地址 = 通訊地址
  *  T3 戶籍地址欄存在且為必填標記
  *  T4 既有講師（無草稿、新 context）：表單顯示 DB 值，草稿合併不干擾正常載入
- *  T5 每欄變動即寫入帶基準快照的 localStorage 草稿
+ *  T5 每欄變動只寫入受 RLS 保護的伺服器草稿，localStorage 不留 PII
  *  T6 DB 已更新時，舊草稿不可覆蓋新資料
  *  T7 檔案替換失敗不刪舊檔；成功替換則 DB 儲存後才刪舊檔
  *  T8 只按移除但尚未儲存時，不可先刪 Storage 舊檔
@@ -53,6 +53,7 @@ let requestEvents = [];
 let currentRole = 'teacher';
 let lastInstructorSaveBody = null;
 let signMode = 'success';
+let draftRow = null;
 
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=';
 
@@ -112,6 +113,18 @@ async function handleRoute(route) {
             if (table === 'instructors') {
                 requestEvents.push('db-save');
                 try { lastInstructorSaveBody = JSON.parse(req.postData() || '{}'); } catch { lastInstructorSaveBody = null; }
+                return route.fulfill({
+                    status: 201,
+                    headers: { 'content-type': 'application/json' },
+                    body: wantsObject ? JSON.stringify({ updated_at: NOW }) : '[]',
+                });
+            }
+            if (table === 'instructor_profile_drafts') {
+                if (method === 'DELETE') {
+                    draftRow = null;
+                } else {
+                    try { draftRow = JSON.parse(req.postData() || '{}'); } catch { draftRow = null; }
+                }
             }
             return route.fulfill({ status: 201, headers: { 'content-type': 'application/json' }, body: wantsObject ? '{}' : '[]' });
         }
@@ -123,6 +136,7 @@ async function handleRoute(route) {
                 break;
             }
             case 'instructors': data = wantsObject ? instructorRow : (instructorRow ? [instructorRow] : []); break;
+            case 'instructor_profile_drafts': data = wantsObject ? draftRow : (draftRow ? [draftRow] : []); break;
             default: data = wantsObject ? null : [];
         }
         return jsonRes(route, data);
@@ -169,7 +183,7 @@ async function main() {
     let browser;
     try {
         await waitForServer(BASE, 15000);
-        browser = await chromium.launch();
+        browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
 
         // ── T1 / T3 / T5：首次填寫者，填字 → 重整 → 還原 ──
         instructorRow = null;
@@ -185,12 +199,12 @@ async function main() {
         await page.fill(`input[placeholder="${ADDR}"]`, '台北市信義區通訊路 1 號');
         await page.fill(`input[placeholder="${HOUSE}"]`, '新北市板橋區戶籍街 2 號');
         await page.fill(`input[placeholder="${BRANCH}"]`, '仁愛分行測試');
-        await page.waitForTimeout(400); // 等 autosave effect
+        await page.waitForTimeout(900); // 等 server-side autosave debounce
 
-        // T5：localStorage 有草稿且含剛填的值
+        // T5：只在伺服器草稿有剛填的值，localStorage 不留敏感資料
         const draftRaw = await page.evaluate((uid) => window.localStorage.getItem(`profile_draft_${uid}`), UID);
-        let draft = null; try { draft = JSON.parse(draftRaw); } catch { /* ignore */ }
-        assert('T5 草稿寫入 localStorage', draft?.version === 2 && draft.data?.address === '台北市信義區通訊路 1 號' && draft.data?.household_address === '新北市板橋區戶籍街 2 號' && draft.data?.bank_branch === '仁愛分行測試' && typeof draft.baseSnapshot === 'string', draftRaw ? 'v2 draft 已寫入' : 'draft 為空');
+        assert('T5a 草稿寫入伺服器資料表', draftRow?.data?.address === '台北市信義區通訊路 1 號' && draftRow.data?.household_address === '新北市板橋區戶籍街 2 號' && draftRow.data?.bank_branch === '仁愛分行測試');
+        assert('T5b localStorage 不留個資草稿', draftRaw === null, draftRaw ? '仍有舊草稿' : '無草稿');
 
         // T1：重整 /profile（等同換頁走開再回來，且更嚴格＝整頁 reload）
         await gotoProfile(page);
@@ -204,6 +218,7 @@ async function main() {
 
         // ── T2：同通訊地址按鈕（乾淨 context 無草稿）──
         instructorRow = null;
+        draftRow = null;
         ctx = await newCtx(browser);
         page = await ctx.newPage();
         await gotoProfile(page);
@@ -227,7 +242,9 @@ async function main() {
             bank_account_number: '123456789', bank_code: '0080012',
             photo_path: null, id_front_path: null, id_back_path: null, bankbook_path: null,
             hide_from_leaderboard: false,
+            updated_at: NOW,
         };
+        draftRow = null;
         ctx = await newCtx(browser);
         page = await ctx.newPage();
         await gotoProfile(page);
@@ -242,6 +259,7 @@ async function main() {
 
         // ── T6：舊草稿不得覆蓋較新的 DB ──
         instructorRow = { ...instructorRow, address: 'DB 最新通訊地址' };
+        draftRow = null;
         ctx = await newCtx(browser, { address: '舊版未送出草稿地址' });
         page = await ctx.newPage();
         await gotoProfile(page);
@@ -249,14 +267,15 @@ async function main() {
         assert('T6a 舊版草稿不覆蓋既有 DB', legacyShown === 'DB 最新通訊地址', `got="${legacyShown}"`);
         await page.close(); await ctx.close();
 
-        instructorRow = { ...instructorRow, address: 'DB 基準地址' };
+        instructorRow = { ...instructorRow, address: 'DB 基準地址', updated_at: '2026-08-19T00:00:00.000Z' };
+        draftRow = null;
         ctx = await newCtx(browser);
         page = await ctx.newPage();
         page.on('dialog', (dialog) => dialog.accept());
         await gotoProfile(page);
         await page.fill(`input[placeholder="${ADDR}"]`, '目前未送出草稿');
-        await page.waitForTimeout(400);
-        instructorRow = { ...instructorRow, address: 'DB 後來更新地址' };
+        await page.waitForTimeout(900);
+        instructorRow = { ...instructorRow, address: 'DB 後來更新地址', updated_at: '2026-08-19T00:01:00.000Z' };
         await gotoProfile(page);
         const updatedShown = await page.inputValue(`input[placeholder="${ADDR}"]`);
         assert('T6b DB 基準改變時丟棄版本化舊草稿', updatedShown === 'DB 後來更新地址', `got="${updatedShown}"`);
@@ -285,6 +304,7 @@ async function main() {
         page.on('dialog', (dialog) => dialog.dismiss());
         await gotoProfile(page);
         await page.locator('input[type="file"]').first().setInputFiles(replacement);
+        await page.getByRole('button', { name: '儲存個人資料' }).click();
         await page.waitForTimeout(500);
         assert('T7a 替換上傳失敗不刪舊檔', requestEvents.join(' > ') === 'upload-new-failed', `events=${requestEvents.join(' > ')}`);
         await page.close(); await ctx.close();
@@ -322,15 +342,16 @@ async function main() {
         assert('T9b 一般講師的已儲存存摺鎖定', bankbookLockedNotice === 1 && teacherBankbookInput === 0 && teacherBankbookRemove === 0,
             `notice=${bankbookLockedNotice}, input=${teacherBankbookInput}, remove=${teacherBankbookRemove}`);
 
-        await page.fill(`input[placeholder="${ADDR}"]`, 'DB通訊地址暫存');
-        await page.waitForTimeout(300);
-        const persistedDraft = await page.evaluate((uid) => JSON.parse(window.localStorage.getItem(`profile_draft_${uid}`)), UID);
-        persistedDraft.data.bankbook_path = 'draft/rogue-bankbook.png';
-        persistedDraft.data.bankbook_mime = 'image/png';
-        persistedDraft.data.bankbook_size = 999;
-        await page.evaluate(({ uid, draft }) => {
-            window.localStorage.setItem(`profile_draft_${uid}`, JSON.stringify(draft));
-        }, { uid: UID, draft: persistedDraft });
+        draftRow = {
+            user_id: UID,
+            base_updated_at: completeRow.updated_at,
+            data: {
+                address: 'DB通訊地址暫存',
+                bankbook_path: 'draft/rogue-bankbook.png',
+                bankbook_mime: 'image/png',
+                bankbook_size: 999,
+            },
+        };
         page.on('dialog', (dialog) => dialog.accept());
         await page.reload({ waitUntil: 'networkidle' });
         await page.waitForSelector(`input[placeholder="${ADDR}"]`, { timeout: 10000 });

@@ -10,7 +10,8 @@
  *  R5 teacher + 只缺戶籍地址                 → 應導回 /profile
  *  R6 teacher + 未完成但開公告               → 依產品例外留在公告頁
  *  R7 在 /profile 補齊後第一次點課程         → 不可被舊狀態彈回
- *  R8 六位匿名未註冊樣本的缺漏分布           → 四個受保護頁面全部導回 /profile
+ *  R8 富文本內容安全                         → 阻擋可執行內容並保留安全版型
+ *  R9 六位匿名未註冊樣本的缺漏分布           → 四個受保護頁面全部導回 /profile
  * 用法：
  *   本地最新 build：node scripts/verify-complete-gate.mjs
  *   正式站 bundle：VERIFY_BASE_URL=https://example.com node scripts/verify-complete-gate.mjs
@@ -55,13 +56,14 @@ const TEXT_KEYS = ['full_name','nickname','gender','birth_date','id_number','pho
     'bank_account_name','bank_name','bank_branch','bank_account_number','bank_code'];
 
 let instructorRow = null; // 每情境切換
+let announcementRow = null;
 
 const textFilled = { id: 'inst-1', user_id: UID, teaching_regions: ['臺北市'], instructor_role: null,
     photo_path: null, id_front_path: null, id_back_path: null, bankbook_path: null, hide_from_leaderboard: false };
 for (const k of TEXT_KEYS) textFilled[k] = '有值';
 const allComplete = { ...textFilled, photo_path: 'u/p.jpg', id_front_path: 'u/f.jpg', id_back_path: 'u/b.jpg', bankbook_path: 'u/k.jpg' };
 const photoOptionalComplete = { ...allComplete, photo_path: null };
-const SAMPLE_MISSING_COUNTS = [12, 13, 13, 14, 14, 20];
+const SAMPLE_MISSING_COUNTS = [11, 12, 12, 13, 13, 19];
 const PROTECTED_ROUTES = ['/courses', '/leaderboard', '/cube', '/my/salary'];
 const MISSING_ORDER = [
     'bankbook_path', 'id_front_path', 'id_back_path', 'household_address',
@@ -105,6 +107,11 @@ async function handleRoute(route) {
         switch (table) {
             case 'users': data = wantsObject ? SELF : [SELF]; break;
             case 'instructors': data = wantsObject ? instructorRow : (instructorRow ? [instructorRow] : []); break;
+            case 'announcements': {
+                const expectsSingle = wantsObject || url.searchParams.has('id');
+                data = expectsSingle ? announcementRow : (announcementRow ? [announcementRow] : []);
+                break;
+            }
             default: data = wantsObject ? null : [];
         }
         return jsonRes(route, data);
@@ -172,6 +179,52 @@ async function verifyOptionalPhotoProfile(browser) {
     return { optionalHint, dialogMessages };
 }
 
+async function inspectSanitizedAnnouncement(browser) {
+    announcementRow = {
+        id: 'security-html', title: '安全公告', tag: '測試', pinned: false, published: true, created_at: NOW,
+        content: [
+            '<p id="safe-rich-text">安全內容</p>',
+            '<img id="event-image" src="/missing.png" onerror="window.__richXss=1">',
+            '<a id="bad-rich-link" href="javascript:window.__richXss=2">壞連結</a>',
+            '<iframe id="bad-rich-frame" src="https://evil.example/embed/1"></iframe>',
+            '<img id="inline-rich-image" src="data:image/png;base64,iVBORw0KGgo=">',
+            '<div class="course-card" style="display:flex;gap:12px;position:fixed;background-image:url(javascript:alert(1))">課程卡片</div>',
+        ].join(''),
+    };
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
+    await ctx.route('**/*', handleRoute);
+    const page = await ctx.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    await page.goto(`${BASE}/announcements/security-html`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.waitForTimeout(800);
+    const state = await page.evaluate(() => ({
+        pathname: window.location.pathname,
+        safeTextCount: [...document.querySelectorAll('article p')].filter((node) => node.textContent === '安全內容').length,
+        bodyText: document.body.innerText.slice(0, 160),
+        xss: window.__richXss || 0,
+        eventHandler: document.querySelector('article img[src="/missing.png"]')?.getAttribute('onerror') || null,
+        badHref: [...document.querySelectorAll('article a')].find((node) => node.textContent === '壞連結')?.getAttribute('href') || null,
+        badFrameCount: document.querySelectorAll('article iframe').length,
+        inlineImageCount: [...document.querySelectorAll('article img')].filter((node) => node.getAttribute('src')?.startsWith('data:image/png;base64,')).length,
+        layoutStyles: (() => {
+            const card = document.querySelector('article .course-card');
+            return {
+                className: card?.className || '',
+                display: card?.style.display || '',
+                gap: card?.style.gap || '',
+                position: card?.style.position || '',
+                backgroundImage: card?.style.backgroundImage || '',
+            };
+        })(),
+    }));
+    state.pageErrors = pageErrors;
+    await ctx.close();
+    announcementRow = null;
+    return state;
+}
+
 async function main() {
     let preview = null;
     if (IS_REMOTE) {
@@ -184,7 +237,7 @@ async function main() {
     let browser;
     try {
         await waitForServer(BASE, 15000);
-        browser = await chromium.launch();
+        browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
         let L;
         instructorRow = null; L = await landing(browser);
         assert('R1 無 instructors 列 → 導回 /profile', L === '/profile', `landed=${L}`);
@@ -208,12 +261,30 @@ async function main() {
         L = await completeThenOpenCourses(browser);
         assert('R7 補齊後第一次點課程不被彈回', L === '/courses', `landed=${L}`);
 
+        const richHtml = await inspectSanitizedAnnouncement(browser);
+        assert(
+            'R8 富文本阻擋可執行內容，保留安全圖片與課程版型',
+            richHtml.xss === 0
+                && richHtml.pathname === '/announcements/security-html'
+                && richHtml.safeTextCount === 1
+                && richHtml.eventHandler === null
+                && richHtml.badHref === null
+                && richHtml.badFrameCount === 0
+                && richHtml.inlineImageCount === 1
+                && richHtml.layoutStyles.className.includes('course-card')
+                && richHtml.layoutStyles.display === 'flex'
+                && richHtml.layoutStyles.gap === '12px'
+                && richHtml.layoutStyles.position === ''
+                && richHtml.layoutStyles.backgroundImage === '',
+            JSON.stringify(richHtml),
+        );
+
         for (const [index, missingCount] of SAMPLE_MISSING_COUNTS.entries()) {
             instructorRow = sampleWithMissingCount(missingCount, index);
             for (const routePath of PROTECTED_ROUTES) {
                 L = await landing(browser, routePath);
                 assert(
-                    `R8-${index + 1} 匿名樣本缺 ${missingCount} 項，${routePath} 導回 /profile`,
+                    `R9-${index + 1} 匿名樣本缺 ${missingCount} 項，${routePath} 導回 /profile`,
                     L === '/profile',
                     `landed=${L}`,
                 );

@@ -18,12 +18,18 @@ CREATE INDEX IF NOT EXISTS idx_assignment_feedbacks_created
 
 ALTER TABLE public.assignment_feedbacks ENABLE ROW LEVEL SECURITY;
 
--- 所有登入用戶可讀取回饋（講師需看到自己作業的回饋）
+-- 講師只讀自己作業的回饋；輔導員／管理員讀全部以進行批改。
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'assignment_feedbacks' AND policyname = 'Anyone can read feedbacks') THEN
-    CREATE POLICY "Anyone can read feedbacks" ON public.assignment_feedbacks
-      FOR SELECT USING (auth.uid() IS NOT NULL);
-  END IF;
+  DROP POLICY IF EXISTS "Anyone can read feedbacks" ON public.assignment_feedbacks;
+  DROP POLICY IF EXISTS "Scoped assignment feedback reads" ON public.assignment_feedbacks;
+  CREATE POLICY "Scoped assignment feedback reads" ON public.assignment_feedbacks
+    FOR SELECT TO authenticated USING (
+      EXISTS (SELECT 1 FROM public.users u WHERE u.id = auth.uid() AND u.role IN ('admin', 'mentor'))
+      OR EXISTS (
+        SELECT 1 FROM public.assignments a
+        WHERE a.id = assignment_id AND a.user_id = auth.uid()
+      )
+    );
 END $$;
 
 -- 輔導員/管理員可新增回饋

@@ -6,6 +6,16 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const AuthContext = createContext({});
 
+const clearLegacyProfileDrafts = () => {
+    try {
+        Object.keys(localStorage).forEach((key) => {
+            if (key.startsWith('profile_draft_')) {
+                localStorage.removeItem(key);
+            }
+        });
+    } catch { /* localStorage 可能被瀏覽器停用 */ }
+};
+
 // 用原生 fetch 查 PostgREST，完全繞開 Supabase SDK 的 AbortController
 async function rawQuery(table, params, accessToken) {
     const qs = new URLSearchParams(params).toString();
@@ -155,6 +165,7 @@ export const AuthProvider = ({ children }) => {
             if (!isMounted) return;
 
             if (_event === 'SIGNED_OUT') {
+                clearLegacyProfileDrafts();
                 setUser(null);
                 setProfile(null);
                 setInstructorProfile(null);
@@ -170,6 +181,7 @@ export const AuthProvider = ({ children }) => {
 
             // INITIAL_SESSION / SIGNED_IN：只設 user，profile 交給下面的 useEffect
             if (session?.user) {
+                clearLegacyProfileDrafts();
                 setUser(session.user);
             } else if (_event === 'INITIAL_SESSION') {
                 setLoading(false);
@@ -196,6 +208,7 @@ export const AuthProvider = ({ children }) => {
 
     const signOut = async () => {
         try {
+            clearLegacyProfileDrafts();
             await supabase.auth.signOut();
             window.location.href = '/';
         } catch (err) {

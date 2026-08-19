@@ -32,10 +32,9 @@ from urllib.request import Request, urlopen
 from urllib.parse import quote
 from urllib.error import HTTPError
 
-# Mac Python 沒裝 CA 憑證的權宜處理 — 因為 host 是已知的 supabase.co
+# 使用系統 CA 驗證 Supabase 憑證與 hostname；若本機缺 CA，請設定 SSL_CERT_FILE，
+# 不得為了讓匯入成功而關閉驗證，否則 service-role key 會暴露給中間人。
 SSL_CTX = ssl.create_default_context()
-SSL_CTX.check_hostname = False
-SSL_CTX.verify_mode = ssl.CERT_NONE
 
 BASE = Path(__file__).resolve().parent.parent
 IN_JSON = BASE / "scripts" / "instructors_merged_preview.json"

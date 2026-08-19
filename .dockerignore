@@ -1,5 +1,12 @@
-培訓web/node_modules
-培訓web/dist
-培訓web/.env
-培訓web/.env.local
-.git
+**
+!培訓web/
+!培訓web/package.json
+!培訓web/package-lock.json
+!培訓web/index.html
+!培訓web/vite.config.js
+!培訓web/postcss.config.js
+!培訓web/tailwind.config.js
+!培訓web/src/
+!培訓web/src/**
+!培訓web/public/
+!培訓web/public/**
