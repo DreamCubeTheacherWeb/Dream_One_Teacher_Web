@@ -20,7 +20,14 @@ RETURNS text[] LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 CREATE TABLE auth.users (id uuid PRIMARY KEY, email text);
-CREATE TABLE public.users (id uuid PRIMARY KEY, role text NOT NULL);
+CREATE TABLE public.users (
+  id uuid PRIMARY KEY,
+  name text,
+  email text,
+  role text NOT NULL,
+  mentor_name text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE public.instructors (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid UNIQUE,
   full_name text, nickname text, gender text, birth_date date, id_number text,
@@ -34,6 +41,16 @@ CREATE TABLE public.instructors (
   id_front_external_url text, id_back_external_url text, photo_external_url text, bankbook_external_url text,
   wca_name text, wca_synced_at timestamptz, hide_from_leaderboard boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE public.class_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  instructor_id uuid,
+  duration_hours numeric,
+  total_salary numeric,
+  paid_amount numeric,
+  month_label text,
+  session_date date,
+  status text
 );
 CREATE TABLE storage.objects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), bucket_id text, name text);
 CREATE TABLE public.courses (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), is_published boolean NOT NULL DEFAULT false);
@@ -65,6 +82,7 @@ CREATE OR REPLACE FUNCTION public.sync_wca_results(text, jsonb)
 RETURNS jsonb LANGUAGE sql SECURITY DEFINER AS $$ SELECT '{}'::jsonb $$;
 
 ALTER TABLE public.instructors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.class_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lessons ENABLE ROW LEVEL SECURITY;
@@ -80,6 +98,37 @@ CREATE POLICY "Users can view own instructor profile" ON public.instructors
   FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own instructor profile" ON public.instructors
   FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Staff can view all instructors" ON public.instructors
+  FOR SELECT TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.users
+      WHERE id = auth.uid() AND role IN ('admin', 'mentor')
+    )
+  );
+CREATE POLICY "Instructors view own sessions" ON public.class_sessions
+  FOR SELECT TO authenticated USING (
+    instructor_id IN (
+      SELECT id FROM public.instructors WHERE user_id = auth.uid()
+    )
+  );
+CREATE POLICY "Staff view all sessions" ON public.class_sessions
+  FOR SELECT TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.users
+      WHERE id = auth.uid() AND role IN ('admin', 'mentor')
+    )
+  );
+
+CREATE VIEW public.instructor_salary_summary AS
+SELECT
+  i.id AS instructor_id,
+  i.user_id,
+  i.full_name,
+  count(s.id) AS total_sessions,
+  COALESCE(sum(s.total_salary), 0::numeric) AS total_salary
+FROM public.instructors i
+LEFT JOIN public.class_sessions s ON s.instructor_id = i.id
+GROUP BY i.id, i.user_id, i.full_name;
 CREATE POLICY "Users can upload own instructor files" ON storage.objects
   FOR INSERT TO authenticated WITH CHECK (
     bucket_id = 'instructor_uploads'
@@ -105,6 +154,7 @@ GRANT EXECUTE ON FUNCTION public.get_wca_sync_targets(text), public.sync_wca_res
 INSERT INTO public.wca_sync_config (id, secret) VALUES (1, 'old-test-secret');
 
 \ir ../supabase/migrations/20260819140407_security_hardening_release.sql
+\ir ../supabase/migrations/20260819153000_enable_core_rls.sql
 
 DO $$
 BEGIN
@@ -117,17 +167,41 @@ BEGIN
   IF NOT has_function_privilege('anon', 'public.get_wca_sync_targets(text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'anon WCA RPC capability missing';
   END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname IN ('users', 'courses', 'lessons', 'contents', 'assignments')
+      AND NOT c.relrowsecurity
+  ) THEN
+    RAISE EXCEPTION 'core public table still has RLS disabled';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'instructor_salary_summary'
+      AND 'security_invoker=true' = ANY (c.reloptions)
+  ) THEN
+    RAISE EXCEPTION 'salary view is not security_invoker';
+  END IF;
 END;
 $$;
 
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-4000-8000-000000000001', 'teacher@test.local'),
   ('00000000-0000-4000-8000-000000000002', 'other@test.local'),
-  ('00000000-0000-4000-8000-000000000003', 'admin@test.local');
-INSERT INTO public.users (id, role) VALUES
-  ('00000000-0000-4000-8000-000000000001', 'teacher'),
-  ('00000000-0000-4000-8000-000000000002', 'teacher'),
-  ('00000000-0000-4000-8000-000000000003', 'admin');
+  ('00000000-0000-4000-8000-000000000003', 'admin@test.local'),
+  ('00000000-0000-4000-8000-000000000004', 'mentor@test.local'),
+  ('00000000-0000-4000-8000-000000000005', 'pending@test.local');
+INSERT INTO public.users (id, name, email, role) VALUES
+  ('00000000-0000-4000-8000-000000000001', 'Teacher', 'teacher@test.local', 'teacher'),
+  ('00000000-0000-4000-8000-000000000002', 'Other', 'other@test.local', 'teacher'),
+  ('00000000-0000-4000-8000-000000000003', 'Admin', 'admin@test.local', 'admin'),
+  ('00000000-0000-4000-8000-000000000004', 'Mentor', 'mentor@test.local', 'mentor'),
+  ('00000000-0000-4000-8000-000000000005', 'Pending', 'pending@test.local', 'pending');
 
 INSERT INTO public.instructors (
   user_id, full_name, nickname, gender, birth_date, id_number, phone_mobile, line_id,
@@ -147,6 +221,15 @@ INSERT INTO public.instructors (
   '完整介紹', '未完整講師', '測試銀行', '測試分行', '1234567890', '0000000',
   NULL, NULL, NULL, NULL
 );
+
+INSERT INTO public.class_sessions (instructor_id, duration_hours, total_salary, paid_amount, month_label, session_date, status)
+SELECT id, 2, 2000, 500, '2026/08', '2026-08-01', 'approved'
+FROM public.instructors
+WHERE user_id = '00000000-0000-4000-8000-000000000001';
+INSERT INTO public.class_sessions (instructor_id, duration_hours, total_salary, paid_amount, month_label, session_date, status)
+SELECT id, 3, 3000, 1000, '2026/08', '2026-08-02', 'approved'
+FROM public.instructors
+WHERE user_id = '00000000-0000-4000-8000-000000000002';
 
 INSERT INTO public.courses (id, is_published) VALUES
   ('10000000-0000-4000-8000-000000000001', true),
@@ -178,6 +261,24 @@ BEGIN
   IF (SELECT count(*) FROM public.assignment_feedbacks) <> 1 THEN
     RAISE EXCEPTION 'assignment feedback ownership scope failed';
   END IF;
+  IF (SELECT count(*) FROM public.users) <> 1 THEN
+    RAISE EXCEPTION 'teacher could read another public.users row';
+  END IF;
+  IF (SELECT count(*) FROM public.instructor_salary_summary) <> 1
+     OR (SELECT total_salary FROM public.instructor_salary_summary) <> 2000 THEN
+    RAISE EXCEPTION 'teacher salary view bypassed underlying RLS';
+  END IF;
+
+  UPDATE public.users SET role = 'admin' WHERE id = auth.uid();
+  IF FOUND THEN
+    RAISE EXCEPTION 'teacher changed own application role';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.courses (is_published) VALUES (false);
+    RAISE EXCEPTION 'teacher created a course';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
 
   INSERT INTO public.instructor_profile_drafts (user_id, data)
   VALUES (auth.uid(), '{"address":"own draft"}');
@@ -230,6 +331,57 @@ END;
 $$;
 
 RESET ROLE;
+
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000000004"}', false);
+SET ROLE authenticated;
+DO $$
+DECLARE
+  new_course_id uuid;
+  new_lesson_id uuid;
+BEGIN
+  IF (SELECT count(*) FROM public.users) <> 5 THEN
+    RAISE EXCEPTION 'mentor could not read staff user directory';
+  END IF;
+  IF (SELECT count(*) FROM public.courses) <> 2 THEN
+    RAISE EXCEPTION 'mentor could not read draft courses';
+  END IF;
+  IF (SELECT count(*) FROM public.assignments) <> 2 THEN
+    RAISE EXCEPTION 'mentor could not read assignments';
+  END IF;
+  IF (SELECT count(*) FROM public.instructor_salary_summary) <> 2 THEN
+    RAISE EXCEPTION 'mentor could not read staff salary summary';
+  END IF;
+
+  INSERT INTO public.courses (is_published) VALUES (false) RETURNING id INTO new_course_id;
+  INSERT INTO public.lessons (course_id, is_published) VALUES (new_course_id, false) RETURNING id INTO new_lesson_id;
+  INSERT INTO public.contents (lesson_id, status) VALUES (new_lesson_id, 'draft');
+  DELETE FROM public.contents WHERE lesson_id = new_lesson_id;
+  DELETE FROM public.lessons WHERE id = new_lesson_id;
+  DELETE FROM public.courses WHERE id = new_course_id;
+
+  UPDATE public.users SET role = 'admin'
+   WHERE id = '00000000-0000-4000-8000-000000000002';
+  IF FOUND THEN
+    RAISE EXCEPTION 'mentor escalated another user role';
+  END IF;
+END;
+$$;
+RESET ROLE;
+
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000000003"}', false);
+SET ROLE authenticated;
+DO $$
+BEGIN
+  UPDATE public.users SET mentor_name = 'Mentor'
+   WHERE id = '00000000-0000-4000-8000-000000000001';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'admin could not manage user profiles';
+  END IF;
+END;
+$$;
+RESET ROLE;
+
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000000001"}', false);
 
 INSERT INTO public.lesson_comments (id, user_id, lesson_id, body) VALUES (
   '30000000-0000-4000-8000-000000000001',
