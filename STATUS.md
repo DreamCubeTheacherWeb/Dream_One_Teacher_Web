@@ -1,7 +1,33 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-23（課程大分類與分類可見權限已正式上線）。
+> 最後更新：2026-08-23（教材資源導航與個人資料門檻已在本機完成與驗證；尚未部署）。
+
+---
+
+## 📚 2026-08-23：導航列「教材資源」與後台網址管理（✅ 本機完成；⏳ 尚未部署）
+
+**需求與做法**：講師桌面與手機導航列新增「教材資源」，點擊後在新分頁直接開啟
+`https://dreamone-teaching-materials.vercel.app/`。網址沿用既有受 RLS 保護的 `site_links` 表，
+設定 key 為 `teaching_materials`；尚無資料列或讀取失敗時使用指定網址作為安全預設值。原後台
+「薪資頁連結」擴充為「網站連結管理」，管理員可編輯教材資源網址，首次儲存以 upsert 建立設定列；
+導航名稱固定為「教材資源」，不會因後台誤改文案而漂移。只接受不含帳密的 HTTP／HTTPS 網址，
+拒絕 `javascript:`、`data:` 與其他可執行／非網頁協定。教材入口沿用 `ProfileCompleteGate` 的
+個人資料完成度；講師未完成時桌機與手機皆顯示真正停用、沒有 href 的入口，完成儲存後即時解鎖。
+管理員與輔導員維持既有門檻豁免。
+
+**證據**：指定教材站目前 HTTP 200，頁面標題為「夢想一號魔術方塊學院 - 魔術方塊教材系統」。
+純函式安全測試連同乾淨 `origin/main` 既有測試共 29/29；本次檔案針對性 ESLint、production build 與
+`git diff --check` 通過。完全 mock Supabase 的真 Chrome 回歸 22/22：覆蓋無 DB 列時的預設網址、
+新分頁、後台預填與 upsert payload、重新載入後採用新網址、1280／1440px 桌面導航不重疊、
+390px 手機導航無溢出且入口高度至少 44px、未完成講師的桌機／手機入口無法點擊且不存在外部連結，
+以及儲存完整資料後即時解鎖並採用後台網址，page error 為 0。截圖在
+`/tmp/dream-one-teaching-materials-navigation/`。乾淨 `origin/main` 的全站 lint 仍為未修改既有檔案中的
+7 errors / 4 warnings。
+
+**正式環境邊界**：沿用已上線的 `site_links` 表與既有「登入可讀、僅 admin 可寫」RLS，
+不需新 migration；未寫入正式 Supabase、未 push／部署。部署後即使正式庫尚無
+`teaching_materials` 列，導航仍會先使用指定預設網址，管理員第一次在後台儲存後即改由資料庫設定。
 
 ---
 

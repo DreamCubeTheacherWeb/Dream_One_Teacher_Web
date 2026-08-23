@@ -19,7 +19,7 @@ const isAllowedPath = (path) => {
  * 監聽當前使用者：若資料未填完，強制把任何頁面導向 /profile。
  * 在 ProfilePage 上額外顯示「距離首次登入第 N 天」倒數提示。
  */
-const ProfileCompleteGate = () => {
+const ProfileCompleteGate = ({ onCompletionChange }) => {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -31,6 +31,11 @@ const ProfileCompleteGate = () => {
   const completionIsCurrent = completion.userId === user?.id
     && completion.path === location.pathname;
   const complete = isExemptRole ? true : completionIsCurrent ? completion.complete : null;
+
+  // 讓導覽列共用同一份完成度狀態，避免再次查詢 instructors。
+  useEffect(() => {
+    onCompletionChange?.(complete);
+  }, [complete, onCompletionChange]);
 
   // 載入 instructors 完整度 + 註冊時間
   useEffect(() => {

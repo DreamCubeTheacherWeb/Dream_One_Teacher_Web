@@ -2,20 +2,12 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { ArrowLeft, Link2, Save, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { isSafeHttpUrl, TEACHING_MATERIALS_LINK } from '../../lib/siteLinks';
 
 // 固定顯示順序（比資料庫預設排序更明確；未來若新增其他 key，補進這個陣列即可）。
-const KNOWN_KEYS = ['salary_direct', 'salary_partner', 'salary_points'];
+const KNOWN_KEYS = [TEACHING_MATERIALS_LINK.key, 'salary_direct', 'salary_partner', 'salary_points'];
 
-const isValidUrl = (value) => {
-    try {
-        const parsed = new URL(value);
-        return Boolean(parsed);
-    } catch {
-        return false;
-    }
-};
-
-// 「我的薪資」頁兩顆外連表單按鈕的後台編輯頁。資料表 site_links 由
+// 導航列與「我的薪資」頁外連網址的後台編輯頁。資料表 site_links 由
 // supabase/2026-07-09_site_links.sql 建立；表不存在時顯示明確提示而非空白頁。
 const SalaryLinksManager = () => {
     const [loading, setLoading] = useState(true);
@@ -51,7 +43,10 @@ const SalaryLinksManager = () => {
             }
 
             const byKey = new Map((data || []).map((r) => [r.key, r]));
-            setRows(KNOWN_KEYS.map((k) => byKey.get(k) || { key: k, label: '', description: '', url: '' }));
+            setRows(KNOWN_KEYS.map((k) => (
+                byKey.get(k)
+                || (k === TEACHING_MATERIALS_LINK.key ? { ...TEACHING_MATERIALS_LINK } : { key: k, label: '', description: '', url: '' })
+            )));
             setLoading(false);
         })();
         return () => { active = false; };
@@ -69,7 +64,7 @@ const SalaryLinksManager = () => {
             setRowError((prev) => ({ ...prev, [key]: '標題與網址不可空白' }));
             return;
         }
-        if (!isValidUrl(row.url.trim())) {
+        if (!isSafeHttpUrl(row.url)) {
             setRowError((prev) => ({ ...prev, [key]: '網址格式不正確，需含 https:// 開頭' }));
             return;
         }
@@ -103,9 +98,9 @@ const SalaryLinksManager = () => {
             </Link>
 
             <div className="mb-8">
-                <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">薪資頁連結</h1>
+                <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">網站連結管理</h1>
                 <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">
-                    編輯「我的薪資」頁各按鈕的標題、說明與網址（課程回報表單×2＋報酬/點數確認區）。
+                    編輯導航列的「教材資源」網址，以及「我的薪資」頁各按鈕的外部連結。
                 </p>
             </div>
 
@@ -138,42 +133,53 @@ const SalaryLinksManager = () => {
                     {rows.map((row) => {
                         const status = rowStatus[row.key];
                         const err = rowError[row.key];
+                        const isTeachingMaterials = row.key === TEACHING_MATERIALS_LINK.key;
                         return (
                             <div key={row.key} className="bh-card p-6">
                                 <div className="flex items-center gap-2 mb-4">
                                     <Link2 className="w-4 h-4 text-bauhaus-black/50" />
                                     <span className="bh-label text-bauhaus-black/50">{row.key}</span>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="bh-label block mb-1">標題</label>
-                                        <input
-                                            type="text"
-                                            value={row.label}
-                                            onChange={(e) => updateRow(row.key, 'label', e.target.value)}
-                                            className="bh-input"
-                                            placeholder="例：直營課程"
-                                        />
+                                {isTeachingMaterials ? (
+                                    <div className="bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl p-4">
+                                        <div className="font-black text-bauhaus-black">教材資源</div>
+                                        <p className="text-sm font-medium text-bauhaus-black/70 mt-1">
+                                            顯示在講師桌面與手機導航列，點擊後會在新分頁開啟。
+                                        </p>
                                     </div>
-                                    <div>
-                                        <label className="bh-label block mb-1">說明</label>
-                                        <input
-                                            type="text"
-                                            value={row.description || ''}
-                                            onChange={(e) => updateRow(row.key, 'description', e.target.value)}
-                                            className="bh-input"
-                                            placeholder="例：營隊、體驗課、到府課、速解課"
-                                        />
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="bh-label block mb-1">標題</label>
+                                            <input
+                                                type="text"
+                                                value={row.label}
+                                                onChange={(e) => updateRow(row.key, 'label', e.target.value)}
+                                                className="bh-input"
+                                                placeholder="例：直營課程"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="bh-label block mb-1">說明</label>
+                                            <input
+                                                type="text"
+                                                value={row.description || ''}
+                                                onChange={(e) => updateRow(row.key, 'description', e.target.value)}
+                                                className="bh-input"
+                                                placeholder="例：營隊、體驗課、到府課、速解課"
+                                            />
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                                 <div className="mt-4">
-                                    <label className="bh-label block mb-1">表單網址</label>
+                                    <label className="bh-label block mb-1">{isTeachingMaterials ? '教材資源網址' : '表單網址'}</label>
                                     <input
+                                        id={isTeachingMaterials ? 'teaching-materials-url' : undefined}
                                         type="text"
                                         value={row.url}
                                         onChange={(e) => updateRow(row.key, 'url', e.target.value)}
                                         className="bh-input"
-                                        placeholder="https://docs.google.com/forms/..."
+                                        placeholder={isTeachingMaterials ? TEACHING_MATERIALS_LINK.url : 'https://docs.google.com/forms/...'}
                                     />
                                     {err && <p className="text-xs font-bold text-bauhaus-red mt-1">{err}</p>}
                                 </div>

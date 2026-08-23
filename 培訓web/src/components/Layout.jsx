@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Trophy, Timer } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Trophy, Timer, LibraryBig } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ProfileCompleteGate from './ProfileCompleteGate';
 import { INSTRUCTOR_CONTRACTS_ENABLED } from '../lib/featureFlags';
+import { resolveHttpUrl, TEACHING_MATERIALS_LINK } from '../lib/siteLinks';
 
 const ROLE_LABELS = { admin: '管理員', mentor: '輔導員', teacher: '講師', pending: '待審核' };
 
@@ -26,6 +27,8 @@ const Layout = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [teachingMaterialsUrl, setTeachingMaterialsUrl] = useState(TEACHING_MATERIALS_LINK.url);
+    const [profileComplete, setProfileComplete] = useState(null);
 
     useEffect(() => {
         if (loading || !user || !profile) return;
@@ -53,6 +56,29 @@ const Layout = ({ children }) => {
                 console.error('Contract reminder check failed:', err);
             }
         })();
+    }, [loading, user, profile]);
+
+    useEffect(() => {
+        if (loading || !user || !profile || profile.role === 'pending') return undefined;
+
+        let active = true;
+        (async () => {
+            const { data, error } = await supabase
+                .from('site_links')
+                .select('url')
+                .eq('key', TEACHING_MATERIALS_LINK.key)
+                .maybeSingle();
+
+            if (!active) return;
+            if (error) {
+                console.error('讀取教材資源連結失敗，使用預設值：', error.message);
+                return;
+            }
+
+            setTeachingMaterialsUrl(resolveHttpUrl(data?.url, TEACHING_MATERIALS_LINK.url));
+        })();
+
+        return () => { active = false; };
     }, [loading, user, profile]);
 
     // 路由切換時關閉手機選單
@@ -108,6 +134,32 @@ const Layout = ({ children }) => {
                                         <BookOpen className="w-4 h-4" />
                                         我的課程
                                     </button>
+                                )}
+                                {profile && profile.role !== 'pending' && (
+                                    profileComplete === true ? (
+                                        <a
+                                            href={teachingMaterialsUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={navLinkClass('__teaching-materials__')}
+                                            aria-label="教材資源（在新分頁開啟）"
+                                        >
+                                            <LibraryBig className="w-4 h-4" />
+                                            教材資源
+                                        </a>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            disabled
+                                            aria-disabled="true"
+                                            aria-label="教材資源（請先完成個人資料）"
+                                            title="請先完成個人資料後才能開啟教材資源"
+                                            className="flex items-center gap-1.5 px-3 py-2 text-sm text-bauhaus-black/40 font-bold uppercase tracking-wide cursor-not-allowed"
+                                        >
+                                            <LibraryBig className="w-4 h-4" />
+                                            教材資源
+                                        </button>
+                                    )
                                 )}
                                 {profile && profile.role !== 'pending' && (
                                     <Link to="/leaderboard" className={navLinkClass('/leaderboard')}>
@@ -221,6 +273,33 @@ const Layout = ({ children }) => {
                                         </button>
                                     )}
                                     {profile && profile.role !== 'pending' && (
+                                        profileComplete === true ? (
+                                            <a
+                                                href={teachingMaterialsUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={() => setMobileMenuOpen(false)}
+                                                className={mobileNavLinkClass('__teaching-materials__')}
+                                                aria-label="教材資源（在新分頁開啟）"
+                                            >
+                                                <LibraryBig className="w-5 h-5" />
+                                                教材資源
+                                            </a>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                disabled
+                                                aria-disabled="true"
+                                                aria-label="教材資源（請先完成個人資料）"
+                                                title="請先完成個人資料後才能開啟教材資源"
+                                                className="flex items-center gap-3 px-3 py-3.5 text-bauhaus-black/40 font-bold uppercase tracking-wide text-sm w-full text-left rounded-lg cursor-not-allowed"
+                                            >
+                                                <LibraryBig className="w-5 h-5" />
+                                                教材資源
+                                            </button>
+                                        )
+                                    )}
+                                    {profile && profile.role !== 'pending' && (
                                         <Link to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/leaderboard')}>
                                             <Trophy className="w-5 h-5" />
                                             排行榜
@@ -261,7 +340,7 @@ const Layout = ({ children }) => {
                 )}
             </header>
 
-            <ProfileCompleteGate />
+            <ProfileCompleteGate onCompletionChange={setProfileComplete} />
 
             <main className="flex-1 max-w-7xl mx-auto w-full">
                 {children}
