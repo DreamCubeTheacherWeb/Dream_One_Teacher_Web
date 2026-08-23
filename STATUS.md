@@ -1,9 +1,28 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-19（Codex Security 正式發布：資料庫已套用，前端與 WCA 排程仍在發布流程）。
+> 最後更新：2026-08-23（YouTube 播放清單嵌入已完成正式部署與 bundle 驗證）。
 
 ---
+
+## 🎞️ 2026-08-23：YouTube 播放清單嵌入修復（✅ 已上線）
+
+**問題與修正**：內容編輯器原本只會把單支影片、`youtu.be` 與 Shorts 轉成 YouTube embed URL；
+`playlist?list=...` 被原樣放進 iframe 後會遭 YouTube 拒絕連線。現在統一由
+`src/lib/youtube.js` 解析，完整播放清單改成 `embed/videoseries?list=...`；從清單內分享的單支
+影片也會保留 `list` 與 `index`。舊版內容編輯器、畫布編輯器、前台課程頁與作業審核頁均使用
+同一個 helper，既有資料不需重存即可在顯示時轉換。
+
+**證據**：乾淨 `origin/main` worktree 的 26/26 測試、針對性 ESLint、production build 與
+`git diff --check` 通過；`AssignmentReview.jsx` 的 `fetchAll` 宣告順序 lint error 已確認存在於發布前
+基準版本，本次未擴大修正。功能 commit `17ffb85` 已推送 `main`，GitHub deployment
+`6046192137` 由 Zeabur 回報 production success。正式站與乾淨 build 均載入
+`index-B1ZuFdT5.js`，大小同為 2,260,328 bytes，SHA-256 同為
+`e34331ec4b7f0ecfe59f780282d848479e17b3e2a92df5fe5512540e1219d317`；正式 bundle 命中
+`embed/videoseries?list=` 播放清單轉換邏輯。
+
+**正式環境邊界**：本次只更新前端網址解析與測試，未修改 Supabase schema、資料、RLS 或 Storage，
+不需 SQL migration。
 
 ## 🛡️ 2026-08-19：Codex Security 全專案修復（🚀 正式發布中）
 
