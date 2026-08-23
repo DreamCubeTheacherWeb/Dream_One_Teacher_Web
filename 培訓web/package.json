@@ -14,7 +14,8 @@
     "verify:speed-salary": "node scripts/verify-speed-salary.mjs && node scripts/verify-speed-salary-ui.mjs",
     "verify:speed-salary:browser": "node scripts/verify-speed-salary-browser.mjs",
     "verify:bankbook-lock": "node scripts/verify-bankbook-lock.mjs",
-    "verify:course-categories": "node scripts/verify-course-categories.mjs"
+    "verify:course-categories": "node scripts/verify-course-categories.mjs",
+    "verify:announcement-access": "node scripts/verify-announcement-access.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

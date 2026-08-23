@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
+import { isApprovedUser } from '../lib/roles';
 import {
     BookOpen, Target, Heart, Sparkles, ChevronRight,
     Megaphone, Pin, Calendar, Users, Star, ArrowRight,
@@ -93,11 +94,17 @@ const LOCATIONS = [
 ];
 
 const HomePage = () => {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [activeTab, setActiveTab] = useState('real');
     const [announcements, setAnnouncements] = useState([]);
+    const canViewAnnouncements = isApprovedUser(profile);
 
     useEffect(() => {
+        if (!canViewAnnouncements) {
+            return undefined;
+        }
+
+        let active = true;
         const fetchAnnouncements = async () => {
             const { data } = await supabase
                 .from('announcements')
@@ -106,10 +113,12 @@ const HomePage = () => {
                 .order('pinned', { ascending: false })
                 .order('created_at', { ascending: false })
                 .limit(6);
-            setAnnouncements(data || []);
+            if (active) setAnnouncements(data || []);
         };
         fetchAnnouncements();
-    }, []);
+
+        return () => { active = false; };
+    }, [canViewAnnouncements]);
 
     return (
         <div className="min-h-screen overflow-x-hidden">
@@ -257,8 +266,8 @@ const HomePage = () => {
                 </div>
             </section>
 
-            {/* ══════════ BULLETIN BOARD（最新消息，接在願景使命之後） ══════════ */}
-            <section className="py-14 md:py-20 bg-white border-b-4 border-bauhaus-black">
+            {/* ══════════ BULLETIN BOARD（僅限已核准帳號） ══════════ */}
+            {canViewAnnouncements && <section className="py-14 md:py-20 bg-white border-b-4 border-bauhaus-black">
                 <div className="max-w-6xl mx-auto px-4 sm:px-6">
                     <div className="text-center mb-8 md:mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-4 text-xs sm:text-sm font-bold uppercase tracking-widest text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-lg">
@@ -324,7 +333,7 @@ const HomePage = () => {
                         </div>
                     )}
                 </div>
-            </section>
+            </section>}
 
             {/* ══════════ TEAM GALLERY ══════════ */}
             <section className="py-14 md:py-20 bg-white">

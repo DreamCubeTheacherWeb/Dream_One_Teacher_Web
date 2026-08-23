@@ -30,8 +30,9 @@ import NotificationManager from './pages/admin/NotificationManager';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
 import { canAccessInstructorContracts } from './lib/featureFlags';
+import { isApprovedUser } from './lib/roles';
 
-const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false }) => {
+const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false, approvedOnly = false }) => {
   const { user, profile, loading } = useAuth();
 
   if (loading) return <div className="p-12 text-center text-slate-500 text-lg">載入中...</div>;
@@ -40,6 +41,7 @@ const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowP
 
   const isPrivileged = profile.role === 'admin' || profile.role === 'mentor';
   if (!allowPending && !isPrivileged && profile.role === 'pending') return <Navigate to="/pending" />;
+  if (approvedOnly && !isApprovedUser(profile)) return <Navigate to="/" />;
   if (adminOnly && profile.role !== 'admin') return <Navigate to="/" />;
   if (staffOnly && profile.role !== 'admin' && profile.role !== 'mentor') return <Navigate to="/" />;
 
@@ -65,7 +67,14 @@ function App() {
           <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
           <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />
           <Route path="/pending" element={<Layout><PendingApproval /></Layout>} />
-          <Route path="/announcements/:id" element={<Layout><AnnouncementDetail /></Layout>} />
+          <Route
+            path="/announcements/:id"
+            element={
+              <ProtectedRoute approvedOnly>
+                <Layout><AnnouncementDetail /></Layout>
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/profile"
             element={

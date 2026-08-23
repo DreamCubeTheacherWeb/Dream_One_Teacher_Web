@@ -31,3 +31,15 @@ export function isStaff(profile) {
 export function isMentor(profile) {
     return profile?.role === 'mentor';
 }
+
+/**
+ * 是否為已核准使用平台內容的帳號。
+ * 待審核或未登入狀態不得讀取講師公告等內部內容。
+ * @param {{ role?: string } | null | undefined} profile 使用者的 profile 物件
+ * @returns {boolean}
+ */
+export function isApprovedUser(profile) {
+    return profile?.role === 'teacher'
+        || profile?.role === 'mentor'
+        || profile?.role === 'admin';
+}

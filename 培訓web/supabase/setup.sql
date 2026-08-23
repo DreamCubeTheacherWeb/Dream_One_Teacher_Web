@@ -213,8 +213,17 @@ create table announcements (
 
 alter table announcements enable row level security;
 
-create policy "Everyone can view published announcements" on announcements for select using (
+revoke all on public.announcements from anon, authenticated;
+grant select, insert, update, delete on public.announcements to authenticated;
+
+create policy "Approved users can view published announcements" on announcements for select to authenticated using (
   published = true
+  and exists (
+    select 1
+    from public.users
+    where id = (select auth.uid())
+      and role in ('teacher', 'mentor', 'admin')
+  )
 );
 create policy "Admins can do everything on announcements" on announcements for all using (
   exists (select 1 from public.users where id = auth.uid() and role = 'admin')
