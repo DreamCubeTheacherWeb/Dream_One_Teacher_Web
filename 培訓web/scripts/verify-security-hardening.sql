@@ -36,7 +36,7 @@ CREATE TABLE public.instructors (
   bank_account_name text, bank_name text, bank_branch text, bank_account_number text, bank_code text,
   id_front_path text, id_back_path text, photo_path text, bankbook_path text,
   bankbook_mime text, bankbook_size bigint, bankbook_uploaded_at timestamptz,
-  employment_status text, instructor_role text, speed_qualification text,
+  employment_status text, instructor_role text,
   form_submitted_at timestamptz, note_internal text, teaching_regions_raw text, bank_info_raw text,
   id_front_external_url text, id_back_external_url text, photo_external_url text, bankbook_external_url text,
   wca_name text, wca_synced_at timestamptz, hide_from_leaderboard boolean NOT NULL DEFAULT false,
@@ -204,6 +204,7 @@ INSERT INTO public.wca_sync_config (id, secret) VALUES (1, 'old-test-secret');
 \ir ../supabase/migrations/20260819140407_security_hardening_release.sql
 \ir ../supabase/migrations/20260819153000_enable_core_rls.sql
 \ir ../supabase/migrations/20260819160000_restrict_definer_and_public_listing.sql
+\ir ../supabase/migrations/20260823193000_repair_instructor_guard_dependency.sql
 
 DO $$
 BEGIN
