@@ -27,6 +27,8 @@ import Leaderboard from './pages/Leaderboard';
 import CubeTimer from './pages/CubeTimer';
 import SalaryLinksManager from './pages/admin/SalaryLinksManager';
 import NotificationManager from './pages/admin/NotificationManager';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 import { canAccessInstructorContracts } from './lib/featureFlags';
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false }) => {
@@ -60,6 +62,8 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<Layout><HomePage /></Layout>} />
+          <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
+          <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />
           <Route path="/pending" element={<Layout><PendingApproval /></Layout>} />
           <Route path="/announcements/:id" element={<Layout><AnnouncementDetail /></Layout>} />
           <Route

@@ -353,8 +353,25 @@ const Layout = ({ children }) => {
                     <div className="flex-1 bg-bauhaus-yellow" />
                 </div>
                 <div className="py-8">
-                    <div className="max-w-7xl mx-auto px-4 text-center text-white/60 text-sm font-medium">
-                        Copyright 2026 夢想一號文化教育股份有限公司, all rights reserved.
+                    <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-white/60 text-sm font-medium">
+                        <p className="text-center sm:text-left">
+                            Copyright 2026 夢想一號文化教育股份有限公司, all rights reserved.
+                        </p>
+                        <nav aria-label="法律資訊" className="flex items-center gap-1">
+                            <Link
+                                to="/privacy"
+                                className="inline-flex items-center min-h-[44px] px-3 py-2 rounded-lg font-bold text-white/80 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-bauhaus-yellow"
+                            >
+                                隱私權政策
+                            </Link>
+                            <span aria-hidden="true" className="text-white/30">/</span>
+                            <Link
+                                to="/terms"
+                                className="inline-flex items-center min-h-[44px] px-3 py-2 rounded-lg font-bold text-white/80 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-bauhaus-yellow"
+                            >
+                                服務條款
+                            </Link>
+                        </nav>
                     </div>
                 </div>
             </footer>
