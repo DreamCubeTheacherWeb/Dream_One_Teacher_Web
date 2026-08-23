@@ -8,6 +8,7 @@ import LessonView from './pages/LessonView';
 import LessonDetail from './pages/LessonDetail';
 import AdminDashboard from './pages/admin/Dashboard';
 import CMSManager from './pages/admin/CMSManager';
+import CategoryManager from './pages/admin/CategoryManager';
 import AssignmentReview from './pages/admin/AssignmentReview';
 import TeacherManager from './pages/admin/TeacherManager';
 import ProgressOverview from './pages/admin/ProgressOverview';
@@ -124,6 +125,14 @@ function App() {
             element={
               <ProtectedRoute staffOnly={true}>
                 <Layout><CMSManager /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/course-categories"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <Layout><CategoryManager /></Layout>
               </ProtectedRoute>
             }
           />

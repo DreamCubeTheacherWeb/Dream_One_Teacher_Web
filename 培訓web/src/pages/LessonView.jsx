@@ -109,10 +109,10 @@ const LessonView = () => {
         <div className="max-w-3xl mx-auto px-6 py-10">
             {/* Back link */}
             <Link
-                to="/courses"
+                to={course.category_id ? `/courses?category=${course.category_id}` : '/courses'}
                 className="inline-flex items-center gap-1.5 text-xs font-black text-bauhaus-blue uppercase tracking-widest hover:text-bauhaus-black mb-6 transition-colors duration-200 min-h-[44px]"
             >
-                <ChevronLeft className="w-3.5 h-3.5" /> 返回課程列表
+                <ChevronLeft className="w-3.5 h-3.5" /> 返回此大分類
             </Link>
 
             {/* Course header */}

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
     Plus, Edit2, Trash2, Eye, EyeOff, LayoutGrid, Users,
     ClipboardCheck, UserCog, BarChart3, Megaphone, ChevronRight,
-    ContactRound, BookOpen, GraduationCap, Settings, Shield, FileSignature, Wallet, Download, Award
+    ContactRound, BookOpen, GraduationCap, Settings, Shield, FileSignature, Wallet, Download, Award, Layers3
 } from 'lucide-react';
 import { Link2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -32,7 +32,7 @@ const AdminDashboard = () => {
         const fetchData = async () => {
             const { data: coursesData } = await supabase
                 .from('courses')
-                .select('*')
+                .select('*, course_categories(title)')
                 .order('order', { ascending: true });
             setCourses(coursesData || []);
 
@@ -138,6 +138,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <NavCard to="/admin/teachers" icon={UserCog} title="講師名單管理" desc="新增、管理講師與權限設定" color="blue" />
+                        <NavCard to="/admin/course-categories" icon={Layers3} title="課程大分類" desc="管理課程第一層入口與可見對象" color="amber" />
                         <NavCard to="/admin/announcements" icon={Megaphone} title="佈告欄管理" desc="新增、編輯首頁公告內容" color="red" />
                         <NavCard to="/admin/contracts" icon={FileSignature} title="合約文件管理" desc="管理合約文件與查看簽約狀態" color="violet" />
                         <NavCard to="/admin/badges" icon={Award} title="徽章管理" desc="管理徽章清單規則、手動頒發或收回徽章" color="amber" />
@@ -162,6 +163,9 @@ const AdminDashboard = () => {
                             <div className="font-bold text-bauhaus-black">{course.title}</div>
                             <div className="text-xs text-bauhaus-black/50 line-clamp-2 mt-1">{course.description}</div>
                             <div className="flex flex-wrap gap-2 mt-3">
+                                <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
+                                    {course.course_categories?.title || '未分類'}
+                                </span>
                                 <span className={`bh-chip ${
                                     course.visibility === 'intern' ? 'bg-bauhaus-blue text-white' :
                                     course.visibility === 'formal' ? 'bg-bauhaus-black text-white' :
@@ -212,6 +216,7 @@ const AdminDashboard = () => {
                         <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider">
                             <tr>
                                 <th className="px-6 py-4">名稱</th>
+                                <th className="px-6 py-4">大分類</th>
                                 <th className="px-6 py-4">可見對象</th>
                                 <th className="px-6 py-4">排序</th>
                                 <th className="px-6 py-4">狀態</th>
@@ -224,6 +229,11 @@ const AdminDashboard = () => {
                                     <td className="px-6 py-4">
                                         <div className="font-bold text-bauhaus-black">{course.title}</div>
                                         <div className="text-xs text-bauhaus-black/50 line-clamp-1">{course.description}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
+                                            {course.course_categories?.title || '未分類'}
+                                        </span>
                                     </td>
                                     <td className="px-6 py-4">
                                         <span className={`bh-chip ${

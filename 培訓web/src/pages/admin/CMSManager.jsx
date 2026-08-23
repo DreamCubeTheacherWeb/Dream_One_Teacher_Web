@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
-import { Save, ChevronLeft, Plus, Trash2, FileText, Video, Edit3, ClipboardCheck, Hash } from 'lucide-react';
+import { Save, ChevronLeft, Plus, Trash2, FileText, Video, Edit3, ClipboardCheck, Hash, Layers3 } from 'lucide-react';
 import EditorComponent from '../../components/EditorComponent';
+import { TRAINING_VISIBILITY_OPTIONS } from '../../lib/courseCategories';
 
 // 章節 hashtag 編輯列：chips + 輸入框（Enter 或按鈕加入；點 × 移除）
 const LessonTagEditor = ({ lesson, onSave }) => {
@@ -48,13 +49,28 @@ const CMSManager = () => {
     const { courseId } = useParams();
     const navigate = useNavigate();
     const [course, setCourse] = useState({ title: '', description: '', is_published: false });
+    const [categories, setCategories] = useState([]);
     const [lessons, setLessons] = useState([]);
     const [loading, setLoading] = useState(true);
     const [editingLessonId, setEditingLessonId] = useState(null);
 
     useEffect(() => {
         const fetchCourseData = async () => {
+            const { data: categoryData, error: categoryError } = await supabase
+                .from('course_categories')
+                .select('id, title, visibility, is_published, order')
+                .order('order', { ascending: true });
+
+            if (categoryError) {
+                alert('讀取課程大分類失敗：' + categoryError.message);
+            }
+            const availableCategories = categoryData || [];
+            setCategories(availableCategories);
+
             if (courseId === 'new') {
+                if (availableCategories.length > 0) {
+                    setCourse(current => ({ ...current, category_id: availableCategories[0].id }));
+                }
                 setLoading(false);
                 return;
             }
@@ -82,6 +98,10 @@ const CMSManager = () => {
 
     const saveCourse = async () => {
         try {
+            if (!course.category_id) {
+                alert('請先選擇課程大分類；若尚無分類，請先到「課程大分類」建立。');
+                return;
+            }
             if (courseId === 'new') {
                 const { data, error } = await supabase
                     .from('courses')
@@ -194,16 +214,36 @@ const CMSManager = () => {
                                 />
                             </div>
                             <div>
+                                <label className="bh-label flex items-center gap-1.5 mb-1" htmlFor="course-category">
+                                    <Layers3 className="w-3.5 h-3.5" /> 課程大分類
+                                </label>
+                                <select
+                                    id="course-category"
+                                    value={course.category_id || ''}
+                                    onChange={e => setCourse({ ...course, category_id: e.target.value })}
+                                    className="bh-input"
+                                    required
+                                >
+                                    <option value="" disabled>選擇大分類</option>
+                                    {categories.map(category => (
+                                        <option key={category.id} value={category.id}>
+                                            {category.title}{category.is_published ? '' : '（草稿）'}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
                                 <label className="bh-label block mb-1">可見對象</label>
                                 <select
                                     value={course.visibility || 'all'}
                                     onChange={e => setCourse({ ...course, visibility: e.target.value })}
                                     className="bh-input"
                                 >
-                                    <option value="all">全部講師</option>
-                                    <option value="intern">實習培訓專用</option>
-                                    <option value="formal">正式培訓專用</option>
+                                    {TRAINING_VISIBILITY_OPTIONS.map(option => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
                                 </select>
+                                <p className="mt-1.5 text-xs font-medium text-bauhaus-black/50">使用者必須同時符合大分類與本課程的可見條件。</p>
                             </div>
                             <div className="flex items-center gap-2 pt-2">
                                 <input
