@@ -1,25 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
+import { toYouTubeEmbedUrl as toEmbedUrl } from '../../lib/youtube';
 import { useAuth } from '../../context/AuthContext';
 import { MessageSquare, User, Calendar, Play, Search, Filter, ChevronDown, Star, GraduationCap, Send, Clock, Trash2 } from 'lucide-react';
-
-const toEmbedUrl = (url) => {
-    if (!url) return '';
-    try {
-        const u = new URL(url);
-        if (u.pathname.startsWith('/embed/')) return url;
-        if ((u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') && u.searchParams.get('v')) {
-            return `https://www.youtube.com/embed/${u.searchParams.get('v')}`;
-        }
-        if (u.hostname === 'youtu.be' && u.pathname.length > 1) {
-            return `https://www.youtube.com/embed${u.pathname}`;
-        }
-        if (u.pathname.startsWith('/shorts/')) {
-            return `https://www.youtube.com/embed/${u.pathname.replace('/shorts/', '')}`;
-        }
-    } catch { /* ignore */ }
-    return url;
-};
 
 const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習', '職員': '職員', '工讀生': '工讀生' };
 

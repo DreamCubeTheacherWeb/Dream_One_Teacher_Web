@@ -2,29 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
+import { toYouTubeEmbedUrl as toEmbedUrl } from '../lib/youtube';
 import { useAuth } from '../context/AuthContext';
 import { ChevronLeft, ChevronRight, Play, FileText, CheckCircle, Circle, Image as ImageIcon, MessageSquare, Send, Clock, Star, ThumbsUp, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
 const CANVAS_WIDTH = 960;
-
-// YouTube URL → embed URL 轉換
-const toEmbedUrl = (url) => {
-    if (!url) return '';
-    try {
-        const u = new URL(url);
-        if (u.pathname.startsWith('/embed/')) return url;
-        if ((u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') && u.searchParams.get('v')) {
-            return `https://www.youtube.com/embed/${u.searchParams.get('v')}`;
-        }
-        if (u.hostname === 'youtu.be' && u.pathname.length > 1) {
-            return `https://www.youtube.com/embed${u.pathname}`;
-        }
-        if (u.pathname.startsWith('/shorts/')) {
-            return `https://www.youtube.com/embed/${u.pathname.replace('/shorts/', '')}`;
-        }
-    } catch { /* ignore */ }
-    return url;
-};
 
 const LessonDetail = () => {
     const { courseId, lessonId } = useParams();

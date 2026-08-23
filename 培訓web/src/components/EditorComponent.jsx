@@ -5,6 +5,7 @@ import { Save, ChevronLeft, Plus, Trash2, FileText, Video, Edit3, GripVertical, 
 import { supabase } from '../lib/supabaseClient';
 import CanvasEditor from './CanvasEditor';
 import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
+import { toYouTubeEmbedUrl as toEmbedUrl } from '../lib/youtube';
 
 // ─── 擴展 Quill Image blot：支援 width / style 以實現自由縮放 ────────────
 const BaseImage = Quill.import('formats/image');
@@ -51,31 +52,6 @@ const TOOLBAR_OPTIONS = [
 ];
 
 const QUILL_MODULES = { toolbar: TOOLBAR_OPTIONS };
-
-// ─── YouTube URL → embed URL 轉換 ──────────────────────────────────────────
-const toEmbedUrl = (url) => {
-    if (!url) return '';
-    try {
-        const u = new URL(url);
-        // 已經是 embed 格式
-        if (u.pathname.startsWith('/embed/')) return url;
-        // https://www.youtube.com/watch?v=VIDEO_ID
-        if ((u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') && u.searchParams.get('v')) {
-            return `https://www.youtube.com/embed/${u.searchParams.get('v')}`;
-        }
-        // https://youtu.be/VIDEO_ID
-        if (u.hostname === 'youtu.be' && u.pathname.length > 1) {
-            return `https://www.youtube.com/embed${u.pathname}`;
-        }
-        // https://www.youtube.com/shorts/VIDEO_ID
-        if (u.pathname.startsWith('/shorts/')) {
-            return `https://www.youtube.com/embed/${u.pathname.replace('/shorts/', '')}`;
-        }
-    } catch {
-        // 不是合法 URL，原封回傳
-    }
-    return url;
-};
 
 const getContentImageUrl = (path) => {
     if (!path) return null;
