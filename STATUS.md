@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-23（教材資源導航與個人資料門檻已在本機完成與驗證；尚未部署）。
+> 最後更新：2026-08-23（教材資源導航、個人資料門檻與後台網址管理已正式上線）。
 
 ---
 
-## 📚 2026-08-23：導航列「教材資源」與後台網址管理（✅ 本機完成；⏳ 尚未部署）
+## 📚 2026-08-23：導航列「教材資源」與後台網址管理（✅ 已上線）
 
 **需求與做法**：講師桌面與手機導航列新增「教材資源」，點擊後在新分頁直接開啟
 `https://dreamone-teaching-materials.vercel.app/`。網址沿用既有受 RLS 保護的 `site_links` 表，
@@ -22,12 +22,14 @@
 新分頁、後台預填與 upsert payload、重新載入後採用新網址、1280／1440px 桌面導航不重疊、
 390px 手機導航無溢出且入口高度至少 44px、未完成講師的桌機／手機入口無法點擊且不存在外部連結，
 以及儲存完整資料後即時解鎖並採用後台網址，page error 為 0。截圖在
-`/tmp/dream-one-teaching-materials-navigation/`。乾淨 `origin/main` 的全站 lint 仍為未修改既有檔案中的
-7 errors / 4 warnings。
+`/tmp/dream-one-teaching-materials-navigation/`。
 
-**正式環境邊界**：沿用已上線的 `site_links` 表與既有「登入可讀、僅 admin 可寫」RLS，
-不需新 migration；未寫入正式 Supabase、未 push／部署。部署後即使正式庫尚無
-`teaching_materials` 列，導航仍會先使用指定預設網址，管理員第一次在後台儲存後即改由資料庫設定。
+**正式環境證據與邊界**：功能提交 `4f4a104` 已推送 `main`，GitHub deployment `6047589224`
+由 Zeabur 回報 production success。正式站與乾淨發布 build 均載入 `index-Cs5nekxh.js`，SHA-256
+皆為 `a9c6af14e1882e2c8dc711ce12b7ebe22f147045e66e002288309618b24313b7`；正式 bundle 命中
+`teaching_materials`、指定教材網址與個人資料未完成鎖定提示。沿用已上線的 `site_links` 表與既有
+「登入可讀、僅 admin 可寫」RLS，不需新 migration，且未寫入正式 Supabase。即使正式庫尚無
+`teaching_materials` 列，導航仍會使用指定預設網址；管理員第一次在後台儲存後才建立設定列。
 
 ---
 
