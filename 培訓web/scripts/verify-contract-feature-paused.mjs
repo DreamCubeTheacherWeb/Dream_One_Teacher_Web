@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * 回歸驗證：前台講師簽約功能暫停，後台管理仍保留。
+ * 回歸驗證：前台講師簽約與薪資頁停用，後台管理仍保留。
  *
  * T1 講師個人頁不顯示簽約區塊
  * T2 舊的合約通知不會顯示或計入未讀數
@@ -8,10 +8,13 @@
  * T4 講師直接開 /contract/view/:id 會被導回 /profile
  * T5 講師瀏覽過程不查詢合約資料，也不寫入合約通知
  * T6 管理員仍可查看已簽合約與進入合約後台
+ * T7 講師導覽列不顯示「我的薪資」
+ * T8 講師直連薪資頁會被導回 /profile
+ * T9 管理員可在講師名單下載自動填好的 PDF
  *
  * 用法：node scripts/verify-contract-feature-paused.mjs
  */
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -23,7 +26,14 @@ const APP_DIR = path.resolve(__dirname, '..');
 const PORT = 4223;
 const BASE = `http://localhost:${PORT}`;
 const SCREENSHOT = '/tmp/dream-one-contract-paused-profile.png';
+const ADMIN_SCREENSHOT = '/tmp/dream-one-instructor-form-download.png';
+const ADMIN_MOBILE_SCREENSHOT = '/tmp/dream-one-instructor-form-download-mobile.png';
 const { chromium } = require(path.join(APP_DIR, 'node_modules/playwright-core'));
+const CHROME_EXECUTABLE = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+].find((candidate) => candidate && existsSync(candidate));
 
 const envMap = Object.fromEntries(readFileSync(path.join(APP_DIR, '.env'), 'utf8')
     .split('\n').map((line) => line.trim())
@@ -84,6 +94,35 @@ const NOTIFICATIONS = [
     { id: 'contract-notification', user_id: UID, type: 'contract', title: '尚未完成合約簽署', body: '請前往簽約', link: '/contract', is_read: false, created_at: NOW },
     { id: 'announcement-notification', user_id: UID, type: 'announcement', title: '一般公告仍正常顯示', body: '這是非合約通知', link: null, is_read: false, created_at: NOW },
 ];
+const FORM_DOCUMENT = {
+    id: 'form-document-1',
+    doc_type: 'remittance_form',
+    display_name: '廠商匯款申請書',
+    version: 1,
+    sort_order: 1,
+    doc_category: 'form',
+    doc_mode: 'fill_sign',
+    is_active: true,
+    file_path: 'templates/remittance_form/v1.pdf',
+    file_name: 'remittance-form.pdf',
+};
+const FORM_POSITION = {
+    id: 'form-position-1',
+    doc_type: FORM_DOCUMENT.doc_type,
+    doc_version: FORM_DOCUMENT.version,
+    field_type: 'name',
+    page_number: 1,
+    x: 48,
+    y_from_top: 48,
+    width: 180,
+    height: 28,
+    font_size: 13,
+};
+
+const MINIMAL_PDF = Buffer.from(
+    'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSA+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDQgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjIwMgolJUVPRgo=',
+    'base64'
+);
 
 let currentRole = 'teacher';
 let teacherContractReads = 0;
@@ -109,6 +148,9 @@ async function handleRoute(route) {
         return jsonRes(route, {});
     }
     if (pathname.startsWith('/rest/v1/rpc/')) return jsonRes(route, null);
+    if (pathname.startsWith('/storage/v1/object/')) {
+        return route.fulfill({ status: 200, contentType: 'application/pdf', body: MINIMAL_PDF });
+    }
     if (pathname.startsWith('/rest/v1/')) {
         const table = pathname.replace('/rest/v1/', '').split('/')[0];
         const method = req.method();
@@ -132,6 +174,8 @@ async function handleRoute(route) {
             case 'users': data = wantsObject ? profile : [profile]; break;
             case 'instructors': data = wantsObject ? INSTRUCTOR : [INSTRUCTOR]; break;
             case 'instructor_contracts': data = wantsObject ? SIGNED_CONTRACT : [SIGNED_CONTRACT]; break;
+            case 'contract_documents': data = wantsObject ? FORM_DOCUMENT : [FORM_DOCUMENT]; break;
+            case 'contract_field_positions': data = wantsObject ? FORM_POSITION : [FORM_POSITION]; break;
             case 'notifications': data = wantsObject ? NOTIFICATIONS[0] : NOTIFICATIONS; break;
             case 'instructor_claim_requests': data = wantsObject ? null : []; break;
             default: data = wantsObject ? null : [];
@@ -156,8 +200,8 @@ const assert = (name, condition, detail = '') => {
     console.log(`${condition ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`);
 };
 
-async function newContext(browser) {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+async function newContext(browser, viewport = { width: 1280, height: 900 }) {
+    const context = await browser.newContext({ viewport });
     await context.addInitScript(({ key, session }) => {
         window.localStorage.setItem(key, JSON.stringify(session));
     }, { key: STORAGE_KEY, session: FAKE_SESSION });
@@ -175,7 +219,7 @@ async function main() {
     let browser;
     try {
         await waitForServer(BASE, 15000);
-        browser = await chromium.launch();
+        browser = await chromium.launch(CHROME_EXECUTABLE ? { executablePath: CHROME_EXECUTABLE } : {});
 
         currentRole = 'teacher';
         teacherContractReads = 0;
@@ -188,6 +232,8 @@ async function main() {
 
         const contractSectionCount = await page.getByText('合約簽署', { exact: true }).count();
         assert('T1 講師個人頁隱藏簽約區塊', contractSectionCount === 0, `count=${contractSectionCount}`);
+        const salaryNavCount = await page.getByText('我的薪資', { exact: true }).count();
+        assert('T7 講師導覽列隱藏我的薪資', salaryNavCount === 0, `count=${salaryNavCount}`);
 
         await page.locator('button:has(svg.lucide-bell)').first().click();
         const oldContractNotificationCount = await page.getByText('尚未完成合約簽署', { exact: true }).count();
@@ -201,6 +247,10 @@ async function main() {
 
         await page.goto(`${BASE}/contract/view/contract-1`, { waitUntil: 'networkidle', timeout: 20000 });
         assert('T4 講師直連合約檢視頁導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
+        await page.goto(`${BASE}/my/salary`, { waitUntil: 'networkidle', timeout: 20000 });
+        assert('T8a 講師直連我的薪資導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
+        await page.goto(`${BASE}/my/salary/new`, { waitUntil: 'networkidle', timeout: 20000 });
+        assert('T8b 講師直連課程回報導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
         assert('T5a 講師端未查詢合約資料', teacherContractReads === 0, `reads=${teacherContractReads}`);
         assert('T5b 講師端未寫入合約通知', teacherContractNotificationWrites === 0, `writes=${teacherContractNotificationWrites}`);
         await page.close();
@@ -209,6 +259,10 @@ async function main() {
         currentRole = 'admin';
         context = await newContext(browser);
         page = await context.newPage();
+        await page.goto(`${BASE}/profile`, { waitUntil: 'networkidle', timeout: 20000 });
+        const adminProfileContractSection = await page.getByText('合約簽署', { exact: true }).count();
+        assert('T1b 停用期間管理員個人頁也隱藏講師簽約區塊', adminProfileContractSection === 0, `count=${adminProfileContractSection}`);
+
         await page.goto(`${BASE}/contract/view/contract-1`, { waitUntil: 'networkidle', timeout: 20000 });
         const adminCanViewContract = new URL(page.url()).pathname === '/contract/view/contract-1'
             && await page.getByRole('heading', { name: '合約檢視' }).count() === 1;
@@ -218,6 +272,33 @@ async function main() {
         const adminCanOpenBackoffice = new URL(page.url()).pathname === '/admin/contracts'
             && await page.getByRole('heading', { name: '合約文件管理' }).count() === 1;
         assert('T6b 管理員合約後台仍保留', adminCanOpenBackoffice, `landed=${new URL(page.url()).pathname}`);
+
+        await page.goto(`${BASE}/admin/instructors`, { waitUntil: 'networkidle', timeout: 20000 });
+        await page.getByRole('heading', { name: '講師資料總覽' }).waitFor();
+        const templateOption = await page.getByRole('option', { name: '廠商匯款申請書' }).count();
+        const downloadButtons = page.getByRole('button', { name: '下載表單' });
+        assert('T9a 講師名單提供自動填表模板', templateOption === 1, `count=${templateOption}`);
+        assert('T9b 講師名單提供逐位下載按鈕', await downloadButtons.count() === 1, `count=${await downloadButtons.count()}`);
+
+        const downloadPromise = page.waitForEvent('download');
+        await downloadButtons.first().click();
+        const download = await downloadPromise;
+        assert('T9c 自動填表 PDF 可下載', download.suggestedFilename() === '簽約暫停測試員-廠商匯款申請書.pdf', `file=${download.suggestedFilename()}`);
+        const generatedPdfSize = readFileSync(await download.path()).length;
+        assert('T9d 下載 PDF 已嵌入講師資料', generatedPdfSize > MINIMAL_PDF.length, `bytes=${generatedPdfSize}`);
+        await page.screenshot({ path: ADMIN_SCREENSHOT, fullPage: true });
+        await page.close();
+        await context.close();
+
+        context = await newContext(browser, { width: 390, height: 844 });
+        page = await context.newPage();
+        await page.goto(`${BASE}/admin/instructors`, { waitUntil: 'networkidle', timeout: 20000 });
+        await page.getByRole('heading', { name: '講師資料總覽' }).waitFor();
+        const mobileDownloadVisible = await page.getByRole('button', { name: '下載表單' }).isVisible();
+        const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        assert('T9e 手機版講師名單可下載表單', mobileDownloadVisible, `visible=${mobileDownloadVisible}`);
+        assert('T9f 手機版講師名單無水平溢出', mobileOverflow <= 0, `overflow=${mobileOverflow}`);
+        await page.screenshot({ path: ADMIN_MOBILE_SCREENSHOT, fullPage: true });
         await page.close();
         await context.close();
     } finally {
@@ -228,6 +309,8 @@ async function main() {
     const passed = results.filter((result) => result.pass).length;
     console.log(`\n=== ${passed}/${results.length} PASS ===`);
     console.log(`screenshot: ${SCREENSHOT}`);
+    console.log(`admin screenshot: ${ADMIN_SCREENSHOT}`);
+    console.log(`admin mobile screenshot: ${ADMIN_MOBILE_SCREENSHOT}`);
     process.exit(passed === results.length ? 0 : 1);
 }
 

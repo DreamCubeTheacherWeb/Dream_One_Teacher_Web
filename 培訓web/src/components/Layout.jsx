@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Trophy, Timer } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Trophy, Timer } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ProfileCompleteGate from './ProfileCompleteGate';
 import { INSTRUCTOR_CONTRACTS_ENABLED } from '../lib/featureFlags';
@@ -125,12 +125,6 @@ const Layout = ({ children }) => {
                                     <UserCircle className="w-4 h-4" />
                                     個人資料
                                 </Link>
-                                {profile && profile.role !== 'pending' && (
-                                    <Link to="/my/salary" className={navLinkClass('/my/salary')}>
-                                        <Wallet className="w-4 h-4" />
-                                        我的薪資
-                                    </Link>
-                                )}
                                 {(profile?.role === 'admin' || profile?.role === 'mentor') && (
                                     <Link to="/admin" className={navLinkClass('/admin')}>
                                         <LayoutDashboard className="w-4 h-4" />
@@ -242,12 +236,6 @@ const Layout = ({ children }) => {
                                         <UserCircle className="w-5 h-5" />
                                         個人資料
                                     </Link>
-                                    {profile && profile.role !== 'pending' && (
-                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/my/salary')}>
-                                            <Wallet className="w-5 h-5" />
-                                            我的薪資
-                                        </Link>
-                                    )}
                                     {(profile?.role === 'admin' || profile?.role === 'mentor') && (
                                         <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/admin')}>
                                             <LayoutDashboard className="w-5 h-5" />

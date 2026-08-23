@@ -20,8 +20,6 @@ import ContractSigningFlow from './pages/ContractSigningFlow';
 import ContractView from './pages/ContractView';
 import ContractAdmin from './pages/admin/ContractAdmin';
 import SalaryRegister from './pages/admin/SalaryRegister';
-import MySalary from './pages/MySalary';
-import MySalaryNew from './pages/MySalaryNew';
 import ClaimRequests from './pages/admin/ClaimRequests';
 import DownloadCenter from './pages/admin/DownloadCenter';
 import BadgeManager from './pages/admin/BadgeManager';
@@ -256,7 +254,7 @@ function App() {
             path="/my/salary"
             element={
               <ProtectedRoute>
-                <Layout><MySalary /></Layout>
+                <Navigate to="/profile" replace />
               </ProtectedRoute>
             }
           />
@@ -264,7 +262,7 @@ function App() {
             path="/my/salary/new"
             element={
               <ProtectedRoute>
-                <Layout><MySalaryNew /></Layout>
+                <Navigate to="/profile" replace />
               </ProtectedRoute>
             }
           />

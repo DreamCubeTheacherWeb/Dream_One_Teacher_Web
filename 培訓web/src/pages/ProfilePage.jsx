@@ -8,7 +8,7 @@ import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badg
 import { downloadCertificate } from '../lib/certificate';
 import { pickInstructorProfileDraftFields, stripAdminManagedInstructorFields } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
-import { canAccessInstructorContracts } from '../lib/featureFlags';
+import { INSTRUCTOR_CONTRACTS_ENABLED, canAccessInstructorContracts } from '../lib/featureFlags';
 import { PROFILE_SAVED_EVENT, REQUIRED_PROFILE_FIELDS } from '../lib/profileCompletion';
 
 const TW_REGIONS = {
@@ -115,7 +115,9 @@ const ProfilePage = () => {
     const [existingClaim, setExistingClaim] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
     const [wcaLocked, setWcaLocked] = useState(false);
-    const canUseContracts = canAccessInstructorContracts(profile?.role);
+    // 停用期間任何人的個人資料頁都不顯示講師簽約區塊；管理員仍可從合約後台
+    // 查看紀錄與直接測試合約路由，兩種用途不要混在個人資料頁。
+    const canUseContracts = INSTRUCTOR_CONTRACTS_ENABLED && canAccessInstructorContracts(profile?.role);
 
     const loadExistingClaim = async () => {
         const { data } = await supabase
