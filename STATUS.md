@@ -1,7 +1,31 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-23（教材資源導航、個人資料門檻與後台網址管理已正式上線）。
+> 最後更新：2026-08-23（公告區域已限制為登入且通過核准的講師／輔導員／管理員）。
+
+---
+
+## 📢 2026-08-23：公告區域登入與講師權限限制（✅ 已上線）
+
+**需求與修正**：公開首頁不再查詢或顯示公告，待審核帳號同樣看不到；只有已登入且角色為
+`teacher`、`mentor` 或 `admin` 的帳號會看到公告區域。公告詳情路由也套用相同守衛，避免未登入或
+待審核使用者知道網址後直接開啟。後端同步移除匿名讀取 policy 與表權限，已發布公告只允許上述
+核准角色讀取；管理員保留原有草稿與 CRUD 權限。`authenticated` 的表權限另收斂為必要的
+`SELECT`／`INSERT`／`UPDATE`／`DELETE`，不再殘留可繞過 RLS 的 `TRUNCATE`。
+
+**證據**：乾淨 `origin/main` worktree 的 31/31 單元測試、針對性 ESLint、production build、
+`git diff --check` 通過；完全 mock Supabase 的瀏覽器回歸 6/6，覆蓋匿名、待審核與核准講師的首頁
+及公告直連。隔離 PostgreSQL 套用同一 migration，確認匿名／待審核不可讀、teacher／mentor／admin
+可讀已發布公告。正式 Supabase catalog 重驗 RLS 已開啟、匿名無任何表權限、核准角色 SELECT policy
+已生效；匿名 REST 查詢回傳 HTTP 401 `permission denied for table announcements`。重新執行
+Supabase Security Advisor 為 0 errors；28 個既有 SECURITY DEFINER 函式警告與本次公告變更無關。
+
+**正式環境證據**：功能提交 `1740a04` 已推送 `main`，GitHub deployment `6048279809` 由 Zeabur
+回報 production success。`dream-one-teacher.zeabur.app` 與 `teacher.dreamcube.tw` 均載入
+`index-CE9CHGnH.js`，SHA-256 與乾淨 build 同為
+`076a3cc138f4489e94be240531ab42600519619a517ef0704a443fde1e1998ce`。正式站匿名首頁實際確認沒有
+公告區域，匿名直連公告網址會回到首頁；正式 bundle 與通過 6 種角色／路由情境的本機 bundle
+逐位元一致。
 
 ---
 
