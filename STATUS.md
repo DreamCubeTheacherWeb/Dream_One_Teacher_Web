@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-24（講師主檔、Google 帳號認領與新註冊審核流程已完成本機實作與回歸，尚未部署）。
+> 最後更新：2026-08-24（講師主檔、Google 帳號認領與新註冊審核流程已套用正式 Supabase 並部署上線）。
 
 ---
 
-## 👤 2026-08-24：講師主檔與 Google 帳號認領併軌（🧪 已完成，待部署）
+## 👤 2026-08-24：講師主檔與 Google 帳號認領併軌（✅ 已上線）
 
 **核心模型**：`public.instructors` 統一作為講師本人、文件、銀行與薪資資料的主檔；
 `instructors.user_id` 只表示 Google 帳號是否已認領，不再用「邀請名單」判斷講師是否存在。
@@ -33,10 +33,24 @@ staff 首次登入的一次性相容入口，登入後立即消耗，不重新�
 ESLint、production build 與 `git diff --check` 通過。全站 lint 剩 5 個既有未修改檔案的 hook/compiler
 錯誤與 3 個警告，與本次變更無關。
 
-**部署邊界**：本項目前只存在 `codex/instructor-claim-flow-20260824` 本機分支；
-`2026-08-24_align_instructor_claim_flow.sql` 尚未套用正式 Supabase，程式也尚未推送或部署。
-正式發布需先核准 migration，再部署前端並以真實 Google 帳號做一次既有主檔、新註冊、停用帳號與
-未完成資料的 production smoke test。
+**正式環境證據**：`2026-08-24_align_instructor_claim_flow.sql` 已以單一 transaction 套用至
+Supabase production。套用前後均為 263 位講師、12 位已認領、251 位未認領、3 位停用；舊 teacher
+invite 為 0，migration 所需資料表與欄位無缺漏。Postflight 確認 12 個敏感函式皆為
+`SECURITY DEFINER` 且固定空 `search_path`，Auth hook 只授權 `supabase_auth_admin`，anon／authenticated
+不可直接執行；停用講師殘留 teacher 權限、下載稽核未回填筆數均為 0，兩個 trigger、公告 RLS、
+Email 與下載稽核索引皆生效。Before User Created hook 在 Dashboard 顯示 Enabled 並指向
+`public.hook_allow_known_google_signup`；模擬未建檔 Google 帳號會放行，重複 Email、停用與已認領主檔
+分別回 409／403／409。Security Advisor 重跑為 0 errors；30 個 warnings 中 28 個為發布前基準，
+新增 2 個為具函式內身份檢查的 authenticated `SECURITY DEFINER` RPC 通用提醒。
+
+程式提交 `b93be40` 已快轉推送 `main`，GitHub deployment `6058481812` 由 Zeabur 回報 production
+success。`dream-one-teacher.zeabur.app` 與 `teacher.dreamcube.tw` 均載入
+`index-NyEvJ5A3.js`，大小 2,250,451 bytes，SHA-256 與乾淨 build 同為
+`8d5f3973479652edac0f249756090a46b6348a840d69093a9b4f986c590cbdef`。正式首頁正常渲染且無 console
+錯誤；匿名直連 `/courses`、`/admin/instructors`、`/profile` 均回登入首頁，匿名 REST 查詢講師與下載
+稽核資料皆為空陣列，直接呼叫認領與 Auth hook RPC 均回 HTTP 401。此次 production smoke 未實際建立
+新的 Google Auth 帳號，避免為驗證產生正式帳號或認領異動；首次登入各分支由正式函式模擬、完整隔離
+PostgreSQL 測試與逐位元一致的正式前端 bundle 共同覆蓋。
 
 ---
 
