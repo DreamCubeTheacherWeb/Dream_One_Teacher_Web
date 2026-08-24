@@ -16,7 +16,7 @@ const CORNER_DECOS = [
 ];
 
 const STATS_CONFIG = [
-    { key: 'teachers', icon: Users, label: '總人數' },
+    { key: 'teachers', icon: Users, label: '講師主檔' },
     { key: 'courses', icon: LayoutGrid, label: '上線課程' },
     { key: 'assignments', icon: ClipboardCheck, label: '待審核作業' },
 ];
@@ -36,11 +36,11 @@ const AdminDashboard = () => {
                 .order('order', { ascending: true });
             setCourses(coursesData || []);
 
-            const { count: userCount } = await supabase.from('users').select('*', { count: 'exact', head: true });
+            const { count: instructorCount } = await supabase.from('instructors').select('*', { count: 'exact', head: true });
             const { count: assignCount } = await supabase.from('assignments').select('*', { count: 'exact', head: true }).is('feedback', null);
 
             setStats({
-                teachers: userCount || 0,
+                teachers: instructorCount || 0,
                 courses: coursesData?.length || 0,
                 assignments: assignCount || 0
             });
@@ -137,7 +137,7 @@ const AdminDashboard = () => {
                         <span className="text-xs text-bauhaus-black/40 font-bold ml-1">僅管理員可見</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <NavCard to="/admin/teachers" icon={UserCog} title="講師名單管理" desc="新增、管理講師與權限設定" color="blue" />
+                        <NavCard to="/admin/teachers" icon={UserCog} title="帳號審核與權限" desc="審核全新註冊講師與管理帳號角色" color="blue" />
                         <NavCard to="/admin/course-categories" icon={Layers3} title="課程大分類" desc="管理課程第一層入口與可見對象" color="amber" />
                         <NavCard to="/admin/announcements" icon={Megaphone} title="佈告欄管理" desc="新增、編輯首頁公告內容" color="red" />
                         <NavCard to="/admin/contracts" icon={FileSignature} title="合約文件管理" desc="管理合約文件與查看簽約狀態" color="violet" />

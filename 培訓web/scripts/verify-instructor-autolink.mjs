@@ -1,17 +1,15 @@
 #!/usr/bin/env node
 /*
- * 回歸驗證：已通過角色審核的帳號，登入後仍會接回同 email 的歷史 instructors 主檔。
+ * 回歸驗證：既有講師首次登入會認領同 Email 主檔，之後登入仍直接取得同一筆資料。
  *
- * 舊 bug：AuthContext 只在 public.users.role === 'pending' 時呼叫
- * link_my_instructor_by_email。teacher/admin/mentor（尤其先命中 teacher_invites 的帳號）
- * 會直接跳過，因此頁首與個人頁都拿不到歷史講師資料。
+ * 登入決策統一由 claim_my_precreated_instructor 處理，不依角色或額外邀請名單判斷。
  *
  * 驗證方式：假登入 session + mock Supabase。RPC 呼叫前 instructors 查不到資料；
  * RPC 成功後才回傳歷史主檔，最後從真實 React 畫面確認暱稱已自動帶入。
  *
  * 用法：node scripts/verify-instructor-autolink.mjs
  */
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -23,6 +21,7 @@ const APP_DIR = path.resolve(__dirname, '..');
 const PORT = 4221;
 const BASE = `http://localhost:${PORT}`;
 const { chromium } = require(path.join(APP_DIR, 'node_modules/playwright-core'));
+const SYSTEM_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 const envMap = Object.fromEntries(readFileSync(path.join(APP_DIR, '.env'), 'utf8')
     .split('\n').map((line) => line.trim())
@@ -113,10 +112,10 @@ async function handleRoute(route) {
         return jsonResponse(route, {});
     }
 
-    if (url.pathname === '/rest/v1/rpc/link_my_instructor_by_email') {
+    if (url.pathname === '/rest/v1/rpc/claim_my_precreated_instructor') {
         linkRpcCalls += 1;
         linked = true;
-        return jsonResponse(route, INSTRUCTOR_ID);
+        return jsonResponse(route, { status: 'claimed', instructor_id: INSTRUCTOR_ID, claimed_now: true });
     }
 
     if (url.pathname.startsWith('/rest/v1/rpc/')) return jsonResponse(route, null);
@@ -146,7 +145,6 @@ async function handleRoute(route) {
             return jsonResponse(route, wantsObject ? (rows[0] || null) : rows);
         }
 
-        if (table === 'teacher_invites') return jsonResponse(route, []);
         return jsonResponse(route, wantsObject ? null : []);
     }
 
@@ -205,7 +203,7 @@ async function main() {
     let browser;
     try {
         await waitForServer(BASE, 15000);
-        browser = await chromium.launch();
+        browser = await chromium.launch(existsSync(SYSTEM_CHROME) ? { executablePath: SYSTEM_CHROME } : {});
         for (const role of ['teacher', 'admin', 'mentor', 'pending']) {
             await runScenario(browser, role);
         }

@@ -2,14 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, UserSearch, Send, AlertCircle, Trophy, Lock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, AlertCircle, Trophy, Lock, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
 import { pickInstructorProfileDraftFields, stripAdminManagedInstructorFields } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
 import { INSTRUCTOR_CONTRACTS_ENABLED, canAccessInstructorContracts } from '../lib/featureFlags';
-import { PROFILE_SAVED_EVENT, REQUIRED_PROFILE_FIELDS } from '../lib/profileCompletion';
+import { PROFILE_SAVED_EVENT, REQUIRED_PROFILE_FIELDS, hasInstructorDocument } from '../lib/profileCompletion';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -50,6 +50,8 @@ const INITIAL_FORM = {
     wca_id: '',
     bank_account_name: '', bank_name: '', bank_branch: '',
     bank_account_number: '', bank_code: '',
+    photo_external_url: null, id_front_external_url: null,
+    id_back_external_url: null, bankbook_external_url: null,
     photo_path: null, photo_mime: null, photo_size: null, photo_uploaded_at: null,
     id_front_path: null, id_front_mime: null, id_front_size: null, id_front_uploaded_at: null,
     id_back_path: null, id_back_mime: null, id_back_size: null, id_back_uploaded_at: null,
@@ -89,14 +91,14 @@ const readDraft = async (uid, baseUpdatedAt) => {
 };
 
 const ProfilePage = () => {
-    const { user, profile } = useAuth();
+    const { user, profile, claimState } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [isFirstTime, setIsFirstTime] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [form, setForm] = useState(INITIAL_FORM);
-    const [savedBankbookPath, setSavedBankbookPath] = useState(null);
+    const [hasSavedBankbook, setHasSavedBankbook] = useState(false);
     const [filePreviews, setFilePreviews] = useState({});
     const [pendingFiles, setPendingFiles] = useState({});
     const [uploading, setUploading] = useState({});
@@ -111,24 +113,11 @@ const ProfilePage = () => {
     const savedBaseUpdatedAt = useRef(null);
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
-    const [showClaimModal, setShowClaimModal] = useState(false);
-    const [existingClaim, setExistingClaim] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
     const [wcaLocked, setWcaLocked] = useState(false);
     // 停用期間任何人的個人資料頁都不顯示講師簽約區塊；管理員仍可從合約後台
     // 查看紀錄與直接測試合約路由，兩種用途不要混在個人資料頁。
     const canUseContracts = INSTRUCTOR_CONTRACTS_ENABLED && canAccessInstructorContracts(profile?.role);
-
-    const loadExistingClaim = async () => {
-        const { data } = await supabase
-            .from('instructor_claim_requests')
-            .select('id, status, instructor:instructor_id ( full_name )')
-            .eq('requester_user_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-        setExistingClaim(data || null);
-    };
 
     const loadContractStatus = async () => {
         try {
@@ -163,26 +152,12 @@ const ProfilePage = () => {
             .eq('user_id', user.id)
             .maybeSingle();
 
-        // 雙保險:萬一 AuthContext 的 fallback link 也沒接到(同 email 但 user_id IS NULL)
-        // 在這裡再試一次,避免使用者填新資料造成「同人兩列」
-        if (!data) {
-            const { data: linkedId } = await supabase.rpc('link_my_instructor_by_email');
-            if (linkedId) {
-                const { data: linkedRow } = await supabase
-                    .from('instructors')
-                    .select('*')
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-                data = linkedRow;
-            }
-        }
-
         let nextForm;
 
         if (data) {
             setIsFirstTime(false);
             setInstructorId(data.id || null);
-            setSavedBankbookPath(data.bankbook_path?.trim() || null);
+            setHasSavedBankbook(hasInstructorDocument(data, 'bankbook'));
             const formData = {};
             for (const key of Object.keys(INITIAL_FORM)) {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
@@ -194,7 +169,7 @@ const ProfilePage = () => {
             nextForm = draft ? { ...formData, ...draft } : formData;
             // 功能上線前若瀏覽器留有「已儲存存摺的替換草稿」，不可讓草稿蓋過 DB 正本，
             // 否則畫面會顯示未送出的檔案，儲存時也會被後端鎖定規則拒絕。
-            if (data.bankbook_path?.trim() && profile?.role !== 'admin') {
+            if (hasInstructorDocument(data, 'bankbook') && profile?.role !== 'admin') {
                 for (const field of BANKBOOK_FIELDS) nextForm[field] = formData[field];
             }
             originalWcaId.current = formData.wca_id || '';
@@ -202,7 +177,7 @@ const ProfilePage = () => {
         } else {
             setIsFirstTime(true);
             setInstructorId(null);
-            setSavedBankbookPath(null);
+            setHasSavedBankbook(false);
             const base = {
                 ...INITIAL_FORM,
                 full_name: profile?.name || '',
@@ -239,7 +214,6 @@ const ProfilePage = () => {
         if (user?.id) {
             loadProfile();
             if (canUseContracts) loadContractStatus();
-            loadExistingClaim();
         }
         // Supabase 會在 TOKEN_REFRESHED 時提供新的 user 物件；只依 user id 載入，
         // 避免 token 更新把使用者尚未送出的表單重新以 DB 舊值覆蓋。
@@ -305,7 +279,7 @@ const ProfilePage = () => {
     };
 
     const handleFileUpload = (docType, file) => {
-        if (docType === 'bankbook' && savedBankbookPath && profile?.role !== 'admin') {
+        if (docType === 'bankbook' && hasSavedBankbook && profile?.role !== 'admin') {
             alert('存摺封面已鎖定，如需更換請聯繫管理員。');
             return;
         }
@@ -327,7 +301,7 @@ const ProfilePage = () => {
     };
 
     const handleRemoveFile = (docType) => {
-        if (docType === 'bankbook' && savedBankbookPath && profile?.role !== 'admin') {
+        if (docType === 'bankbook' && hasSavedBankbook && profile?.role !== 'admin') {
             alert('存摺封面已鎖定，如需更換請聯繫管理員。');
             return;
         }
@@ -363,7 +337,7 @@ const ProfilePage = () => {
             alert('請至少選擇一個接課地區');
             return;
         }
-        const missingDocs = DOC_TYPES.filter(d => !form[`${d.key}_path`] && !pendingFiles[d.key]);
+        const missingDocs = DOC_TYPES.filter(d => !hasInstructorDocument(form, d.key) && !pendingFiles[d.key]);
         if (missingDocs.length > 0) {
             alert('以下文件尚未上傳：\n' + missingDocs.map(d => `• ${d.label}`).join('\n'));
             return;
@@ -466,8 +440,8 @@ const ProfilePage = () => {
         setUploading({});
         savedSnapshot.current = profileSnapshot(nextForm);
         savedBaseUpdatedAt.current = savedRow?.updated_at || null;
-        setSavedBankbookPath(nextForm.bankbook_path?.trim() || null);
-        window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: payload }));
+        setHasSavedBankbook(hasInstructorDocument(nextForm, 'bankbook'));
+        window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: nextForm }));
 
         if (profile?.role === 'pending' && isFirstTime) {
             setShowSuccess(true);
@@ -498,36 +472,13 @@ const ProfilePage = () => {
                 </div>
             )}
 
-            {/* ── 認領歷史講師資料(僅 isFirstTime 且尚未提出 pending 申請時顯示)── */}
-            {isFirstTime && (!existingClaim || existingClaim.status === 'rejected') && (
-                <div className="bh-card p-5 mb-6 flex items-start gap-3">
-                    <div className="w-10 h-10 bg-bauhaus-blue border-2 border-bauhaus-black rounded-lg flex items-center justify-center shrink-0">
-                        <UserSearch className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1">
-                        <p className="text-bauhaus-black font-black">您是已建檔的講師嗎?</p>
-                        <p className="text-bauhaus-black/70 text-sm mt-0.5 font-medium">
-                            如果您之前已經填過資料、想用這個 Google 帳號接收歷史記錄,請點下方認領,輸入姓名並核對手機與身分證末四碼,相符即可立即啟用(不需等待審核)。
-                        </p>
-                        <button
-                            type="button"
-                            onClick={() => setShowClaimModal(true)}
-                            className="bh-btn bh-btn-blue mt-3 px-4 py-3 md:py-2 text-sm w-full sm:w-auto"
-                        >
-                            <UserSearch className="w-4 h-4" /> 認領我的講師資料
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ── 顯示既有 claim 狀態 ── */}
-            {existingClaim?.status === 'pending' && (
-                <div className="bh-card bg-bauhaus-yellow/10 p-5 mb-6 flex items-start gap-3">
-                    <Clock className="w-5 h-5 text-bauhaus-black shrink-0 mt-0.5" />
+            {claimState?.status === 'claimed' && claimState.claimed_now && (
+                <div className="bh-card bg-bauhaus-blue/10 p-5 mb-6 flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-bauhaus-blue shrink-0 mt-0.5" />
                     <div>
-                        <p className="text-bauhaus-black font-black">認領申請審核中</p>
+                        <p className="text-bauhaus-black font-black">已找到並認領您的講師主檔</p>
                         <p className="text-bauhaus-black/70 text-sm mt-0.5 font-medium">
-                            您已申請認領 <strong className="font-black">{existingClaim.instructor?.full_name}</strong> 的講師資料,等候管理員審核中。通過後會自動綁定。
+                            既有資料已自動帶入，不需要再次審核。請補齊尚缺欄位；完成前僅能查看個人資料與公告。
                         </p>
                     </div>
                 </div>
@@ -802,8 +753,9 @@ const ProfilePage = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {DOC_TYPES.map(({ key, label, Icon: docIcon }) => {
                         const Icon = docIcon;
+                        const externalUrl = form[`${key}_external_url`];
                         const isBankbookLocked = key === 'bankbook'
-                            && Boolean(savedBankbookPath)
+                            && hasSavedBankbook
                             && profile?.role !== 'admin';
                         return (
                         <div
@@ -836,6 +788,28 @@ const ProfilePage = () => {
                                         <div className="text-[10px] text-bauhaus-black/50 mt-1 font-bold">
                                             {((pendingFiles[key]?.size || form[`${key}_size`]) / 1024 / 1024).toFixed(1)} MB
                                         </div>
+                                    )}
+                                </div>
+                            ) : externalUrl ? (
+                                <div className="h-32 border-2 border-bauhaus-black rounded-xl bg-white flex flex-col items-center justify-center gap-2 px-3">
+                                    <CheckCircle2 className="w-7 h-7 text-bauhaus-blue" />
+                                    <span className="text-xs font-bold text-bauhaus-black">已從既有主檔帶入</span>
+                                    <a
+                                        href={externalUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs font-black text-bauhaus-blue hover:underline"
+                                    >
+                                        查看既有文件 <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                    {!isBankbookLocked && (
+                                        <button
+                                            type="button"
+                                            onClick={() => fileRefs.current[key]?.click()}
+                                            className="text-xs font-black text-bauhaus-black hover:underline"
+                                        >
+                                            上傳新版
+                                        </button>
                                     )}
                                 </div>
                             ) : isBankbookLocked ? (
@@ -1006,18 +980,6 @@ const ProfilePage = () => {
                         </div>
                     )}
                 </Section>
-            )}
-
-            {/* ── 認領歷史講師資料 Modal ── */}
-            {showClaimModal && (
-                <ClaimInstructorModal
-                    initialName={form.full_name || profile?.name || ''}
-                    onClose={() => setShowClaimModal(false)}
-                    onSubmitted={() => {
-                        setShowClaimModal(false);
-                        loadExistingClaim();
-                    }}
-                />
             )}
 
             {/* ── 註冊完成彈窗 ── */}
@@ -1296,207 +1258,5 @@ const Field = ({ label, required, children }) => (
         {children}
     </div>
 );
-
-// ═══════════════════════════════════════════════════════════════
-// 認領歷史講師資料 Modal
-// 流程:輸入姓名(+選填手機末四碼)→ 搜尋 → 選一筆 → 送出申請
-// 後端 RPC search_unlinked_instructors 只回遮罩過的資訊
-// ═══════════════════════════════════════════════════════════════
-const ClaimInstructorModal = ({ initialName, onClose, onSubmitted }) => {
-    const [nameQuery, setNameQuery] = useState(initialName || '');
-    const [results, setResults] = useState([]);
-    const [searched, setSearched] = useState(false);
-    const [searching, setSearching] = useState(false);
-    const [selected, setSelected] = useState(null);
-    const [phoneFull, setPhoneFull] = useState('');
-    const [idLast4, setIdLast4] = useState('');
-    const [message, setMessage] = useState('');
-    const [submitting, setSubmitting] = useState(false);
-    const [err, setErr] = useState('');
-
-    const inputCls = 'bh-input text-sm';
-
-    const doSearch = async (e) => {
-        e?.preventDefault();
-        setErr('');
-        if (!nameQuery.trim()) {
-            setErr('請輸入姓名');
-            return;
-        }
-        setSearching(true);
-        const { data, error } = await supabase.rpc('search_unlinked_instructors', {
-            name_query: nameQuery.trim(),
-        });
-        setSearching(false);
-        setSearched(true);
-        if (error) {
-            setErr('搜尋失敗:' + error.message);
-            return;
-        }
-        setResults(data || []);
-        setSelected(null);
-    };
-
-    const doSubmit = async () => {
-        if (!selected) return;
-        setErr('');
-        setSubmitting(true);
-        const { data, error } = await supabase.rpc('submit_claim_request', {
-            target_instructor_id: selected.id,
-            phone_input: phoneFull.trim() || null,
-            message_input: message.trim() || null,
-            id_last4_input: idLast4.trim() || null,
-        });
-        setSubmitting(false);
-        if (error) {
-            setErr('送出失敗:' + error.message);
-            return;
-        }
-        // 手機＋身分證末四碼與名冊相符 → 後端已當場自動綁定,不必等審核
-        if (data && data.status === 'approved') {
-            alert('認領成功!資料與名冊相符,已自動綁定你的講師資料,歡迎回來。');
-            window.location.reload();
-            return;
-        }
-        alert('已送出認領申請,請等待管理員審核。');
-        onSubmitted();
-    };
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
-            <div className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl overflow-hidden shadow-hard-lg max-w-lg w-full max-h-[85vh] flex flex-col">
-                <div className="px-6 py-4 border-b-2 border-bauhaus-black flex items-start justify-between">
-                    <div>
-                        <h2 className="font-black uppercase tracking-tight text-lg text-bauhaus-black flex items-center gap-2">
-                            <UserSearch className="w-5 h-5 text-bauhaus-blue" /> 認領講師資料
-                        </h2>
-                        <p className="text-xs text-bauhaus-black/60 mt-1 font-medium">
-                            請輸入您過去填寫資料時使用的姓名,我們會在歷史記錄中比對。
-                        </p>
-                    </div>
-                    <button onClick={onClose} className="relative text-bauhaus-black/40 hover:text-bauhaus-black shrink-0 before:absolute before:-inset-2 before:content-['']">
-                        <X className="w-5 h-5" />
-                    </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-                    {!selected && (
-                        <>
-                            <form onSubmit={doSearch} className="space-y-3">
-                                <Field label="姓名" required>
-                                    <input
-                                        type="text" value={nameQuery}
-                                        onChange={e => setNameQuery(e.target.value)}
-                                        className={inputCls} placeholder="例:王小明"
-                                    />
-                                </Field>
-                                <button
-                                    type="submit" disabled={searching}
-                                    className="bh-btn bh-btn-blue w-full px-4 py-2.5 text-sm"
-                                >
-                                    {searching ? '搜尋中⋯' : '搜尋'}
-                                </button>
-                            </form>
-
-                            {searched && results.length === 0 && !searching && (
-                                <div className="border-2 border-bauhaus-black rounded-xl bg-bauhaus-muted p-4 text-center text-bauhaus-black/60 text-sm font-medium">
-                                    <AlertCircle className="w-5 h-5 mx-auto mb-1 text-bauhaus-black/40" />
-                                    沒有找到符合的講師資料,請確認姓名,或直接填寫下方表單註冊新講師。
-                                </div>
-                            )}
-
-                            {results.length > 0 && (
-                                <div className="space-y-2">
-                                    <div className="text-xs font-bold text-bauhaus-black/60 px-1">
-                                        找到 {results.length} 筆,請點選您本人
-                                    </div>
-                                    {results.map(r => (
-                                        <button
-                                            key={r.id}
-                                            onClick={() => { setSelected(r); setPhoneFull(''); setIdLast4(''); setMessage(''); }}
-                                            className="w-full text-left p-3 border-2 border-bauhaus-black rounded-xl hover:bg-bauhaus-muted transition-colors"
-                                        >
-                                            <div className="font-black text-bauhaus-black">{r.full_name}</div>
-                                            <div className="text-xs text-bauhaus-black/60 mt-0.5 flex flex-wrap gap-x-3">
-                                                {r.email_masked && <span>📧 {r.email_masked}</span>}
-                                                {r.phone_masked && <span>📱 {r.phone_masked}</span>}
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </>
-                    )}
-
-                    {selected && (
-                        <div className="space-y-4">
-                            <div className="bg-bauhaus-blue/10 border-2 border-bauhaus-black rounded-xl p-4">
-                                <div className="text-xs text-bauhaus-blue font-black uppercase tracking-wide mb-1">即將認領</div>
-                                <div className="font-black text-bauhaus-black">{selected.full_name}</div>
-                                <div className="text-xs text-bauhaus-black/60 mt-0.5 flex flex-wrap gap-x-3">
-                                    {selected.email_masked && <span>📧 {selected.email_masked}</span>}
-                                    {selected.phone_masked && <span>📱 {selected.phone_masked}</span>}
-                                </div>
-                                <button onClick={() => setSelected(null)}
-                                    className="relative text-xs text-bauhaus-blue font-bold hover:underline mt-2 before:absolute before:-inset-2 before:content-['']">
-                                    ← 重新選擇
-                                </button>
-                            </div>
-
-                            <Field label="您的完整手機號碼(與名冊核對)">
-                                <input
-                                    type="tel" value={phoneFull}
-                                    onChange={e => setPhoneFull(e.target.value)}
-                                    className={inputCls} placeholder="0912345678"
-                                />
-                            </Field>
-
-                            <Field label="身分證字號末四碼(與名冊核對)">
-                                <input
-                                    type="text" inputMode="numeric" value={idLast4}
-                                    onChange={e => setIdLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                                    className={inputCls} placeholder="1234" maxLength={4}
-                                />
-                                <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">
-                                    手機與身分證末四碼都與名冊相符,即可立即啟用,不需等待審核。
-                                </p>
-                            </Field>
-
-                            <Field label="說明(選填,協助管理員快速辨識)">
-                                <textarea
-                                    value={message}
-                                    onChange={e => setMessage(e.target.value)}
-                                    rows={3}
-                                    className={inputCls + ' resize-none'}
-                                    placeholder="例:之前用 work@gmail.com 註冊,現在改用個人 Gmail"
-                                />
-                            </Field>
-                        </div>
-                    )}
-
-                    {err && (
-                        <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-xl px-3 py-2 font-bold">
-                            {err}
-                        </div>
-                    )}
-                </div>
-
-                {selected && (
-                    <div className="px-6 py-3 border-t-2 border-bauhaus-black flex justify-end gap-2">
-                        <button onClick={onClose}
-                            className="bh-btn-ghost px-4 py-3 md:py-2 text-sm">
-                            取消
-                        </button>
-                        <button onClick={doSubmit} disabled={submitting}
-                            className="bh-btn bh-btn-blue px-5 py-3 md:py-2 text-sm">
-                            <Send className="w-4 h-4" />
-                            {submitting ? '送出⋯' : '送出認領申請'}
-                        </button>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
 
 export default ProfilePage;

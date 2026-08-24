@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Inbox, Download, FileText, Loader2, Settings, AlertCircle } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Download, FileText, Loader2, Settings, AlertCircle } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
+import { REQUIRED_PROFILE_DOCUMENTS, hasInstructorDocument } from '../../lib/profileCompletion';
 
 const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習' };
 
@@ -13,7 +14,7 @@ const STATUS_OPTIONS = [
     { key: 'assistant', label: '助教',     color: 'bg-white text-bauhaus-black' },
     { key: 'part_time', label: '工讀生',   color: 'bg-bauhaus-muted text-bauhaus-black' },
     { key: 'frozen',    label: '冷凍',     color: 'bg-bauhaus-yellow text-bauhaus-black' },
-    { key: 'cancelled', label: '停止合作', color: 'bg-bauhaus-red text-white' },
+    { key: 'cancelled', label: '已離職／停止合作', color: 'bg-bauhaus-red text-white' },
 ];
 const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map(s => [s.key, s]));
 
@@ -23,11 +24,10 @@ const DOC_KEYS = [
     { key: 'photo', label: '講師照片' },
     { key: 'bankbook', label: '存摺封面' },
 ];
-
 const LINK_FILTERS = [
     { key: '', label: '全部', color: 'bg-bauhaus-black text-white' },
-    { key: 'linked', label: '已綁帳號', color: 'bg-bauhaus-blue text-white' },
-    { key: 'unlinked', label: '未綁帳號', color: 'bg-bauhaus-muted text-bauhaus-black' },
+    { key: 'linked', label: '已認領', color: 'bg-bauhaus-blue text-white' },
+    { key: 'unlinked', label: '未認領', color: 'bg-bauhaus-muted text-bauhaus-black' },
 ];
 
 const InstructorList = () => {
@@ -43,7 +43,6 @@ const InstructorList = () => {
     const [signedUrls, setSignedUrls] = useState({});
     const [showAddModal, setShowAddModal] = useState(false);
     const [linkingInst, setLinkingInst] = useState(null);
-    const [pendingClaimCount, setPendingClaimCount] = useState(0);
     const [formTemplates, setFormTemplates] = useState([]);
     const [selectedFormType, setSelectedFormType] = useState('');
     const [generatingFor, setGeneratingFor] = useState(null);
@@ -91,17 +90,6 @@ const InstructorList = () => {
         const timer = window.setTimeout(loadInstructors, 0);
         return () => window.clearTimeout(timer);
     }, [loadInstructors]);
-    useEffect(() => {
-        if (!isAdmin) return;
-        (async () => {
-            const { count } = await supabase
-                .from('instructor_claim_requests')
-                .select('id', { count: 'exact', head: true })
-                .eq('status', 'pending');
-            setPendingClaimCount(count || 0);
-        })();
-    }, [isAdmin]);
-
     const toggleExpand = async (inst) => {
         if (expandedId === inst.id) {
             setExpandedId(null);
@@ -144,9 +132,9 @@ const InstructorList = () => {
     const linkedCount = instructors.filter(i => i.user_id).length;
     const unlinkedCount = instructors.length - linkedCount;
 
-    const docCount = (inst) => DOC_KEYS.filter(d =>
-        inst[`${d.key}_path`] || inst[`${d.key}_external_url`]
-    ).length;
+    const docCount = (inst) => REQUIRED_PROFILE_DOCUMENTS.filter(({ key }) => (
+        hasInstructorDocument(inst, key)
+    )).length;
 
     const handleRoleChange = async (inst, newRole) => {
         const { error } = await supabase
@@ -163,7 +151,7 @@ const InstructorList = () => {
     };
 
     const handleUnlink = async (inst) => {
-        if (!confirm(`確定要解除 ${inst.full_name} 的帳號綁定嗎?\n解綁後使用者下次登入會被當作新使用者,需要重新認領這筆資料。`)) return;
+        if (!confirm(`確定要解除 ${inst.full_name} 的帳號認領嗎?\n解綁後，同一 Email 的 Google 帳號下次登入會再次自動認領這筆主檔。`)) return;
         const { error } = await supabase.rpc('admin_unlink_instructor', { target_instructor_id: inst.id });
         if (error) {
             alert('解綁失敗:' + error.message);
@@ -197,6 +185,7 @@ const InstructorList = () => {
             const { error: auditError } = await supabase.from('instructor_form_downloads').insert({
                 downloaded_by: user.id,
                 target_user_id: inst.user_id || null,
+                target_instructor_id: inst.id,
                 doc_type: docMeta.doc_type,
                 doc_version: docMeta.version,
             });
@@ -218,27 +207,11 @@ const InstructorList = () => {
                 <div>
                     <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">講師資料總覽</h1>
                     <p className="text-bauhaus-black/60 mt-1 font-medium">
-                        共 {instructors.length} 位 ・ <span className="text-bauhaus-blue font-bold">{linkedCount}</span> 位已綁帳號 ・ <span className="text-bauhaus-black/60 font-bold">{unlinkedCount}</span> 位待登入
+                        共 {instructors.length} 位 ・ <span className="text-bauhaus-blue font-bold">{linkedCount}</span> 位已認領 ・ <span className="text-bauhaus-black/60 font-bold">{unlinkedCount}</span> 位未認領
                     </p>
                 </div>
                 {isAdmin && (
                     <div className="flex items-center gap-2 flex-wrap">
-                        <Link
-                            to="/admin/claims"
-                            className={`inline-flex items-center gap-2 font-bold px-3 py-2.5 rounded-xl border-2 border-bauhaus-black transition-colors text-sm min-h-[44px] ${
-                                pendingClaimCount > 0
-                                    ? 'bg-bauhaus-yellow text-bauhaus-black hover:bg-bauhaus-yellow/80'
-                                    : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
-                            }`}
-                        >
-                            <Inbox className="w-4 h-4" />
-                            認領申請
-                            {pendingClaimCount > 0 && (
-                                <span className="bg-bauhaus-black text-white text-xs px-1.5 min-w-[20px] text-center">
-                                    {pendingClaimCount}
-                                </span>
-                            )}
-                        </Link>
                         <button
                             onClick={() => setShowAddModal(true)}
                             className="bh-btn bh-btn-blue px-4 py-2.5"
@@ -448,11 +421,11 @@ const InstructorList = () => {
 const LinkBadge = ({ userId }) => (
     userId ? (
         <span className="bh-chip bg-bauhaus-blue text-white">
-            <Check className="w-3 h-3" /> 已綁
+            <Check className="w-3 h-3" /> 已認領
         </span>
     ) : (
         <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">
-            未綁
+            未認領
         </span>
     )
 );
@@ -619,9 +592,9 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                         <MapPin className="w-3 h-3" />
                         {inst.teaching_regions?.length || inst.teaching_regions_raw ? (inst.teaching_regions?.length || '–') : 0}
                     </span>
-                    <span className={`bh-chip ${docCount === 4 ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
+                    <span className={`bh-chip ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
                         <FileImage className="w-3 h-3" />
-                        {docCount}/4
+                        {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
                     </span>
                     {isAdmin && (
                         inst.user_id ? (
@@ -710,9 +683,9 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                 </div>
             </td>
             <td className="px-6 py-4">
-                <span className={`bh-chip ${docCount === 4 ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
+                <span className={`bh-chip ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
                     <FileImage className="w-3 h-3" />
-                    {docCount}/4
+                    {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
                 </span>
             </td>
             <td className="px-6 py-4 text-right">
@@ -894,7 +867,7 @@ const LinkInstructorModal = ({ inst, onClose, onLinked }) => {
 
     useEffect(() => {
         (async () => {
-            // 撈未綁任何 instructor 的 users(避免綁到已綁的人)
+            // 撈尚未認領其他 instructor 的 users（避免一個帳號認領兩筆主檔）
             const { data: allUsers } = await supabase
                 .from('users')
                 .select('id,name,email,role')
@@ -956,7 +929,7 @@ const LinkInstructorModal = ({ inst, onClose, onLinked }) => {
                         className="bh-input text-sm"
                         autoFocus
                     />
-                    <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">僅列出尚未綁定其他講師的使用者</p>
+                    <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">僅列出尚未認領其他講師主檔的使用者</p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-6 py-2">

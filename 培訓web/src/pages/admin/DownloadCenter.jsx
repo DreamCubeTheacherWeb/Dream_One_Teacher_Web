@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import JSZip from 'jszip';
 import { supabase } from '../../lib/supabaseClient';
@@ -10,54 +10,10 @@ import {
 } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import FieldPositionEditor from '../../components/FieldPositionEditor';
+import { getInstructorProfileCompletion, isInstructorProfileComplete } from '../../lib/profileCompletion';
 
-// 必填欄位（與 ProfilePage 的 REQUIRED_FIELDS 對齊；只做完整度判斷不擋人下載）
-// 註：instructor_role（講師等級）由系統／管理員指派，講師本人填不了，故不列入完整度，
-//     否則所有人都會因這格永遠顯示「未完成」。household_address（戶籍地址）ProfilePage 有要求，一併納入。
-const REQUIRED_FIELDS = [
-  { key: 'full_name', label: '姓名' },
-  { key: 'nickname', label: '暱稱' },
-  { key: 'gender', label: '性別' },
-  { key: 'birth_date', label: '生日' },
-  { key: 'id_number', label: '身分證字號' },
-  { key: 'phone_mobile', label: '手機號碼' },
-  { key: 'line_id', label: 'Line ID' },
-  { key: 'address', label: '通訊地址' },
-  { key: 'household_address', label: '戶籍地址' },
-  { key: 'email_primary', label: 'Email' },
-  { key: 'teaching_freq_semester', label: '接課頻率(學期)' },
-  { key: 'teaching_freq_vacation', label: '接課頻率(寒暑假)' },
-  { key: 'bio_notes', label: '經歷／理念' },
-  { key: 'bank_account_name', label: '匯款戶名' },
-  { key: 'bank_name', label: '銀行別' },
-  { key: 'bank_branch', label: '分行別' },
-  { key: 'bank_account_number', label: '銀行帳號' },
-  { key: 'bank_code', label: '銀行代碼' },
-];
-const REQUIRED_DOCS = [
-  { key: 'photo_path', label: '大頭照' },
-  { key: 'id_front_path', label: '身分證正面' },
-  { key: 'id_back_path', label: '身分證反面' },
-  { key: 'bankbook_path', label: '存摺封面' },
-];
-const TOTAL_REQUIRED = REQUIRED_FIELDS.length + REQUIRED_DOCS.length + 1; // +1：授課縣市
-
-// 回傳「還缺哪些資料」的中文標籤陣列（空陣列＝資料齊全）
-const missingItems = (inst) => {
-  if (!inst) return ['（查無資料）'];
-  const missing = [];
-  for (const f of REQUIRED_FIELDS) {
-    const v = inst[f.key];
-    if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) missing.push(f.label);
-  }
-  if (!inst.teaching_regions?.length) missing.push('授課縣市');
-  for (const d of REQUIRED_DOCS) {
-    if (!inst[d.key]) missing.push(d.label);
-  }
-  return missing;
-};
-
-const isComplete = (inst) => missingItems(inst).length === 0;
+const missingItems = (inst) => getInstructorProfileCompletion(inst).missingItems;
+const isComplete = isInstructorProfileComplete;
 
 const DownloadCenter = () => {
   const { user } = useAuth();
@@ -86,15 +42,12 @@ const DownloadCenter = () => {
   const [fieldEditorTarget, setFieldEditorTarget] = useState(null);
   const [fieldEditorUrl, setFieldEditorUrl] = useState(null);
 
-  useEffect(() => { loadData(); }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const { data: instData } = await supabase
         .from('instructors')
         .select('*')
-        .not('user_id', 'is', null)
         .order('full_name');
       setInstructors(instData || []);
 
@@ -124,14 +77,18 @@ const DownloadCenter = () => {
       const activeForms = Object.values(activeMap)
         .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
       setForms(activeForms);
-      if (activeForms.length && !selectedForm) {
-        setSelectedForm(activeForms[0].doc_type);
-      }
+      setSelectedForm((current) => (
+        activeForms.some((form) => form.doc_type === current)
+          ? current
+          : activeForms[0]?.doc_type || null
+      ));
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   // ── 新增表單類型（doc_category 一律 form；doc_mode 一律 fill_sign 以便定位欄位）──
   const handleAddForm = async () => {
@@ -251,7 +208,7 @@ const DownloadCenter = () => {
   };
 
   const toggleAllVisible = () => {
-    const allIds = filtered.map(i => i.user_id);
+    const allIds = filtered.map(i => i.id);
     const allSelected = allIds.every(id => selectedIds.has(id));
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -290,6 +247,7 @@ const DownloadCenter = () => {
       await supabase.from('instructor_form_downloads').insert({
         downloaded_by: user.id,
         target_user_id: inst.user_id,
+        target_instructor_id: inst.id,
         doc_type: docMeta.doc_type,
         doc_version: docMeta.version,
       });
@@ -301,7 +259,7 @@ const DownloadCenter = () => {
 
   const downloadBatch = async () => {
     if (!selectedForm) { alert('請先選擇要下載的表單'); return; }
-    const targets = filtered.filter(i => selectedIds.has(i.user_id));
+    const targets = filtered.filter(i => selectedIds.has(i.id));
     if (!targets.length) { alert('請至少勾選一位講師'); return; }
 
     setGenerating(true);
@@ -324,6 +282,7 @@ const DownloadCenter = () => {
           logs.push({
             downloaded_by: user.id,
             target_user_id: inst.user_id,
+            target_instructor_id: inst.id,
             doc_type: docMeta.doc_type,
             doc_version: docMeta.version,
           });
@@ -362,7 +321,7 @@ const DownloadCenter = () => {
   }
 
   const selectedFormMeta = forms.find(f => f.doc_type === selectedForm);
-  const allVisibleSelected = filtered.length > 0 && filtered.every(i => selectedIds.has(i.user_id));
+  const allVisibleSelected = filtered.length > 0 && filtered.every(i => selectedIds.has(i.id));
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
@@ -614,24 +573,24 @@ const DownloadCenter = () => {
         ) : (
           <div className="divide-y-2 divide-bauhaus-black/20">
             {filtered.map(inst => {
-              const checked = selectedIds.has(inst.user_id);
+              const checked = selectedIds.has(inst.id);
               const missing = missingItems(inst);
               const complete = missing.length === 0;
-              const pct = Math.round(((TOTAL_REQUIRED - missing.length) / TOTAL_REQUIRED) * 100);
-              const expanded = expandedIds.has(inst.user_id);
+              const pct = getInstructorProfileCompletion(inst).percent;
+              const expanded = expandedIds.has(inst.id);
               const barColor = pct >= 80 ? 'bg-bauhaus-blue' : pct >= 40 ? 'bg-bauhaus-yellow' : 'bg-bauhaus-red';
               const pctColor = pct >= 80 ? 'text-bauhaus-blue' : pct >= 40 ? 'text-bauhaus-black' : 'text-bauhaus-red';
               const MAX_CHIPS = 6;
               const shown = expanded ? missing : missing.slice(0, MAX_CHIPS);
               return (
                 <div
-                  key={inst.user_id}
+                  key={inst.id}
                   className={`px-4 py-3.5 flex items-start gap-3 transition-colors ${checked ? 'bg-bauhaus-cream' : 'hover:bg-bauhaus-cream'}`}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
-                    onChange={() => toggleOne(inst.user_id)}
+                    onChange={() => toggleOne(inst.id)}
                     className="w-5 h-5 accent-bauhaus-blue mt-0.5 shrink-0"
                   />
 
@@ -647,6 +606,9 @@ const DownloadCenter = () => {
                           {inst.instructor_role}級
                         </span>
                       )}
+                      <span className={`bh-chip text-[10px] px-1.5 py-0.5 ${inst.user_id ? 'bg-bauhaus-blue text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
+                        {inst.user_id ? '已認領' : '未認領'}
+                      </span>
                     </div>
                     <div className="text-xs text-bauhaus-black/60 mt-0.5 truncate">
                       {inst.email_primary || '—'} · {inst.phone_mobile || '—'}
@@ -668,7 +630,7 @@ const DownloadCenter = () => {
                         ))}
                         {missing.length > MAX_CHIPS && (
                           <button
-                            onClick={() => toggleExpand(inst.user_id)}
+                            onClick={() => toggleExpand(inst.id)}
                             className="text-[11px] font-bold text-bauhaus-blue hover:underline px-1 min-h-[24px]"
                           >
                             {expanded ? '收合' : `＋ 還有 ${missing.length - MAX_CHIPS} 項`}

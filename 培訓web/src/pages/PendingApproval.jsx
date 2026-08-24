@@ -5,9 +5,10 @@ import { Clock, LogOut, RefreshCw } from 'lucide-react';
 import { Navigate, useNavigate } from 'react-router-dom';
 
 const PendingApproval = () => {
-    const { user, profile, signOut, refreshProfile } = useAuth();
+    const { user, profile, signOut, refreshProfile, claimState } = useAuth();
     const navigate = useNavigate();
     const [checking, setChecking] = useState(true);
+    const [hasInstructorProfile, setHasInstructorProfile] = useState(false);
 
     useEffect(() => {
         if (!user) return;
@@ -17,14 +18,15 @@ const PendingApproval = () => {
                 .select('id')
                 .eq('user_id', user.id)
                 .maybeSingle();
-            if (!data) {
+            setHasInstructorProfile(Boolean(data));
+            if (!data && claimState?.status === 'new') {
                 navigate('/profile', { replace: true });
             } else {
                 setChecking(false);
             }
         };
         checkProfile();
-    }, [user, navigate]);
+    }, [user, navigate, claimState?.status]);
 
     if (!user) return <Navigate to="/" />;
     if (profile?.role && profile.role !== 'pending') return <Navigate to="/courses" />;
@@ -44,12 +46,18 @@ const PendingApproval = () => {
                     <Clock className="w-10 h-10 text-bauhaus-black" />
                 </div>
 
-                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-3 tracking-tight">帳號審核中</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-3 tracking-tight">
+                    {claimState?.status === 'conflict' ? '講師資料需要協助確認' : '帳號審核中'}
+                </h1>
                 <p className="text-bauhaus-black/70 mb-2 font-medium">
-                    你的帳號已成功註冊並完成資料填寫，目前正在等待管理員審核。
+                    {claimState?.status === 'conflict'
+                        ? '系統找到無法自動判定的既有資料，為避免新增重複主檔，請聯繫管理員處理。'
+                        : '你的帳號已成功註冊並完成資料填寫，目前正在等待管理員審核。'}
                 </p>
                 <p className="text-bauhaus-black/50 text-sm mb-8 font-medium">
-                    審核通過後即可瀏覽所有培訓課程內容。
+                    {claimState?.status === 'conflict'
+                        ? claimState.reason
+                        : '審核通過後即可瀏覽所有培訓課程內容。'}
                 </p>
 
                 <div className="bg-white border-2 border-bauhaus-black rounded-2xl p-5 mb-8 text-left shadow-hard">
@@ -63,7 +71,7 @@ const PendingApproval = () => {
                             <span className="text-bauhaus-black/50 font-medium">狀態</span>
                             <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
                                 <span className="w-1.5 h-1.5 bg-bauhaus-black rounded-full animate-pulse" />
-                                待審核
+                                {claimState?.status === 'conflict' ? '資料衝突' : '待審核'}
                             </span>
                         </div>
                     </div>
@@ -77,12 +85,14 @@ const PendingApproval = () => {
                         <RefreshCw className="w-4 h-4" />
                         重新檢查狀態
                     </button>
-                    <button
-                        onClick={() => navigate('/profile')}
-                        className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm"
-                    >
-                        編輯個人資料
-                    </button>
+                    {hasInstructorProfile && claimState?.status !== 'conflict' && (
+                        <button
+                            onClick={() => navigate('/profile')}
+                            className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm"
+                        >
+                            編輯個人資料
+                        </button>
+                    )}
                     <button
                         onClick={signOut}
                         className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm"

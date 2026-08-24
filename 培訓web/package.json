@@ -15,7 +15,8 @@
     "verify:speed-salary:browser": "node scripts/verify-speed-salary-browser.mjs",
     "verify:bankbook-lock": "node scripts/verify-bankbook-lock.mjs",
     "verify:course-categories": "node scripts/verify-course-categories.mjs",
-    "verify:announcement-access": "node scripts/verify-announcement-access.mjs"
+    "verify:announcement-access": "node scripts/verify-announcement-access.mjs",
+    "verify:claim-flow": "node scripts/verify-google-only-auth.mjs && node scripts/verify-instructor-claim-flow.mjs && node scripts/verify-instructor-autolink.mjs && node scripts/verify-claim-admin-ui.mjs && node scripts/verify-complete-gate.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

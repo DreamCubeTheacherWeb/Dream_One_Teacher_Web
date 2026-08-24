@@ -20,7 +20,6 @@ import ContractSigningFlow from './pages/ContractSigningFlow';
 import ContractView from './pages/ContractView';
 import ContractAdmin from './pages/admin/ContractAdmin';
 import SalaryRegister from './pages/admin/SalaryRegister';
-import ClaimRequests from './pages/admin/ClaimRequests';
 import DownloadCenter from './pages/admin/DownloadCenter';
 import BadgeManager from './pages/admin/BadgeManager';
 import Leaderboard from './pages/Leaderboard';
@@ -33,11 +32,12 @@ import { canAccessInstructorContracts } from './lib/featureFlags';
 import { isApprovedUser } from './lib/roles';
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false, approvedOnly = false }) => {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, claimState, loading } = useAuth();
 
   if (loading) return <div className="p-12 text-center text-slate-500 text-lg">載入中...</div>;
   if (!user) return <Navigate to="/" />;
   if (!profile) return <div className="p-12 text-center text-slate-500 text-lg">載入中...</div>;
+  if (allowPending && claimState?.status === 'conflict') return <Navigate to="/pending" replace />;
 
   const isPrivileged = profile.role === 'admin' || profile.role === 'mentor';
   if (!allowPending && !isPrivileged && profile.role === 'pending') return <Navigate to="/pending" />;
@@ -189,11 +189,7 @@ function App() {
           />
           <Route
             path="/admin/claims"
-            element={
-              <ProtectedRoute adminOnly={true}>
-                <Layout><ClaimRequests /></Layout>
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/admin/instructors" replace />}
           />
           <Route
             path="/contract"

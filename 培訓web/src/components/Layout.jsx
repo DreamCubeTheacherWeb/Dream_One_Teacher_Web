@@ -23,7 +23,7 @@ const PenguinAvatar = () => (
 );
 
 const Layout = ({ children }) => {
-    const { user, profile, instructorProfile, avatarUrl, loading, signOut } = useAuth();
+    const { user, profile, instructorProfile, avatarUrl, loading, signOut, accessError } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -339,6 +339,14 @@ const Layout = ({ children }) => {
                     </div>
                 )}
             </header>
+
+            {accessError && (
+                <div className="max-w-4xl mx-auto w-full px-4 pt-4" role="alert">
+                    <div className="border-2 border-bauhaus-black rounded-xl bg-bauhaus-red px-4 py-3 text-white font-bold">
+                        {accessError}
+                    </div>
+                </div>
+            )}
 
             <ProfileCompleteGate onCompletionChange={setProfileComplete} />
 

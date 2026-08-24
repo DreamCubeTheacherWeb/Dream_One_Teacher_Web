@@ -25,17 +25,78 @@ export const REQUIRED_PROFILE_PATHS = [
   'bankbook_path',
 ];
 
+export const REQUIRED_PROFILE_DOCUMENTS = [
+  { key: 'id_front', label: '身分證正面' },
+  { key: 'id_back', label: '身分證反面' },
+  { key: 'bankbook', label: '存摺封面' },
+];
+
 export const PROFILE_SAVED_EVENT = 'instructor-profile-saved';
 
-export const isInstructorProfileComplete = (instructor) => {
-  if (!instructor?.teaching_regions?.length) return false;
+const hasValue = (value) => value !== null
+  && value !== undefined
+  && (typeof value !== 'string' || Boolean(value.trim()));
 
-  const hasAllFields = REQUIRED_PROFILE_FIELDS.every(({ key }) => {
-    const value = instructor[key];
-    return value !== null
-      && value !== undefined
-      && (typeof value !== 'string' || value.trim());
+export const toFetchableInstructorDocumentUrl = (value) => {
+  if (!hasValue(value)) return null;
+
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' || url.hostname !== 'drive.google.com') return null;
+
+    const pathMatch = url.pathname.match(/^\/file\/d\/([A-Za-z0-9_-]+)/);
+    const fileId = url.searchParams.get('id') || pathMatch?.[1];
+    if (!fileId || !/^[A-Za-z0-9_-]+$/.test(fileId)) return null;
+
+    const directUrl = new URL('https://drive.google.com/uc');
+    directUrl.searchParams.set('export', 'download');
+    directUrl.searchParams.set('id', fileId);
+    return directUrl.toString();
+  } catch {
+    return null;
+  }
+};
+
+export const getInstructorDocumentReference = (instructor, key) => {
+  const path = instructor?.[`${key}_path`];
+  if (hasValue(path)) return { kind: 'storage', value: path.trim() };
+
+  const externalUrl = instructor?.[`${key}_external_url`];
+  const fetchUrl = toFetchableInstructorDocumentUrl(externalUrl);
+  if (fetchUrl) {
+    return { kind: 'external', value: externalUrl.trim(), fetchUrl };
+  }
+
+  return null;
+};
+
+export const hasInstructorDocument = (instructor, key) => (
+  getInstructorDocumentReference(instructor, key) !== null
+);
+
+export const getInstructorProfileCompletion = (instructor) => {
+  const missingItems = [];
+
+  REQUIRED_PROFILE_FIELDS.forEach(({ key, label }) => {
+    if (!hasValue(instructor?.[key])) missingItems.push(label);
   });
 
-  return hasAllFields && REQUIRED_PROFILE_PATHS.every((path) => instructor[path]);
+  if (!instructor?.teaching_regions?.length) missingItems.push('主要接課地區');
+
+  REQUIRED_PROFILE_DOCUMENTS.forEach(({ key, label }) => {
+    if (!hasInstructorDocument(instructor, key)) missingItems.push(label);
+  });
+
+  const totalItems = REQUIRED_PROFILE_FIELDS.length + REQUIRED_PROFILE_DOCUMENTS.length + 1;
+  return {
+    complete: missingItems.length === 0,
+    missingItems,
+    completedItems: totalItems - missingItems.length,
+    totalItems,
+    percent: Math.round(((totalItems - missingItems.length) / totalItems) * 100),
+  };
+};
+
+export const isInstructorProfileComplete = (instructor) => {
+  return getInstructorProfileCompletion(instructor).complete;
 };

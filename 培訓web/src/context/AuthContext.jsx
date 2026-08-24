@@ -35,6 +35,8 @@ export const AuthProvider = ({ children }) => {
     const [profile, setProfile] = useState(null);
     const [instructorProfile, setInstructorProfile] = useState(null);
     const [avatarUrl, setAvatarUrl] = useState(null);
+    const [claimState, setClaimState] = useState(null);
+    const [accessError, setAccessError] = useState(null);
     const [loading, setLoading] = useState(true);
     const fetchingRef = useRef(false);
 
@@ -54,73 +56,40 @@ export const AuthProvider = ({ children }) => {
 
             let profileData = rows?.[0] || null;
 
-            if (profileData) {
-                // 如果 role 還是 pending，先試 teacher_invites；歷史 instructors 綁定統一在下方處理。
-                if (profileData.role === 'pending') {
-                    const invites = await rawQuery('teacher_invites', {
-                        select: 'role',
-                        email: `eq.${profileData.email}`,
-                    }, token);
-                    const invite = invites?.[0];
-                    if (invite?.role && invite.role !== 'pending') {
-                        await supabase.from('users').update({ role: invite.role }).eq('id', authUser.id);
-                        await supabase.from('teacher_invites').delete().eq('email', profileData.email);
-                        profileData = { ...profileData, role: invite.role };
-                    }
+            if (!profileData) {
+                const { error: createErr } = await supabase.from('users').insert({
+                    id: authUser.id,
+                    name: authUser.user_metadata?.full_name || null,
+                    email: authUser.email,
+                    role: 'pending',
+                });
+                if (createErr && !createErr.message?.includes('duplicate')) {
+                    console.warn('Failed to create user entry:', createErr.message);
                 }
-            } else {
-                // 沒有 profile,先試 teacher_invites
-                const email = authUser.email;
-                let createdProfile = null;
-
-                if (email) {
-                    const invites = await rawQuery('teacher_invites', {
-                        select: '*',
-                        email: `eq.${email}`,
-                    }, token);
-                    const invite = invites?.[0];
-
-                    if (invite) {
-                        const { error: insertErr } = await supabase.from('users').insert({
-                            id: authUser.id,
-                            name: invite.name || authUser.user_metadata?.full_name,
-                            email,
-                            role: invite.role,
-                        });
-                        if (!insertErr) {
-                            await supabase.from('teacher_invites').delete().eq('email', email);
-                            createdProfile = { id: authUser.id, name: invite.name, email, role: invite.role };
-                        }
-                    }
-                }
-
-                if (!createdProfile) {
-                    // 建立 pending 用戶
-                    const { error: createErr } = await supabase.from('users').insert({
-                        id: authUser.id,
-                        name: authUser.user_metadata?.full_name || null,
-                        email: authUser.email,
-                        role: 'pending',
-                    });
-                    if (createErr && !createErr.message?.includes('duplicate')) {
-                        console.warn('Failed to create user entry:', createErr.message);
-                    }
-
-                    if (!createdProfile) {
-                        createdProfile = { id: authUser.id, email: authUser.email, role: 'pending' };
-                    }
-                }
-                profileData = createdProfile;
+                profileData = {
+                    id: authUser.id,
+                    name: authUser.user_metadata?.full_name || null,
+                    email: authUser.email,
+                    role: 'pending',
+                };
             }
 
-            // 不論目前角色為何，都補做一次歷史講師主檔綁定。
-            // 舊流程只在 role=pending 時呼叫，造成 teacher/admin/mentor（尤其 teacher_invites
-            // 已先升級角色者）永遠跳過綁定，個人頁因此拿不到既有 instructors 資料。
-            // RPC 本身具冪等性：已綁定或 email 無唯一匹配時不會改動資料。
-            const { data: linkedId, error: linkError } = await supabase.rpc('link_my_instructor_by_email');
-            if (linkError) {
-                console.warn('Instructor profile auto-link failed:', linkError.message);
-            } else if (linkedId) {
+            // 唯一決策點：既有主檔第一次登入時認領；之後呼叫只回傳既有認領結果。
+            const { data: claimResult, error: claimError } = await supabase.rpc('claim_my_precreated_instructor');
+            if (claimError) {
+                console.warn('Instructor profile claim failed:', claimError.message);
+                setClaimState({ status: 'error', reason: claimError.message });
+            } else {
+                setClaimState(claimResult || { status: 'new' });
+            }
+
+            if (claimResult?.status === 'blocked') {
+                setAccessError(claimResult.reason || '此講師帳號已停止使用，如有疑問請聯繫管理員。');
+                await supabase.auth.signOut();
+                return;
+            }
+
+            if (claimResult?.status === 'claimed') {
                 const refreshed = await rawQuery('users', {
                     select: '*', id: `eq.${authUser.id}`,
                 }, token);
@@ -170,6 +139,7 @@ export const AuthProvider = ({ children }) => {
                 setProfile(null);
                 setInstructorProfile(null);
                 setAvatarUrl(null);
+                setClaimState(null);
                 setLoading(false);
                 return;
             }
@@ -182,6 +152,7 @@ export const AuthProvider = ({ children }) => {
             // INITIAL_SESSION / SIGNED_IN：只設 user，profile 交給下面的 useEffect
             if (session?.user) {
                 clearLegacyProfileDrafts();
+                setAccessError(null);
                 setUser(session.user);
             } else if (_event === 'INITIAL_SESSION') {
                 setLoading(false);
@@ -199,6 +170,7 @@ export const AuthProvider = ({ children }) => {
     }, [user, profile, fetchProfile]);
 
     const signInWithGoogle = async () => {
+        setAccessError(null);
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: { redirectTo: window.location.origin },
@@ -220,6 +192,7 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{
             user, profile, instructorProfile, avatarUrl,
+            claimState, accessError,
             signInWithGoogle, signOut,
             refreshProfile: () => { fetchingRef.current = false; return fetchProfile(user); },
             loading,

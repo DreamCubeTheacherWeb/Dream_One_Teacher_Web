@@ -1,13 +1,14 @@
 import { PDFDocument } from 'pdf-lib';
 import { supabase } from './supabaseClient';
+import { getInstructorDocumentReference } from './profileCompletion';
 
 const DPR = 3;
 
-const IMAGE_FIELD_TO_PATH_KEY = {
-  photo: 'photo_path',
-  id_front_image: 'id_front_path',
-  id_back_image: 'id_back_path',
-  bankbook_image: 'bankbook_path',
+const IMAGE_FIELD_TO_DOCUMENT = {
+  photo: { key: 'photo', required: false },
+  id_front_image: { key: 'id_front', required: true },
+  id_back_image: { key: 'id_back', required: true },
+  bankbook_image: { key: 'bankbook', required: true },
 };
 
 const textToPngBuffer = async (text, opts = {}) => {
@@ -115,17 +116,41 @@ const buildFieldValueMap = (instructor) => ({
   bank_code: instructor.bank_code || '',
 });
 
-const fetchInstructorImage = async (path) => {
-  if (!path) return null;
-  const { data, error } = await supabase.storage
-    .from('instructor_uploads')
-    .download(path);
-  if (error || !data) return null;
+const fetchInstructorDocument = async (reference) => {
+  if (!reference) return null;
+
+  let blob;
+  if (reference.kind === 'storage') {
+    const { data, error } = await supabase.storage
+      .from('instructor_uploads')
+      .download(reference.value);
+    if (error || !data) {
+      throw new Error(`無法下載已上傳文件：${reference.value}`);
+    }
+    blob = data;
+  } else {
+    let response;
+    try {
+      response = await fetch(reference.fetchUrl, { credentials: 'omit' });
+    } catch {
+      throw new Error('無法讀取匯入文件，請先將該文件重新上傳至系統後再產生表單。');
+    }
+    if (!response.ok) {
+      throw new Error(`無法讀取匯入文件（HTTP ${response.status}），請先重新上傳後再產生表單。`);
+    }
+    blob = await response.blob();
+  }
+
+  const sourceBytes = await blob.arrayBuffer();
+  const signature = new TextDecoder('ascii').decode(sourceBytes.slice(0, 5));
+  if (signature === '%PDF-') {
+    return { kind: 'pdf', bytes: sourceBytes };
+  }
+
   try {
-    return await normalizeImageToBytes(data);
+    return { kind: 'image', bytes: await normalizeImageToBytes(blob) };
   } catch (e) {
-    console.warn('Image normalize failed for', path, e);
-    return null;
+    throw new Error(`文件格式無法處理：${e.message}`);
   }
 };
 
@@ -159,24 +184,52 @@ export async function generateFilledForm({ docMeta, positions, instructor }) {
     const { height: pageH } = page.getSize();
 
     // ── 圖片欄位 ──
-    const imagePathKey = IMAGE_FIELD_TO_PATH_KEY[pos.field_type];
-    if (imagePathKey) {
-      const path = instructor[imagePathKey];
-      if (!path) continue;
-      if (!imageCache[path]) {
-        imageCache[path] = await fetchInstructorImage(path);
+    const imageDocument = IMAGE_FIELD_TO_DOCUMENT[pos.field_type];
+    if (imageDocument) {
+      const reference = getInstructorDocumentReference(instructor, imageDocument.key);
+      if (!reference) continue;
+      const cacheKey = `${reference.kind}:${reference.value}`;
+      if (!imageCache[cacheKey]) {
+        try {
+          imageCache[cacheKey] = await fetchInstructorDocument(reference);
+        } catch (error) {
+          if (imageDocument.required) throw error;
+          console.warn(`選填圖片無法載入：${reference.value}`, error);
+          continue;
+        }
       }
-      const imageBytes = imageCache[path];
-      if (!imageBytes) continue;
+      const document = imageCache[cacheKey];
+      if (!document) continue;
+
+      if (document.kind === 'pdf') {
+        try {
+          const [embeddedPage] = await pdfDoc.embedPdf(document.bytes, [0]);
+          page.drawPage(embeddedPage, {
+            x: pos.x,
+            y: pageH - pos.y_from_top - pos.height,
+            width: pos.width,
+            height: pos.height,
+          });
+        } catch (error) {
+          if (imageDocument.required) {
+            throw new Error(`無法嵌入必填 PDF 文件：${reference.value}`);
+          }
+          console.warn(`無法嵌入選填 PDF ${reference.value}：${error.message}`);
+        }
+        continue;
+      }
 
       let embedded;
       try {
-        embedded = await pdfDoc.embedPng(imageBytes);
+        embedded = await pdfDoc.embedPng(document.bytes);
       } catch {
         try {
-          embedded = await pdfDoc.embedJpg(imageBytes);
+          embedded = await pdfDoc.embedJpg(document.bytes);
         } catch (e2) {
-          console.warn(`無法嵌入圖片 ${path}：${e2.message}`);
+          if (imageDocument.required) {
+            throw new Error(`無法嵌入必填文件：${reference.value}`);
+          }
+          console.warn(`無法嵌入選填圖片 ${reference.value}：${e2.message}`);
           continue;
         }
       }
@@ -237,19 +290,19 @@ export async function loadFormTemplate(docType) {
 }
 
 /**
- * High-level convenience: takes a doc_type and instructor user_id,
+ * High-level convenience: takes a doc_type and instructor master id,
  * returns the filled PDF bytes plus a suggested filename.
  */
-export async function generateFormForInstructor({ docType, userId }) {
+export async function generateFormForInstructor({ docType, instructorId }) {
   const { docMeta, positions } = await loadFormTemplate(docType);
 
   const { data: instructor, error: instErr } = await supabase
     .from('instructors')
     .select('*')
-    .eq('user_id', userId)
+    .eq('id', instructorId)
     .maybeSingle();
   if (instErr) throw new Error(`查講師資料失敗：${instErr.message}`);
-  if (!instructor) throw new Error(`找不到講師資料：${userId}`);
+  if (!instructor) throw new Error(`找不到講師資料：${instructorId}`);
 
   const bytes = await generateFilledForm({ docMeta, positions, instructor });
   const safeName = (instructor.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
