@@ -37,6 +37,46 @@ const hasValue = (value) => value !== null
   && value !== undefined
   && (typeof value !== 'string' || Boolean(value.trim()));
 
+const isLegacyMailingAddressNote = (value) => (
+  typeof value === 'string' && value.trim().startsWith('[通訊地址]')
+);
+
+const deriveGenderFromTaiwanId = (idNumber) => {
+  const normalized = typeof idNumber === 'string' ? idNumber.trim().toUpperCase() : '';
+  if (!/^[A-Z][12]\d{8}$/.test(normalized)) return null;
+  return normalized[1] === '1' ? '男' : '女';
+};
+
+export const getInstructorLegacyRecoverableItems = (instructor) => {
+  const recoverable = [];
+  if (!hasValue(instructor?.nickname) && hasValue(instructor?.line_name || instructor?.full_name)) {
+    recoverable.push('講師暱稱');
+  }
+  if (!hasValue(instructor?.gender) && deriveGenderFromTaiwanId(instructor?.id_number)) {
+    recoverable.push('性別');
+  }
+  if (
+    (!hasValue(instructor?.bio_notes) || isLegacyMailingAddressNote(instructor?.bio_notes))
+    && [
+      instructor?.bio_personal_experience,
+      instructor?.bio_teaching_experience,
+      instructor?.teaching_philosophy,
+    ].some(hasValue)
+  ) {
+    recoverable.push('經歷 / 理念');
+  }
+  if (!instructor?.teaching_regions?.length && hasValue(instructor?.teaching_regions_raw)) {
+    recoverable.push('主要接課地區');
+  }
+  const bankFieldsMissing = [
+    'bank_account_name', 'bank_name', 'bank_branch', 'bank_account_number', 'bank_code',
+  ].some((key) => !hasValue(instructor?.[key]));
+  if (bankFieldsMissing && hasValue(instructor?.bank_info_raw)) {
+    recoverable.push('舊匯款帳戶資料');
+  }
+  return recoverable;
+};
+
 export const toFetchableInstructorDocumentUrl = (value) => {
   if (!hasValue(value)) return null;
 
@@ -78,7 +118,10 @@ export const getInstructorProfileCompletion = (instructor) => {
   const missingItems = [];
 
   REQUIRED_PROFILE_FIELDS.forEach(({ key, label }) => {
-    if (!hasValue(instructor?.[key])) missingItems.push(label);
+    if (
+      !hasValue(instructor?.[key])
+      || (key === 'bio_notes' && isLegacyMailingAddressNote(instructor?.[key]))
+    ) missingItems.push(label);
   });
 
   if (!instructor?.teaching_regions?.length) missingItems.push('主要接課地區');
@@ -91,6 +134,7 @@ export const getInstructorProfileCompletion = (instructor) => {
   return {
     complete: missingItems.length === 0,
     missingItems,
+    recoverableItems: getInstructorLegacyRecoverableItems(instructor),
     completedItems: totalItems - missingItems.length,
     totalItems,
     percent: Math.round(((totalItems - missingItems.length) / totalItems) * 100),

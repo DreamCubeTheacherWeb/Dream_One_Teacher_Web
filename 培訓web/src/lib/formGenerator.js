@@ -107,7 +107,7 @@ const buildFieldValueMap = (instructor) => ({
   phone: instructor.phone_mobile || '',
 
   // 匯款表單欄位
-  nickname: instructor.nickname || '',
+  nickname: instructor.nickname || instructor.line_name || instructor.full_name || '',
   email_primary: instructor.email_primary || '',
   bank_account_name: instructor.bank_account_name || '',
   bank_name: instructor.bank_name || '',

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   getInstructorProfileCompletion,
   getInstructorDocumentReference,
+  getInstructorLegacyRecoverableItems,
   hasInstructorDocument,
   isInstructorProfileComplete,
   REQUIRED_PROFILE_FIELDS,
@@ -81,4 +82,42 @@ test('缺少接課地區與文字欄位時會列出實際缺項', () => {
   assert.equal(completion.complete, false);
   assert.ok(completion.missingItems.includes('講師暱稱'));
   assert.ok(completion.missingItems.includes('主要接課地區'));
+});
+
+test('舊欄位有資料時會另外標示可轉換，不會誤稱完全找不到', () => {
+  const instructor = {
+    ...completeInstructor,
+    nickname: null,
+    gender: null,
+    id_number: 'A123456789',
+    line_name: 'Line 顯示名稱',
+    bank_account_name: null,
+    bank_name: null,
+    bank_branch: null,
+    bank_account_number: null,
+    bank_code: null,
+    bank_info_raw: '0087007/123456789/王小明',
+  };
+
+  assert.deepEqual(getInstructorLegacyRecoverableItems(instructor), [
+    '講師暱稱',
+    '性別',
+    '舊匯款帳戶資料',
+  ]);
+  const completion = getInstructorProfileCompletion(instructor);
+  assert.equal(completion.complete, false);
+  assert.deepEqual(completion.recoverableItems, [
+    '講師暱稱',
+    '性別',
+    '舊匯款帳戶資料',
+  ]);
+});
+
+test('歷史匯入用來暫存通訊地址的標記不算經歷資料', () => {
+  const completion = getInstructorProfileCompletion({
+    ...completeInstructor,
+    bio_notes: '[通訊地址] 台北市測試路一號',
+  });
+  assert.equal(completion.complete, false);
+  assert.ok(completion.missingItems.includes('經歷 / 理念'));
 });

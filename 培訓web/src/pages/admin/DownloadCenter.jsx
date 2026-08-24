@@ -12,7 +12,6 @@ import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import FieldPositionEditor from '../../components/FieldPositionEditor';
 import { getInstructorProfileCompletion, isInstructorProfileComplete } from '../../lib/profileCompletion';
 
-const missingItems = (inst) => getInstructorProfileCompletion(inst).missingItems;
 const isComplete = isInstructorProfileComplete;
 
 const DownloadCenter = () => {
@@ -566,6 +565,11 @@ const DownloadCenter = () => {
               · 資料齊全 {filtered.filter(isComplete).length} 位
             </span>
           )}
+          {filtered.some(inst => getInstructorProfileCompletion(inst).recoverableItems.length > 0) && (
+            <span className="text-bauhaus-yellow normal-case tracking-normal">
+              · {filtered.filter(inst => getInstructorProfileCompletion(inst).recoverableItems.length > 0).length} 位可從既有資料整理
+            </span>
+          )}
         </div>
 
         {filtered.length === 0 ? (
@@ -574,9 +578,11 @@ const DownloadCenter = () => {
           <div className="divide-y-2 divide-bauhaus-black/20">
             {filtered.map(inst => {
               const checked = selectedIds.has(inst.id);
-              const missing = missingItems(inst);
+              const completion = getInstructorProfileCompletion(inst);
+              const missing = completion.missingItems;
+              const recoverable = completion.recoverableItems;
               const complete = missing.length === 0;
-              const pct = getInstructorProfileCompletion(inst).percent;
+              const pct = completion.percent;
               const expanded = expandedIds.has(inst.id);
               const barColor = pct >= 80 ? 'bg-bauhaus-blue' : pct >= 40 ? 'bg-bauhaus-yellow' : 'bg-bauhaus-red';
               const pctColor = pct >= 80 ? 'text-bauhaus-blue' : pct >= 40 ? 'text-bauhaus-black' : 'text-bauhaus-red';
@@ -615,10 +621,25 @@ const DownloadCenter = () => {
                     </div>
 
                     {/* 還缺什麼資料 */}
+                    {recoverable.length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-bauhaus-blue">
+                          可從既有資料帶入
+                        </span>
+                        {recoverable.map(item => (
+                          <span
+                            key={item}
+                            className="inline-flex items-center rounded-md bg-bauhaus-blue/10 text-bauhaus-blue text-[11px] font-bold px-1.5 py-0.5"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {!complete && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] font-bold text-bauhaus-black/45">
-                          還缺 {missing.length} 項
+                          尚未轉成正式欄位 {missing.length} 項
                         </span>
                         {shown.map(m => (
                           <span

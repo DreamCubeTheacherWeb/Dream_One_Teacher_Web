@@ -32,6 +32,13 @@ from urllib.request import Request, urlopen
 from urllib.parse import quote
 from urllib.error import HTTPError
 
+from instructor_data_reconciliation import (
+    compose_bio,
+    derive_gender,
+    load_financial_institutions,
+    parse_legacy_bank_info,
+)
+
 # 使用系統 CA 驗證 Supabase 憑證與 hostname；若本機缺 CA，請設定 SSL_CERT_FILE，
 # 不得為了讓匯入成功而關閉驗證，否則 service-role key 會暴露給中間人。
 SSL_CTX = ssl.create_default_context()
@@ -42,6 +49,12 @@ IN_JSON = BASE / "scripts" / "instructors_merged_preview.json"
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 COMMIT = "--commit" in sys.argv
+FINANCIAL_INSTITUTIONS_CSV = os.environ.get("FINANCIAL_INSTITUTIONS_CSV", "")
+FINANCIAL_INSTITUTIONS = (
+    load_financial_institutions(Path(FINANCIAL_INSTITUTIONS_CSV))
+    if FINANCIAL_INSTITUTIONS_CSV
+    else {}
+)
 
 if not SUPABASE_URL or not SERVICE_KEY:
     print("❌ 缺少 SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY 環境變數")
@@ -149,7 +162,7 @@ print("🔍 讀取現有 instructors...")
 try:
     status, existing = http(
         "GET",
-        "/instructors?select=id,user_id,full_name,email_primary",
+        "/instructors?select=*",
         prefer="count=exact",
     )
 except HTTPError as e:
@@ -158,8 +171,7 @@ except HTTPError as e:
 
 existing = existing or []
 print(f"   現有 {len(existing)} 筆")
-for r in existing:
-    print(f"   - {r['full_name']!r} | email={r.get('email_primary')!r} | user_id={r.get('user_id')}")
+print(f"   已認領 {sum(bool(r.get('user_id')) for r in existing)} 筆")
 
 # 手動 alias:DB 暱稱 → 真實姓名(CSV 用真實姓名)
 NAME_ALIAS = {
@@ -187,8 +199,15 @@ print(f"\n📥 載入 {len(merged)} 筆合併資料")
 
 def to_row(r):
     regions = parse_regions(r.get("teaching_regions_raw"))
+    bank_fields = parse_legacy_bank_info(
+        r.get("bank_info_raw"),
+        r.get("full_name"),
+        FINANCIAL_INSTITUTIONS,
+    ) or {}
     row = {
         "full_name": r["full_name"],
+        "nickname": r.get("line_name") or r["full_name"],
+        "gender": r.get("gender") or derive_gender(r.get("id_number")),
         "employment_status": r.get("employment_status"),
         "instructor_role": r.get("instructor_role"),
         "birth_date": parse_date(r.get("birth_date")),
@@ -197,7 +216,8 @@ def to_row(r):
         "phone_home": r.get("phone_home"),
         "email_primary": r.get("email_primary"),
         "email_secondary": r.get("email_secondary"),
-        "address": r.get("address_registered"),
+        "address": r.get("address_mailing") or r.get("address_registered"),
+        "household_address": r.get("address_registered"),
         "line_id": r.get("line_id"),
         "line_name": r.get("line_name"),
         "facebook_url": r.get("facebook_url"),
@@ -221,17 +241,14 @@ def to_row(r):
         "id_back_external_url": r.get("id_back_external_url"),
         "photo_external_url": r.get("photo_external_url"),
         "bankbook_external_url": r.get("bankbook_external_url"),
-        "bio_notes": (
-            f"[通訊地址] {r['address_mailing']}"
-            if r.get("address_mailing") and r.get("address_mailing") != r.get("address_registered")
-            else None
-        ),
+        "bio_notes": compose_bio(r),
+        **bank_fields,
     }
     return {k: v for k, v in row.items() if v is not None}
 
 
 # ──── 3. 配對 + 分類 ─────────────────────────────────────────
-to_update = []  # (existing_id, row_data)
+to_update = []  # (existing_id, missing-only row_data)
 to_insert = []
 match_log = []
 
@@ -250,9 +267,18 @@ for r in merged:
         matched_by = f"name={name}"
 
     if ex is not None:
+        # 主檔狀態與等級以匯入表為準；其餘欄位只補空值，避免之後重跑
+        # 匯入時覆蓋講師本人已在網站更新的資料。
+        authoritative_fields = {"employment_status", "instructor_role"}
+        missing_only = {
+            key: value
+            for key, value in row.items()
+            if key in authoritative_fields or not ex.get(key)
+        }
         for skip in ("user_id", "id", "created_at"):
-            row.pop(skip, None)
-        to_update.append((ex["id"], row))
+            missing_only.pop(skip, None)
+        if missing_only:
+            to_update.append((ex["id"], missing_only))
         match_log.append(
             f"  🔗 UPDATE: CSV「{r['full_name']}」 → DB「{ex['full_name']}」({matched_by})"
         )
@@ -262,19 +288,13 @@ for r in merged:
 print(f"\n=== 配對結果 ===")
 print(f"  將 UPDATE(email 對到現有列): {len(to_update)} 筆")
 print(f"  將 INSERT(新資料): {len(to_insert)} 筆")
-if match_log:
-    print("\n配對明細:")
-    for m in match_log:
-        print(m)
+print("  配對明細未輸出，避免終端紀錄講師個資")
 
 
 # ──── 4. Dry run 或實際寫入 ────────────────────────────────────
 if not COMMIT:
     print("\n🔍 DRY RUN(沒加 --commit,只印不寫)")
-    print("\n前 2 筆 INSERT 預覽:")
-    for r in to_insert[:2]:
-        print(json.dumps(r, ensure_ascii=False, indent=2))
-        print("---")
+    print(f"  新增列預覽已隱藏（{len(to_insert)} 筆），避免終端紀錄講師個資")
     print(f"\n要實際寫入請加 --commit")
     sys.exit(0)
 

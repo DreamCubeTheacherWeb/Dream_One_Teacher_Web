@@ -89,6 +89,8 @@ const instructors = [
   {
     id: '00000000-0000-4000-8000-0000000000b3', user_id: pendingId,
     full_name: '新註冊老師', email_primary: 'new@example.com', created_at: now,
+    id_number: 'A123456789', line_name: '舊 Line 名稱',
+    bank_info_raw: '0087007/123456789/新註冊老師',
   },
 ];
 const formDocuments = [{
@@ -205,6 +207,15 @@ try {
   assert.match(await importedCard.innerText(), /已認領|未認領/);
   assert.doesNotMatch(await importedCard.innerText(), /還缺.*大頭照/);
   console.log('PASS  未認領匯入講師也會出現在表單下載，且大頭照不算缺項');
+
+  const legacyCard = page.getByText('新註冊老師', { exact: true }).first().locator('..').locator('..');
+  assert.match(await legacyCard.innerText(), /可從既有資料帶入/);
+  assert.match(await legacyCard.innerText(), /講師暱稱/);
+  assert.match(await legacyCard.innerText(), /性別/);
+  assert.match(await legacyCard.innerText(), /舊匯款帳戶資料/);
+  assert.match(await page.locator('body').innerText(), /1 位可從既有資料整理/);
+  await page.screenshot({ path: '/tmp/dream-one-instructor-legacy-data.png', fullPage: true });
+  console.log('PASS  舊欄位另列為可整理資料，不再誤稱全部找不到');
 
   await page.goto(`${baseUrl}/admin/teachers`, { waitUntil: 'networkidle' });
   const accountText = await page.locator('body').innerText();
