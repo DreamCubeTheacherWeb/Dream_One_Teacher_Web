@@ -124,7 +124,7 @@ const AdminDashboard = () => {
                     <NavCard to="/admin/progress" icon={BarChart3} title="培訓進度總覽" desc="檢視所有講師學習進度與狀態" color="emerald" />
                     <NavCard to="/admin/instructors" icon={ContactRound} title="講師資料總覽" desc="查看所有講師個人資料與文件" color="purple" />
                     <NavCard to="/admin/salary" icon={Wallet} title="薪資登記中心" desc="登記每月薪資、查看異常與付款狀態" color="rose" />
-                    <NavCard to="/admin/download-center" icon={Download} title="表單下載中心" desc="批次下載講師匯款申請書與其他自動填表" color="emerald" />
+                    <NavCard to="/admin/download-center" icon={Download} title="表單預覽與下載" desc="預覽講師匯款申請書與其他自動填表，並支援批次下載" color="emerald" />
                 </div>
             </div>
 

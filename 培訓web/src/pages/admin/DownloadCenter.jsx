@@ -6,10 +6,11 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Download, FileText, Search, CheckCircle2, AlertCircle,
   Loader2, Users, FileWarning, ChevronDown, Filter, ArrowLeft, Settings,
-  Plus, Upload, Trash2, PenTool, X, Landmark
+  Plus, Upload, Trash2, PenTool, X, Landmark, Eye
 } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import FieldPositionEditor from '../../components/FieldPositionEditor';
+import FilledFormPreviewModal from '../../components/FilledFormPreviewModal';
 import {
   getInstructorProfileCompletion,
   getMissingRemittanceItems,
@@ -32,6 +33,9 @@ const DownloadCenter = () => {
   const [filterStatus, setFilterStatus] = useState('all'); // all | complete | incomplete | remittance_complete | remittance_incomplete
   const [expandedIds, setExpandedIds] = useState(new Set()); // 展開完整缺項清單的講師
   const [generating, setGenerating] = useState(false);
+  const [previewingFor, setPreviewingFor] = useState(null);
+  const [formPreview, setFormPreview] = useState(null);
+  const formPreviewUrl = formPreview?.url;
   const [progress, setProgress] = useState({ done: 0, total: 0, current: '' });
   const [errors, setErrors] = useState([]);
 
@@ -94,6 +98,14 @@ const DownloadCenter = () => {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    return () => {
+      if (formPreviewUrl) URL.revokeObjectURL(formPreviewUrl);
+    };
+  }, [formPreviewUrl]);
+
+  const closeFormPreview = useCallback(() => setFormPreview(null), []);
 
   // ── 新增表單類型（doc_category 一律 form；doc_mode 一律 fill_sign 以便定位欄位）──
   const handleAddForm = async () => {
@@ -249,9 +261,9 @@ const DownloadCenter = () => {
     return latest;
   };
 
-  const downloadSingle = async (inst) => {
-    if (!selectedForm) { alert('請先選擇要下載的表單'); return; }
-    setGenerating(true);
+  const previewSingle = async (inst) => {
+    if (!selectedForm) { alert('請先選擇要預覽的表單'); return; }
+    setPreviewingFor(inst.id);
     setErrors([]);
     try {
       const [latestInstructor] = await fetchLatestInstructors([inst.id]);
@@ -263,23 +275,42 @@ const DownloadCenter = () => {
 
       const blob = new Blob([bytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      await supabase.from('instructor_form_downloads').insert({
-        downloaded_by: user.id,
-        target_user_id: latestInstructor.user_id || null,
-        target_instructor_id: latestInstructor.id,
-        doc_type: docMeta.doc_type,
-        doc_version: docMeta.version,
+      setFormPreview({
+        url,
+        filename,
+        audit: {
+          targetUserId: latestInstructor.user_id || null,
+          targetInstructorId: latestInstructor.id,
+          docType: docMeta.doc_type,
+          docVersion: docMeta.version,
+        },
       });
     } catch (e) {
-      alert('產生失敗：' + e.message);
+      alert('預覽產生失敗：' + e.message);
     }
-    setGenerating(false);
+    setPreviewingFor(null);
+  };
+
+  const downloadPreview = async () => {
+    if (!formPreview) return;
+
+    const anchor = document.createElement('a');
+    anchor.href = formPreview.url;
+    anchor.download = formPreview.filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    const { error } = await supabase.from('instructor_form_downloads').insert({
+      downloaded_by: user.id,
+      target_user_id: formPreview.audit.targetUserId,
+      target_instructor_id: formPreview.audit.targetInstructorId,
+      doc_type: formPreview.audit.docType,
+      doc_version: formPreview.audit.docVersion,
+    });
+    if (error) {
+      console.error('寫入表單下載紀錄失敗：', error.message);
+    }
   };
 
   const downloadBatch = async () => {
@@ -364,10 +395,10 @@ const DownloadCenter = () => {
           <ArrowLeft className="w-4 h-4" /> 返回後台首頁
         </Link>
         <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight flex items-center gap-2">
-          <Download className="w-7 h-7 text-bauhaus-blue" /> 講師表單下載中心
+          <Eye className="w-7 h-7 text-bauhaus-blue" /> 講師表單預覽與下載
         </h1>
         <p className="text-bauhaus-black/60 font-medium mt-1 text-sm">
-          選擇表單與講師後，系統會即時讀取資料庫最新值、自動套入模板並下載 PDF。
+          選擇表單與講師後，系統會即時讀取最新資料並自動套入模板；可先預覽確認，再下載 PDF。
         </p>
       </div>
 
@@ -422,7 +453,7 @@ const DownloadCenter = () => {
                 <Settings className="w-4 h-4 text-bauhaus-blue" /> 表單模板管理
               </h2>
               <p className="text-xs text-bauhaus-black/50 mt-0.5">
-                這裡新增的文件只會出現在表單下載中心，不會進入講師簽約流程。
+                這裡新增的文件只會出現在表單預覽與下載，不會進入講師簽約流程。
               </p>
             </div>
             <button onClick={() => setShowAddForm(true)} className="bh-btn bh-btn-blue px-4 py-2 text-sm min-h-[44px]">
@@ -592,7 +623,7 @@ const DownloadCenter = () => {
         </button>
         <button
           onClick={downloadBatch}
-          disabled={generating || !selectedForm || selectedVisibleCount === 0}
+          disabled={generating || previewingFor !== null || !selectedForm || selectedVisibleCount === 0}
           className="bh-btn bh-btn-blue ml-auto px-5 py-2 text-sm min-h-[44px]"
         >
           {generating ? (
@@ -712,7 +743,7 @@ const DownloadCenter = () => {
                     )}
                   </div>
 
-                  {/* 完成度 + 下載 */}
+                  {/* 完成度 + 預覽 */}
                   <div className="flex flex-col items-end gap-2 shrink-0 w-24 sm:w-28">
                     {complete ? (
                       <span className="bh-chip bg-bauhaus-blue text-white text-[10px] px-2 py-1">
@@ -729,12 +760,16 @@ const DownloadCenter = () => {
                       </div>
                     )}
                     <button
-                      onClick={() => downloadSingle(inst)}
-                      disabled={generating || !selectedForm}
+                      onClick={() => previewSingle(inst)}
+                      disabled={generating || previewingFor !== null || !selectedForm}
                       className="bh-btn bh-btn-outline text-xs px-3 py-1.5 w-full justify-center"
-                      title={selectedFormMeta ? `下載「${selectedFormMeta.display_name}」` : ''}
+                      title={selectedFormMeta ? `預覽「${selectedFormMeta.display_name}」` : ''}
                     >
-                      <Download className="w-3 h-3" /> 下載
+                      {previewingFor === inst.id ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> 產生中</>
+                      ) : (
+                        <><Eye className="w-3 h-3" /> 預覽</>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -752,6 +787,14 @@ const DownloadCenter = () => {
           docType={fieldEditorTarget.docType}
           docVersion={fieldEditorTarget.docVersion}
           pdfUrl={fieldEditorUrl}
+        />
+      )}
+
+      {formPreview && (
+        <FilledFormPreviewModal
+          preview={formPreview}
+          onClose={closeFormPreview}
+          onDownload={downloadPreview}
         />
       )}
     </div>

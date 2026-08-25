@@ -10,7 +10,12 @@ import {
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// 後台文件預覽與欄位定位共用同版本、同來源的 PDF worker，
+// 避免網路或 CSP 阻擋外部 CDN 時無法開啟私密文件。
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 const FIELD_DEFS = [
   // 合約用既有欄位

@@ -188,8 +188,12 @@ try {
   assert.ok(await page.getByText('未認領匯入老師', { exact: true }).count() > 0);
   const importedRow = page.locator('tr').filter({ hasText: '未認領匯入老師' }).first();
   assert.match(await importedRow.innerText(), /3\/3/);
+  await importedRow.getByRole('button', { name: '預覽表單' }).click();
+  const previewDialog = page.getByRole('dialog');
+  await previewDialog.getByRole('heading', { name: '表單預覽' }).waitFor();
+  assert.equal(await previewDialog.getByText('未認領匯入老師-講師匯款資料表.pdf').count(), 1);
   const downloadPromise = page.waitForEvent('download', { timeout: 15000 });
-  await importedRow.getByRole('button', { name: '下載表單' }).click();
+  await previewDialog.getByRole('button', { name: '下載 PDF' }).click();
   const download = await downloadPromise.catch(async (error) => {
     throw new Error(`${error.message}\nPAGE: ${await page.locator('body').innerText()}`);
   });
@@ -199,6 +203,7 @@ try {
   assert.equal(outputPdf.getPageCount(), 1);
   assert.ok(outputBytes.length > templatePdfBytes.length);
   console.log('PASS  講師資料總覽顯示所有主檔與認領狀態');
+  console.log('PASS  自動填表可先預覽再下載');
   console.log('PASS  外部匯入的身分證正反面與存摺實際嵌入 PDF');
 
   await page.goto(`${baseUrl}/admin/download-center`, { waitUntil: 'networkidle' });
@@ -209,13 +214,13 @@ try {
   console.log('PASS  未認領匯入講師也會出現在表單下載，且大頭照不算缺項');
 
   const legacyCard = page.getByText('新註冊老師', { exact: true }).first().locator('..').locator('..');
-  assert.match(await legacyCard.innerText(), /可從既有資料帶入/);
+  assert.doesNotMatch(await legacyCard.innerText(), /可從既有資料帶入/);
   assert.match(await legacyCard.innerText(), /講師暱稱/);
   assert.match(await legacyCard.innerText(), /性別/);
-  assert.match(await legacyCard.innerText(), /舊匯款帳戶資料/);
-  assert.match(await page.locator('body').innerText(), /1 位可從既有資料整理/);
+  assert.doesNotMatch(await legacyCard.innerText(), /舊匯款帳戶資料/);
+  assert.doesNotMatch(await page.locator('body').innerText(), /可從既有資料整理/);
   await page.screenshot({ path: '/tmp/dream-one-instructor-legacy-data.png', fullPage: true });
-  console.log('PASS  舊欄位另列為可整理資料，不再誤稱全部找不到');
+  console.log('PASS  講師缺項依現行欄位顯示，不再出現舊資料帶入提示');
 
   await page.goto(`${baseUrl}/admin/teachers`, { waitUntil: 'networkidle' });
   const accountText = await page.locator('body').innerText();

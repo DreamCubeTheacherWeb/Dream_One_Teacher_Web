@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Download, FileText, Loader2, Settings, AlertCircle } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Eye, FileText, Loader2, Settings, AlertCircle } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import { REQUIRED_PROFILE_DOCUMENTS, hasInstructorDocument } from '../../lib/profileCompletion';
+import FilledFormPreviewModal from '../../components/FilledFormPreviewModal';
 
 const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習' };
 
@@ -46,7 +47,9 @@ const InstructorList = () => {
     const [formTemplates, setFormTemplates] = useState([]);
     const [selectedFormType, setSelectedFormType] = useState('');
     const [generatingFor, setGeneratingFor] = useState(null);
-    const [downloadError, setDownloadError] = useState('');
+    const [formError, setFormError] = useState('');
+    const [formPreview, setFormPreview] = useState(null);
+    const formPreviewUrl = formPreview?.url;
 
     const loadInstructors = useCallback(async () => {
         const [instructorResult, formResult] = await Promise.all([
@@ -90,6 +93,15 @@ const InstructorList = () => {
         const timer = window.setTimeout(loadInstructors, 0);
         return () => window.clearTimeout(timer);
     }, [loadInstructors]);
+
+    useEffect(() => {
+        return () => {
+            if (formPreviewUrl) URL.revokeObjectURL(formPreviewUrl);
+        };
+    }, [formPreviewUrl]);
+
+    const closeFormPreview = useCallback(() => setFormPreview(null), []);
+
     const toggleExpand = async (inst) => {
         if (expandedId === inst.id) {
             setExpandedId(null);
@@ -160,14 +172,14 @@ const InstructorList = () => {
         await loadInstructors();
     };
 
-    const handleDownloadForm = async (inst) => {
+    const handlePreviewForm = async (inst) => {
         if (!selectedFormType) {
-            setDownloadError('尚未設定可下載的表單模板，請先至表單下載中心完成設定。');
+            setFormError('尚未設定可預覽的表單模板，請先至表單預覽與下載完成設定。');
             return;
         }
 
         setGeneratingFor(inst.id);
-        setDownloadError('');
+        setFormError('');
         try {
             const { data: latestInstructor, error: latestError } = await supabase
                 .from('instructors')
@@ -181,28 +193,42 @@ const InstructorList = () => {
             const safeName = (latestInstructor.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
             const filename = `${safeName}-${docMeta.display_name || selectedFormType}.pdf`;
             const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-            const anchor = document.createElement('a');
-            anchor.href = url;
-            anchor.download = filename;
-            document.body.appendChild(anchor);
-            anchor.click();
-            anchor.remove();
-            window.setTimeout(() => URL.revokeObjectURL(url), 0);
-
-            const { error: auditError } = await supabase.from('instructor_form_downloads').insert({
-                downloaded_by: user.id,
-                target_user_id: latestInstructor.user_id || null,
-                target_instructor_id: latestInstructor.id,
-                doc_type: docMeta.doc_type,
-                doc_version: docMeta.version,
+            setFormPreview({
+                url,
+                filename,
+                audit: {
+                    targetUserId: latestInstructor.user_id || null,
+                    targetInstructorId: latestInstructor.id,
+                    docType: docMeta.doc_type,
+                    docVersion: docMeta.version,
+                },
             });
-            if (auditError) {
-                console.error('寫入表單下載紀錄失敗：', auditError.message);
-            }
         } catch (error) {
-            setDownloadError(`${inst.full_name || '此講師'}的表單產生失敗：${error.message}`);
+            setFormError(`${inst.full_name || '此講師'}的表單預覽產生失敗：${error.message}`);
         } finally {
             setGeneratingFor(null);
+        }
+    };
+
+    const handleDownloadPreview = async () => {
+        if (!formPreview) return;
+
+        const anchor = document.createElement('a');
+        anchor.href = formPreview.url;
+        anchor.download = formPreview.filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+
+        const { error: auditError } = await supabase.from('instructor_form_downloads').insert({
+            downloaded_by: user.id,
+            target_user_id: formPreview.audit.targetUserId,
+            target_instructor_id: formPreview.audit.targetInstructorId,
+            doc_type: formPreview.audit.docType,
+            doc_version: formPreview.audit.docVersion,
+        });
+        if (auditError) {
+            console.error('寫入表單下載紀錄失敗：', auditError.message);
         }
     };
 
@@ -237,7 +263,7 @@ const InstructorList = () => {
                     <div>
                         <h2 className="font-black text-bauhaus-black">講師資料自動填表</h2>
                         <p className="text-sm text-bauhaus-black/60 font-medium mt-0.5">
-                            選擇表單後，可直接下載即時帶入資料庫最新資料與文件的 PDF。
+                            選擇表單後，可先預覽即時帶入的最新資料與文件，確認後再下載 PDF。
                         </p>
                     </div>
                 </div>
@@ -265,10 +291,10 @@ const InstructorList = () => {
                 </div>
             </div>
 
-            {downloadError && (
+            {formError && (
                 <div role="alert" className="mb-6 bg-bauhaus-red text-white border-2 border-bauhaus-black rounded-xl px-4 py-3 text-sm font-bold flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>{downloadError}</span>
+                    <span>{formError}</span>
                 </div>
             )}
 
@@ -354,9 +380,9 @@ const InstructorList = () => {
                             onRoleChange={(newRole) => handleRoleChange(inst, newRole)}
                             onUnlink={() => handleUnlink(inst)}
                             onLink={() => setLinkingInst(inst)}
-                            onDownload={() => handleDownloadForm(inst)}
-                            downloadDisabled={!selectedFormType || generatingFor !== null}
-                            downloading={generatingFor === inst.id}
+                            onPreview={() => handlePreviewForm(inst)}
+                            previewDisabled={!selectedFormType || generatingFor !== null}
+                            previewing={generatingFor === inst.id}
                         />
                     ))
                 )}
@@ -388,9 +414,9 @@ const InstructorList = () => {
                                 onRoleChange={(newRole) => handleRoleChange(inst, newRole)}
                                 onUnlink={() => handleUnlink(inst)}
                                 onLink={() => setLinkingInst(inst)}
-                                onDownload={() => handleDownloadForm(inst)}
-                                downloadDisabled={!selectedFormType || generatingFor !== null}
-                                downloading={generatingFor === inst.id}
+                                onPreview={() => handlePreviewForm(inst)}
+                                previewDisabled={!selectedFormType || generatingFor !== null}
+                                previewing={generatingFor === inst.id}
                             />
                         ))}
                         {filtered.length === 0 && (
@@ -416,6 +442,14 @@ const InstructorList = () => {
                     inst={linkingInst}
                     onClose={() => setLinkingInst(null)}
                     onLinked={() => { setLinkingInst(null); loadInstructors(); }}
+                />
+            )}
+
+            {formPreview && (
+                <FilledFormPreviewModal
+                    preview={formPreview}
+                    onClose={closeFormPreview}
+                    onDownload={handleDownloadPreview}
                 />
             )}
         </div>
@@ -558,7 +592,7 @@ const BioBlock = ({ label, text }) => (
     </div>
 );
 
-const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink, onDownload, downloadDisabled, downloading }) => (
+const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink, onPreview, previewDisabled, previewing }) => (
     <div className="bh-card overflow-hidden">
         <div
             className="p-4 flex items-start gap-3 cursor-pointer hover:bg-bauhaus-cream transition-colors"
@@ -612,12 +646,12 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                     )}
                     <button
                         type="button"
-                        onClick={onDownload}
-                        disabled={downloadDisabled}
+                        onClick={onPreview}
+                        disabled={previewDisabled}
                         className="bh-btn bh-btn-outline px-3 py-2 text-xs disabled:opacity-40"
                     >
-                        {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                        {downloading ? '產生中' : '下載表單'}
+                        {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                        {previewing ? '產生預覽' : '預覽表單'}
                     </button>
                 </div>
             </div>
@@ -633,7 +667,7 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
     </div>
 );
 
-const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink, onDownload, downloadDisabled, downloading }) => (
+const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink, onPreview, previewDisabled, previewing }) => (
     <>
         <tr className="hover:bg-bauhaus-cream transition-colors cursor-pointer" onClick={onToggle}>
             <td className="px-6 py-4">
@@ -699,12 +733,12 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                 <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
                     <button
                         type="button"
-                        onClick={onDownload}
-                        disabled={downloadDisabled}
+                        onClick={onPreview}
+                        disabled={previewDisabled}
                         className="bh-btn bh-btn-outline px-3 py-2 text-xs whitespace-nowrap disabled:opacity-40"
                     >
-                        {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                        {downloading ? '產生中' : '下載表單'}
+                        {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                        {previewing ? '產生預覽' : '預覽表單'}
                     </button>
                     <button type="button" onClick={onToggle} className="p-2 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors" aria-label={expanded ? '收合講師資料' : '展開講師資料'}>
                         {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}

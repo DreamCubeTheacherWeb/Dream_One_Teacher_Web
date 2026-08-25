@@ -10,8 +10,8 @@
  * T6 管理員仍可查看已簽合約與進入合約後台
  * T7 講師導覽列不顯示「我的薪資」
  * T8 講師直連薪資頁會被導回 /profile
- * T9 管理員可在講師名單下載自動填好的 PDF
- * T10 表單下載中心會顯示匯款完整度、隱藏舊帶入提示並支援手機版
+ * T9 管理員可在講師名單預覽自動填好的 PDF，確認後再下載
+ * T10 表單預覽與下載會顯示匯款完整度、隱藏舊帶入提示並支援手機版
  *
  * 用法：node scripts/verify-contract-feature-paused.mjs
  */
@@ -283,18 +283,23 @@ async function main() {
         await page.goto(`${BASE}/admin/instructors`, { waitUntil: 'networkidle', timeout: 20000 });
         await page.getByRole('heading', { name: '講師資料總覽' }).waitFor();
         const templateOption = await page.getByRole('option', { name: '廠商匯款申請書' }).count();
-        const downloadButtons = page.getByRole('button', { name: '下載表單' });
+        const previewButtons = page.getByRole('button', { name: '預覽表單' });
         assert('T9a 講師名單提供自動填表模板', templateOption === 1, `count=${templateOption}`);
-        assert('T9b 講師名單提供逐位下載按鈕', await downloadButtons.count() === 1, `count=${await downloadButtons.count()}`);
+        assert('T9b 講師名單提供逐位預覽按鈕', await previewButtons.count() === 1, `count=${await previewButtons.count()}`);
+
+        const readsBeforeInstructorPreview = latestInstructorReads;
+        await previewButtons.first().click();
+        const previewDialog = page.getByRole('dialog');
+        await previewDialog.getByRole('heading', { name: '表單預覽' }).waitFor();
+        assert('T9c 自動填表 PDF 可先預覽', await previewDialog.getByText('簽約暫停測試員-廠商匯款申請書.pdf').count() === 1);
+        assert('T9d 預覽前重新讀取講師最新資料', latestInstructorReads > readsBeforeInstructorPreview, `reads=${latestInstructorReads - readsBeforeInstructorPreview}`);
 
         const downloadPromise = page.waitForEvent('download');
-        const readsBeforeInstructorDownload = latestInstructorReads;
-        await downloadButtons.first().click();
+        await previewDialog.getByRole('button', { name: '下載 PDF' }).click();
         const download = await downloadPromise;
-        assert('T9c 自動填表 PDF 可下載', download.suggestedFilename() === '簽約暫停測試員-廠商匯款申請書.pdf', `file=${download.suggestedFilename()}`);
+        assert('T9e 預覽後可下載 PDF', download.suggestedFilename() === '簽約暫停測試員-廠商匯款申請書.pdf', `file=${download.suggestedFilename()}`);
         const generatedPdfSize = readFileSync(await download.path()).length;
-        assert('T9d 下載 PDF 已嵌入講師資料', generatedPdfSize > MINIMAL_PDF.length, `bytes=${generatedPdfSize}`);
-        assert('T9e 下載前重新讀取講師最新資料', latestInstructorReads > readsBeforeInstructorDownload, `reads=${latestInstructorReads - readsBeforeInstructorDownload}`);
+        assert('T9f 下載 PDF 已嵌入講師資料', generatedPdfSize > MINIMAL_PDF.length, `bytes=${generatedPdfSize}`);
         await page.screenshot({ path: ADMIN_SCREENSHOT, fullPage: true });
         await page.close();
         await context.close();
@@ -303,10 +308,15 @@ async function main() {
         page = await context.newPage();
         await page.goto(`${BASE}/admin/instructors`, { waitUntil: 'networkidle', timeout: 20000 });
         await page.getByRole('heading', { name: '講師資料總覽' }).waitFor();
-        const mobileDownloadVisible = await page.getByRole('button', { name: '下載表單' }).isVisible();
+        const mobilePreviewButton = page.getByRole('button', { name: '預覽表單' });
+        const mobilePreviewVisible = await mobilePreviewButton.isVisible();
+        await mobilePreviewButton.click();
+        const mobilePreviewDialog = page.getByRole('dialog');
+        await mobilePreviewDialog.getByRole('heading', { name: '表單預覽' }).waitFor();
+        await page.locator('.react-pdf__Page__canvas').waitFor({ timeout: 15000 });
         const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-        assert('T9f 手機版講師名單可下載表單', mobileDownloadVisible, `visible=${mobileDownloadVisible}`);
-        assert('T9g 手機版講師名單無水平溢出', mobileOverflow <= 0, `overflow=${mobileOverflow}`);
+        assert('T9g 手機版講師名單可預覽表單', mobilePreviewVisible, `visible=${mobilePreviewVisible}`);
+        assert('T9h 手機版預覽無水平溢出', mobileOverflow <= 0, `overflow=${mobileOverflow}`);
         await page.screenshot({ path: ADMIN_MOBILE_SCREENSHOT, fullPage: true });
         await page.close();
         await context.close();
@@ -314,14 +324,19 @@ async function main() {
         context = await newContext(browser);
         page = await context.newPage();
         await page.goto(`${BASE}/admin/download-center`, { waitUntil: 'networkidle', timeout: 20000 });
-        await page.getByRole('heading', { name: '講師表單下載中心' }).waitFor();
+        await page.getByRole('heading', { name: '講師表單預覽與下載' }).waitFor();
         assert('T10a 下載中心顯示匯款資料完成狀態', await page.getByText('匯款資料完成狀態', { exact: true }).count() === 1);
         assert('T10b 六碼銀行代碼列入資料齊全', await page.getByRole('button', { name: '資料齊全 1 位' }).count() === 1);
         assert('T10c 尚未完整名單可直接篩選', await page.getByRole('button', { name: '尚未完整 0 位' }).count() === 1);
         assert('T10d 不再顯示舊資料帶入提示', await page.getByText('可從既有資料帶入', { exact: true }).count() === 0);
         assert('T10e 不再顯示舊匯款帳戶資料標籤', await page.getByText('舊匯款帳戶資料', { exact: true }).count() === 0);
+        await page.getByRole('button', { name: '預覽', exact: true }).click();
+        const downloadCenterPreview = page.getByRole('dialog');
+        await downloadCenterPreview.getByRole('heading', { name: '表單預覽' }).waitFor();
+        assert('T10f 下載中心的逐位表單可預覽', await downloadCenterPreview.getByRole('button', { name: '下載 PDF' }).count() === 1);
+        await downloadCenterPreview.getByRole('button', { name: '關閉表單預覽' }).click();
         await page.getByRole('button', { name: '尚未完整 0 位' }).click();
-        assert('T10f 匯款未完整篩選會更新名單', await page.getByText('沒有符合條件的講師', { exact: true }).count() === 1);
+        assert('T10g 匯款未完整篩選會更新名單', await page.getByText('沒有符合條件的講師', { exact: true }).count() === 1);
         await page.screenshot({ path: DOWNLOAD_CENTER_SCREENSHOT, fullPage: true });
         await page.close();
         await context.close();
@@ -329,9 +344,12 @@ async function main() {
         context = await newContext(browser, { width: 390, height: 844 });
         page = await context.newPage();
         await page.goto(`${BASE}/admin/download-center`, { waitUntil: 'networkidle', timeout: 20000 });
-        await page.getByRole('heading', { name: '講師表單下載中心' }).waitFor();
+        await page.getByRole('heading', { name: '講師表單預覽與下載' }).waitFor();
+        await page.getByRole('button', { name: '預覽', exact: true }).click();
+        await page.getByRole('dialog').getByRole('heading', { name: '表單預覽' }).waitFor();
+        await page.locator('.react-pdf__Page__canvas').waitFor({ timeout: 15000 });
         const downloadCenterOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-        assert('T10g 手機版匯款完整度無水平溢出', downloadCenterOverflow <= 0, `overflow=${downloadCenterOverflow}`);
+        assert('T10h 手機版表單預覽無水平溢出', downloadCenterOverflow <= 0, `overflow=${downloadCenterOverflow}`);
         await page.screenshot({ path: DOWNLOAD_CENTER_MOBILE_SCREENSHOT, fullPage: true });
         await page.close();
         await context.close();
