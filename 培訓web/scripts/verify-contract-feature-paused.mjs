@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * 回歸驗證：前台講師簽約與薪資頁停用，後台管理仍保留。
+ * 回歸驗證：前台講師簽約停用、報酬頁啟用，後台管理仍保留。
  *
  * T1 講師個人頁不顯示簽約區塊
  * T2 舊的合約通知不會顯示或計入未讀數
@@ -8,8 +8,8 @@
  * T4 講師直接開 /contract/view/:id 會被導回 /profile
  * T5 講師瀏覽過程不查詢合約資料，也不寫入合約通知
  * T6 管理員仍可查看已簽合約與進入合約後台
- * T7 講師導覽列不顯示「我的薪資」
- * T8 講師直連薪資頁會被導回 /profile
+ * T7 講師導覽列顯示「我的報酬」
+ * T8 講師可直接開啟報酬與課程回報頁
  * T9 管理員可在講師名單預覽自動填好的 PDF，確認後再下載
  * T10 表單預覽與下載會顯示匯款完整度、隱藏舊帶入提示並支援手機版
  *
@@ -85,6 +85,20 @@ const INSTRUCTOR = {
     photo_path: 'mock/photo.jpg', id_front_path: 'mock/id-front.jpg',
     id_back_path: 'mock/id-back.jpg', bankbook_path: 'mock/bankbook.jpg',
     hide_from_leaderboard: false,
+};
+const SALARY_SUMMARY = {
+    user_id: UID,
+    full_name: INSTRUCTOR.full_name,
+    this_month_salary: 0,
+    this_month_sessions: 0,
+    this_year_salary: 0,
+    total_unpaid: 0,
+    total_paid: 0,
+    total_salary: 0,
+    total_sessions: 0,
+    total_hours: 0,
+    pending_salary: 0,
+    approved_unpaid_salary: 0,
 };
 const SIGNED_CONTRACT = {
     id: 'contract-1', user_id: UID, status: 'signed', signed_at: NOW,
@@ -180,6 +194,8 @@ async function handleRoute(route) {
         switch (table) {
             case 'users': data = wantsObject ? profile : [profile]; break;
             case 'instructors': data = wantsObject ? INSTRUCTOR : [INSTRUCTOR]; break;
+            case 'instructor_salary_summary': data = wantsObject ? SALARY_SUMMARY : [SALARY_SUMMARY]; break;
+            case 'class_sessions': data = []; break;
             case 'instructor_contracts': data = wantsObject ? SIGNED_CONTRACT : [SIGNED_CONTRACT]; break;
             case 'contract_documents': data = wantsObject ? FORM_DOCUMENT : [FORM_DOCUMENT]; break;
             case 'contract_field_positions': data = wantsObject ? FORM_POSITION : [FORM_POSITION]; break;
@@ -239,8 +255,10 @@ async function main() {
 
         const contractSectionCount = await page.getByText('合約簽署', { exact: true }).count();
         assert('T1 講師個人頁隱藏簽約區塊', contractSectionCount === 0, `count=${contractSectionCount}`);
-        const salaryNavCount = await page.getByText('我的薪資', { exact: true }).count();
-        assert('T7 講師導覽列隱藏我的薪資', salaryNavCount === 0, `count=${salaryNavCount}`);
+        const compensationNavCount = await page.getByText('我的報酬', { exact: true }).count();
+        const oldSalaryNavCount = await page.getByText('我的薪資', { exact: true }).count();
+        assert('T7a 講師導覽列顯示我的報酬', compensationNavCount === 1, `count=${compensationNavCount}`);
+        assert('T7b 講師導覽列不再顯示我的薪資', oldSalaryNavCount === 0, `count=${oldSalaryNavCount}`);
 
         await page.locator('button:has(svg.lucide-bell)').first().click();
         const oldContractNotificationCount = await page.getByText('尚未完成合約簽署', { exact: true }).count();
@@ -255,9 +273,14 @@ async function main() {
         await page.goto(`${BASE}/contract/view/contract-1`, { waitUntil: 'networkidle', timeout: 20000 });
         assert('T4 講師直連合約檢視頁導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
         await page.goto(`${BASE}/my/salary`, { waitUntil: 'networkidle', timeout: 20000 });
-        assert('T8a 講師直連我的薪資導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
+        const compensationRouteWorks = new URL(page.url()).pathname === '/my/salary'
+            && await page.getByRole('heading', { name: '我的報酬' }).count() === 1;
+        assert('T8a 講師可直連我的報酬', compensationRouteWorks, `landed=${new URL(page.url()).pathname}`);
         await page.goto(`${BASE}/my/salary/new`, { waitUntil: 'networkidle', timeout: 20000 });
-        assert('T8b 講師直連課程回報導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
+        const compensationFormWorks = new URL(page.url()).pathname === '/my/salary/new'
+            && await page.getByRole('heading', { name: '登記課程回報' }).count() === 1
+            && await page.getByText('回我的報酬', { exact: true }).count() === 1;
+        assert('T8b 講師可直連課程回報', compensationFormWorks, `landed=${new URL(page.url()).pathname}`);
         assert('T5a 講師端未查詢合約資料', teacherContractReads === 0, `reads=${teacherContractReads}`);
         assert('T5b 講師端未寫入合約通知', teacherContractNotificationWrites === 0, `writes=${teacherContractNotificationWrites}`);
         await page.close();

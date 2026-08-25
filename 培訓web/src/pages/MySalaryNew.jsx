@@ -73,7 +73,7 @@ const MySalaryNew = () => {
     return (
         <div className="p-4 sm:p-8 max-w-3xl mx-auto">
             <Link to="/my/salary" className="relative inline-flex items-center gap-1 text-sm text-bauhaus-black/60 hover:text-bauhaus-blue mb-4 min-h-[44px]">
-                <ArrowLeft className="w-4 h-4" /> 回我的薪資
+                <ArrowLeft className="w-4 h-4" /> 回我的報酬
             </Link>
 
             <div className="mb-6">

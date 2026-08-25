@@ -7,7 +7,7 @@ import { isSafeHttpUrl, TEACHING_MATERIALS_LINK } from '../../lib/siteLinks';
 // 固定顯示順序（比資料庫預設排序更明確；未來若新增其他 key，補進這個陣列即可）。
 const KNOWN_KEYS = [TEACHING_MATERIALS_LINK.key, 'salary_direct', 'salary_partner', 'salary_points'];
 
-// 導航列與「我的薪資」頁外連網址的後台編輯頁。資料表 site_links 由
+// 教材資源與備用報酬表單外連網址的後台編輯頁。資料表 site_links 由
 // supabase/2026-07-09_site_links.sql 建立；表不存在時顯示明確提示而非空白頁。
 const SalaryLinksManager = () => {
     const [loading, setLoading] = useState(true);
@@ -100,7 +100,7 @@ const SalaryLinksManager = () => {
             <div className="mb-8">
                 <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">網站連結管理</h1>
                 <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">
-                    編輯導航列的「教材資源」網址，以及「我的薪資」頁各按鈕的外部連結。
+                    編輯導航列的「教材資源」網址，以及備用報酬表單的外部連結。
                 </p>
             </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
@@ -12,10 +12,8 @@ const STATUS_COLORS = {
     paid:     'bg-bauhaus-blue text-white',
 };
 
-// 薪資頁暫停開關(2026-07-09)：公司暫停用網站登記薪資,改用兩份 Google 表單收單。
-// 開著時只顯示 SalaryFormLinks 兩顆表單按鈕；下方原本的統計/表格內容完整保留不刪,
-// 只是變成 unreachable——日後要恢復,把這個常數改回 false 即可。
-const SALARY_PAGE_PAUSED = true;
+// 站內報酬明細與課程回報已恢復；外部表單元件保留作為緊急回退選項。
+const SALARY_PAGE_PAUSED = false;
 
 // 表單連結預設值(對應 supabase/2026-07-09_site_links.sql 的 seed)：
 // 若 site_links 資料表還沒建好、或讀取失敗,SalaryFormLinks 會 fallback 用這組,頁面仍可用。
@@ -71,7 +69,7 @@ const SalaryFormLinks = () => {
     return (
         <div className="p-4 sm:p-8 max-w-3xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的薪資</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的報酬</h1>
                 <p className="text-bauhaus-black/60 mt-2 text-sm font-medium">課程回報改用以下表單填寫；報酬與點數結算結果請至確認區查看。</p>
             </div>
             <div className="flex flex-col gap-4">
@@ -118,11 +116,7 @@ const MySalary = () => {
     const [loading, setLoading] = useState(true);
     const [monthFilter, setMonthFilter] = useState('');
 
-    useEffect(() => {
-        if (user) load();
-    }, [user]);
-
-    const load = async () => {
+    const load = useCallback(async () => {
         setLoading(true);
         // 自己的彙總(VIEW 自動依 RLS 過濾)
         const [sumRes, sessRes] = await Promise.all([
@@ -132,7 +126,13 @@ const MySalary = () => {
         setSummary(sumRes.data);
         setSessions(sessRes.data || []);
         setLoading(false);
-    };
+    }, [user]);
+
+    useEffect(() => {
+        if (!user) return undefined;
+        const timer = window.setTimeout(load, 0);
+        return () => window.clearTimeout(timer);
+    }, [user, load]);
 
     const months = useMemo(() => [...new Set(sessions.map(s => s.month_label).filter(Boolean))].sort().reverse(), [sessions]);
     const filtered = useMemo(() => monthFilter ? sessions.filter(s => s.month_label === monthFilter) : sessions, [sessions, monthFilter]);
@@ -157,6 +157,7 @@ const MySalary = () => {
     if (!summary) {
         return (
             <div className="p-4 sm:p-8 max-w-3xl mx-auto">
+                <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-6">我的報酬</h1>
                 <div className="bh-card py-16 px-6 text-center">
                     <div className="w-16 h-16 border-2 border-bauhaus-black bg-bauhaus-muted rounded-full flex items-center justify-center mx-auto mb-4">
                         <Wallet className="w-8 h-8 text-bauhaus-black/40" />
@@ -181,7 +182,7 @@ const MySalary = () => {
         <div className="p-4 sm:p-8 max-w-6xl mx-auto">
             <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的薪資</h1>
+                    <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的報酬</h1>
                     <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">{summary.full_name}</p>
                 </div>
                 <Link to="/my/salary/new"
