@@ -87,7 +87,7 @@ const FilledFormPreviewModal = ({ preview, onClose, onDownload }) => {
             <p id="filled-form-preview-description" className="mb-4 text-sm font-bold text-bauhaus-black/65">
               請確認自動帶入的資料與附件內容，確認後再下載 PDF。
             </p>
-            <DocumentViewer fileUrl={preview.url} />
+            <DocumentViewer fileUrl={preview.url} fileData={preview.bytes} />
           </div>
         </div>
 

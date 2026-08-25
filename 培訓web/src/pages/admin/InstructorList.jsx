@@ -195,6 +195,7 @@ const InstructorList = () => {
             const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
             setFormPreview({
                 url,
+                bytes,
                 filename,
                 audit: {
                     targetUserId: latestInstructor.user_id || null,

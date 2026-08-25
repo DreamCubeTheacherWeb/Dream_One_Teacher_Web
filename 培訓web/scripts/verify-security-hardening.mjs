@@ -34,6 +34,9 @@ const authContext = read(appDir, 'src/context/AuthContext.jsx');
 const lessonDetail = read(appDir, 'src/pages/LessonDetail.jsx');
 const layout = read(appDir, 'src/components/Layout.jsx');
 const documentViewer = read(appDir, 'src/components/DocumentViewer.jsx');
+const filledFormPreview = read(appDir, 'src/components/FilledFormPreviewModal.jsx');
+const instructorList = read(appDir, 'src/pages/admin/InstructorList.jsx');
+const downloadCenter = read(appDir, 'src/pages/admin/DownloadCenter.jsx');
 const dockerfile = read(repoDir, 'Dockerfile');
 
 assert.doesNotMatch(profilePage, /localStorage\.setItem\([^\n]*profile_draft_/);
@@ -41,6 +44,10 @@ assert.match(authContext, /localStorage\.removeItem\(key\)/);
 assert.doesNotMatch(lessonDetail, /from\(['"]notifications['"]\)\.insert/);
 assert.match(layout, /rpc\(['"]ensure_my_contract_reminder['"]\)/);
 assert.doesNotMatch(documentViewer, /unpkg\.com/);
+assert.match(documentViewer, /fileData\s*\?\s*\{\s*data:\s*fileData\s*\}\s*:\s*fileUrl/);
+assert.match(filledFormPreview, /fileData=\{preview\.bytes\}/);
+assert.match(instructorList, /setFormPreview\(\{\s*url,\s*bytes,/);
+assert.match(downloadCenter, /setFormPreview\(\{\s*url,\s*bytes,/);
 assert.doesNotMatch(dockerfile, /^COPY \. \.$/m);
 
 for (const script of ['import_instructors.py', 'import_salary_history.py', 'push_rate_card.py']) {

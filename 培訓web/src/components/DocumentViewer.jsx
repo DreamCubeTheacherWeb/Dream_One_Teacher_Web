@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { ChevronLeft, ChevronRight, ZoomIn, X, Maximize2 } from 'lucide-react';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -10,7 +10,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已完整看完且清楚這份文件的所有內容' }) => {
+const DocumentViewer = ({ fileUrl, fileData, onFinishReading, finishButtonText = '我已完整看完且清楚這份文件的所有內容' }) => {
   const [numPages, setNumPages] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasReachedEnd, setHasReachedEnd] = useState(false);
@@ -21,6 +21,11 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
   const [pageHeight, setPageHeight] = useState(null);
   const containerRef = useRef(null);
   const pdfBoxRef = useRef(null);
+  // 動態產生的表單直接交給 PDF.js bytes，避免正式站 CSP 阻擋 blob: URL 的 fetch。
+  // 一般已上傳文件仍沿用既有 URL 載入流程。
+  const pdfSource = useMemo(() => (
+    fileData ? { data: fileData } : fileUrl
+  ), [fileData, fileUrl]);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -56,7 +61,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
     });
   };
 
-  if (!fileUrl) {
+  if (!pdfSource) {
     return (
       <div className="flex items-center justify-center h-64 text-bauhaus-black/40 font-medium">
         尚未上傳文件
@@ -98,7 +103,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
           style={pageHeight ? { minHeight: pageHeight, scrollMarginTop: 16 } : { scrollMarginTop: 16 }}
           onClick={() => setZoomPage(currentPage)}
         >
-          <Document file={fileUrl} onLoadSuccess={onDocumentLoadSuccess} loading={
+          <Document file={pdfSource} onLoadSuccess={onDocumentLoadSuccess} loading={
             <div className="flex items-center justify-center h-[500px] w-full">
               <div className="animate-spin w-8 h-8 border-4 border-bauhaus-black border-t-transparent rounded-full" />
             </div>
@@ -169,7 +174,7 @@ const DocumentViewer = ({ fileUrl, onFinishReading, finishButtonText = '我已�
               <X className="w-5 h-5" />
             </button>
             <div className="p-2 overflow-auto max-h-[90dvh]">
-              <Document file={fileUrl}>
+              <Document file={pdfSource}>
                 <Page
                   pageNumber={zoomPage}
                   width={Math.min(window.innerWidth - 48, 1200)}

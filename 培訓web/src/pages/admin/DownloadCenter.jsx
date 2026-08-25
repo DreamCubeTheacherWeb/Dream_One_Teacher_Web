@@ -277,6 +277,7 @@ const DownloadCenter = () => {
       const url = URL.createObjectURL(blob);
       setFormPreview({
         url,
+        bytes,
         filename,
         audit: {
           targetUserId: latestInstructor.user_id || null,
