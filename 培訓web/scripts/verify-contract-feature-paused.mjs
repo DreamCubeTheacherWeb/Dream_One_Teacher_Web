@@ -11,6 +11,7 @@
  * T7 講師導覽列不顯示「我的薪資」
  * T8 講師直連薪資頁會被導回 /profile
  * T9 管理員可在講師名單下載自動填好的 PDF
+ * T10 表單下載中心會顯示匯款完整度、隱藏舊帶入提示並支援手機版
  *
  * 用法：node scripts/verify-contract-feature-paused.mjs
  */
@@ -28,6 +29,8 @@ const BASE = `http://localhost:${PORT}`;
 const SCREENSHOT = '/tmp/dream-one-contract-paused-profile.png';
 const ADMIN_SCREENSHOT = '/tmp/dream-one-instructor-form-download.png';
 const ADMIN_MOBILE_SCREENSHOT = '/tmp/dream-one-instructor-form-download-mobile.png';
+const DOWNLOAD_CENTER_SCREENSHOT = '/tmp/dream-one-remittance-download-center.png';
+const DOWNLOAD_CENTER_MOBILE_SCREENSHOT = '/tmp/dream-one-remittance-download-center-mobile.png';
 const { chromium } = require(path.join(APP_DIR, 'node_modules/playwright-core'));
 const CHROME_EXECUTABLE = [
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
@@ -78,7 +81,7 @@ const INSTRUCTOR = {
     teaching_freq_semester: '每週 2 次', teaching_freq_vacation: '每週 3 次',
     teaching_regions: ['臺北市'], bio_notes: '測試資料',
     bank_account_name: '簽約暫停測試員', bank_name: '測試銀行', bank_branch: '測試分行',
-    bank_account_number: '1234567890', bank_code: '0080000',
+    bank_account_number: '1234567890', bank_code: '822123',
     photo_path: 'mock/photo.jpg', id_front_path: 'mock/id-front.jpg',
     id_back_path: 'mock/id-back.jpg', bankbook_path: 'mock/bankbook.jpg',
     hide_from_leaderboard: false,
@@ -127,6 +130,7 @@ const MINIMAL_PDF = Buffer.from(
 let currentRole = 'teacher';
 let teacherContractReads = 0;
 let teacherContractNotificationWrites = 0;
+let latestInstructorReads = 0;
 
 function jsonRes(route, data, extra = {}) {
     const headers = { 'content-type': 'application/json', ...extra };
@@ -163,6 +167,9 @@ async function handleRoute(route) {
         if (currentRole === 'teacher' && method !== 'GET' && table === 'notifications') {
             const body = req.postData() || '';
             if (body.includes('contract')) teacherContractNotificationWrites += 1;
+        }
+        if (method === 'GET' && table === 'instructors' && (url.searchParams.has('id') || url.search.includes('id=in.'))) {
+            latestInstructorReads += 1;
         }
         if (method !== 'GET') {
             return route.fulfill({ status: 201, headers: { 'content-type': 'application/json' }, body: wantsObject ? '{}' : '[]' });
@@ -281,11 +288,13 @@ async function main() {
         assert('T9b 講師名單提供逐位下載按鈕', await downloadButtons.count() === 1, `count=${await downloadButtons.count()}`);
 
         const downloadPromise = page.waitForEvent('download');
+        const readsBeforeInstructorDownload = latestInstructorReads;
         await downloadButtons.first().click();
         const download = await downloadPromise;
         assert('T9c 自動填表 PDF 可下載', download.suggestedFilename() === '簽約暫停測試員-廠商匯款申請書.pdf', `file=${download.suggestedFilename()}`);
         const generatedPdfSize = readFileSync(await download.path()).length;
         assert('T9d 下載 PDF 已嵌入講師資料', generatedPdfSize > MINIMAL_PDF.length, `bytes=${generatedPdfSize}`);
+        assert('T9e 下載前重新讀取講師最新資料', latestInstructorReads > readsBeforeInstructorDownload, `reads=${latestInstructorReads - readsBeforeInstructorDownload}`);
         await page.screenshot({ path: ADMIN_SCREENSHOT, fullPage: true });
         await page.close();
         await context.close();
@@ -296,9 +305,34 @@ async function main() {
         await page.getByRole('heading', { name: '講師資料總覽' }).waitFor();
         const mobileDownloadVisible = await page.getByRole('button', { name: '下載表單' }).isVisible();
         const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-        assert('T9e 手機版講師名單可下載表單', mobileDownloadVisible, `visible=${mobileDownloadVisible}`);
-        assert('T9f 手機版講師名單無水平溢出', mobileOverflow <= 0, `overflow=${mobileOverflow}`);
+        assert('T9f 手機版講師名單可下載表單', mobileDownloadVisible, `visible=${mobileDownloadVisible}`);
+        assert('T9g 手機版講師名單無水平溢出', mobileOverflow <= 0, `overflow=${mobileOverflow}`);
         await page.screenshot({ path: ADMIN_MOBILE_SCREENSHOT, fullPage: true });
+        await page.close();
+        await context.close();
+
+        context = await newContext(browser);
+        page = await context.newPage();
+        await page.goto(`${BASE}/admin/download-center`, { waitUntil: 'networkidle', timeout: 20000 });
+        await page.getByRole('heading', { name: '講師表單下載中心' }).waitFor();
+        assert('T10a 下載中心顯示匯款資料完成狀態', await page.getByText('匯款資料完成狀態', { exact: true }).count() === 1);
+        assert('T10b 六碼銀行代碼列入資料齊全', await page.getByRole('button', { name: '資料齊全 1 位' }).count() === 1);
+        assert('T10c 尚未完整名單可直接篩選', await page.getByRole('button', { name: '尚未完整 0 位' }).count() === 1);
+        assert('T10d 不再顯示舊資料帶入提示', await page.getByText('可從既有資料帶入', { exact: true }).count() === 0);
+        assert('T10e 不再顯示舊匯款帳戶資料標籤', await page.getByText('舊匯款帳戶資料', { exact: true }).count() === 0);
+        await page.getByRole('button', { name: '尚未完整 0 位' }).click();
+        assert('T10f 匯款未完整篩選會更新名單', await page.getByText('沒有符合條件的講師', { exact: true }).count() === 1);
+        await page.screenshot({ path: DOWNLOAD_CENTER_SCREENSHOT, fullPage: true });
+        await page.close();
+        await context.close();
+
+        context = await newContext(browser, { width: 390, height: 844 });
+        page = await context.newPage();
+        await page.goto(`${BASE}/admin/download-center`, { waitUntil: 'networkidle', timeout: 20000 });
+        await page.getByRole('heading', { name: '講師表單下載中心' }).waitFor();
+        const downloadCenterOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        assert('T10g 手機版匯款完整度無水平溢出', downloadCenterOverflow <= 0, `overflow=${downloadCenterOverflow}`);
+        await page.screenshot({ path: DOWNLOAD_CENTER_MOBILE_SCREENSHOT, fullPage: true });
         await page.close();
         await context.close();
     } finally {
@@ -311,6 +345,8 @@ async function main() {
     console.log(`screenshot: ${SCREENSHOT}`);
     console.log(`admin screenshot: ${ADMIN_SCREENSHOT}`);
     console.log(`admin mobile screenshot: ${ADMIN_MOBILE_SCREENSHOT}`);
+    console.log(`download center screenshot: ${DOWNLOAD_CENTER_SCREENSHOT}`);
+    console.log(`download center mobile screenshot: ${DOWNLOAD_CENTER_MOBILE_SCREENSHOT}`);
     process.exit(passed === results.length ? 0 : 1);
 }
 

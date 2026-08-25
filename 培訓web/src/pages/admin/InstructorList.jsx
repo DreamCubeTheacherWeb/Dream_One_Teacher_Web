@@ -169,9 +169,16 @@ const InstructorList = () => {
         setGeneratingFor(inst.id);
         setDownloadError('');
         try {
+            const { data: latestInstructor, error: latestError } = await supabase
+                .from('instructors')
+                .select('*')
+                .eq('id', inst.id)
+                .single();
+            if (latestError) throw latestError;
+
             const { docMeta, positions } = await loadFormTemplate(selectedFormType);
-            const bytes = await generateFilledForm({ docMeta, positions, instructor: inst });
-            const safeName = (inst.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
+            const bytes = await generateFilledForm({ docMeta, positions, instructor: latestInstructor });
+            const safeName = (latestInstructor.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
             const filename = `${safeName}-${docMeta.display_name || selectedFormType}.pdf`;
             const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
             const anchor = document.createElement('a');
@@ -184,8 +191,8 @@ const InstructorList = () => {
 
             const { error: auditError } = await supabase.from('instructor_form_downloads').insert({
                 downloaded_by: user.id,
-                target_user_id: inst.user_id || null,
-                target_instructor_id: inst.id,
+                target_user_id: latestInstructor.user_id || null,
+                target_instructor_id: latestInstructor.id,
                 doc_type: docMeta.doc_type,
                 doc_version: docMeta.version,
             });
@@ -230,7 +237,7 @@ const InstructorList = () => {
                     <div>
                         <h2 className="font-black text-bauhaus-black">講師資料自動填表</h2>
                         <p className="text-sm text-bauhaus-black/60 font-medium mt-0.5">
-                            選擇表單後，可直接在講師名單下載已自動帶入個人資料與上傳文件的 PDF。
+                            選擇表單後，可直接下載即時帶入資料庫最新資料與文件的 PDF。
                         </p>
                     </div>
                 </div>

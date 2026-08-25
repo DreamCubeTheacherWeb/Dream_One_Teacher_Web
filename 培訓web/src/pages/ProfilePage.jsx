@@ -350,8 +350,8 @@ const ProfilePage = () => {
             if (!ok) return;
         }
 
-        if (form.bank_code && form.bank_code.length !== 7) {
-            alert('銀行代碼必須為 7 碼數字');
+        if (form.bank_code && ![6, 7].includes(form.bank_code.length)) {
+            alert('銀行代碼必須為 6 或 7 碼數字');
             return;
         }
 
@@ -708,16 +708,16 @@ const ProfilePage = () => {
                             placeholder="例：仁愛分行"
                         />
                     </Field>
-                    <Field label="銀行代碼（7 碼）" required>
+                    <Field label="銀行代碼（6–7 碼）" required>
                         <input
                             type="text"
                             value={form.bank_code}
                             onChange={e => handleChange('bank_code', e.target.value.replace(/\D/g, '').slice(0, 7))}
                             className={inputCls + ' font-mono tracking-wider'}
-                            placeholder="0000000"
+                            placeholder="000000 或 0000000"
                             maxLength={7}
                         />
-                        <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">共 7 碼數字（{form.bank_code.length}/7）</p>
+                        <p className="text-xs text-bauhaus-black/50 mt-1 font-medium">請依匯款資料填寫 6 或 7 碼數字（目前 {form.bank_code.length} 碼）</p>
                     </Field>
                     <Field label="銀行帳號（含檢查碼）" required>
                         <input

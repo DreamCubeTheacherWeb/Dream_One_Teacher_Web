@@ -4,8 +4,10 @@ import {
   getInstructorProfileCompletion,
   getInstructorDocumentReference,
   getInstructorLegacyRecoverableItems,
+  getMissingRemittanceItems,
   hasInstructorDocument,
   isInstructorProfileComplete,
+  isInstructorRemittanceComplete,
   REQUIRED_PROFILE_FIELDS,
   toFetchableInstructorDocumentUrl,
 } from './profileCompletion.js';
@@ -120,4 +122,33 @@ test('歷史匯入用來暫存通訊地址的標記不算經歷資料', () => {
   });
   assert.equal(completion.complete, false);
   assert.ok(completion.missingItems.includes('經歷 / 理念'));
+});
+
+test('六碼銀行代碼只要有值即視為已填寫匯款資料', () => {
+  const instructor = { ...completeInstructor, bank_code: '822123' };
+
+  assert.equal(isInstructorRemittanceComplete(instructor), true);
+  assert.deepEqual(getMissingRemittanceItems(instructor), []);
+});
+
+test('既有 Google Drive 存摺連結會計入匯款資料完整度', () => {
+  const instructor = {
+    ...completeInstructor,
+    bankbook_path: null,
+    bankbook_external_url: 'https://drive.google.com/open?id=bankbook',
+  };
+
+  assert.equal(isInstructorRemittanceComplete(instructor), true);
+});
+
+test('匯款資料缺項會精確列出缺少的分行與存摺封面', () => {
+  const instructor = {
+    ...completeInstructor,
+    bank_branch: ' ',
+    bankbook_path: null,
+    bankbook_external_url: null,
+  };
+
+  assert.equal(isInstructorRemittanceComplete(instructor), false);
+  assert.deepEqual(getMissingRemittanceItems(instructor), ['分行別', '存摺封面']);
 });

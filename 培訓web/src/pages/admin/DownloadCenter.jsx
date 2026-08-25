@@ -6,11 +6,16 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Download, FileText, Search, CheckCircle2, AlertCircle,
   Loader2, Users, FileWarning, ChevronDown, Filter, ArrowLeft, Settings,
-  Plus, Upload, Trash2, PenTool, X
+  Plus, Upload, Trash2, PenTool, X, Landmark
 } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import FieldPositionEditor from '../../components/FieldPositionEditor';
-import { getInstructorProfileCompletion, isInstructorProfileComplete } from '../../lib/profileCompletion';
+import {
+  getInstructorProfileCompletion,
+  getMissingRemittanceItems,
+  isInstructorProfileComplete,
+  isInstructorRemittanceComplete,
+} from '../../lib/profileCompletion';
 
 const isComplete = isInstructorProfileComplete;
 
@@ -24,7 +29,7 @@ const DownloadCenter = () => {
   const [selectedForm, setSelectedForm] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all'); // all | complete | incomplete
+  const [filterStatus, setFilterStatus] = useState('all'); // all | complete | incomplete | remittance_complete | remittance_incomplete
   const [expandedIds, setExpandedIds] = useState(new Set()); // 展開完整缺項清單的講師
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: '' });
@@ -44,10 +49,11 @@ const DownloadCenter = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: instData } = await supabase
+      const { data: instData, error: instError } = await supabase
         .from('instructors')
         .select('*')
         .order('full_name');
+      if (instError) throw instError;
       setInstructors(instData || []);
 
       // 抓「全部」form 類型的所有版本（含未上傳 placeholder、停用舊版），一次供下載選單＋管理面板
@@ -194,6 +200,8 @@ const DownloadCenter = () => {
       }
       if (filterStatus === 'complete' && !isComplete(inst)) return false;
       if (filterStatus === 'incomplete' && isComplete(inst)) return false;
+      if (filterStatus === 'remittance_complete' && !isInstructorRemittanceComplete(inst)) return false;
+      if (filterStatus === 'remittance_incomplete' && isInstructorRemittanceComplete(inst)) return false;
       return true;
     });
   }, [instructors, searchTerm, filterStatus]);
@@ -225,14 +233,32 @@ const DownloadCenter = () => {
     });
   };
 
+  const fetchLatestInstructors = async (ids) => {
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    const latest = [];
+
+    for (let i = 0; i < uniqueIds.length; i += 100) {
+      const { data, error } = await supabase
+        .from('instructors')
+        .select('*')
+        .in('id', uniqueIds.slice(i, i + 100));
+      if (error) throw error;
+      latest.push(...(data || []));
+    }
+
+    return latest;
+  };
+
   const downloadSingle = async (inst) => {
     if (!selectedForm) { alert('請先選擇要下載的表單'); return; }
     setGenerating(true);
     setErrors([]);
     try {
+      const [latestInstructor] = await fetchLatestInstructors([inst.id]);
+      if (!latestInstructor) throw new Error('找不到這位講師的最新資料');
       const { docMeta, positions } = await loadFormTemplate(selectedForm);
-      const bytes = await generateFilledForm({ docMeta, positions, instructor: inst });
-      const safe = (inst.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
+      const bytes = await generateFilledForm({ docMeta, positions, instructor: latestInstructor });
+      const safe = (latestInstructor.full_name || 'unknown').replace(/[/\\?%*:|"<>]/g, '_');
       const filename = `${safe}-${docMeta.display_name || selectedForm}.pdf`;
 
       const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -245,8 +271,8 @@ const DownloadCenter = () => {
 
       await supabase.from('instructor_form_downloads').insert({
         downloaded_by: user.id,
-        target_user_id: inst.user_id,
-        target_instructor_id: inst.id,
+        target_user_id: latestInstructor.user_id || null,
+        target_instructor_id: latestInstructor.id,
         doc_type: docMeta.doc_type,
         doc_version: docMeta.version,
       });
@@ -258,14 +284,20 @@ const DownloadCenter = () => {
 
   const downloadBatch = async () => {
     if (!selectedForm) { alert('請先選擇要下載的表單'); return; }
-    const targets = filtered.filter(i => selectedIds.has(i.id));
-    if (!targets.length) { alert('請至少勾選一位講師'); return; }
+    const selectedTargets = filtered.filter(i => selectedIds.has(i.id));
+    if (!selectedTargets.length) { alert('請至少勾選一位講師'); return; }
 
     setGenerating(true);
     setErrors([]);
-    setProgress({ done: 0, total: targets.length, current: '' });
+    setProgress({ done: 0, total: selectedTargets.length, current: '' });
 
     try {
+      const targets = await fetchLatestInstructors(selectedTargets.map(inst => inst.id));
+      if (targets.length !== selectedTargets.length) {
+        throw new Error('有講師資料已不存在，請重新載入後再試');
+      }
+      const targetOrder = new Map(selectedTargets.map((inst, index) => [inst.id, index]));
+      targets.sort((a, b) => targetOrder.get(a.id) - targetOrder.get(b.id));
       const { docMeta, positions } = await loadFormTemplate(selectedForm);
       const zip = new JSZip();
       const logs = [];
@@ -280,7 +312,7 @@ const DownloadCenter = () => {
           zip.file(`${safe}-${docMeta.display_name || selectedForm}.pdf`, bytes);
           logs.push({
             downloaded_by: user.id,
-            target_user_id: inst.user_id,
+            target_user_id: inst.user_id || null,
             target_instructor_id: inst.id,
             doc_type: docMeta.doc_type,
             doc_version: docMeta.version,
@@ -321,6 +353,9 @@ const DownloadCenter = () => {
 
   const selectedFormMeta = forms.find(f => f.doc_type === selectedForm);
   const allVisibleSelected = filtered.length > 0 && filtered.every(i => selectedIds.has(i.id));
+  const selectedVisibleCount = filtered.filter(inst => selectedIds.has(inst.id)).length;
+  const remittanceCompleteCount = instructors.filter(isInstructorRemittanceComplete).length;
+  const remittanceIncompleteCount = instructors.length - remittanceCompleteCount;
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
@@ -332,7 +367,7 @@ const DownloadCenter = () => {
           <Download className="w-7 h-7 text-bauhaus-blue" /> 講師表單下載中心
         </h1>
         <p className="text-bauhaus-black/60 font-medium mt-1 text-sm">
-          選擇要下載的表單與講師後，系統會把講師資料自動套入模板並下載 PDF。
+          選擇表單與講師後，系統會即時讀取資料庫最新值、自動套入模板並下載 PDF。
         </p>
       </div>
 
@@ -493,6 +528,35 @@ const DownloadCenter = () => {
         </div>
       )}
 
+      {/* ── 匯款資料狀態 ── */}
+      <div className="bh-card p-4 mb-3 flex flex-col lg:flex-row lg:items-center gap-4">
+        <div className="flex items-start gap-3 flex-1">
+          <div className="w-10 h-10 rounded-xl border-2 border-bauhaus-black bg-bauhaus-yellow flex items-center justify-center shrink-0">
+            <Landmark className="w-5 h-5 text-bauhaus-black" />
+          </div>
+          <div>
+            <h2 className="font-black text-bauhaus-black">匯款資料完成狀態</h2>
+            <p className="text-xs text-bauhaus-black/55 font-medium mt-0.5">
+              檢查匯款戶名、銀行、分行、帳號、銀行代碼與存摺封面；大頭照不列入必填。
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setFilterStatus('remittance_incomplete')}
+            className={`bh-btn px-4 py-2 text-sm min-h-[44px] ${filterStatus === 'remittance_incomplete' ? 'bh-btn-red' : 'bh-btn-outline'}`}
+          >
+            <AlertCircle className="w-4 h-4" /> 尚未完整 {remittanceIncompleteCount} 位
+          </button>
+          <button
+            onClick={() => setFilterStatus('remittance_complete')}
+            className={`bh-btn px-4 py-2 text-sm min-h-[44px] ${filterStatus === 'remittance_complete' ? 'bh-btn-blue' : 'bh-btn-outline'}`}
+          >
+            <CheckCircle2 className="w-4 h-4" /> 資料齊全 {remittanceCompleteCount} 位
+          </button>
+        </div>
+      </div>
+
       {/* ── 工具列 ── */}
       <div className="bh-card p-4 mb-3 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
@@ -513,8 +577,10 @@ const DownloadCenter = () => {
             className="bh-input pl-9 pr-8 py-2 text-sm appearance-none cursor-pointer"
           >
             <option value="all">全部講師</option>
-            <option value="complete">資料齊全</option>
-            <option value="incomplete">資料未完整</option>
+            <option value="remittance_incomplete">匯款資料未完整（{remittanceIncompleteCount}）</option>
+            <option value="remittance_complete">匯款資料齊全（{remittanceCompleteCount}）</option>
+            <option value="complete">全部資料齊全</option>
+            <option value="incomplete">全部資料未完整</option>
           </select>
           <ChevronDown className="w-3 h-3 text-bauhaus-black/40 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
@@ -526,13 +592,13 @@ const DownloadCenter = () => {
         </button>
         <button
           onClick={downloadBatch}
-          disabled={generating || !selectedForm || selectedIds.size === 0}
+          disabled={generating || !selectedForm || selectedVisibleCount === 0}
           className="bh-btn bh-btn-blue ml-auto px-5 py-2 text-sm min-h-[44px]"
         >
           {generating ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> 產生中... ({progress.done}/{progress.total})</>
           ) : (
-            <><Download className="w-4 h-4" /> 批次下載 {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}</>
+            <><Download className="w-4 h-4" /> 批次下載 {selectedVisibleCount > 0 ? `(${selectedVisibleCount})` : ''}</>
           )}
         </button>
       </div>
@@ -562,12 +628,8 @@ const DownloadCenter = () => {
           <span>顯示 {filtered.length} / {instructors.length} 位講師</span>
           {filtered.length > 0 && (
             <span className="text-white/60 normal-case tracking-normal">
-              · 資料齊全 {filtered.filter(isComplete).length} 位
-            </span>
-          )}
-          {filtered.some(inst => getInstructorProfileCompletion(inst).recoverableItems.length > 0) && (
-            <span className="text-bauhaus-yellow normal-case tracking-normal">
-              · {filtered.filter(inst => getInstructorProfileCompletion(inst).recoverableItems.length > 0).length} 位可從既有資料整理
+              · 匯款齊全 {filtered.filter(isInstructorRemittanceComplete).length} 位
+              {' '}· 未完整 {filtered.filter(inst => !isInstructorRemittanceComplete(inst)).length} 位
             </span>
           )}
         </div>
@@ -580,7 +642,7 @@ const DownloadCenter = () => {
               const checked = selectedIds.has(inst.id);
               const completion = getInstructorProfileCompletion(inst);
               const missing = completion.missingItems;
-              const recoverable = completion.recoverableItems;
+              const remittanceMissing = getMissingRemittanceItems(inst);
               const complete = missing.length === 0;
               const pct = completion.percent;
               const expanded = expandedIds.has(inst.id);
@@ -597,6 +659,7 @@ const DownloadCenter = () => {
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleOne(inst.id)}
+                    aria-label={`選擇 ${inst.full_name || '未填姓名'}`}
                     className="w-5 h-5 accent-bauhaus-blue mt-0.5 shrink-0"
                   />
 
@@ -615,31 +678,19 @@ const DownloadCenter = () => {
                       <span className={`bh-chip text-[10px] px-1.5 py-0.5 ${inst.user_id ? 'bg-bauhaus-blue text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
                         {inst.user_id ? '已認領' : '未認領'}
                       </span>
+                      <span className={`bh-chip text-[10px] px-1.5 py-0.5 ${remittanceMissing.length === 0 ? 'bg-bauhaus-blue text-white' : 'bg-bauhaus-red/10 text-bauhaus-red'}`}>
+                        {remittanceMissing.length === 0 ? '匯款齊全' : `匯款缺 ${remittanceMissing.length} 項`}
+                      </span>
                     </div>
                     <div className="text-xs text-bauhaus-black/60 mt-0.5 truncate">
                       {inst.email_primary || '—'} · {inst.phone_mobile || '—'}
                     </div>
 
                     {/* 還缺什麼資料 */}
-                    {recoverable.length > 0 && (
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-bauhaus-blue">
-                          可從既有資料帶入
-                        </span>
-                        {recoverable.map(item => (
-                          <span
-                            key={item}
-                            className="inline-flex items-center rounded-md bg-bauhaus-blue/10 text-bauhaus-blue text-[11px] font-bold px-1.5 py-0.5"
-                          >
-                            {item}
-                          </span>
-                        ))}
-                      </div>
-                    )}
                     {!complete && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] font-bold text-bauhaus-black/45">
-                          尚未轉成正式欄位 {missing.length} 項
+                          還缺 {missing.length} 項
                         </span>
                         {shown.map(m => (
                           <span

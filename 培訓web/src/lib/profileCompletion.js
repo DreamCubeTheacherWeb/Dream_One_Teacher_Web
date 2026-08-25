@@ -31,6 +31,14 @@ export const REQUIRED_PROFILE_DOCUMENTS = [
   { key: 'bankbook', label: '存摺封面' },
 ];
 
+export const REQUIRED_REMITTANCE_FIELDS = [
+  { key: 'bank_account_name', label: '匯款戶名' },
+  { key: 'bank_name', label: '銀行別' },
+  { key: 'bank_branch', label: '分行別' },
+  { key: 'bank_account_number', label: '銀行帳號' },
+  { key: 'bank_code', label: '銀行代碼' },
+];
+
 export const PROFILE_SAVED_EVENT = 'instructor-profile-saved';
 
 const hasValue = (value) => value !== null
@@ -112,6 +120,19 @@ export const getInstructorDocumentReference = (instructor, key) => {
 
 export const hasInstructorDocument = (instructor, key) => (
   getInstructorDocumentReference(instructor, key) !== null
+);
+
+export const getMissingRemittanceItems = (instructor) => {
+  const missingItems = REQUIRED_REMITTANCE_FIELDS
+    .filter(({ key }) => !hasValue(instructor?.[key]))
+    .map(({ label }) => label);
+
+  if (!hasInstructorDocument(instructor, 'bankbook')) missingItems.push('存摺封面');
+  return missingItems;
+};
+
+export const isInstructorRemittanceComplete = (instructor) => (
+  getMissingRemittanceItems(instructor).length === 0
 );
 
 export const getInstructorProfileCompletion = (instructor) => {
