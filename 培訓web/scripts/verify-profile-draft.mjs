@@ -398,6 +398,51 @@ async function main() {
         await page.close(); await ctx.close();
         currentRole = 'teacher';
 
+        // ── T10：匯款銀行資訊存過一次後，一般講師五欄唯讀＋提示文字；管理員不受限 ──
+        const BANK_PLACEHOLDERS = ['須與身分證姓名相同', '例：華南銀行', '例：仁愛分行', '000000 或 0000000', '請填寫完整帳號'];
+        const bankDisabledCount = async (pg) => {
+            let n = 0;
+            for (const ph of BANK_PLACEHOLDERS) n += await pg.locator(`input[placeholder="${ph}"]:disabled`).count();
+            return n;
+        };
+        currentRole = 'teacher';
+        instructorRow = completeRow;
+        draftRow = { user_id: UID, base_updated_at: completeRow.updated_at, data: { bank_branch: '草稿偷改分行', bank_account_number: '000' } };
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        const teacherBankDisabled = await bankDisabledCount(page);
+        const bankNotice = await page.getByTestId('bank-locked-notice').count();
+        const bankNoticeText = bankNotice ? await page.getByTestId('bank-locked-notice').innerText() : '';
+        const bankBranchShown = await page.inputValue(`input[placeholder="${BRANCH}"]`);
+        assert('T10a 一般講師匯款五欄全部唯讀', teacherBankDisabled === 5, `disabled=${teacherBankDisabled}`);
+        assert('T10b 顯示「請於講師群組提出」提示', bankNotice === 1 && bankNoticeText.includes('請於講師群組提出'), `text="${bankNoticeText}"`);
+        assert('T10c 舊草稿不覆蓋已鎖定的匯款資料', bankBranchShown === 'DB分行值', `got="${bankBranchShown}"`);
+        const bankbookNoticeText = await page.getByTestId('bankbook-locked-notice').innerText();
+        assert('T10d 存摺提示也改為講師群組', bankbookNoticeText.includes('請於講師群組提出'), `text="${bankbookNoticeText}"`);
+        await page.locator('input[placeholder="須與身分證姓名相同"]').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(APP_DIR, 'scripts/shots/bank-locked-teacher.png'), fullPage: false });
+        await page.close(); await ctx.close();
+        draftRow = null;
+
+        // 帳號還沒存過（首次填寫）→ 可編輯、無提示
+        instructorRow = { ...completeRow, bank_account_number: '' };
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        const firstTimeBankDisabled = await bankDisabledCount(page);
+        const firstTimeNotice = await page.getByTestId('bank-locked-notice').count();
+        assert('T10e 首次填寫匯款資訊可編輯', firstTimeBankDisabled === 0 && firstTimeNotice === 0, `disabled=${firstTimeBankDisabled}, notice=${firstTimeNotice}`);
+        await page.close(); await ctx.close();
+
+        currentRole = 'admin'; instructorRow = completeRow;
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        await gotoProfile(page);
+        const adminBankDisabled = await bankDisabledCount(page);
+        const adminNotice = await page.getByTestId('bank-locked-notice').count();
+        assert('T10f 管理員可編輯匯款資訊', adminBankDisabled === 0 && adminNotice === 0, `disabled=${adminBankDisabled}, notice=${adminNotice}`);
+        await page.close(); await ctx.close();
+        currentRole = 'teacher';
+
+
     } finally {
         if (browser) await browser.close();
         preview.kill('SIGTERM');

@@ -1,7 +1,31 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-25（匯款資料完整度、最新資料填表與 6／7 碼銀行代碼已部署上線）。
+> 最後更新：2026-08-25（匯款銀行資訊存後鎖定：前端已部署；⚠️ 鎖定 SQL 待業主在 SQL Editor 執行）。
+
+---
+
+## 🔒 2026-08-25：匯款銀行資訊存過即鎖定＋提示改為講師群組（✅ 前端已部署；⚠️ SQL 待業主套正式庫）
+
+**需求與做法**：業主要求匯款資料與存摺封面「存過一次後講師不可再改，要改請於講師群組提出」。
+存摺封面已於 8/18 鎖定，但匯款五欄（戶名／銀行別／分行／代碼／帳號）先前講師可隨時改、DB 無保護。
+本次比照存摺做兩層：`ProfilePage.jsx` 在 DB 已有 `bank_account_number` 且非 admin 時五欄 `disabled`
+灰底＋黃色提示；伺服器草稿不得覆蓋已鎖定欄位；新增
+`supabase/migrations/20260825120000_lock_instructor_bank_account_after_first_save.sql`
+（BEFORE UPDATE trigger，非 admin 改任一欄→42501；admin／service role 不受限）。
+兩處提示統一為「如需修改，請於講師群組提出。」（存摺原寫「聯繫管理員」，一併改）。
+
+**證據**：`node scripts/verify-bank-account-lock.mjs`（本機臨時 Postgres 套 migration）
+→ `PASS: bank account lock database guard`；`node scripts/verify-profile-draft.mjs` 27/27 PASS
+（新增 T10a–f：五欄唯讀、提示文字、草稿不覆蓋、首次可填、admin 可編輯、存摺提示文字）；
+截圖 `培訓web/scripts/shots/bank-locked-teacher.png` 判讀灰底與提示框正常；ESLint 通過。
+
+**⚠️ 待業主 1 步**：Supabase SQL Editor 貼上執行上述 migration，再跑
+`SELECT tgname FROM pg_trigger WHERE tgname = 'trg_guard_instructor_bank_account';` 應回 1 列。
+套完之前，鎖定只有前端擋（繞過畫面仍可改），不會壞但不完整。
+
+**地雷**：鎖定判準是「DB 已有銀行帳號」；管理員替講師清空帳號後，講師可重新填寫一次（預期行為）。
+本機 `wip/20260812-2128-main` 分支另有大量未部署改動，本次刻意只從 origin/main 分出 `feat/lock-bank-account` 上線這一項。
 
 ---
 

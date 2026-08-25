@@ -63,6 +63,8 @@ const INITIAL_FORM = {
 // localStorage 殘留身分證、銀行資料，或離開頁面時留下未被資料列引用的物件。
 const legacyDraftKeyFor = (uid) => `profile_draft_${uid}`;
 const BANKBOOK_FIELDS = ['bankbook_path', 'bankbook_mime', 'bankbook_size', 'bankbook_uploaded_at'];
+const BANK_FIELDS = ['bank_account_name', 'bank_name', 'bank_branch', 'bank_code', 'bank_account_number'];
+const LOCK_NOTICE = '如需修改，請於講師群組提出。';
 const profileSnapshot = (form) => JSON.stringify(stripAdminManagedInstructorFields(form));
 const clearLegacyBrowserDraft = (uid) => {
     try { localStorage.removeItem(legacyDraftKeyFor(uid)); } catch { /* 略過 */ }
@@ -99,6 +101,7 @@ const ProfilePage = () => {
     const [showSuccess, setShowSuccess] = useState(false);
     const [form, setForm] = useState(INITIAL_FORM);
     const [hasSavedBankbook, setHasSavedBankbook] = useState(false);
+    const [savedBankAccount, setSavedBankAccount] = useState(false);
     const [filePreviews, setFilePreviews] = useState({});
     const [pendingFiles, setPendingFiles] = useState({});
     const [uploading, setUploading] = useState({});
@@ -158,6 +161,7 @@ const ProfilePage = () => {
             setIsFirstTime(false);
             setInstructorId(data.id || null);
             setHasSavedBankbook(hasInstructorDocument(data, 'bankbook'));
+            setSavedBankAccount(Boolean(data.bank_account_number?.trim()));
             const formData = {};
             for (const key of Object.keys(INITIAL_FORM)) {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
@@ -172,12 +176,16 @@ const ProfilePage = () => {
             if (hasInstructorDocument(data, 'bankbook') && profile?.role !== 'admin') {
                 for (const field of BANKBOOK_FIELDS) nextForm[field] = formData[field];
             }
+            if (data.bank_account_number?.trim() && profile?.role !== 'admin') {
+                for (const field of BANK_FIELDS) nextForm[field] = formData[field];
+            }
             originalWcaId.current = formData.wca_id || '';
             setWcaLocked(!!data.hide_from_leaderboard);
         } else {
             setIsFirstTime(true);
             setInstructorId(null);
             setHasSavedBankbook(false);
+            setSavedBankAccount(false);
             const base = {
                 ...INITIAL_FORM,
                 full_name: profile?.name || '',
@@ -280,7 +288,7 @@ const ProfilePage = () => {
 
     const handleFileUpload = (docType, file) => {
         if (docType === 'bankbook' && hasSavedBankbook && profile?.role !== 'admin') {
-            alert('存摺封面已鎖定，如需更換請聯繫管理員。');
+            alert('存摺封面已鎖定，' + LOCK_NOTICE);
             return;
         }
         if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
@@ -302,7 +310,7 @@ const ProfilePage = () => {
 
     const handleRemoveFile = (docType) => {
         if (docType === 'bankbook' && hasSavedBankbook && profile?.role !== 'admin') {
-            alert('存摺封面已鎖定，如需更換請聯繫管理員。');
+            alert('存摺封面已鎖定，' + LOCK_NOTICE);
             return;
         }
         const previousPath = form[`${docType}_path`];
@@ -441,6 +449,7 @@ const ProfilePage = () => {
         savedSnapshot.current = profileSnapshot(nextForm);
         savedBaseUpdatedAt.current = savedRow?.updated_at || null;
         setHasSavedBankbook(hasInstructorDocument(nextForm, 'bankbook'));
+        setSavedBankAccount(Boolean(nextForm.bank_account_number?.trim()));
         window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: nextForm }));
 
         if (profile?.role === 'pending' && isFirstTime) {
@@ -456,6 +465,8 @@ const ProfilePage = () => {
     if (loading) return <div className="p-12 text-center text-bauhaus-black/60 font-bold text-lg">載入中...</div>;
 
     const inputCls = 'bh-input';
+    const isBankLocked = savedBankAccount && profile?.role !== 'admin';
+    const bankInputCls = inputCls + (isBankLocked ? ' disabled:bg-bauhaus-muted disabled:text-bauhaus-black/60 disabled:border-bauhaus-black/50 disabled:cursor-not-allowed' : '');
     const selectCls = inputCls + ' bg-white';
 
     return (
@@ -686,7 +697,8 @@ const ProfilePage = () => {
                             type="text"
                             value={form.bank_account_name}
                             onChange={e => handleChange('bank_account_name', e.target.value)}
-                            className={inputCls}
+                            disabled={isBankLocked}
+                            className={bankInputCls}
                             placeholder="須與身分證姓名相同"
                         />
                     </Field>
@@ -695,7 +707,8 @@ const ProfilePage = () => {
                             type="text"
                             value={form.bank_name}
                             onChange={e => handleChange('bank_name', e.target.value)}
-                            className={inputCls}
+                            disabled={isBankLocked}
+                            className={bankInputCls}
                             placeholder="例：華南銀行"
                         />
                     </Field>
@@ -704,7 +717,8 @@ const ProfilePage = () => {
                             type="text"
                             value={form.bank_branch}
                             onChange={e => handleChange('bank_branch', e.target.value)}
-                            className={inputCls}
+                            disabled={isBankLocked}
+                            className={bankInputCls}
                             placeholder="例：仁愛分行"
                         />
                     </Field>
@@ -713,7 +727,8 @@ const ProfilePage = () => {
                             type="text"
                             value={form.bank_code}
                             onChange={e => handleChange('bank_code', e.target.value.replace(/\D/g, '').slice(0, 7))}
-                            className={inputCls + ' font-mono tracking-wider'}
+                            disabled={isBankLocked}
+                            className={bankInputCls + ' font-mono tracking-wider'}
                             placeholder="000000 或 0000000"
                             maxLength={7}
                         />
@@ -724,11 +739,21 @@ const ProfilePage = () => {
                             type="text"
                             value={form.bank_account_number}
                             onChange={e => handleChange('bank_account_number', e.target.value.replace(/[^0-9-]/g, ''))}
-                            className={inputCls + ' font-mono tracking-wider md:col-span-2'}
+                            disabled={isBankLocked}
+                            className={bankInputCls + ' font-mono tracking-wider md:col-span-2'}
                             placeholder="請填寫完整帳號"
                         />
                     </Field>
                 </div>
+                {isBankLocked && (
+                    <div
+                        data-testid="bank-locked-notice"
+                        className="mt-4 border-2 border-bauhaus-black rounded-xl bg-bauhaus-yellow px-3 py-2 text-xs font-bold text-bauhaus-black leading-relaxed flex items-start gap-2"
+                    >
+                        <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                        <span>匯款銀行資訊已儲存並鎖定。{LOCK_NOTICE}</span>
+                    </div>
+                )}
                 <div className="mt-4 bg-bauhaus-yellow/10 border-2 border-bauhaus-black rounded-xl p-3 text-xs text-bauhaus-black font-bold">
                     💡 銀行帳戶為華南銀行者免扣手續費；非華南銀行將扣匯款手續費 30 元。
                 </div>
@@ -845,7 +870,7 @@ const ProfilePage = () => {
                                 >
                                     <div className="flex items-start gap-2">
                                         <Lock className="w-4 h-4 mt-0.5 shrink-0" />
-                                        <span>存摺封面已提交並鎖定。為保護匯款資料，如需更換請聯繫管理員協助。</span>
+                                        <span>存摺封面已提交並鎖定。{LOCK_NOTICE}</span>
                                     </div>
                                 </div>
                             ) : (
