@@ -689,7 +689,7 @@ const ProfilePage = () => {
             {/* ── 匯款銀行資訊 ── */}
             <Section icon={Landmark} title="匯款銀行資訊">
                 <p className="text-sm text-bauhaus-black/70 mb-4 font-medium">
-                    此區資訊將用於「廠商匯款申請書」的自動填寫，<strong className="font-black text-bauhaus-black">匯款戶名請務必與身分證姓名相同</strong>。
+                    <strong className="font-black text-bauhaus-black">匯款戶名請務必與身分證姓名相同</strong>，無法透過家人帳戶代領，請及早辦理帳戶避免延誤領取報酬時間。
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="匯款戶名" required>
