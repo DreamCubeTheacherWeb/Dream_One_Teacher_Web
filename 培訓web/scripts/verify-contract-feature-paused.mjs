@@ -9,7 +9,7 @@
  * T5 講師瀏覽過程不查詢合約資料，也不寫入合約通知
  * T6 管理員仍可查看已簽合約與進入合約後台
  * T7 講師導覽列顯示「我的報酬」
- * T8 講師可直接開啟報酬與課程回報頁
+ * T8 講師可開啟後台設定的外部報酬連結，站內課程回報頁維持關閉
  * T9 管理員可在講師名單預覽自動填好的 PDF，確認後再下載
  * T10 表單預覽與下載會顯示匯款完整度、隱藏舊帶入提示並支援手機版
  *
@@ -100,6 +100,26 @@ const SALARY_SUMMARY = {
     pending_salary: 0,
     approved_unpaid_salary: 0,
 };
+const SALARY_LINKS = [
+    {
+        key: 'salary_direct',
+        label: '測試直營課程表單',
+        description: '從 site_links 動態載入',
+        url: 'https://example.com/direct-form',
+    },
+    {
+        key: 'salary_partner',
+        label: '測試合作單位表單',
+        description: '從 site_links 動態載入',
+        url: 'https://example.com/partner-form',
+    },
+    {
+        key: 'salary_points',
+        label: '測試報酬確認連結',
+        description: '從 site_links 動態載入',
+        url: 'https://example.com/compensation',
+    },
+];
 const SIGNED_CONTRACT = {
     id: 'contract-1', user_id: UID, status: 'signed', signed_at: NOW,
     filled_name: '簽約暫停測試員', filled_instructor_role: 'A',
@@ -196,6 +216,7 @@ async function handleRoute(route) {
             case 'instructors': data = wantsObject ? INSTRUCTOR : [INSTRUCTOR]; break;
             case 'instructor_salary_summary': data = wantsObject ? SALARY_SUMMARY : [SALARY_SUMMARY]; break;
             case 'class_sessions': data = []; break;
+            case 'site_links': data = wantsObject ? SALARY_LINKS[0] : SALARY_LINKS; break;
             case 'instructor_contracts': data = wantsObject ? SIGNED_CONTRACT : [SIGNED_CONTRACT]; break;
             case 'contract_documents': data = wantsObject ? FORM_DOCUMENT : [FORM_DOCUMENT]; break;
             case 'contract_field_positions': data = wantsObject ? FORM_POSITION : [FORM_POSITION]; break;
@@ -274,13 +295,19 @@ async function main() {
         assert('T4 講師直連合約檢視頁導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
         await page.goto(`${BASE}/my/salary`, { waitUntil: 'networkidle', timeout: 20000 });
         const compensationRouteWorks = new URL(page.url()).pathname === '/my/salary'
-            && await page.getByRole('heading', { name: '我的報酬' }).count() === 1;
-        assert('T8a 講師可直連我的報酬', compensationRouteWorks, `landed=${new URL(page.url()).pathname}`);
+            && await page.getByRole('heading', { name: '我的報酬' }).count() === 1
+            && await page.getByRole('link', { name: /測試直營課程表單/ }).getAttribute('href') === 'https://example.com/direct-form'
+            && await page.getByRole('link', { name: /測試合作單位表單/ }).getAttribute('href') === 'https://example.com/partner-form'
+            && await page.getByRole('link', { name: /測試報酬確認連結/ }).getAttribute('href') === 'https://example.com/compensation';
+        assert('T8a 我的報酬顯示後台設定的三個外部連結', compensationRouteWorks, `landed=${new URL(page.url()).pathname}`);
+        const salaryDataReads = await page.evaluate(() => performance.getEntriesByType('resource')
+            .filter((entry) => /\/rest\/v1\/(instructor_salary_summary|class_sessions)/.test(entry.name)).length);
+        assert('T8b 外部連結頁不讀取站內薪資明細', salaryDataReads === 0, `reads=${salaryDataReads}`);
         await page.goto(`${BASE}/my/salary/new`, { waitUntil: 'networkidle', timeout: 20000 });
-        const compensationFormWorks = new URL(page.url()).pathname === '/my/salary/new'
-            && await page.getByRole('heading', { name: '登記課程回報' }).count() === 1
-            && await page.getByText('回我的報酬', { exact: true }).count() === 1;
-        assert('T8b 講師可直連課程回報', compensationFormWorks, `landed=${new URL(page.url()).pathname}`);
+        const internalCompensationFormClosed = new URL(page.url()).pathname === '/my/salary'
+            && await page.getByRole('heading', { name: '我的報酬' }).count() === 1
+            && await page.getByRole('heading', { name: '登記課程回報' }).count() === 0;
+        assert('T8c 站內課程回報頁導回我的報酬', internalCompensationFormClosed, `landed=${new URL(page.url()).pathname}`);
         assert('T5a 講師端未查詢合約資料', teacherContractReads === 0, `reads=${teacherContractReads}`);
         assert('T5b 講師端未寫入合約通知', teacherContractNotificationWrites === 0, `writes=${teacherContractNotificationWrites}`);
         await page.close();

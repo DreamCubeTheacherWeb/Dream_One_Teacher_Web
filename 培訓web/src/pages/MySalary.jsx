@@ -12,8 +12,9 @@ const STATUS_COLORS = {
     paid:     'bg-bauhaus-blue text-white',
 };
 
-// 站內報酬明細與課程回報已恢復；外部表單元件保留作為緊急回退選項。
-const SALARY_PAGE_PAUSED = false;
+// 講師端使用後台可編輯的外部表單／報酬確認連結。
+// 站內薪資明細與課程回報保留程式碼，但不對講師開放。
+const SALARY_PAGE_PAUSED = true;
 
 // 表單連結預設值(對應 supabase/2026-07-09_site_links.sql 的 seed)：
 // 若 site_links 資料表還沒建好、或讀取失敗,SalaryFormLinks 會 fallback 用這組,頁面仍可用。
@@ -44,7 +45,7 @@ const SALARY_LINK_TONES = [
     { bg: 'bg-bauhaus-yellow', text: 'text-bauhaus-black', sub: 'text-bauhaus-black/70' },
 ];
 
-// 課程回報改用外連 Google 表單收單,這個頁面只顯示兩顆大按鈕。
+// 課程回報與報酬確認改用外部連結，這個頁面顯示三顆大按鈕。
 // 連結內容從 site_links 表讀,讀不到(表未建立/查詢失敗)就用 DEFAULT_SALARY_LINKS。
 const SalaryFormLinks = () => {
     const [links, setLinks] = useState(DEFAULT_SALARY_LINKS);
@@ -129,7 +130,7 @@ const MySalary = () => {
     }, [user]);
 
     useEffect(() => {
-        if (!user) return undefined;
+        if (SALARY_PAGE_PAUSED || !user) return undefined;
         const timer = window.setTimeout(load, 0);
         return () => window.clearTimeout(timer);
     }, [user, load]);
