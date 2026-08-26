@@ -128,7 +128,7 @@ const Layout = ({ children }) => {
                                     </Link>
                                 ) : (
                                     <button
-                                        onClick={() => alert('權限尚未開啟，如資料已填寫完，請通知夢想一號管理員協助開啟權限')}
+                                        onClick={() => alert('權限尚未開啟，請檢查是否有資料尚未填寫完畢，如有疑問請於講師群組提出')}
                                         className="flex items-center gap-1.5 px-3 py-2 text-sm text-bauhaus-black/40 hover:text-bauhaus-black font-bold uppercase tracking-wide cursor-pointer"
                                     >
                                         <BookOpen className="w-4 h-4" />
@@ -271,7 +271,7 @@ const Layout = ({ children }) => {
                                         </Link>
                                     ) : (
                                         <button
-                                            onClick={() => { alert('權限尚未開啟，如資料已填寫完，請通知夢想一號管理員協助開啟權限'); setMobileMenuOpen(false); }}
+                                            onClick={() => { alert('權限尚未開啟，請檢查是否有資料尚未填寫完畢，如有疑問請於講師群組提出'); setMobileMenuOpen(false); }}
                                             className="flex items-center gap-3 px-3 py-3.5 text-bauhaus-black/40 font-bold uppercase tracking-wide text-sm w-full text-left"
                                         >
                                             <BookOpen className="w-5 h-5" />
