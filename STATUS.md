@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-26（薪資回報 migration 已套正式庫、前端待部署；報酬供應商 CSV 已上線）。
+> 最後更新：2026-08-26（薪資回報、管理端登記與報酬供應商 CSV 均已部署上線）。
 
 ---
 
-## 💰 2026-08-26：恢復講師回報與管理端薪資登記（✅ migration 已上線；⏳ 前端待部署）
+## 💰 2026-08-26：恢復講師回報與管理端薪資登記（✅ 正式環境已上線）
 
 **轉換體驗**：「我的報酬」重新以站內「登記課程回報」為主要入口，講師選擇課程、
 日期、時數與人數後立即看到報酬試算、採用資格與單價，不需自行填薪資。舊的直營／合作單位
@@ -36,8 +36,14 @@ production build 均通過。
 265／206／9,532；catalog 已確認 RPC、8 個定價快照欄位、trigger、`security_invoker`、固定空
 `search_path` 與 anon／authenticated 權限符合預期，匿名正式 REST 呼叫回報 RPC 另回 HTTP 401。
 
-**尚未執行**：功能提交尚未推送，對應前端尚未由 Zeabur 發布；正式庫已先完成相容 migration，現行
-舊表單前端可繼續使用，不會因等待前端發布而中斷。
+**正式前端證據**：功能 commit `d439bc0` 已 fast-forward 推入 `main`，Zeabur production deployment
+`6106389370` 於 2026-08-26 14:52:33 UTC 回報 success。`teacher.dreamcube.tw` 與
+`dream-one-teacher.zeabur.app` 均載入 `/assets/index-BxFKWhfL.js`（2,346,676 bytes、SHA-256
+`4994cf970ed4b14ea210984200aab1772b7860e854ce8f56c82d7af40c3f1873`）與
+`/assets/index-D04hQ-Mu.css`，兩站資產和乾淨本機 production build 逐位元一致。兩站的
+`/my/salary`、`/my/salary/new`、`/admin/salary`、`/admin/salary/export` 均回傳正式 SPA，live bundle
+同時命中新 RPC、舊表單轉換提醒與供應商 CSV。正式已登入實機另確認講師回報頁會即時顯示待核薪結果、
+管理端薪資登記中心無停用遮罩，兩頁 console 0 error；驗證過程沒有送出課程或變更薪資資料。
 
 ---
 
