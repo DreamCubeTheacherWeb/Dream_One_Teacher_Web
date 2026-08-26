@@ -6,8 +6,7 @@ import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, 
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import { REQUIRED_PROFILE_DOCUMENTS, hasInstructorDocument } from '../../lib/profileCompletion';
 import FilledFormPreviewModal from '../../components/FilledFormPreviewModal';
-
-const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習' };
+import { INSTRUCTOR_LEVEL_LABELS as ROLE_LABELS, SPEED_QUALIFICATION_LABELS, speedQualificationLabel } from '../../lib/constants';
 
 const STATUS_OPTIONS = [
     { key: 'active',    label: '講師',     color: 'bg-bauhaus-blue text-white' },
@@ -44,6 +43,7 @@ const InstructorList = () => {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [roleFilter, setRoleFilter] = useState('');
+    const [speedFilter, setSpeedFilter] = useState('');
     const [expandedId, setExpandedId] = useState(null);
     const [signedUrls, setSignedUrls] = useState({});
     const [showAddModal, setShowAddModal] = useState(false);
@@ -105,14 +105,12 @@ const InstructorList = () => {
     }, [formPreviewUrl]);
 
     const closeFormPreview = useCallback(() => setFormPreview(null), []);
-
     const applyLinkFilter = (nextFilter) => {
         const nextParams = new URLSearchParams(searchParams);
         if (nextFilter) nextParams.set('claim', nextFilter);
         else nextParams.delete('claim');
         setSearchParams(nextParams, { replace: true });
     };
-
     const toggleExpand = async (inst) => {
         if (expandedId === inst.id) {
             setExpandedId(null);
@@ -137,6 +135,8 @@ const InstructorList = () => {
     const filtered = instructors.filter(i => {
         if (statusFilter && i.employment_status !== statusFilter) return false;
         if (roleFilter && i.instructor_role !== roleFilter) return false;
+        if (speedFilter === 'none' && i.speed_qualification) return false;
+        if (speedFilter && speedFilter !== 'none' && i.speed_qualification !== speedFilter) return false;
         if (linkFilter === 'linked' && !i.user_id) return false;
         if (linkFilter === 'unlinked' && i.user_id) return false;
         if (search) {
@@ -373,6 +373,17 @@ const InstructorList = () => {
                         <option key={k} value={k}>{v}</option>
                     ))}
                 </select>
+                <select
+                    value={speedFilter}
+                    onChange={e => setSpeedFilter(e.target.value)}
+                    className="bh-chip bg-white text-bauhaus-black cursor-pointer hover:bg-bauhaus-muted outline-none"
+                >
+                    <option value="">全部速解資格</option>
+                    <option value="none">未取得</option>
+                    {Object.entries(SPEED_QUALIFICATION_LABELS).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                    ))}
+                </select>
             </div>
 
             <div className="block md:hidden space-y-3">
@@ -409,6 +420,7 @@ const InstructorList = () => {
                             <th className="px-6 py-4">Email</th>
                             <th className="px-6 py-4">綁定</th>
                             <th className="px-6 py-4">等級</th>
+                            <th className="px-6 py-4">速解資格</th>
                             <th className="px-6 py-4">地區</th>
                             <th className="px-6 py-4">文件</th>
                             <th className="px-6 py-4 text-right">操作</th>
@@ -434,7 +446,7 @@ const InstructorList = () => {
                         ))}
                         {filtered.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="px-6 py-12 text-center text-bauhaus-black/50">
+                                <td colSpan={8} className="px-6 py-12 text-center text-bauhaus-black/50">
                                     {search ? '找不到符合的講師' : '尚無講師資料'}
                                 </td>
                             </tr>
@@ -642,6 +654,7 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                     ) : (
                         <span className="text-xs text-bauhaus-black/40">未設定</span>
                     )}
+                    <SpeedQualificationBadge value={inst.speed_qualification} />
                     <span className="inline-flex items-center gap-1 text-xs text-bauhaus-black/60">
                         <MapPin className="w-3 h-3" />
                         {inst.teaching_regions?.length || inst.teaching_regions_raw ? (inst.teaching_regions?.length || '–') : 0}
@@ -735,6 +748,9 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                     <span className="text-xs text-bauhaus-black/40">未設定</span>
                 )}
             </td>
+            <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+                <SpeedQualificationBadge value={inst.speed_qualification} />
+            </td>
             <td className="px-6 py-4">
                 <div className="flex items-center gap-1 text-xs text-bauhaus-black/60">
                     <MapPin className="w-3 h-3" />
@@ -779,12 +795,18 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
 
         {expanded && (
             <tr>
-                <td colSpan={7} className="px-6 py-6 bg-bauhaus-cream">
+                <td colSpan={8} className="px-6 py-6 bg-bauhaus-cream">
                     <InstructorExpandedContent inst={inst} urls={urls} />
                 </td>
             </tr>
         )}
     </>
+);
+
+const SpeedQualificationBadge = ({ value }) => (
+    <span className={`bh-chip ${value ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/60'}`}>
+        {speedQualificationLabel(value)}
+    </span>
 );
 
 const InfoRow = ({ label, value }) => {
@@ -807,6 +829,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
         phone_mobile: '',
         employment_status: 'active',
         instructor_role: '',
+        speed_qualification: '',
     });
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
@@ -824,6 +847,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
             phone_mobile: form.phone_mobile.trim() || null,
             employment_status: form.employment_status || null,
             instructor_role: form.instructor_role || null,
+            speed_qualification: form.speed_qualification || null,
         };
         const { error } = await supabase.from('instructors').insert(payload);
         setSaving(false);
@@ -887,6 +911,18 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
                             >
                                 <option value="">未設定</option>
                                 {Object.entries(ROLE_LABELS).map(([k, v]) => (
+                                    <option key={k} value={k}>{v}</option>
+                                ))}
+                            </select>
+                        </Field>
+                        <Field label="速解專業資格">
+                            <select
+                                value={form.speed_qualification}
+                                onChange={e => setForm(p => ({ ...p, speed_qualification: e.target.value }))}
+                                className={inputCls}
+                            >
+                                <option value="">未取得</option>
+                                {Object.entries(SPEED_QUALIFICATION_LABELS).map(([k, v]) => (
                                     <option key={k} value={k}>{v}</option>
                                 ))}
                             </select>

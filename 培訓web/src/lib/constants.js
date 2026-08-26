@@ -18,3 +18,21 @@ export const COURSE_LABELS = {
 
 // instructor role 中文 label
 export const ROLE_LABELS = { lead: '主講', assistant: '助教', head_judge: '主裁', sub_judge: '助裁', counter: '櫃台', project_lead: '負責人', other: '其他' };
+
+export const INSTRUCTOR_LEVEL_LABELS = {
+    S: 'S 級',
+    'A+': 'A+ 級',
+    A: 'A 級',
+    B: 'B 級',
+    '實習': '實習',
+};
+
+export const SPEED_QUALIFICATION_LABELS = {
+    speed_teacher: '速解老師',
+    speed_master: '速解大師',
+};
+
+export const isSpeedCourse = (courseType = '') => courseType.startsWith('speed_');
+
+export const speedQualificationLabel = (value) =>
+    SPEED_QUALIFICATION_LABELS[value] || '未取得';

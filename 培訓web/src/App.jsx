@@ -23,6 +23,7 @@ import ContractAdmin from './pages/admin/ContractAdmin';
 import SalaryRegister from './pages/admin/SalaryRegister';
 import SalaryVendorExport from './pages/admin/SalaryVendorExport';
 import MySalary from './pages/MySalary';
+import MySalaryNew from './pages/MySalaryNew';
 import DownloadCenter from './pages/admin/DownloadCenter';
 import BadgeManager from './pages/admin/BadgeManager';
 import Leaderboard from './pages/Leaderboard';
@@ -290,7 +291,7 @@ function App() {
             path="/my/salary/new"
             element={
               <ProtectedRoute>
-                <Navigate to="/my/salary" replace />
+                <Layout><MySalaryNew /></Layout>
               </ProtectedRoute>
             }
           />

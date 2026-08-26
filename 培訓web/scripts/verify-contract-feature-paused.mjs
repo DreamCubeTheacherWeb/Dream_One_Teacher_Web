@@ -9,7 +9,7 @@
  * T5 講師瀏覽過程不查詢合約資料，也不寫入合約通知
  * T6 管理員仍可查看已簽合約與進入合約後台
  * T7 講師導覽列顯示「我的報酬」
- * T8 講師可開啟後台設定的外部報酬連結，站內課程回報頁維持關閉
+ * T8 講師可使用站內課程回報與報酬明細，並保留外部表單作轉換備援
  * T9 管理員可在講師名單預覽自動填好的 PDF，確認後再下載
  * T10 表單預覽與下載會顯示匯款完整度、隱藏舊帶入提示並支援手機版
  *
@@ -164,6 +164,7 @@ const MINIMAL_PDF = Buffer.from(
 let currentRole = 'teacher';
 let teacherContractReads = 0;
 let teacherContractNotificationWrites = 0;
+let teacherSalaryReads = 0;
 let latestInstructorReads = 0;
 
 function jsonRes(route, data, extra = {}) {
@@ -197,6 +198,9 @@ async function handleRoute(route) {
 
         if (currentRole === 'teacher' && method === 'GET' && ['instructor_contracts', 'contract_documents'].includes(table)) {
             teacherContractReads += 1;
+        }
+        if (currentRole === 'teacher' && method === 'GET' && ['instructor_salary_summary', 'class_sessions'].includes(table)) {
+            teacherSalaryReads += 1;
         }
         if (currentRole === 'teacher' && method !== 'GET' && table === 'notifications') {
             const body = req.postData() || '';
@@ -293,21 +297,22 @@ async function main() {
 
         await page.goto(`${BASE}/contract/view/contract-1`, { waitUntil: 'networkidle', timeout: 20000 });
         assert('T4 講師直連合約檢視頁導回個人頁', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
+        teacherSalaryReads = 0;
         await page.goto(`${BASE}/my/salary`, { waitUntil: 'networkidle', timeout: 20000 });
         const compensationRouteWorks = new URL(page.url()).pathname === '/my/salary'
             && await page.getByRole('heading', { name: '我的報酬' }).count() === 1
-            && await page.getByRole('link', { name: /測試直營課程表單/ }).getAttribute('href') === 'https://example.com/direct-form'
-            && await page.getByRole('link', { name: /測試合作單位表單/ }).getAttribute('href') === 'https://example.com/partner-form'
-            && await page.getByRole('link', { name: /測試報酬確認連結/ }).getAttribute('href') === 'https://example.com/compensation';
-        assert('T8a 我的報酬顯示後台設定的三個外部連結', compensationRouteWorks, `landed=${new URL(page.url()).pathname}`);
-        const salaryDataReads = await page.evaluate(() => performance.getEntriesByType('resource')
-            .filter((entry) => /\/rest\/v1\/(instructor_salary_summary|class_sessions)/.test(entry.name)).length);
-        assert('T8b 外部連結頁不讀取站內薪資明細', salaryDataReads === 0, `reads=${salaryDataReads}`);
+            && await page.getByRole('link', { name: /報酬／點數確認區/ }).getAttribute('href') === 'https://example.com/compensation'
+            && await page.getByRole('link', { name: /登記課程回報/ }).getAttribute('href') === '/my/salary/new';
+        assert('T8a 我的報酬顯示站內回報與後台設定的確認連結', compensationRouteWorks, `landed=${new URL(page.url()).pathname}`);
+        assert('T8b 我的報酬會讀取自己的站內薪資明細', teacherSalaryReads >= 2, `reads=${teacherSalaryReads}`);
+        await page.getByText('仍在使用舊表單？', { exact: true }).click();
+        const legacyLinksWork = await page.getByRole('link', { name: /測試直營課程表單舊表單/ }).getAttribute('href') === 'https://example.com/direct-form'
+            && await page.getByRole('link', { name: /測試合作單位表單舊表單/ }).getAttribute('href') === 'https://example.com/partner-form';
+        assert('T8c 舊表單作為可展開的轉換備援', legacyLinksWork, 'legacy links unavailable');
         await page.goto(`${BASE}/my/salary/new`, { waitUntil: 'networkidle', timeout: 20000 });
-        const internalCompensationFormClosed = new URL(page.url()).pathname === '/my/salary'
-            && await page.getByRole('heading', { name: '我的報酬' }).count() === 1
-            && await page.getByRole('heading', { name: '登記課程回報' }).count() === 0;
-        assert('T8c 站內課程回報頁導回我的報酬', internalCompensationFormClosed, `landed=${new URL(page.url()).pathname}`);
+        const internalCompensationFormWorks = new URL(page.url()).pathname === '/my/salary/new'
+            && await page.getByRole('heading', { name: '登記課程回報' }).count() === 1;
+        assert('T8d 站內課程回報頁已恢復', internalCompensationFormWorks, `landed=${new URL(page.url()).pathname}`);
         assert('T5a 講師端未查詢合約資料', teacherContractReads === 0, `reads=${teacherContractReads}`);
         assert('T5b 講師端未寫入合約通知', teacherContractNotificationWrites === 0, `writes=${teacherContractNotificationWrites}`);
         await page.close();

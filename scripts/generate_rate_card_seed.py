@@ -124,7 +124,7 @@ for s, *prices in camp:
         if rate is not None:
             rows.append(("camp", role, 8, s, s, "hourly", rate, "冬夏令營 / 到府營隊"))
 
-# ── 速解到府課程 ── 1.5 hr,速解大師 / 基礎速解講師
+# ── 速解到府課程 ── 1.5 hr,速解大師 / 速解老師
 speed_onsite = [
     (5, 1350, 1250),
     (4, 1200, 1100),
@@ -134,7 +134,7 @@ speed_onsite = [
 ]
 for s, master, basic_r in speed_onsite:
     rows.append(("speed_onsite", "速解大師", 1.5, s, s, "hourly", master, "速解到府"))
-    rows.append(("speed_onsite", "基礎速解講師", 1.5, s, s, "hourly", basic_r, "速解到府"))
+    rows.append(("speed_onsite", "速解老師", 1.5, s, s, "hourly", basic_r, "速解到府"))
 
 # ── 速解線上課程 ── 1.5 hr
 speed_online = [
@@ -144,7 +144,7 @@ speed_online = [
 ]
 for s, master, basic_r in speed_online:
     rows.append(("speed_online", "速解大師", 1.5, s, s, "hourly", master, "速解線上"))
-    rows.append(("speed_online", "基礎速解講師", 1.5, s, s, "hourly", basic_r, "速解線上"))
+    rows.append(("speed_online", "速解老師", 1.5, s, s, "hourly", basic_r, "速解線上"))
 
 # ── 速解培訓班 ── 2 hr, 主講 / 助教按帶課組數計
 speed_training = [
@@ -169,7 +169,7 @@ speed_camp = [
 ]
 for s, master, basic_r in speed_camp:
     rows.append(("speed_camp", "速解大師", 8, s, s, "hourly", master, "速解 / 全英文營隊"))
-    rows.append(("speed_camp", "基礎速解講師", 8, s, s, "hourly", basic_r, "速解 / 全英文營隊"))
+    rows.append(("speed_camp", "速解老師", 8, s, s, "hourly", basic_r, "速解 / 全英文營隊"))
 
 # ── 幼兒啟蒙課程 ── 1~1.5 hr, 5+ 學生
 rows.append(("kids_lead", None, None, 5, None, "hourly", 960, "幼兒啟蒙 主講"))

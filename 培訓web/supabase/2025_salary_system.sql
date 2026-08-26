@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS public.salary_rate_card (
 
   -- 報酬表的「橫軸」
   course_type     text NOT NULL,                   -- 例 '實體教室常態課程_初階'、'到府課程_1.5hr'
-  instructor_role text,                            -- S/A+/A/B/實習,或 '速解大師'/'基礎速解講師',null = 不分等級
+  instructor_role text,                            -- 舊欄位名稱：一般等級或速解報酬規則標籤；null = 不分等級
   duration_hours  numeric(4,2),                    -- 1.5, 2, 8...; null = 不論時數
   student_count_min int,                           -- 1, 4, 5...; null = 不論人數
   student_count_max int,                           -- inclusive,如 8 表示「7 或 8 人」

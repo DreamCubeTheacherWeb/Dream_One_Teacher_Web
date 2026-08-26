@@ -20,11 +20,12 @@ const check = (name, test) => {
     }
 };
 
-check('講師端 payload 會移除 instructor_role', () => {
-    const original = { full_name: '測試講師', instructor_role: 'S' };
+check('講師端 payload 會移除等級與速解資格', () => {
+    const original = { full_name: '測試講師', instructor_role: 'S', speed_qualification: 'speed_master' };
     const filtered = stripAdminManagedInstructorFields(original);
     assert.deepEqual(filtered, { full_name: '測試講師' });
     assert.equal(original.instructor_role, 'S', '不可改動原始表單物件');
+    assert.equal(original.speed_qualification, 'speed_master', '不可改動原始表單物件');
 });
 
 check('伺服器端草稿不留檔案路徑或管理欄位', () => {
@@ -49,6 +50,15 @@ check('講師個人頁的等級欄沒有下拉選單', () => {
     assert.equal(roleFieldMarkup.includes("handleChange('instructor_role'"), false);
 });
 
+check('講師個人頁的速解資格唯讀且標明由管理員認定', () => {
+    const start = profilePage.indexOf('<Field label="速解專業資格">');
+    const end = profilePage.indexOf('<Field label="接課頻率（學期間）"', start);
+    const markup = profilePage.slice(start, end);
+    assert.ok(start >= 0 && end > start, '找不到速解專業資格欄位');
+    assert.equal(markup.includes('<select'), false);
+    assert.match(markup, /由管理員認定/);
+});
+
 check('講師端草稿與儲存請求都套用管理欄位過濾', () => {
     assert.match(profilePage, /data:\s*pickInstructorProfileDraftFields\(form\)/);
     assert.match(profilePage, /\.\.\.stripAdminManagedInstructorFields\(nextForm\)/);
@@ -64,12 +74,20 @@ check('管理端等級選單由 isAdmin 條件包住', () => {
 });
 
 const guardMigration = read('supabase/2026-07-09_claim_id_and_role.sql');
+const adminFieldGuardMigration = read('supabase/migrations/20260819140407_security_hardening_release.sql');
 
 check('資料庫 trigger 阻止非管理員自行設定或修改等級', () => {
     assert.match(guardMigration, /role = 'admin'/);
     assert.match(guardMigration, /IF TG_OP = 'INSERT' THEN\s*NEW\.instructor_role := '實習'/);
     assert.match(guardMigration, /ELSIF TG_OP = 'UPDATE' THEN\s*NEW\.instructor_role := OLD\.instructor_role/);
     assert.match(guardMigration, /CREATE TRIGGER trg_guard_instructor_role/);
+});
+
+check('資料庫 trigger 阻止非管理員自行設定或修改速解資格', () => {
+    assert.match(adminFieldGuardMigration, /CREATE OR REPLACE FUNCTION public\.guard_instructor_admin_fields/);
+    assert.match(adminFieldGuardMigration, /NEW\.speed_qualification IS NOT NULL/);
+    assert.match(adminFieldGuardMigration, /NEW\.speed_qualification,[\s\S]*OLD\.speed_qualification/);
+    assert.match(adminFieldGuardMigration, /CREATE TRIGGER trg_guard_instructor_admin_fields/);
 });
 
 const passed = results.filter(({ pass }) => pass).length;

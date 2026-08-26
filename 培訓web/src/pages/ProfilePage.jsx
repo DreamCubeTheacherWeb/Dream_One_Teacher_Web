@@ -16,6 +16,7 @@ import {
     PROFILE_SAVED_EVENT,
     toFetchableExternalImageUrl,
 } from '../lib/profileCompletion';
+import { speedQualificationLabel } from '../lib/constants';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -50,7 +51,7 @@ const INITIAL_FORM = {
     full_name: '', nickname: '', gender: '', birth_date: '', id_number: '',
     phone_mobile: '', phone_home: '', line_id: '', address: '', household_address: '',
     email_primary: '', email_secondary: '',
-    instructor_role: '', teaching_freq_semester: '', teaching_freq_vacation: '',
+    instructor_role: '', speed_qualification: '', teaching_freq_semester: '', teaching_freq_vacation: '',
     teaching_regions: [],
     bio_notes: '',
     wca_id: '',
@@ -688,7 +689,7 @@ const ProfilePage = () => {
 
             {/* ── 教學資訊 ── */}
             <Section icon={GraduationCap} title="教學資訊">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Field label="講師等級">
                         {/* 等級一律由系統/管理員決定,老師不可自選:認領者沿用名冊原等級,
                             全新老師預設「實習」(伺服器端 guard_instructor_role 也會強制) */}
@@ -700,6 +701,14 @@ const ProfilePage = () => {
                             <span className="text-xs text-bauhaus-black/50">
                                 {form.instructor_role ? '（如需變更請聯繫管理員）' : '（首次註冊預設,管理員可調整）'}
                             </span>
+                        </div>
+                    </Field>
+                    <Field label="速解專業資格">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`bh-chip text-sm px-4 py-2.5 ${form.speed_qualification ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/60'}`}>
+                                {speedQualificationLabel(form.speed_qualification)}
+                            </span>
+                            <span className="text-xs text-bauhaus-black/50">（由管理員認定）</span>
                         </div>
                     </Field>
                     <Field label="接課頻率（學期間）" required>

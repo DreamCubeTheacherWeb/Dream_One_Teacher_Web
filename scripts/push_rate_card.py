@@ -102,12 +102,12 @@ for s, *prices in [
 # 速解到府
 for s, m, b in [(5, 1350, 1250), (4, 1200, 1100), (3, 1050, 950), (2, 900, 800), (1, 750, 650)]:
     add("speed_onsite", "速解大師", 1.5, s, s, "hourly", m, "速解到府")
-    add("speed_onsite", "基礎速解講師", 1.5, s, s, "hourly", b, "速解到府")
+    add("speed_onsite", "速解老師", 1.5, s, s, "hourly", b, "速解到府")
 
 # 速解線上
 for s, m, b in [(3, 750, 650), (2, 650, 550), (1, 550, 450)]:
     add("speed_online", "速解大師", 1.5, s, s, "hourly", m, "速解線上")
-    add("speed_online", "基礎速解講師", 1.5, s, s, "hourly", b, "速解線上")
+    add("speed_online", "速解老師", 1.5, s, s, "hourly", b, "速解線上")
 
 # 速解培訓
 add("speed_training_lead", None, 2, 6, None, "hourly", 800, "主講 6+ 組")
@@ -120,7 +120,7 @@ add("speed_training_assistant", None, 2, 1, 2, "hourly", 500, "助教 1-2 組")
 for s, m, b in [(8, 650, 600), (7, 600, 550), (6, 550, 500),
                 (5, 500, 450), (4, 450, 400), (3, 400, 350)]:
     add("speed_camp", "速解大師", 8, s, s, "hourly", m, "速解 / 全英文營隊")
-    add("speed_camp", "基礎速解講師", 8, s, s, "hourly", b, "速解 / 全英文營隊")
+    add("speed_camp", "速解老師", 8, s, s, "hourly", b, "速解 / 全英文營隊")
 
 # 幼兒
 add("kids_lead", None, None, 5, None, "hourly", 960, "幼兒啟蒙 主講")
