@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-26（既有講師手機＋身分證末四碼認領已套用正式 Supabase 並部署上線）。
+> 最後更新：2026-08-26（初次登入舊資料對照、外部頭像與缺項提示已部署上線）。
 
 ---
 
-## 👤 2026-08-26：初次登入舊資料對照、外部頭像與缺項提示（✅ 本機完成；⏳ 未推送／未部署）
+## 👤 2026-08-26：初次登入舊資料對照、外部頭像與缺項提示（✅ 正式環境已上線）
 
 **需求與做法**：講師初次登入後，個人資料頁新增預設收合的「舊匯入資料」對照區，僅顯示本人主檔中
 既有的 Line 名稱、接課地區原文、舊經歷／理念、匯款原文等欄位，不顯示管理員內部備註，也不會用舊值
@@ -18,8 +18,13 @@
 可展開，以及外部頭像 fallback。桌機 1280×1000、手機 390×844 截圖已檢查，無溢位。Impeccable detector
 只回報 `Layout.jsx` 既有、非本次修改的手機選單 `border-t-4`。
 
-**邊界**：本次未修改 Supabase schema、RLS、RPC 或正式資料，也未 push／部署；修改隔離在
-`codex/first-login-profile-context`，避免混入主工作目錄既有的報告與 `STATUS.md` WIP。
+**正式環境證據與邊界**：功能 commit `cc5330b` 已 fast-forward 推入 `main`；Zeabur production
+deployment `6106147468` 於 2026-08-26 14:39:46 UTC 回報 success。`teacher.dreamcube.tw` 與 Zeabur
+網域均載入 `/assets/index-CQFR1E4p.js`，大小 2,295,559 bytes、SHA-256
+`9d7a68871af8fcfe3b70754e21adec66042432a74fd7f1ae2720f528020a6128`，與乾淨本機 build 完全一致；
+正式 bundle 命中舊資料、缺項與外部頭像文案，隔離 mock Supabase 的正式站 DOM 回歸 37/37，桌機與
+390px 手機截圖已人工檢查。本次未修改 Supabase schema、RLS、RPC、Storage 或正式講師資料；原工作目錄
+既有報告與 `STATUS.md` WIP 未納入發布。
 
 ---
 
