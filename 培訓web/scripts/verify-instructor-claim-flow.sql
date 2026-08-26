@@ -34,6 +34,8 @@ CREATE TABLE public.instructors (
   user_id uuid UNIQUE,
   full_name text,
   nickname text,
+  instructor_role text,
+  speed_qualification text,
   gender text,
   birth_date date,
   id_number text,
@@ -59,6 +61,14 @@ CREATE TABLE public.instructors (
   id_back_external_url text,
   photo_external_url text,
   bankbook_external_url text,
+  email_secondary text,
+  form_submitted_at timestamptz,
+  note_internal text,
+  teaching_regions_raw text,
+  bank_info_raw text,
+  wca_name text,
+  wca_synced_at timestamptz,
+  hide_from_leaderboard boolean NOT NULL DEFAULT false,
   employment_status public.employment_status_enum,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -90,6 +100,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authentic
 GRANT SELECT ON auth.users TO authenticated;
 GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, anon, supabase_auth_admin;
 
+ALTER TABLE public.instructors ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own instructor profile"
+  ON public.instructors FOR SELECT TO authenticated
+  USING ((SELECT auth.uid()) = user_id);
+CREATE POLICY "Users can update own instructor profile"
+  ON public.instructors FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = user_id)
+  WITH CHECK ((SELECT auth.uid()) = user_id);
+
 CREATE OR REPLACE FUNCTION private.current_user_is_staff()
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
   SELECT EXISTS (
@@ -100,6 +119,21 @@ $$;
 
 CREATE OR REPLACE FUNCTION private.current_user_is_teacher()
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$ SELECT false $$;
+
+-- 模擬 8/19 已上線的管理欄位 guard；本次 migration 必須在不放寬 RLS 的前提下修復安全認領。
+CREATE OR REPLACE FUNCTION public.guard_instructor_admin_fields()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL AND TG_OP = 'UPDATE' AND NEW.user_id IS DISTINCT FROM OLD.user_id THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'administrator-managed instructor fields cannot be changed by instructors';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_guard_instructor_admin_fields
+BEFORE INSERT OR UPDATE ON public.instructors
+FOR EACH ROW EXECUTE FUNCTION public.guard_instructor_admin_fields();
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
@@ -124,11 +158,18 @@ VALUES
   ('重複甲', 'duplicate@example.com', 'active'),
   ('重複乙', 'DUPLICATE@example.com', 'active'),
   ('已被認領講師', 'linked@example.com', 'active');
+INSERT INTO public.instructors (
+  full_name, email_primary, email_secondary, phone_mobile, id_number, employment_status
+)
+VALUES
+  ('備用信箱講師', 'secondary-contact@example.com', 'secondary-login@example.com', '0900111222', 'A123456789', 'active'),
+  ('身分認領講師', 'legacy-contact@example.com', NULL, '0912-345-678', 'B223456789', 'active');
 UPDATE public.instructors
 SET user_id = '00000000-0000-4000-8000-000000000099'
 WHERE email_primary = 'linked@example.com';
 
 \ir ../supabase/migrations/2026-08-24_align_instructor_claim_flow.sql
+\ir ../supabase/migrations/20260826140000_recover_existing_instructor_identity_claim.sql
 
 DO $$
 DECLARE
@@ -153,6 +194,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'normalized instructor email index is missing';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND tablename = 'instructors'
+      AND indexname = 'idx_instructors_normalized_secondary_email'
+  ) THEN
+    RAISE EXCEPTION 'normalized secondary instructor email index is missing';
+  END IF;
 
   result := public.hook_allow_known_google_signup(
     '{"user":{"email":"unknown@example.com","app_metadata":{"provider":"google","providers":["google"]}}}'::jsonb
@@ -166,6 +215,13 @@ BEGIN
   );
   IF result <> '{}'::jsonb THEN
     RAISE EXCEPTION 'active pre-created instructor should be allowed: %', result;
+  END IF;
+
+  result := public.hook_allow_known_google_signup(
+    '{"user":{"email":"secondary-login@example.com","app_metadata":{"provider":"google","providers":["google"]}}}'::jsonb
+  );
+  IF result <> '{}'::jsonb THEN
+    RAISE EXCEPTION 'secondary email instructor should be allowed: %', result;
   END IF;
 
   result := public.hook_allow_known_google_signup(
@@ -198,6 +254,25 @@ BEGIN
 END
 $$;
 
+-- 備用 Email 也會在建立 auth.users 時直接認領，且保留原本主要聯絡 Email。
+INSERT INTO auth.users (id, email, raw_user_meta_data)
+VALUES ('00000000-0000-4000-8000-000000000005', 'SECONDARY-LOGIN@example.com', '{"full_name":"Google 備用信箱名稱"}');
+
+DO $$
+BEGIN
+  IF (SELECT role FROM public.users WHERE id = '00000000-0000-4000-8000-000000000005') <> 'teacher' THEN
+    RAISE EXCEPTION 'secondary email instructor did not receive teacher role';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.instructors
+    WHERE user_id = '00000000-0000-4000-8000-000000000005'
+      AND email_primary = 'secondary-contact@example.com'
+  ) THEN
+    RAISE EXCEPTION 'secondary email claim overwrote or failed to link the legacy primary email';
+  END IF;
+END
+$$;
+
 -- 既有 staff 帳號相容資料只在首次登入消耗，不會變成講師主檔或邀請介面。
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES
@@ -216,7 +291,97 @@ BEGIN
 END
 $$;
 
+-- Email 未命中的非新進講師，三項本人資料唯一命中後直接認領，不需審核。
+INSERT INTO auth.users (id, email, raw_user_meta_data)
+VALUES ('00000000-0000-4000-8000-000000000020', 'returning-new-google@example.com', '{"full_name":"身分認領講師"}');
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000020', false);
+
+-- pending 本人不能繞過 RPC 直接更新未認領主檔；RLS 應讓這次 UPDATE 為 0 row。
+SET ROLE authenticated;
+UPDATE public.instructors
+SET user_id = auth.uid()
+WHERE email_primary = 'legacy-contact@example.com';
+RESET ROLE;
+
+DO $$
+BEGIN
+  IF (SELECT user_id FROM public.instructors WHERE email_primary = 'legacy-contact@example.com') IS NOT NULL THEN
+    RAISE EXCEPTION 'pending account bypassed identity verification through direct update';
+  END IF;
+END
+$$;
+
+DO $$
+DECLARE
+  result jsonb;
+BEGIN
+  result := public.claim_existing_instructor_by_identity('身分 認領講師', '0912 345 678', '6789');
+  IF result->>'status' <> 'claimed' OR result->>'claimed_now' <> 'true' THEN
+    RAISE EXCEPTION 'identity claim did not link existing instructor: %', result;
+  END IF;
+  IF (SELECT role FROM public.users WHERE id = auth.uid()) <> 'teacher' THEN
+    RAISE EXCEPTION 'identity claim did not promote pending account';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.instructors
+    WHERE user_id = auth.uid()
+      AND email_primary = 'legacy-contact@example.com'
+  ) THEN
+    RAISE EXCEPTION 'identity claim did not preserve legacy instructor contact data';
+  END IF;
+END
+$$;
+
+-- 認領後本人仍不可自行解除連結；只有受控 RPC／admin 可管理連結生命週期。
+SET ROLE authenticated;
+DO $$
+BEGIN
+  BEGIN
+    UPDATE public.instructors SET user_id = NULL WHERE user_id = auth.uid();
+    RAISE EXCEPTION 'teacher unlinked their own instructor account';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+END
+$$;
+RESET ROLE;
+
+-- 錯誤核對不洩漏欄位差異；第五次失敗後鎖定 24 小時。
+INSERT INTO auth.users (id, email, raw_user_meta_data)
+VALUES ('00000000-0000-4000-8000-000000000021', 'wrong-claim@example.com', '{"full_name":"錯誤核對者"}');
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000021', false);
+
+DO $$
+DECLARE
+  result jsonb;
+  attempt integer;
+BEGIN
+  FOR attempt IN 1..4 LOOP
+    result := public.claim_existing_instructor_by_identity('不存在講師', '0999999999', '0000');
+    IF result->>'status' <> 'not_found' THEN
+      RAISE EXCEPTION 'failed identity claim leaked or returned wrong state on attempt %: %', attempt, result;
+    END IF;
+  END LOOP;
+
+  result := public.claim_existing_instructor_by_identity('不存在講師', '0999999999', '0000');
+  IF result->>'status' <> 'locked' OR result->>'locked_until' IS NULL THEN
+    RAISE EXCEPTION 'fifth failed identity claim was not locked: %', result;
+  END IF;
+
+  result := public.claim_existing_instructor_by_identity('身分認領講師', '0912345678', '6789');
+  IF result->>'status' <> 'locked' THEN
+    RAISE EXCEPTION 'locked identity claim was allowed to retry: %', result;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.instructors WHERE user_id = auth.uid())
+     OR (SELECT role FROM public.users WHERE id = auth.uid()) <> 'pending' THEN
+    RAISE EXCEPTION 'failed identity verification linked or promoted an account';
+  END IF;
+END
+$$;
+
 -- 唯一既有 Email 在建立 auth.users 後直接成為 teacher 並認領主檔。
+SELECT set_config('request.jwt.claim.sub', '', false);
 INSERT INTO auth.users (id, email, raw_user_meta_data)
 VALUES ('00000000-0000-4000-8000-000000000001', 'ACTIVE@example.com', '{"full_name":"Google 名稱"}');
 
@@ -259,6 +424,7 @@ END
 $$;
 
 -- 外部匯入的三份必填文件算完整；大頭照保持選填。
+SELECT set_config('request.jwt.claim.sub', '', false);
 UPDATE public.instructors SET
   nickname = '完整講師', gender = '女', birth_date = '1990-01-01', id_number = 'A123456789',
   phone_mobile = '0912345678', line_id = 'line', address = '通訊地址', household_address = '戶籍地址',
@@ -270,6 +436,7 @@ UPDATE public.instructors SET
   bankbook_external_url = 'https://example.com/bankbook',
   photo_path = NULL, photo_external_url = NULL
 WHERE user_id = '00000000-0000-4000-8000-000000000002';
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000002', false);
 
 DO $$
 BEGIN
@@ -280,9 +447,11 @@ END
 $$;
 
 -- 停用狀態立即降權，且同一帳號再次登入時仍被拒絕。
+SELECT set_config('request.jwt.claim.sub', '', false);
 UPDATE public.instructors
 SET employment_status = 'frozen'
 WHERE user_id = '00000000-0000-4000-8000-000000000002';
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000002', false);
 
 DO $$
 DECLARE
@@ -384,6 +553,12 @@ BEGIN
   END IF;
   IF NOT has_function_privilege('authenticated', 'public.claim_my_precreated_instructor()', 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated cannot execute claim RPC';
+  END IF;
+  IF has_function_privilege('anon', 'public.claim_existing_instructor_by_identity(text,text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon can execute identity claim RPC';
+  END IF;
+  IF NOT has_function_privilege('authenticated', 'public.claim_existing_instructor_by_identity(text,text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated cannot execute identity claim RPC';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns

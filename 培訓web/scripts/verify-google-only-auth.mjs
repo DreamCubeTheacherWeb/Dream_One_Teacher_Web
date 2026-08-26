@@ -23,6 +23,7 @@ const formGenerator = read('src/lib/formGenerator.js');
 const instructorList = read('src/pages/admin/InstructorList.jsx');
 const pendingApproval = read('src/pages/PendingApproval.jsx');
 const migration = read('supabase/migrations/2026-08-24_align_instructor_claim_flow.sql');
+const identityMigration = read('supabase/migrations/20260826140000_recover_existing_instructor_identity_claim.sql');
 
 const checks = [];
 const check = (name, callback) => {
@@ -87,6 +88,30 @@ check('外部匯入文件算完整，大頭照不是必填', () => {
 check('Email 衝突帳號不會進入新主檔填寫流程', () => {
   assert.match(pendingApproval, /claimState\?\.status === 'new'/);
   assert.match(pendingApproval, /claimState\?\.status !== 'conflict'/);
+});
+
+check('Email 未命中時先選新進或非新進，不會直接建立空白主檔', () => {
+  assert.match(pendingApproval, />新進</);
+  assert.match(pendingApproval, />非新進</);
+  assert.match(pendingApproval, /8\/25 後才加入講師群組/);
+  assert.match(pendingApproval, /claim_existing_instructor_by_identity/);
+  assert.doesNotMatch(pendingApproval, /!data && claimState\?\.status === 'new'[\s\S]{0,120}navigate\('\/profile'/);
+});
+
+check('既有講師以姓名、完整手機與身分證末四碼直接認領並限制重試', () => {
+  assert.match(identityMigration, /claim_existing_instructor_by_identity/);
+  assert.match(identityMigration, /provided_full_name text/);
+  assert.match(identityMigration, /provided_phone_mobile text/);
+  assert.match(identityMigration, /provided_id_last_four text/);
+  assert.match(identityMigration, /next_attempts >= 5/);
+  assert.match(identityMigration, /interval '24 hours'/);
+  assert.match(identityMigration, /SET role = 'teacher'/);
+  assert.match(identityMigration, /OLD\.user_id IS NULL AND NEW\.user_id = actor_id/);
+});
+
+check('Google Email 同時比對主要與備用 Email', () => {
+  assert.match(identityMigration, /email_primary[\s\S]{0,180}email_secondary/);
+  assert.match(identityMigration, /idx_instructors_normalized_secondary_email/);
 });
 
 check('Auth hook 權限只開給 supabase_auth_admin', () => {

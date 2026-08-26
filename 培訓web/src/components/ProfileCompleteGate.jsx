@@ -8,7 +8,8 @@ import {
 } from '../lib/profileCompletion';
 
 // 允許未填完資料時仍可進入的路徑
-const ALLOWED_PATHS = ['/profile'];
+// pending 需先完成「新進／非新進」分流；不能在選擇前被完整度檢查導去空白主檔。
+const ALLOWED_PATHS = ['/profile', '/pending'];
 const isAllowedPath = (path) => {
   if (ALLOWED_PATHS.includes(path)) return true;
   if (path.startsWith('/announcements')) return true;
