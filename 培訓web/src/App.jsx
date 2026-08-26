@@ -16,6 +16,7 @@ import AnnouncementManager from './pages/admin/AnnouncementManager';
 import AnnouncementDetail from './pages/AnnouncementDetail';
 import ProfilePage from './pages/ProfilePage';
 import InstructorList from './pages/admin/InstructorList';
+import AdminInstructorEdit from './pages/admin/AdminInstructorEdit';
 import ContractSigningFlow from './pages/ContractSigningFlow';
 import ContractView from './pages/ContractView';
 import ContractAdmin from './pages/admin/ContractAdmin';
@@ -185,6 +186,14 @@ function App() {
             element={
               <ProtectedRoute staffOnly={true}>
                 <Layout><InstructorList /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/instructors/:instructorId/edit"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <Layout><AdminInstructorEdit /></Layout>
               </ProtectedRoute>
             }
           />

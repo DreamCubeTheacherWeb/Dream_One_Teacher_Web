@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Eye, FileText, Loader2, Settings, AlertCircle } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Eye, FileText, Loader2, Settings, AlertCircle, Pencil } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import { REQUIRED_PROFILE_DOCUMENTS, hasInstructorDocument } from '../../lib/profileCompletion';
 import FilledFormPreviewModal from '../../components/FilledFormPreviewModal';
@@ -34,12 +34,16 @@ const LINK_FILTERS = [
 const InstructorList = () => {
     const { user, profile } = useAuth();
     const isAdmin = profile?.role === 'admin';
+    const [searchParams, setSearchParams] = useSearchParams();
+    const requestedLinkFilter = searchParams.get('claim');
+    const linkFilter = requestedLinkFilter === 'linked' || requestedLinkFilter === 'unlinked'
+        ? requestedLinkFilter
+        : '';
     const [instructors, setInstructors] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [roleFilter, setRoleFilter] = useState('');
-    const [linkFilter, setLinkFilter] = useState('');
     const [expandedId, setExpandedId] = useState(null);
     const [signedUrls, setSignedUrls] = useState({});
     const [showAddModal, setShowAddModal] = useState(false);
@@ -101,6 +105,13 @@ const InstructorList = () => {
     }, [formPreviewUrl]);
 
     const closeFormPreview = useCallback(() => setFormPreview(null), []);
+
+    const applyLinkFilter = (nextFilter) => {
+        const nextParams = new URLSearchParams(searchParams);
+        if (nextFilter) nextParams.set('claim', nextFilter);
+        else nextParams.delete('claim');
+        setSearchParams(nextParams, { replace: true });
+    };
 
     const toggleExpand = async (inst) => {
         if (expandedId === inst.id) {
@@ -317,7 +328,8 @@ const InstructorList = () => {
                     return (
                         <button
                             key={f.key || 'all'}
-                            onClick={() => setLinkFilter(f.key)}
+                            onClick={() => applyLinkFilter(f.key)}
+                            aria-pressed={active}
                             className={`bh-chip transition-colors min-h-[44px] ${
                                 active ? f.color : 'bg-white text-bauhaus-black/60 hover:bg-bauhaus-muted'
                             }`}
@@ -639,6 +651,15 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                         {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
                     </span>
                     {isAdmin && (
+                        <Link
+                            to={`/admin/instructors/${inst.id}/edit`}
+                            className="bh-btn bh-btn-blue px-3 py-2 text-xs"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <Pencil className="w-3.5 h-3.5" /> 編輯資料
+                        </Link>
+                    )}
+                    {isAdmin && (
                         inst.user_id ? (
                             <button onClick={onUnlink} className="text-xs font-bold text-bauhaus-red hover:underline">解綁</button>
                         ) : (
@@ -732,6 +753,14 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
             </td>
             <td className="px-6 py-4 text-right">
                 <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+                    {isAdmin && (
+                        <Link
+                            to={`/admin/instructors/${inst.id}/edit`}
+                            className="bh-btn bh-btn-blue px-3 py-2 text-xs whitespace-nowrap"
+                        >
+                            <Pencil className="w-3.5 h-3.5" /> 編輯資料
+                        </Link>
+                    )}
                     <button
                         type="button"
                         onClick={onPreview}

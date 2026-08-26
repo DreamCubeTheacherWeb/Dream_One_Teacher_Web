@@ -1,7 +1,35 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-25（匯款銀行資訊存後鎖定：前端已部署；⚠️ 鎖定 SQL 待業主在 SQL Editor 執行）。
+> 最後更新：2026-08-26（講師主檔完整編輯器已在乾淨分支完成；⚠️ 尚未部署、權限 migration 尚未套正式庫）。
+
+---
+
+## 🛠️ 2026-08-26：管理員可完整編輯講師主檔（✅ 本機完成；⚠️ 未部署／未套正式 DB）
+
+**需求與做法**：在既有 `/admin/instructors` 講師資料總覽的桌機列與手機卡新增「編輯資料」入口，
+但只對 `admin` 顯示；新路由 `/admin/instructors/:instructorId/edit` 也以 `adminOnly` 守衛，mentor
+直接輸入網址會被導回首頁。編輯頁涵蓋帳號／業務狀態、基本聯絡資料、教學地區與經歷、匯款、WCA、
+內部備註、身分證正反面、講師照片與存摺封面；可維護已認領或未認領的所有講師主檔，沒有新增欄位。
+管理員上傳新文件時會先更新主檔引用，再清理舊 Storage 物件；資料庫更新失敗則回滾本次新上傳。
+
+**權限邊界**：新增 migration `supabase/migrations/20260826130000_admin_instructor_editor_access.sql`，
+明確重建 admin 全權 policy（含 `USING`＋`WITH CHECK`），並用 restrictive policy 限制非 admin 只能
+更新／新增自己的主檔，mentor 即使能讀總覽也不能代改別人。Storage 另允許 admin 移除講師舊檔，
+以及講師本人讀取管理員在未認領階段上傳、之後被自己主檔引用的文件；搭配 file-path trigger，
+非 admin 更換文件時只能寫進自己的帳號路徑，避免用竄改主檔路徑讀取別人的證件。
+
+**證據**：production build、變更檔針對性 ESLint、42/42 單元測試、原講師主檔／自動填表瀏覽器
+回歸皆通過。新瀏覽器回歸實證：admin 有入口並送出 PATCH、390px 無水平溢出且儲存鈕熱區 ≥44px；
+mentor 無入口、直連被擋且 0 PATCH。暫時 PostgreSQL 實際套新 migration，證明 mentor 更新別人為
+0 row、本人資料仍可更新、admin 可更新任意講師與刪除舊檔、講師可讀自己主檔引用的匯入檔且不可
+竄改成其他路徑。既有 `verify:security`、存摺鎖定與匯款鎖定資料庫回歸亦全數通過。
+全站 lint 仍有 4 個既有 React Hook error 與 2 個 warning，均位於本次未修改的 5 個舊檔；
+本次變更檔單獨 lint 為 0 問題。
+
+**發布邊界**：本次只在 `codex/admin-instructor-editor` 乾淨分支完成；尚未 push、未部署前端、
+未對正式 Supabase `mnovjlicwzwkefkhstte` 套用 migration。上線時必須先套 migration，再發布前端，
+否則新編輯頁的文件刪除與未認領文件後續本人讀取不完整。
 
 ---
 

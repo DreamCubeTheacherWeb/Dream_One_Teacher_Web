@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock, RefreshCw, Search, ShieldCheck, UserCheck, Users } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, RefreshCw, Search, ShieldCheck, UserCheck, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { getInstructorProfileCompletion } from '../../lib/profileCompletion';
 
@@ -149,7 +149,7 @@ const TeacherManager = () => {
                 <div>
                     <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">帳號審核與權限</h1>
                     <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">
-                        只有完全未預先建檔的新註冊講師需要審核；講師主檔與認領狀態請到講師資料總覽管理。
+                        只有完全未預先建檔的新註冊講師需要審核；點選下方認領狀態卡片，可直接查看與編輯講師主檔。
                     </p>
                 </div>
                 <div className="flex gap-2">
@@ -164,8 +164,8 @@ const TeacherManager = () => {
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
                 <StatCard icon={Clock} label="新註冊待審核" value={roleCounts.pending || 0} color="bg-bauhaus-yellow text-bauhaus-black" />
-                <StatCard icon={UserCheck} label="主檔已認領" value={claimedCount} color="bg-bauhaus-blue text-white" />
-                <StatCard icon={Users} label="主檔未認領" value={unclaimedCount} color="bg-bauhaus-muted text-bauhaus-black" />
+                <StatCard icon={UserCheck} label="主檔已認領" value={claimedCount} color="bg-bauhaus-blue text-white" to="/admin/instructors?claim=linked" />
+                <StatCard icon={Users} label="主檔未認領" value={unclaimedCount} color="bg-bauhaus-muted text-bauhaus-black" to="/admin/instructors?claim=unlinked" />
                 <StatCard icon={ShieldCheck} label="後台人員" value={(roleCounts.mentor || 0) + (roleCounts.admin || 0)} color="bg-bauhaus-black text-white" />
             </div>
 
@@ -277,19 +277,33 @@ const TeacherManager = () => {
     );
 };
 
-const StatCard = ({ icon, label, value, color }) => {
+const StatCard = ({ icon, label, value, color, to }) => {
     const CardIcon = icon;
-    return (
-    <div className="bh-card p-4 flex items-center gap-3">
+    const content = <>
         <div className={`w-10 h-10 rounded-lg border-2 border-bauhaus-black flex items-center justify-center shrink-0 ${color}`}>
             <CardIcon className="w-5 h-5" />
         </div>
-        <div>
+        <div className="min-w-0">
             <div className="text-2xl font-black text-bauhaus-black tabular-nums">{value}</div>
             <div className="text-xs font-bold text-bauhaus-black/50">{label}</div>
+            {to && <div className="text-xs font-black text-bauhaus-blue mt-1">查看與編輯</div>}
         </div>
-    </div>
-    );
+        {to && <ArrowRight className="w-4 h-4 text-bauhaus-blue ml-auto shrink-0 transition-transform group-hover:translate-x-1" />}
+    </>;
+
+    if (to) {
+        return (
+            <Link
+                to={to}
+                aria-label={`${label} ${value}，查看與編輯`}
+                className="bh-card bh-card-hover group p-4 flex items-center gap-3 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-bauhaus-blue/35"
+            >
+                {content}
+            </Link>
+        );
+    }
+
+    return <div className="bh-card p-4 flex items-center gap-3">{content}</div>;
 };
 
 export default TeacherManager;
