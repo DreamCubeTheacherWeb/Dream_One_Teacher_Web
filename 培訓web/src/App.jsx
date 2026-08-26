@@ -21,6 +21,7 @@ import ContractSigningFlow from './pages/ContractSigningFlow';
 import ContractView from './pages/ContractView';
 import ContractAdmin from './pages/admin/ContractAdmin';
 import SalaryRegister from './pages/admin/SalaryRegister';
+import SalaryVendorExport from './pages/admin/SalaryVendorExport';
 import MySalary from './pages/MySalary';
 import DownloadCenter from './pages/admin/DownloadCenter';
 import BadgeManager from './pages/admin/BadgeManager';
@@ -234,6 +235,14 @@ function App() {
             element={
               <ProtectedRoute staffOnly={true}>
                 <Layout><SalaryRegister /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/salary/export"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <Layout><SalaryVendorExport /></Layout>
               </ProtectedRoute>
             }
           />
