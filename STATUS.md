@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-26（既有講師手機＋身分證末四碼認領已完成本機實作與回歸，尚未推送／部署）。
+> 最後更新：2026-08-26（既有講師手機＋身分證末四碼認領已套用正式 Supabase 並部署上線）。
 
 ---
 
-## 👤 2026-08-26：既有講師本人核對與資料自動帶入（✅ 本機完成；⏸ 尚未推送／部署）
+## 👤 2026-08-26：既有講師本人核對與資料自動帶入（✅ 正式環境已上線）
 
 **需求與流程**：Google 登入先以主要或備用 Email 對應講師主檔；唯一命中時維持原本的直接認領。
 Email 未命中且尚無主檔時，不再直接進入空白個人資料，而是顯示「新進／非新進」：8/25 後才加入
@@ -26,8 +26,18 @@ pending 帳號呼叫；不提供候選名單、不回傳單欄命中狀態，失
 單元測試 42/42、production build、變更檔 ESLint 與 `git diff --check` 均通過。全站 lint 仍有本次
 未修改的 4 個舊檔 React Hook error 與 2 個 warning；本次變更檔為 0 問題。
 
-**發布邊界**：本節只代表乾淨分支的本機完成狀態；尚未推送、尚未套正式 Supabase migration、尚未
-部署前端，也尚未異動任何正式講師帳號或主檔。
+**正式環境證據**：正式 Supabase 專案 `mnovjlicwzwkefkhstte` 已成功套用 migration
+`20260826140000_recover_existing_instructor_identity_claim.sql`。catalog postflight 確認認領 RPC、
+SECURITY DEFINER、固定 `search_path`、anon 禁止、authenticated 允許、限速表、備用 Email 索引與
+`instructors` RLS 均符合預期；正式匿名 REST 呼叫另回 401，證明未登入者不能執行認領。功能 commit
+`70235d3` 已 fast-forward 推入 `main`，Zeabur check 於 2026-08-26 08:58:27 UTC 成功。正式網域
+`teacher.dreamcube.tw` 與 Zeabur 網域皆載入 `/assets/index-eOM6h17c.js`（SHA-256
+`5349e771dca37ea8f2c40ee985b69e60f071d457fa262c1f707f2468ce178458`），兩站 bundle 完全相同，且實際
+包含 `claim_existing_instructor_by_identity`、身分選擇、8/25 備註與「新進／非新進」文案。
+
+**資料邊界**：本次 migration 與部署不會跳過本人核對直接改綁正式講師。蔡宜津以 `yijin` Google
+帳號登入後選「非新進」，輸入原主檔的完整手機與身分證末四碼，唯一命中即由 RPC 自動綁定、升為
+teacher 並帶入原講師資料，不需要後台審核。
 
 ---
 
