@@ -2,14 +2,20 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, AlertCircle, Trophy, Lock, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, AlertCircle, Trophy, Lock, ChevronDown, ChevronUp, ExternalLink, History } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
 import { pickInstructorProfileDraftFields, stripAdminManagedInstructorFields } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
 import { INSTRUCTOR_CONTRACTS_ENABLED, canAccessInstructorContracts } from '../lib/featureFlags';
-import { PROFILE_SAVED_EVENT, REQUIRED_PROFILE_FIELDS, hasInstructorDocument } from '../lib/profileCompletion';
+import {
+    getInstructorLegacyReferenceGroups,
+    getInstructorProfileCompletion,
+    hasInstructorDocument,
+    PROFILE_SAVED_EVENT,
+    toFetchableExternalImageUrl,
+} from '../lib/profileCompletion';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -100,9 +106,11 @@ const ProfilePage = () => {
     const [isFirstTime, setIsFirstTime] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [form, setForm] = useState(INITIAL_FORM);
+    const [importedProfile, setImportedProfile] = useState(null);
     const [hasSavedBankbook, setHasSavedBankbook] = useState(false);
     const [savedBankAccount, setSavedBankAccount] = useState(false);
     const [filePreviews, setFilePreviews] = useState({});
+    const [filePreviewSources, setFilePreviewSources] = useState({});
     const [pendingFiles, setPendingFiles] = useState({});
     const [uploading, setUploading] = useState({});
     const fileRefs = useRef({});
@@ -159,6 +167,7 @@ const ProfilePage = () => {
 
         if (data) {
             setIsFirstTime(false);
+            setImportedProfile(data);
             setInstructorId(data.id || null);
             setHasSavedBankbook(hasInstructorDocument(data, 'bankbook'));
             setSavedBankAccount(Boolean(data.bank_account_number?.trim()));
@@ -183,6 +192,7 @@ const ProfilePage = () => {
             setWcaLocked(!!data.hide_from_leaderboard);
         } else {
             setIsFirstTime(true);
+            setImportedProfile(null);
             setInstructorId(null);
             setHasSavedBankbook(false);
             setSavedBankAccount(false);
@@ -202,6 +212,7 @@ const ProfilePage = () => {
 
         // 預覽依 DB 正本建立；未儲存的新檔只存在當前頁面記憶體，由選檔時另設 blob 預覽。
         const previews = {};
+        const previewSources = {};
         const allDocKeys = ['photo', ...DOC_TYPES.map(d => d.key)];
         for (const key of allDocKeys) {
             const storedPath = nextForm[`${key}_path`];
@@ -209,10 +220,21 @@ const ProfilePage = () => {
                 const { data: urlData } = await supabase.storage
                     .from('instructor_uploads')
                     .createSignedUrl(storedPath, 3600);
-                if (urlData?.signedUrl) previews[key] = urlData.signedUrl;
+                if (urlData?.signedUrl) {
+                    previews[key] = urlData.signedUrl;
+                    previewSources[key] = 'storage';
+                }
+            }
+            if (key === 'photo' && !previews.photo) {
+                const externalPhotoUrl = toFetchableExternalImageUrl(nextForm.photo_external_url);
+                if (externalPhotoUrl) {
+                    previews.photo = externalPhotoUrl;
+                    previewSources.photo = 'external';
+                }
             }
         }
         setFilePreviews(previews);
+        setFilePreviewSources(previewSources);
 
         hydrated.current = true; // 載入完成後才允許草稿自動寫入
         setLoading(false);
@@ -306,6 +328,7 @@ const ProfilePage = () => {
         pendingPreviewUrls.current[docType] = previewUrl;
         setPendingFiles(prev => ({ ...prev, [docType]: file }));
         setFilePreviews(prev => ({ ...prev, [docType]: previewUrl }));
+        setFilePreviewSources(prev => ({ ...prev, [docType]: 'pending' }));
     };
 
     const handleRemoveFile = (docType) => {
@@ -328,26 +351,50 @@ const ProfilePage = () => {
             [`${docType}_path`]: null, [`${docType}_mime`]: null,
             [`${docType}_size`]: null, [`${docType}_uploaded_at`]: null,
         }));
+        const externalPhotoUrl = docType === 'photo'
+            ? toFetchableExternalImageUrl(form.photo_external_url)
+            : null;
         setFilePreviews(prev => {
             const next = { ...prev };
-            delete next[docType];
+            if (externalPhotoUrl) next.photo = externalPhotoUrl;
+            else delete next[docType];
+            return next;
+        });
+        setFilePreviewSources(prev => {
+            const next = { ...prev };
+            if (externalPhotoUrl) next.photo = 'external';
+            else delete next[docType];
+            return next;
+        });
+    };
+
+    const handleAvatarPreviewError = () => {
+        const externalPhotoUrl = toFetchableExternalImageUrl(form.photo_external_url);
+        if (filePreviewSources.photo !== 'external' && externalPhotoUrl) {
+            setFilePreviews(prev => ({ ...prev, photo: externalPhotoUrl }));
+            setFilePreviewSources(prev => ({ ...prev, photo: 'external' }));
+            return;
+        }
+        setFilePreviews(prev => {
+            const next = { ...prev };
+            delete next.photo;
+            return next;
+        });
+        setFilePreviewSources(prev => {
+            const next = { ...prev };
+            delete next.photo;
             return next;
         });
     };
 
     const handleSave = async () => {
-        const missing = REQUIRED_PROFILE_FIELDS.filter(f => !form[f.key]?.toString().trim());
-        if (missing.length > 0) {
-            alert('以下欄位為必填：\n' + missing.map(f => `• ${f.label}`).join('\n'));
-            return;
-        }
-        if (!form.teaching_regions?.length) {
-            alert('請至少選擇一個接課地區');
-            return;
-        }
-        const missingDocs = DOC_TYPES.filter(d => !hasInstructorDocument(form, d.key) && !pendingFiles[d.key]);
-        if (missingDocs.length > 0) {
-            alert('以下文件尚未上傳：\n' + missingDocs.map(d => `• ${d.label}`).join('\n'));
+        const profileForValidation = { ...form };
+        Object.keys(pendingFiles).forEach((key) => {
+            profileForValidation[`${key}_path`] = `pending/${key}`;
+        });
+        const { missingItems } = getInstructorProfileCompletion(profileForValidation);
+        if (missingItems.length > 0) {
+            alert('請先補齊以下資料：\n' + missingItems.map(item => `• ${item}`).join('\n'));
             return;
         }
 
@@ -468,6 +515,7 @@ const ProfilePage = () => {
     const isBankLocked = savedBankAccount && profile?.role !== 'admin';
     const bankInputCls = inputCls + (isBankLocked ? ' disabled:bg-bauhaus-muted disabled:text-bauhaus-black/60 disabled:border-bauhaus-black/50 disabled:cursor-not-allowed' : '');
     const selectCls = inputCls + ' bg-white';
+    const legacyReferenceGroups = getInstructorLegacyReferenceGroups(importedProfile);
 
     return (
         <div className="p-6 max-w-4xl mx-auto">
@@ -495,12 +543,22 @@ const ProfilePage = () => {
                 </div>
             )}
 
+            {legacyReferenceGroups.length > 0 && (
+                <LegacyReferencePanel groups={legacyReferenceGroups} />
+            )}
+
             {/* ── Header with Avatar ── */}
             <div className="mb-8 flex items-center gap-6">
                 <div className="relative shrink-0">
                     <div className="w-28 h-28 rounded-full bg-bauhaus-muted border-2 lg:border-4 border-bauhaus-black overflow-hidden flex items-center justify-center">
                         {filePreviews.photo ? (
-                            <img src={filePreviews.photo} alt="大頭照" className="w-full h-full object-cover" />
+                            <img
+                                src={filePreviews.photo}
+                                alt="大頭照"
+                                referrerPolicy="no-referrer"
+                                onError={handleAvatarPreviewError}
+                                className="w-full h-full object-cover"
+                            />
                         ) : (
                             <Camera className="w-10 h-10 text-bauhaus-black/30" />
                         )}
@@ -528,7 +586,7 @@ const ProfilePage = () => {
                             e.target.value = '';
                         }}
                     />
-                    {filePreviews.photo && (
+                    {filePreviews.photo && filePreviewSources.photo !== 'external' && (
                         <button
                             onClick={() => handleRemoveFile('photo')}
                             className="absolute top-0 right-0 w-6 h-6 bg-bauhaus-red hover:bg-bauhaus-red/90 text-white rounded-full flex items-center justify-center border-2 border-bauhaus-black"
@@ -548,6 +606,11 @@ const ProfilePage = () => {
                     </p>
                     {!filePreviews.photo && (
                         <p className="text-bauhaus-black/50 text-sm mt-1 font-medium">← 大頭照為選填，可稍後補上</p>
+                    )}
+                    {filePreviewSources.photo === 'external' && (
+                        <p data-testid="external-avatar-notice" className="text-bauhaus-blue text-sm mt-1 font-bold">
+                            目前顯示舊匯入頭像；需要更新時可按鉛筆上傳新版。
+                        </p>
                     )}
                 </div>
             </div>
@@ -1272,6 +1335,49 @@ const Section = ({ icon, title, children }) => {
         </h2>
         {children}
     </div>
+    );
+};
+
+const LegacyReferencePanel = ({ groups }) => {
+    const itemCount = groups.reduce((count, group) => count + group.items.length, 0);
+    return (
+        <details data-testid="legacy-reference-panel" className="group bh-card mb-6 overflow-hidden">
+            <summary className="flex min-h-[56px] cursor-pointer list-none items-center gap-3 bg-bauhaus-yellow/20 px-4 py-3 sm:px-5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-bauhaus-blue">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-bauhaus-black bg-bauhaus-yellow">
+                    <History className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                    <span className="block font-black text-bauhaus-black">查看舊匯入資料（{itemCount} 筆）</span>
+                    <span className="mt-0.5 block text-sm font-medium text-bauhaus-black/70">
+                        供您核對舊表單原文，不會覆蓋目前已填內容。
+                    </span>
+                </span>
+                <ChevronDown className="h-5 w-5 shrink-0 transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="border-t-2 border-bauhaus-black bg-white px-4 py-4 sm:px-5">
+                <p className="max-w-[72ch] text-sm font-bold leading-relaxed text-bauhaus-black/70">
+                    已帶入本頁欄位的內容不用重填；若結構化欄位仍空白，可參考下列舊資料補上正確值。
+                    匯款資料等敏感內容預設收合，請在安全環境查看。
+                </p>
+                <div className="mt-4 divide-y-2 divide-bauhaus-black/20">
+                    {groups.map((group) => (
+                        <section key={group.key} className="py-4 first:pt-0 last:pb-0">
+                            <h3 className="bh-label mb-2 text-bauhaus-black">{group.label}</h3>
+                            <dl className="space-y-3">
+                                {group.items.map((item) => (
+                                    <div key={item.key} className="grid gap-1 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+                                        <dt className="text-xs font-black text-bauhaus-black/60">{item.label}</dt>
+                                        <dd className="whitespace-pre-wrap break-words text-sm font-bold leading-relaxed text-bauhaus-black">
+                                            {item.value}
+                                        </dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </section>
+                    ))}
+                </div>
+            </div>
+        </details>
     );
 };
 

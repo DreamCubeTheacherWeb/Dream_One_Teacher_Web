@@ -12,11 +12,13 @@
  *  R7 在 /profile 補齊後第一次點課程         → 不可被舊狀態彈回
  *  R8 富文本內容安全                         → 阻擋可執行內容並保留安全版型
  *  R9 六位匿名未註冊樣本的缺漏分布           → 四個受保護頁面全部導回 /profile
+ *  R10 個人頁完整度提示                       → 明列缺項，不要求重填已有資料
+ *  R11 舊匯入資料與外部頭像                   → 可展開核對，且頭像正常 fallback
  * 用法：
  *   本地最新 build：node scripts/verify-complete-gate.mjs
  *   正式站 bundle：VERIFY_BASE_URL=https://example.com node scripts/verify-complete-gate.mjs
  */
-import { readFileSync } from 'fs';
+import { mkdirSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -29,6 +31,9 @@ const PORT = 4215;
 const BASE = process.env.VERIFY_BASE_URL?.replace(/\/$/, '') || `http://localhost:${PORT}`;
 const BASE_ORIGIN = new URL(BASE).origin;
 const IS_REMOTE = Boolean(process.env.VERIFY_BASE_URL);
+const SCREENSHOT_DIR = process.env.VERIFY_SCREENSHOT_DIR
+    ? path.resolve(process.env.VERIFY_SCREENSHOT_DIR)
+    : null;
 const { chromium } = require(path.join(APP_DIR, 'node_modules/playwright-core'));
 
 const envMap = Object.fromEntries(readFileSync(path.join(APP_DIR, '.env'), 'utf8')
@@ -89,6 +94,13 @@ async function handleRoute(route) {
     const url = new URL(req.url());
     if (url.origin === BASE_ORIGIN) return route.continue();
     if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') return route.continue();
+    if (url.hostname === 'legacy-avatar.test') {
+        return route.fulfill({
+            status: 200,
+            contentType: 'image/png',
+            body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+        });
+    }
     if (!url.hostname.endsWith('.supabase.co')) return route.abort();
     const p = url.pathname;
     if (p.startsWith('/auth/v1/')) {
@@ -177,6 +189,55 @@ async function verifyOptionalPhotoProfile(browser) {
     await page.waitForTimeout(500);
     await ctx.close();
     return { optionalHint, dialogMessages };
+}
+
+async function inspectFirstLoginProfileHelp(browser) {
+    instructorRow = {
+        ...allComplete,
+        nickname: '',
+        bankbook_path: null,
+        bankbook_external_url: null,
+        photo_path: null,
+        photo_external_url: 'https://legacy-avatar.test/avatar.png',
+        line_name: 'Cube 老師',
+        teaching_regions_raw: '新竹台北',
+        bio_teaching_experience: '社團授課三年',
+        bank_info_raw: '0087007/123456789/王小明',
+    };
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+    await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
+    await ctx.route('**/*', handleRoute);
+    const page = await ctx.newPage();
+    await page.goto(`${BASE}/profile`, { waitUntil: 'networkidle', timeout: 20000 });
+
+    const missingText = await page.getByTestId('profile-missing-items').innerText();
+    const panel = page.getByTestId('legacy-reference-panel');
+    const panelSummary = await panel.locator('summary').innerText();
+    if (SCREENSHOT_DIR) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'profile-desktop-top.png') });
+    }
+    await panel.locator('summary').click();
+    const panelText = await panel.innerText();
+    if (SCREENSHOT_DIR) {
+        await panel.screenshot({ path: path.join(SCREENSHOT_DIR, 'profile-desktop-legacy-panel.png') });
+    }
+    const externalAvatarNotice = await page.getByTestId('external-avatar-notice').isVisible();
+    const externalAvatarSrc = await page.getByAltText('大頭照').getAttribute('src');
+
+    const state = { missingText, panelSummary, panelText, externalAvatarNotice, externalAvatarSrc };
+    await ctx.close();
+
+    if (SCREENSHOT_DIR) {
+        const mobileCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+        await mobileCtx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
+        await mobileCtx.route('**/*', handleRoute);
+        const mobilePage = await mobileCtx.newPage();
+        await mobilePage.goto(`${BASE}/profile`, { waitUntil: 'networkidle', timeout: 20000 });
+        await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, 'profile-mobile-top.png') });
+        await mobileCtx.close();
+    }
+    return state;
 }
 
 async function inspectSanitizedAnnouncement(browser) {
@@ -290,6 +351,30 @@ async function main() {
                 );
             }
         }
+
+        const firstLoginHelp = await inspectFirstLoginProfileHelp(browser);
+        assert(
+            'R10 完整度提示明列真正缺少的欄位',
+            firstLoginHelp.missingText.includes('講師暱稱')
+                && firstLoginHelp.missingText.includes('存摺封面')
+                && !firstLoginHelp.missingText.includes('主要 Email'),
+            firstLoginHelp.missingText.replaceAll('\n', '、'),
+        );
+        assert(
+            'R11a 舊匯入資料可展開核對',
+            firstLoginHelp.panelSummary.includes('查看舊匯入資料（4 筆）')
+                && firstLoginHelp.panelText.includes('Cube 老師')
+                && firstLoginHelp.panelText.includes('新竹台北')
+                && firstLoginHelp.panelText.includes('社團授課三年')
+                && firstLoginHelp.panelText.includes('0087007/123456789/王小明'),
+            firstLoginHelp.panelSummary,
+        );
+        assert(
+            'R11b 舊外部頭像會作為 fallback 顯示',
+            firstLoginHelp.externalAvatarNotice
+                && firstLoginHelp.externalAvatarSrc === 'https://legacy-avatar.test/avatar.png',
+            JSON.stringify(firstLoginHelp),
+        );
     } finally {
         if (browser) await browser.close();
         preview?.kill('SIGTERM');

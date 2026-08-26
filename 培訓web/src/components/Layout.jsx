@@ -22,6 +22,20 @@ const PenguinAvatar = () => (
     </svg>
 );
 
+const ProfileAvatar = ({ src, alt }) => {
+    const [failedSrc, setFailedSrc] = useState(null);
+    if (!src || failedSrc === src) return <PenguinAvatar />;
+    return (
+        <img
+            src={src}
+            alt={alt}
+            referrerPolicy="no-referrer"
+            onError={() => setFailedSrc(src)}
+            className="w-full h-full object-cover"
+        />
+    );
+};
+
 const Layout = ({ children }) => {
     const { user, profile, instructorProfile, avatarUrl, loading, signOut, accessError } = useAuth();
     const navigate = useNavigate();
@@ -197,11 +211,7 @@ const Layout = ({ children }) => {
                                 <div className="flex items-center gap-3 pl-4 border-l-2 border-bauhaus-black">
                                     <Link to="/profile" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
                                         <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-bauhaus-black shrink-0">
-                                            {avatarUrl ? (
-                                                <img src={avatarUrl} alt="大頭貼" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <PenguinAvatar />
-                                            )}
+                                            <ProfileAvatar src={avatarUrl} alt="大頭貼" />
                                         </div>
                                         <div className="flex flex-col items-start gap-0.5">
                                             <span className="text-sm font-bold text-bauhaus-black leading-tight max-w-[120px] truncate">
@@ -249,11 +259,7 @@ const Layout = ({ children }) => {
                                     {/* 使用者資訊 */}
                                     <Link to="/profile" className="flex items-center gap-3 p-3 rounded-xl border-2 border-bauhaus-black bg-bauhaus-muted mb-3">
                                         <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-bauhaus-black shrink-0">
-                                            {avatarUrl ? (
-                                                <img src={avatarUrl} alt="大頭貼" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <PenguinAvatar />
-                                            )}
+                                            <ProfileAvatar src={avatarUrl} alt="大頭貼" />
                                         </div>
                                         <div className="flex flex-col gap-1">
                                             <div className="font-bold text-bauhaus-black text-sm">{displayName}</div>

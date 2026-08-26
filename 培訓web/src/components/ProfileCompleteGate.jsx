@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import {
-  isInstructorProfileComplete,
+  getInstructorProfileCompletion,
   PROFILE_SAVED_EVENT,
 } from '../lib/profileCompletion';
 
@@ -24,7 +24,14 @@ const ProfileCompleteGate = ({ onCompletionChange }) => {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [completion, setCompletion] = useState({ userId: null, path: null, complete: null });
+  const [completion, setCompletion] = useState({
+    userId: null,
+    path: null,
+    complete: null,
+    completedItems: 0,
+    totalItems: 0,
+    missingItems: [],
+  });
   const [createdAt, setCreatedAt] = useState(null);
   const [mountedAt] = useState(Date.now);
 
@@ -53,10 +60,11 @@ const ProfileCompleteGate = ({ onCompletionChange }) => {
         .eq('user_id', user.id)
         .maybeSingle();
       if (cancelled) return;
+      const nextCompletion = getInstructorProfileCompletion(inst);
       setCompletion({
         userId: user.id,
         path: checkedPath,
-        complete: isInstructorProfileComplete(inst),
+        ...nextCompletion,
       });
       // 用 auth.user.created_at 作為三天倒數起點
       setCreatedAt(user.created_at || profile.created_at || null);
@@ -68,10 +76,11 @@ const ProfileCompleteGate = ({ onCompletionChange }) => {
   useEffect(() => {
     const handleProfileSaved = (event) => {
       if (!user?.id) return;
+      const nextCompletion = getInstructorProfileCompletion(event.detail);
       setCompletion({
         userId: user.id,
         path: location.pathname,
-        complete: isInstructorProfileComplete(event.detail),
+        ...nextCompletion,
       });
     };
     window.addEventListener(PROFILE_SAVED_EVENT, handleProfileSaved);
@@ -89,12 +98,13 @@ const ProfileCompleteGate = ({ onCompletionChange }) => {
   // 只在 /profile 顯示倒數橫幅
   if (loading || complete === null || complete) return null;
   if (location.pathname !== '/profile') return null;
-  if (!createdAt) return null;
-
-  const elapsedMs = mountedAt - new Date(createdAt).getTime();
+  const createdAtMs = createdAt ? new Date(createdAt).getTime() : NaN;
+  const hasValidCreatedAt = Number.isFinite(createdAtMs);
+  const elapsedMs = hasValidCreatedAt ? mountedAt - createdAtMs : 0;
   const elapsedDays = Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
-  const remaining = 3 - elapsedDays;
+  const remaining = hasValidCreatedAt ? 3 - elapsedDays : null;
   const overdue = remaining < 0;
+  const missingCount = completion.missingItems.length;
 
   return (
     <div className="max-w-4xl mx-auto px-4 pt-4">
@@ -108,7 +118,7 @@ const ProfileCompleteGate = ({ onCompletionChange }) => {
             overdue ? 'bg-bauhaus-red text-white' : 'bg-bauhaus-yellow text-bauhaus-black'
           }`}
         >
-          {overdue ? '!' : remaining}
+          {overdue ? '!' : missingCount}
         </div>
         <div className="flex-1 min-w-0">
           <div
@@ -116,20 +126,42 @@ const ProfileCompleteGate = ({ onCompletionChange }) => {
               overdue ? 'text-bauhaus-red' : 'text-bauhaus-black'
             }`}
           >
-            {overdue
-              ? `已逾期 ${Math.abs(remaining)} 天 — 請立即完成資料填寫`
-              : remaining === 0
-              ? '今天是最後一天 — 請務必完成資料填寫'
-              : `您還有 ${remaining} 天需完成講師資料`}
+            還缺 {missingCount} 項講師資料
           </div>
           <div
             className={`text-sm mt-1 font-medium ${
               overdue ? 'text-bauhaus-red/80' : 'text-bauhaus-black/70'
             }`}
           >
-            首次登入起 3 天內須完成所有資料（含銀行資訊與身分證、存摺等檔案）。
-            <strong className="ml-1">未完成前無法瀏覽其他頁面。</strong>
+            {hasValidCreatedAt && (
+              <span className="mr-1">
+                {overdue
+                  ? `已逾期 ${Math.abs(remaining)} 天。`
+                  : remaining === 0
+                  ? '今天是完成期限。'
+                  : `首次登入後還有 ${remaining} 天可完成。`}
+              </span>
+            )}
+            已帶入的資料不必重填，只需補齊下列項目。
+            <strong className="ml-1">完成前僅能查看個人資料與公告。</strong>
           </div>
+          <div
+            data-testid="profile-missing-items"
+            aria-label={`尚缺 ${missingCount} 項講師資料`}
+            className="mt-3 flex flex-wrap gap-2"
+          >
+            {completion.missingItems.map((item) => (
+              <span
+                key={item}
+                className="inline-flex min-h-8 items-center rounded-lg border-2 border-bauhaus-black bg-white px-2.5 py-1 text-xs font-black text-bauhaus-black"
+              >
+                {item}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-xs font-bold text-bauhaus-black/60">
+            已完成 {completion.completedItems}／{completion.totalItems} 項
+          </p>
         </div>
       </div>
     </div>

@@ -41,6 +41,37 @@ export const REQUIRED_REMITTANCE_FIELDS = [
 
 export const PROFILE_SAVED_EVENT = 'instructor-profile-saved';
 
+const LEGACY_REFERENCE_SECTIONS = [
+  {
+    key: 'contact',
+    label: '基本與聯絡資料',
+    fields: [
+      { key: 'line_name', label: '舊 Line 顯示名稱' },
+      { key: 'school_info', label: '就讀學校／科系' },
+      { key: 'shirt_size', label: '衣服尺寸' },
+      { key: 'facebook_url', label: 'Facebook 網址' },
+    ],
+  },
+  {
+    key: 'teaching',
+    label: '接課與教學資料',
+    fields: [
+      { key: 'teaching_regions_raw', label: '舊接課地區原文' },
+      { key: 'bio_personal_experience', label: '個人經歷' },
+      { key: 'bio_teaching_experience', label: '授課經驗' },
+      { key: 'teaching_philosophy', label: '教學理念' },
+      { key: 'note_to_team', label: '想對團隊說的話' },
+    ],
+  },
+  {
+    key: 'remittance',
+    label: '舊匯款資料',
+    fields: [
+      { key: 'bank_info_raw', label: '匯款帳戶原文' },
+    ],
+  },
+];
+
 const hasValue = (value) => value !== null
   && value !== undefined
   && (typeof value !== 'string' || Boolean(value.trim()));
@@ -54,6 +85,22 @@ const deriveGenderFromTaiwanId = (idNumber) => {
   if (!/^[A-Z][12]\d{8}$/.test(normalized)) return null;
   return normalized[1] === '1' ? '男' : '女';
 };
+
+export const getInstructorLegacyReferenceGroups = (instructor) => (
+  LEGACY_REFERENCE_SECTIONS
+    .map((section) => ({
+      key: section.key,
+      label: section.label,
+      items: section.fields
+        .filter(({ key }) => hasValue(instructor?.[key]))
+        .map(({ key, label }) => ({
+          key,
+          label,
+          value: String(instructor[key]).trim(),
+        })),
+    }))
+    .filter(({ items }) => items.length > 0)
+);
 
 export const getInstructorLegacyRecoverableItems = (instructor) => {
   const recoverable = [];
@@ -100,6 +147,20 @@ export const toFetchableInstructorDocumentUrl = (value) => {
     directUrl.searchParams.set('export', 'download');
     directUrl.searchParams.set('id', fileId);
     return directUrl.toString();
+  } catch {
+    return null;
+  }
+};
+
+export const toFetchableExternalImageUrl = (value) => {
+  const googleDriveUrl = toFetchableInstructorDocumentUrl(value);
+  if (googleDriveUrl) return googleDriveUrl;
+  if (!hasValue(value)) return null;
+
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' || url.username || url.password) return null;
+    return url.toString();
   } catch {
     return null;
   }

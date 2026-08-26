@@ -5,6 +5,24 @@
 
 ---
 
+## 👤 2026-08-26：初次登入舊資料對照、外部頭像與缺項提示（✅ 本機完成；⏳ 未推送／未部署）
+
+**需求與做法**：講師初次登入後，個人資料頁新增預設收合的「舊匯入資料」對照區，僅顯示本人主檔中
+既有的 Line 名稱、接課地區原文、舊經歷／理念、匯款原文等欄位，不顯示管理員內部備註，也不會用舊值
+覆蓋目前表單。頭像改為 Storage 檔案優先、HTTPS／Google Drive `photo_external_url` 次之，外部圖失敗時
+再回到預設頭像；外部圖請求不帶 referrer。完整度橫幅直接列出缺少欄位與已完成項數，送出驗證也改用
+同一份 `getInstructorProfileCompletion()` 規則，避免講師儲存後才發現仍被關卡擋下。
+
+**驗證**：`npm test` 44/44、任務範圍 ESLint、`npm run build`、`npm run verify:claim-flow` 全綠；
+`verify-complete-gate.mjs` 擴充後 37/37，實際瀏覽器確認缺項只列「講師暱稱／存摺封面」、4 筆舊資料
+可展開，以及外部頭像 fallback。桌機 1280×1000、手機 390×844 截圖已檢查，無溢位。Impeccable detector
+只回報 `Layout.jsx` 既有、非本次修改的手機選單 `border-t-4`。
+
+**邊界**：本次未修改 Supabase schema、RLS、RPC 或正式資料，也未 push／部署；修改隔離在
+`codex/first-login-profile-context`，避免混入主工作目錄既有的報告與 `STATUS.md` WIP。
+
+---
+
 ## 👤 2026-08-26：既有講師本人核對與資料自動帶入（✅ 正式環境已上線）
 
 **需求與流程**：Google 登入先以主要或備用 Email 對應講師主檔；唯一命中時維持原本的直接認領。

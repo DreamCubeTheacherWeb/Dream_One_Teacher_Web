@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import {
   getInstructorProfileCompletion,
   getInstructorDocumentReference,
+  getInstructorLegacyReferenceGroups,
   getInstructorLegacyRecoverableItems,
   getMissingRemittanceItems,
   hasInstructorDocument,
   isInstructorProfileComplete,
   isInstructorRemittanceComplete,
   REQUIRED_PROFILE_FIELDS,
+  toFetchableExternalImageUrl,
   toFetchableInstructorDocumentUrl,
 } from './profileCompletion.js';
 
@@ -57,6 +59,19 @@ test('Google Drive 分享頁會轉成可跨來源讀取的文件下載網址', (
   );
   assert.equal(toFetchableInstructorDocumentUrl('http://127.0.0.1/private'), null);
   assert.equal(toFetchableInstructorDocumentUrl('https://example.com/not-imported'), null);
+});
+
+test('外部頭像接受 HTTPS 並把 Google Drive 分享頁轉為可載入網址', () => {
+  assert.equal(
+    toFetchableExternalImageUrl('https://drive.google.com/file/d/avatar_123/view?usp=sharing'),
+    'https://drive.google.com/uc?export=download&id=avatar_123',
+  );
+  assert.equal(
+    toFetchableExternalImageUrl('https://images.example.com/instructors/a.png'),
+    'https://images.example.com/instructors/a.png',
+  );
+  assert.equal(toFetchableExternalImageUrl('http://images.example.com/a.png'), null);
+  assert.equal(toFetchableExternalImageUrl('https://user:secret@example.com/a.png'), null);
 });
 
 test('同一文件同時有 Storage 與外部連結時優先使用受控 Storage 檔案', () => {
@@ -112,6 +127,36 @@ test('舊欄位有資料時會另外標示可轉換，不會誤稱完全找不�
     '講師暱稱',
     '性別',
     '舊匯款帳戶資料',
+  ]);
+});
+
+test('舊匯入資料會依用途分組供講師對照，空白與內部備註不顯示', () => {
+  assert.deepEqual(getInstructorLegacyReferenceGroups({
+    line_name: '  Cube 老師  ',
+    school_info: ' ',
+    teaching_regions_raw: '新竹台北',
+    bio_teaching_experience: '社團授課三年',
+    bank_info_raw: '0087007/123456789/王小明',
+    note_internal: '只給管理員看的內容',
+  }), [
+    {
+      key: 'contact',
+      label: '基本與聯絡資料',
+      items: [{ key: 'line_name', label: '舊 Line 顯示名稱', value: 'Cube 老師' }],
+    },
+    {
+      key: 'teaching',
+      label: '接課與教學資料',
+      items: [
+        { key: 'teaching_regions_raw', label: '舊接課地區原文', value: '新竹台北' },
+        { key: 'bio_teaching_experience', label: '授課經驗', value: '社團授課三年' },
+      ],
+    },
+    {
+      key: 'remittance',
+      label: '舊匯款資料',
+      items: [{ key: 'bank_info_raw', label: '匯款帳戶原文', value: '0087007/123456789/王小明' }],
+    },
   ]);
 });
 

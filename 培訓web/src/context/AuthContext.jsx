@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { toFetchableExternalImageUrl } from '../lib/profileCompletion';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -100,21 +101,21 @@ export const AuthProvider = ({ children }) => {
 
             // 2. 查 instructors（顯示名稱、頭貼）
             const instrRows = await rawQuery('instructors', {
-                select: 'full_name,nickname,photo_path',
+                select: 'full_name,nickname,photo_path,photo_external_url',
                 user_id: `eq.${authUser.id}`,
             }, token);
             const instrData = instrRows?.[0] || null;
 
             if (instrData) {
                 setInstructorProfile(instrData);
+                let nextAvatarUrl = toFetchableExternalImageUrl(instrData.photo_external_url);
                 if (instrData.photo_path) {
                     const { data: urlData } = await supabase.storage
                         .from('instructor_uploads')
                         .createSignedUrl(instrData.photo_path, 7200);
-                    setAvatarUrl(urlData?.signedUrl || null);
-                } else {
-                    setAvatarUrl(null);
+                    nextAvatarUrl = urlData?.signedUrl || nextAvatarUrl;
                 }
+                setAvatarUrl(nextAvatarUrl);
             } else {
                 setInstructorProfile(null);
                 setAvatarUrl(null);
