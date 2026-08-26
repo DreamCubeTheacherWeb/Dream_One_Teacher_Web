@@ -1,7 +1,7 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-26（初次登入舊資料對照、外部頭像與缺項提示已部署上線）。
+> 最後更新：2026-08-26（報酬供應商 CSV 條件匯出已部署上線）。
 
 ---
 
@@ -28,7 +28,7 @@ deployment `6106147468` 於 2026-08-26 14:39:46 UTC 回報 success。`teacher.dr
 
 ---
 
-## 📊 2026-08-26：報酬供應商 CSV 條件匯出（✅ 本機完成；⏳ 未部署）
+## 📊 2026-08-26：報酬供應商 CSV 條件匯出（✅ 正式環境已上線）
 
 **需求與做法**：新增管理員專用 `/admin/salary/export`，可不選老師匯出全部、搜尋後單選／複選老師、
 依課程日期起迄縮小到區間內有報酬紀錄者，並依目前講師等級篩選。日期留白時不要求已有薪資紀錄；
@@ -39,9 +39,17 @@ deployment `6106147468` 於 2026-08-26 14:39:46 UTC 回報 success。`teacher.dr
 `instructors` 取值。主檔目前沒有「夥伴號碼」，因此保留欄位但留白且在畫面提示，不自行編號。
 預覽只顯示銀行帳號末四碼，並列出每位講師缺少的必要匯出欄位；頁面與路由只對 admin 開放。
 
-**本機證據**：匯出純函式測試 9/9、全套單元測試 51/51 通過（欄數、編碼／換行、跳脫、單／複選、
+**本機證據**：匯出純函式測試 9/9；整合最新主線後全套單元測試 53/53 通過（欄數、編碼／換行、跳脫、單／複選、
 日期、等級、缺漏與檔名）；production build 與變更檔 ESLint 通過；真 Chrome 驗證下載檔名／內容、日期＋等級交集、老師搜尋選取、
-390px 無頁面水平溢出與 44px 操作熱區，mentor 直接網址會被導回首頁。Impeccable detector 0 項。
+390px 無頁面水平溢出與 44px 操作熱區，mentor 直接網址會被導回首頁。安全性、存摺鎖定、講師認領與
+完整度關卡 37/37 回歸亦通過；Impeccable detector 0 項。
+
+**正式環境證據與邊界**：功能 commit `731d6a0` 已 fast-forward 推入 `main`，對應 Zeabur deployment
+`6a8efb6b04336e45712015bd` 回報 success；後續主線純狀態文件 deployment `6a8efb9e04336e45712015d8`
+亦於 2026-08-26 14:44:15 UTC 成功。`teacher.dreamcube.tw` 與 `dream-one-teacher.zeabur.app` 均載入
+`/assets/index-BJqMOWUe.js`，SHA-256 皆為 `37e7cc1406abc0c762f0faa76c6e30507d276960ac41a04054332a1bd33e8eb3`；
+兩站 `/admin/salary/export` 回傳正式 SPA，live bundle 實際包含路由、功能名稱與篩選匯出文案。本功能
+未新增或套用 Supabase migration，也未變更正式資料；另一個獨立的薪資流程提交未納入本次發布。
 
 ---
 
