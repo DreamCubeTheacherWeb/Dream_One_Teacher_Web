@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-26（講師主檔完整編輯器已在乾淨分支完成；⚠️ 尚未部署、權限 migration 尚未套正式庫）。
+> 最後更新：2026-08-26（講師主檔完整編輯器與權限 migration 已部署正式環境並完成實機驗證）。
 
 ---
 
-## 🛠️ 2026-08-26：管理員可完整編輯講師主檔（✅ 本機完成；⚠️ 未部署／未套正式 DB）
+## ✅ 2026-08-26：管理員可完整編輯講師主檔（正式環境已上線）
 
 **需求與做法**：在既有 `/admin/instructors` 講師資料總覽的桌機列與手機卡新增「編輯資料」入口，
 但只對 `admin` 顯示；新路由 `/admin/instructors/:instructorId/edit` 也以 `adminOnly` 守衛，mentor
@@ -19,7 +19,7 @@
 以及講師本人讀取管理員在未認領階段上傳、之後被自己主檔引用的文件；搭配 file-path trigger，
 非 admin 更換文件時只能寫進自己的帳號路徑，避免用竄改主檔路徑讀取別人的證件。
 
-**證據**：production build、變更檔針對性 ESLint、42/42 單元測試、原講師主檔／自動填表瀏覽器
+**本機證據**：production build、變更檔針對性 ESLint、42/42 單元測試、原講師主檔／自動填表瀏覽器
 回歸皆通過。新瀏覽器回歸實證：admin 有入口並送出 PATCH、390px 無水平溢出且儲存鈕熱區 ≥44px；
 mentor 無入口、直連被擋且 0 PATCH。暫時 PostgreSQL 實際套新 migration，證明 mentor 更新別人為
 0 row、本人資料仍可更新、admin 可更新任意講師與刪除舊檔、講師可讀自己主檔引用的匯入檔且不可
@@ -27,9 +27,14 @@ mentor 無入口、直連被擋且 0 PATCH。暫時 PostgreSQL 實際套新 migr
 全站 lint 仍有 4 個既有 React Hook error 與 2 個 warning，均位於本次未修改的 5 個舊檔；
 本次變更檔單獨 lint 為 0 問題。
 
-**發布邊界**：本次只在 `codex/admin-instructor-editor` 乾淨分支完成；尚未 push、未部署前端、
-未對正式 Supabase `mnovjlicwzwkefkhstte` 套用 migration。上線時必須先套 migration，再發布前端，
-否則新編輯頁的文件刪除與未認領文件後續本人讀取不完整。
+**正式環境證據**：先於 Supabase `mnovjlicwzwkefkhstte` 套用 migration，再發布 commit
+`9775d91`。套用前後講師數量均為 265（已認領 11、未認領 254）；四個 `instructors` policy、
+五個 Storage policy、file-path trigger 與 function 權限稽核皆符合預期。交易回滾回歸證明 mentor
+更新他人為 0 row、admin 更新未認領講師為 1 row，且正式資料零殘留。Security Advisor 為 0 error；
+新 policy／trigger 未增加 warning。Zeabur production deployment `6099368338` 成功，正式網域與 Zeabur
+網域均載入 `/assets/index-C_3sZBAw.js`，SHA-256 與本機 production build 一致。管理員實機由「主檔未認領
+254」進入清單，確認 254 筆均有「編輯資料」，並成功開啟未認領講師完整表單；儲存按鈕可用、console
+0 error，驗證時未按儲存，沒有改動正式資料。
 
 ---
 
