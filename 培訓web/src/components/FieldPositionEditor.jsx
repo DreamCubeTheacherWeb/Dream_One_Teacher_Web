@@ -138,33 +138,29 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
   const handleSave = async () => {
     setSaving(true);
     try {
-      await supabase
-        .from('contract_field_positions')
-        .delete()
-        .eq('doc_type', docType)
-        .eq('doc_version', docVersion);
+      const positions = fields.map(f => ({
+        field_type: f.fieldType,
+        page_number: f.page,
+        x: Math.round(f.x * 100) / 100,
+        y_from_top: Math.round(f.yFromTop * 100) / 100,
+        width: Math.round(f.width * 100) / 100,
+        height: Math.round(f.height * 100) / 100,
+        font_size: f.fontSize,
+      }));
+      const { error } = await supabase.rpc('replace_contract_field_positions', {
+        p_doc_type: docType,
+        p_doc_version: docVersion,
+        p_positions: positions,
+      });
+      if (error) throw error;
 
-      if (fields.length > 0) {
-        const rows = fields.map(f => ({
-          doc_type: docType,
-          doc_version: docVersion,
-          field_type: f.fieldType,
-          page_number: f.page,
-          x: Math.round(f.x * 100) / 100,
-          y_from_top: Math.round(f.yFromTop * 100) / 100,
-          width: Math.round(f.width * 100) / 100,
-          height: Math.round(f.height * 100) / 100,
-          font_size: f.fontSize,
-        }));
-        const { error } = await supabase.from('contract_field_positions').insert(rows);
-        if (error) throw error;
-      }
       alert('欄位位置已儲存！');
       onClose();
     } catch (err) {
       alert('儲存失敗：' + (err.message || '未知錯誤'));
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const pageFields = fields.filter(f => f.page === currentPage);

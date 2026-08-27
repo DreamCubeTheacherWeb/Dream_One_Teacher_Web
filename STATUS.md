@@ -5,6 +5,31 @@
 
 ---
 
+## 📝 2026-08-27：同頁重複合約欄位儲存修復（✅ 已建置未上線）
+
+**問題與根因**：表單欄位定位器允許同一個資料欄位在同頁出現多次，例如
+匯款申請書的申請人姓名與聯絡人姓名；但 `contract_field_positions` 的唯一約束
+禁止 `(doc_type, doc_version, field_type, page_number)` 重複，因此儲存兩個同頁「姓名」時
+回報 `duplicate key value violates unique constraint`。舊儲存流程另分成先刪除、再新增兩個
+請求，若新增失敗會留下已被清空的排版。
+
+**修正**：新增 migration
+`supabase/migrations/20260827105756_allow_duplicate_contract_field_positions.sql`，移除過度嚴格的
+複合唯一約束，保留每筆 UUID 主鍵；新增 `SECURITY INVOKER`、只授權 authenticated 的
+`replace_contract_field_positions` RPC，並在函式內再檢查 admin 角色。前端改為以單一 RPC
+交易取代分開 DELETE/INSERT，任何一筆失敗都回滾；同一文件以 transaction advisory lock
+序列化並行儲存，並補回非唯一 `(doc_type, doc_version)` 索引；`contracts_setup.sql` 也同步新建與
+舊庫重跑行為。
+
+**驗證**：隔離 PostgreSQL 實際建立舊唯一約束後連續兩次套用 migration，同頁重複姓名儲存、
+其他文件版本不受影響、無效新資料交易回滾、非 admin 拒絕、anon 無 RPC 權限全部通過；
+前端專項確認儲存已只走 RPC。`npm test` 53/53、production build、變更檔 ESLint
+0 error（`FieldPositionEditor` 保留 1 個既有 Hook dependency warning）、`git diff --check` 全數通過。
+
+**上線邊界**：正式 Supabase 與前端都尚未變更；上線時必須先套 migration，再發布前端，
+否則新前端會因 RPC 尚不存在而無法儲存。原錯誤流程若已先成功 DELETE，這次修正無法自動
+還原尚未儲存的畫面座標；若原編輯分頁仍開著，應先保留不重整，等後端修正後再儲存。
+
 ## 💰 2026-08-26：恢復講師回報與管理端薪資登記（✅ 正式環境已上線）
 
 **轉換體驗**：「我的報酬」重新以站內「登記課程回報」為主要入口，講師選擇課程、

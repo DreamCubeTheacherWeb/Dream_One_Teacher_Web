@@ -14,6 +14,7 @@
     "verify:speed-salary": "node scripts/verify-speed-salary.mjs && node scripts/verify-speed-salary-ui.mjs",
     "verify:speed-salary:browser": "node scripts/verify-speed-salary-browser.mjs",
     "verify:bankbook-lock": "node scripts/verify-bankbook-lock.mjs",
+    "verify:contract-field-positions": "node scripts/verify-contract-field-positions.mjs",
     "verify:admin-instructor-editor": "node scripts/verify-admin-instructor-access.mjs && node scripts/verify-admin-instructor-editor-ui.mjs",
     "verify:salary-vendor-export": "node --test src/lib/vendorCsvExport.test.js",
     "verify:salary-vendor-export:browser": "node scripts/verify-salary-vendor-export-browser.mjs",
