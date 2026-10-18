@@ -292,6 +292,7 @@ const MySalary = () => {
                         {months.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                 </div>
+                <p className="text-xs text-bauhaus-black/60 mb-3">目前只顯示 2026 年 1 月起的課程紀錄；更早的紀錄整理中，有疑問請洽課程派發窗口。</p>
 
                 {!monthFilter && monthlyStats.length > 0 && (
                     <div className="bh-card mb-6 overflow-hidden">

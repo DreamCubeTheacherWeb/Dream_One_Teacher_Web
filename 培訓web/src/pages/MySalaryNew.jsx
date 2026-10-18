@@ -20,6 +20,8 @@ import {
 
 const TAIPEI_TODAY = taipeiToday();
 const PROGRESS_REQUIRED_COURSES = new Set(['regular_basic', 'regular_advanced']);
+// 講師端可見範圍門檻（與 migration 20261018150000 的 instructor_salary_visible_from() 一致）
+const SALARY_VISIBLE_FROM = '2026-01-01';
 
 const MySalaryNew = () => {
     const { user } = useAuth();
@@ -205,7 +207,7 @@ const MySalaryNew = () => {
                     </Field>
 
                     <Field label="日期 *" icon={Calendar}>
-                        <input type="date" max={TAIPEI_TODAY} required value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
+                        <input type="date" min={SALARY_VISIBLE_FROM} max={TAIPEI_TODAY} required value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
                             className="bh-input" />
                     </Field>
 

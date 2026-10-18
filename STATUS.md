@@ -1,11 +1,38 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-18（課程回報對齊 Google 表單欄位已建置未上線；另補記 8/27 合約欄位修復的正式環境驗證）。
+> 最後更新：2026-10-18（課程回報對齊 Google 表單欄位已上線；講師薪資可見範圍 2026-01 起＋參考表權限收緊已建置未上線）。
 
 ---
 
-## 📋 2026-10-18：課程回報對齊 Google 表單欄位（✅ 已建置未上線）
+## 🔒 2026-10-18：講師只看 2026 年 1 月起的薪資紀錄＋參考表限已核准角色（✅ 已建置未上線）
+
+**需求**：業主 2026-10-18 指示「講師薪資可以看到的資料範圍先從 2026 年一月開始就好，那之前的有些可能還要整理」，並要求「權限的部分幫我檢查一下」。
+
+**做法**：migration `supabase/migrations/20261018150000_limit_instructor_salary_visibility.sql`（可重複執行）：
+① 新函式 `instructor_salary_visible_from()` 回傳 `2026-01-01`（之後要往前開放只需 `CREATE OR REPLACE` 改日期，不必重寫政策）；
+② 重建 `class_sessions` 的講師 SELECT 政策為「自己的紀錄 且 `session_date >= 門檻`」，限 authenticated；admin／mentor 政策不動；
+`instructor_salary_summary` 是 security_invoker view，講師端總場次／總薪資自動只算門檻後的紀錄；SECURITY DEFINER 的回報、試算、排行榜函式不受影響。
+③ 資安審查（security-auditor）指出：站點 Google 登入即自動建 `pending` 帳號，而 `salary_rate_card` 與新建的 `salary_report_options`
+的 SELECT 政策是 `TO authenticated USING (true)`，等於任何人登入就能讀全公司報酬表與 78 個合作單位清單。本 migration 把兩表 SELECT
+改為 `users.role IN ('teacher','mentor','admin')`。前端：講師「我的報酬」月份明細加一行「目前只顯示 2026 年 1 月起的課程紀錄」，回報頁
+日期欄 `min=2026-01-01`（後端 RPC 未擋更早日期，只是前端提示）。
+
+**驗證**：`LC_ALL=C npm run verify:salary-visibility`（隔離 PostgreSQL，引導區複製正式庫現行政策）8/8 PASS：migration 連跑兩次、政策數正確、
+門檻函式 anon 無 EXECUTE、講師只看到自己 2026-01-01 與之後的紀錄且彙總跟著變、看不到別人、管理員仍看全部（含 2025）、anon 零、
+回報 RPC 照常且新紀錄本人看得到、pending 帳號讀不到報酬表／選項表／紀錄而 teacher 讀得到。`npm test` 59/59、變更檔 ESLint 0、build 通過。
+（本機跑驗證腳本若遇 `postmaster became multithreaded` 要帶 `LC_ALL=C`。）
+
+**正式庫現況（2026-10-18 唯讀查詢）**：`users.role` CHECK 含 mentor；目前 mentor 0 人、teacher 2、pending 1、admin 14。報酬表的管理政策在線上叫
+「Staff can manage rate card」（admin＋mentor），與原始碼「Admins can manage rate card」不同，是後台另行放寬過的。
+
+**待業主決定**：①是否套用本 migration 到正式庫（套完要推前端）；②資安審查的「高・條件式」：mentor 對 class_sessions 是 FOR ALL（可改任何人薪資、
+刪回報），目前 mentor 0 人所以休眠，但 CHECK 允許新增 mentor；若 mentor 定位是「可看不可改薪資」，應把寫入收成 admin only；
+③「低」：`quote_salary` 收了 `p_role_in_session` 但沒用，助教回報會照主講規則試算，核薪時要看角色。
+
+---
+
+## 📋 2026-10-18：課程回報對齊 Google 表單欄位（✅ 正式環境已上線）
 
 **問題**：站內「我的報酬 → 登記課程回報」缺公司兩份 Google 課後回報表單有的欄位——B2B 合作單位表單的
 「教學課程期間」「本次上課單位名稱」「本次發出教材數量」，以及 B2C 直營表單的「是否申請交通補助（單趟公里數）」、
@@ -33,7 +60,17 @@
 `npm test` 59/59、production build、變更檔 ESLint 0 問題、既有薪資靜態檢查 9/9、`git diff --check` 通過。
 以上由主對話於 2026-10-18 親自重跑確認（SQL 驗證 10 項 PASS＋15 種錯誤輸入、瀏覽器 30/30、截圖 8 張實際存在）。
 
-**上線邊界**：正式 Supabase 與前端都尚未變更。順序：**先套 migration，再發前端**（新前端呼叫新簽章，反過來所有回報都會
+**正式環境證據（2026-10-18 21:50 台北）**：業主指示「可以上線 體驗課也可以回報」後，先在 Supabase 後台 SQL Editor（業主本人登入的
+Chrome 分頁）以 `BEGIN … COMMIT` 單一交易套用 `20261018120000_align_salary_report_with_forms.sql`，回 Success。
+套用前核對：class_sessions 9,532 筆、有效報酬規則 206、舊 10 參數函式 1 個、新欄位 0、選項表不存在。套用後核對：9,532 筆未變、
+5 新欄位、4 具名 CHECK、`submit_my_class_session` 只剩 15 參數版本（anon 無 EXECUTE、authenticated 有）、選項表 RLS 開啟＋2 條政策、
+anon 不可讀、種子 3／78／31、體驗課議價列 1（有效規則 206→207）。外部匿名 REST 呼叫新簽章回 401 `42501`、讀選項表回 401。
+接著 `758a43b` fast-forward 推上 `main`，GitHub deployment `7155492640` 於 13:51:31 UTC success；每 60 秒探測連續 5 次命中新程式包
+`/assets/index-DssrE7WL.js`（2,355,076 bytes、SHA-256 前綴 `5c40339e186173ce`），`dream-one-teacher.zeabur.app` 與
+`teacher.dreamcube.tw` 兩站相同且與乾淨本機 build 逐位元一致，bundle 內含「體驗課」與 `salary_report_options`。
+驗證過程未送出任何回報、未改任何正式資料。
+
+**上線邊界（原文留存）**：順序：**先套 migration，再發前端**（新前端呼叫新簽章，反過來所有回報都會
 送不出）。先套 migration 時舊前端仍可回報直營課，但合作課／營隊會被新規則擋下並顯示「請選擇上課單位／營隊梯次」，
 所以 migration 套完要緊接著發前端，空窗越短越好。之後新增學期合作單位或營隊梯次＝在 `salary_report_options`
 新增一列（舊選項改 `is_active=false`，不要刪），目前還沒有後台管理畫面，需由管理員在 Supabase 後台操作。
