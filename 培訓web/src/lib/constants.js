@@ -4,7 +4,7 @@
 // course_type 中文 label
 export const COURSE_LABELS = {
     regular_basic: '實體常態-初階', regular_advanced: '實體常態-進階',
-    online: '線上課程', overseas_online: '國外一對一線上',
+    online: '線上課程', overseas_online: '國外一對一線上', trial: '體驗課',
     onsite_2hr: '到府 2hr/節', onsite_1_5hr: '到府 1.5hr/節',
     collab_lead: '合作 主講', collab_assistant: '合作 助教', collab_project: '合作 專案',
     camp: '冬夏令營', speed_onsite: '速解到府', speed_online: '速解線上',
@@ -36,3 +36,10 @@ export const isSpeedCourse = (courseType = '') => courseType.startsWith('speed_'
 
 export const speedQualificationLabel = (value) =>
     SPEED_QUALIFICATION_LABELS[value] || '未取得';
+
+// 合作課「教學課程期間」（class_sessions.term_period）
+export const TERM_PERIOD_LABELS = {
+    winter_break: '寒假',
+    semester: '學期間',
+    summer_break: '暑假',
+};

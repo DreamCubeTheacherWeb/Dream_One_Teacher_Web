@@ -1,11 +1,47 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-08-26（薪資回報、管理端登記與報酬供應商 CSV 均已部署上線）。
+> 最後更新：2026-10-18（課程回報對齊 Google 表單欄位已建置未上線；另補記 8/27 合約欄位修復的正式環境驗證）。
 
 ---
 
-## 📝 2026-08-27：同頁重複合約欄位儲存修復（✅ 已建置未上線）
+## 📋 2026-10-18：課程回報對齊 Google 表單欄位（✅ 已建置未上線）
+
+**問題**：站內「我的報酬 → 登記課程回報」缺公司兩份 Google 課後回報表單有的欄位——B2B 合作單位表單的
+「教學課程期間」「本次上課單位名稱」「本次發出教材數量」，以及 B2C 直營表單的「是否申請交通補助（單趟公里數）」、
+營隊表單的「營隊梯次」，講師因此還不能完全改用站內回報。
+
+**做法**：新 migration `supabase/migrations/20261018120000_align_salary_report_with_forms.sql`（可重複執行）：
+`class_sessions` 加 `term_period`、`unit_name`、`materials_issued`、`transport_subsidy_requested`（預設 false）、
+`transport_distance_km`，以具名 CHECK 擋錯誤期間、超過 200 字、公里數不在 (0, 500]、未申請卻有公里數；新增
+`salary_report_options` 選項表（RLS：登入者只讀啟用中選項、只有 admin 可增改刪、anon 無權限），種入教學期間 3、
+合作單位 78（寒暑假 48＋學期間 30，分隔列不入庫）、營隊梯次 31，重跑不覆寫管理員改過的名稱或停用狀態。
+`submit_my_class_session` 先 DROP 舊 10 參數簽章再建 15 參數新版（避免同名多載讓 PostgREST 呼叫歧義），
+權限、SECURITY DEFINER、空 `search_path` 與既有驗證原樣保留；合作課（`collab_*`）必填期間與單位、營隊
+（`camp`／`camp_director_*`／`speed_camp`）必填梯次、勾交通補助必填公里數（四捨五入到 0.1）、未勾時公里數強制 NULL。
+交通補助在合作課以外的課型都可申請（後端對任何課型皆接受）。課程類型新增 `trial`（體驗課，表單 B 的課程種類之一；業主 2026-10-18 指示「體驗課也可以回報」）：migration 以 `negotiable` 模式、無金額種入報酬表，回報後為「待核薪」，金額由管理員核薪時填。`quote_salary` 未動。`2025_salary_system.sql` 同步新欄位、約束與選項表結構（種子與 RPC 仍在 migration）。
+前端回報頁依課型顯示條件欄位：合作課→期間＋單位下拉（含「其它」自填）＋教材數量；營隊→梯次下拉（含「其它」）；
+營隊與直營→交通補助開關（表單 B 兩段都有），勾選才出現單趟公里數；合作課不顯示；選項讀取失敗自動改為自由輸入，不擋回報；只送出目前課型看得到的欄位。
+後台 `/admin/salary` 桌機表格與手機卡片顯示期間、單位／梯次、教材、「交通補助：申請 ・ 單趟 X km」（只顯示，不改核薪）。
+
+**驗證**：`npm run verify:salary-report-form`（隔離 PostgreSQL）：migration 連跑三次無誤且舊紀錄平順補預設值、
+`pg_proc` 只剩一個 `submit_my_class_session`、anon 對 RPC 與選項表零權限（catalog＋實際呼叫）、講師讀不到停用選項且
+寫不進選項表、15 種錯誤輸入全被擋、直營／合作／營隊各成功一筆且新欄位正確、舊前端 10 參數呼叫直營課仍可用、
+種子 3／78／31、體驗課可回報且為待核薪、新建庫路徑（2025 → 20260826 → 20261018）可用。`npm run verify:salary-report-form:browser`
+（mock Supabase＋本機 dev）30/30：三種課型條件欄位切換、前端驗證訊息、送出參數、選項失敗退回自由輸入、
+390px 回報頁與後台皆無水平溢出；截圖在 `培訓web/docs/verification/2026-10-18-salary-report-form/`。
+`npm test` 59/59、production build、變更檔 ESLint 0 問題、既有薪資靜態檢查 9/9、`git diff --check` 通過。
+以上由主對話於 2026-10-18 親自重跑確認（SQL 驗證 10 項 PASS＋15 種錯誤輸入、瀏覽器 30/30、截圖 8 張實際存在）。
+
+**上線邊界**：正式 Supabase 與前端都尚未變更。順序：**先套 migration，再發前端**（新前端呼叫新簽章，反過來所有回報都會
+送不出）。先套 migration 時舊前端仍可回報直營課，但合作課／營隊會被新規則擋下並顯示「請選擇上課單位／營隊梯次」，
+所以 migration 套完要緊接著發前端，空窗越短越好。之後新增學期合作單位或營隊梯次＝在 `salary_report_options`
+新增一列（舊選項改 `is_active=false`，不要刪），目前還沒有後台管理畫面，需由管理員在 Supabase 後台操作。
+
+**已知小事**：`2025_salary_system.sql` 的 `month_label` 以 `to_char()` 當 generated column，PostgreSQL 16 會拒絕建表
+（既有問題，非本次引入；正式庫已存在不受影響）。新建庫測試只把這一行換成一般欄位後驗證，原檔未修。
+
+## 📝 2026-08-27：同頁重複合約欄位儲存修復（✅ 正式環境已上線，2026-10-18 驗證）
 
 **問題與根因**：表單欄位定位器允許同一個資料欄位在同頁出現多次，例如
 匯款申請書的申請人姓名與聯絡人姓名；但 `contract_field_positions` 的唯一約束
@@ -26,9 +62,16 @@
 前端專項確認儲存已只走 RPC。`npm test` 53/53、production build、變更檔 ESLint
 0 error（`FieldPositionEditor` 保留 1 個既有 Hook dependency warning）、`git diff --check` 全數通過。
 
-**上線邊界**：正式 Supabase 與前端都尚未變更；上線時必須先套 migration，再發布前端，
-否則新前端會因 RPC 尚不存在而無法儲存。原錯誤流程若已先成功 DELETE，這次修正無法自動
-還原尚未儲存的畫面座標；若原編輯分頁仍開著，應先保留不重整，等後端修正後再儲存。
+**正式環境證據（2026-10-18 唯讀驗證）**：功能提交已以 `3267377` 併入 `main`（2026-08-27 19:20，
+與本分支 `87188a6` 內容逐檔相同，`git diff` 為空），Zeabur 自動部署後正式站
+`dream-one-teacher.zeabur.app` 載入 `/assets/index-C1g3ZmNU.js`，bundle 內含
+`replace_contract_field_positions` 呼叫。正式 Supabase 專案 `mnovjlicwzwkefkhstte` 以 anon key 帶
+正確參數名呼叫該 RPC 回 HTTP 401 `42501 permission denied for function`，證明函式已存在且匿名者被擋；
+（以 `{}` 空參數呼叫會回 PGRST202 找不到函式，那是參數不符的假陰性，不能拿來判斷）。
+本次驗證未寫入任何資料。此段原寫「已建置未上線」是文件未同步，非功能未上線。
+
+**殘留邊界**：原錯誤流程若已先成功 DELETE，這次修正無法自動還原尚未儲存的畫面座標；
+受影響的文件版本需在定位器重新擺放一次並儲存。
 
 ## 💰 2026-08-26：恢復講師回報與管理端薪資登記（✅ 正式環境已上線）
 

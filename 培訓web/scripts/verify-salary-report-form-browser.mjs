@@ -1,0 +1,370 @@
+#!/usr/bin/env node
+// 課程回報對齊 Google 表單：以 mock Supabase 實際操作站內回報頁與後台明細（桌機＋390px 手機）。
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import net from 'node:net';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
+
+const require = createRequire(import.meta.url);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const appDir = path.resolve(scriptDir, '..');
+const { chromium } = require(path.join(appDir, 'node_modules/playwright-core'));
+const chromeExecutable = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const shotDir = path.join(appDir, 'docs/verification/2026-10-18-salary-report-form');
+mkdirSync(shotDir, { recursive: true });
+
+const env = Object.fromEntries(readFileSync(path.join(appDir, '.env'), 'utf8')
+    .split('\n').map(line => line.trim())
+    .filter(line => line && !line.startsWith('#') && line.includes('='))
+    .map(line => [line.slice(0, line.indexOf('=')).trim(), line.slice(line.indexOf('=') + 1).trim()]));
+const projectRef = new URL(env.VITE_SUPABASE_URL).hostname.split('.')[0];
+const storageKey = `sb-${projectRef}-auth-token`;
+const userId = '00000000-0000-4000-8000-000000000051';
+const instructorId = '10000000-0000-4000-8000-000000000051';
+const now = new Date().toISOString();
+
+const reportOptions = [
+    { kind: 'term_period', value: 'winter_break', label: '寒假', sort_order: 10, is_active: true },
+    { kind: 'term_period', value: 'semester', label: '學期間', sort_order: 20, is_active: true },
+    { kind: 'term_period', value: 'summer_break', label: '暑假', sort_order: 30, is_active: true },
+    { kind: 'partner_unit', value: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', label: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', sort_order: 10, is_active: true },
+    { kind: 'partner_unit', value: '【週二】再興魔方高手 入門班115上', label: '【週二】再興魔方高手 入門班115上', sort_order: 20, is_active: true },
+    { kind: 'partner_unit', value: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', label: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', sort_order: 30, is_active: true },
+    { kind: 'camp_batch', value: '【臺北A】中山 | 7/1~7/3 三日營', label: '【臺北A】中山 | 7/1~7/3 三日營', sort_order: 10, is_active: true },
+    { kind: 'camp_batch', value: '【高雄H】苓雅 | 8/15~8/16 速解營', label: '【高雄H】苓雅 | 8/15~8/16 速解營', sort_order: 20, is_active: true },
+];
+
+const baseSession = {
+    instructor_id: instructorId,
+    instructor_name: '回報測試老師',
+    instructor_role_at_time: 'A',
+    speed_qualification_at_time: null,
+    role_in_session: 'lead',
+    bonus: 0,
+    paid_amount: 0,
+    status: 'pending',
+    pricing_status: 'quoted',
+    pricing_message: '已依現行報酬表完成試算',
+    source: 'self_report',
+    registered_by_name: '回報測試老師',
+    created_at: now,
+    term_period: null,
+    unit_name: null,
+    materials_issued: null,
+    transport_subsidy_requested: false,
+    transport_distance_km: null,
+};
+const adminSessions = [
+    { ...baseSession, id: '30000000-0000-4000-8000-000000000051', course_type: 'onsite_1_5hr', course_name: '王小明', session_date: '2026-10-14', month_label: '2026/10', duration_hours: 1.5, student_count: 2, base_salary: 600, total_salary: 600, transport_subsidy_requested: true, transport_distance_km: 12.4 },
+    { ...baseSession, id: '30000000-0000-4000-8000-000000000052', course_type: 'collab_lead', course_name: null, session_date: '2026-10-13', month_label: '2026/10', duration_hours: 2, student_count: 18, base_salary: 1000, total_salary: 1000, term_period: 'semester', unit_name: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', materials_issued: '楓葉10' },
+    { ...baseSession, id: '30000000-0000-4000-8000-000000000053', course_type: 'camp', course_name: null, session_date: '2026-10-12', month_label: '2026/10', duration_hours: null, student_count: 8, base_salary: 3000, total_salary: 3000, unit_name: '【臺北A】中山 | 7/1~7/3 三日營' },
+];
+
+const authUser = {
+    id: userId,
+    aud: 'authenticated',
+    role: 'authenticated',
+    email: 'report-teacher@test.local',
+    user_metadata: { full_name: '回報測試老師' },
+    app_metadata: { provider: 'google', providers: ['google'] },
+    identities: [],
+    created_at: now,
+    updated_at: now,
+};
+const session = {
+    access_token: 'mock.salary.report',
+    refresh_token: 'mock.refresh',
+    token_type: 'bearer',
+    expires_in: 31536000,
+    expires_at: Math.floor(Date.now() / 1000) + 31536000,
+    user: authUser,
+};
+
+let appRole = 'teacher';
+let optionsFail = false;
+let submitBodies = [];
+let directSessionWrites = 0;
+
+const json = (route, data, status = 200) => route.fulfill({
+    status,
+    headers: { 'content-type': 'application/json', ...(Array.isArray(data) ? { 'content-range': data.length ? `0-${data.length - 1}/${data.length}` : '*/0' } : {}) },
+    body: JSON.stringify(data),
+});
+
+async function handleRoute(route) {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (['127.0.0.1', 'localhost'].includes(url.hostname)) return route.continue();
+    if (!url.hostname.endsWith('.supabase.co')) return route.abort();
+
+    if (url.pathname.startsWith('/auth/v1/')) {
+        if (url.pathname === '/auth/v1/user') return json(route, authUser);
+        if (url.pathname.startsWith('/auth/v1/token')) return json(route, session);
+        return json(route, {});
+    }
+    if (url.pathname === '/rest/v1/rpc/link_my_instructor_by_email') return json(route, instructorId);
+    if (url.pathname === '/rest/v1/rpc/quote_salary') {
+        return json(route, [{
+            matched: true, needs_review: false, is_speed_course: false, message: '已依現行報酬表完成試算',
+            instructor_role: 'A', speed_qualification: null, pricing_basis: 'general_level', pricing_label: 'A',
+            rate_card_id: '20000000-0000-4000-8000-000000000051', pricing_mode: 'hourly', applied_rate: 400, base_salary: 600,
+        }]);
+    }
+    if (url.pathname === '/rest/v1/rpc/submit_my_class_session') {
+        submitBodies.push(request.postDataJSON());
+        return json(route, '30000000-0000-4000-8000-000000000099');
+    }
+    if (url.pathname.startsWith('/rest/v1/rpc/')) return json(route, null);
+
+    if (url.pathname.startsWith('/rest/v1/')) {
+        const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
+        const acceptsObject = ((await request.allHeaders()).accept || '').includes('vnd.pgrst.object+json');
+        if (request.method() !== 'GET') {
+            if (table === 'class_sessions') directSessionWrites += 1;
+            return json(route, acceptsObject ? {} : [], 201);
+        }
+        if (table === 'salary_report_options') {
+            if (optionsFail) return json(route, { code: '42P01', message: 'relation does not exist' }, 404);
+            return json(route, reportOptions);
+        }
+        if (table === 'users') {
+            const row = { id: userId, name: '回報測試老師', email: authUser.email, role: appRole, created_at: now };
+            return json(route, acceptsObject ? row : [row]);
+        }
+        if (table === 'instructors') {
+            const row = {
+                id: instructorId, user_id: userId, full_name: '回報測試老師', nickname: '回報測試老師',
+                gender: '男', birth_date: '1990-01-01', id_number: 'A123456789', phone_mobile: '0912345678',
+                line_id: 'report-test', address: '測試通訊地址', household_address: '測試戶籍地址',
+                email_primary: authUser.email, instructor_role: 'A', speed_qualification: null,
+                employment_status: 'active', teaching_freq_semester: '每週 2 次', teaching_freq_vacation: '每週 3 次',
+                teaching_regions: ['臺北市'], bio_notes: '測試講師', bank_account_name: '回報測試老師',
+                bank_name: '測試銀行', bank_branch: '測試分行', bank_account_number: '0000000000', bank_code: '0000000',
+                photo_path: 'test/photo.png', id_front_path: 'test/id-front.png', id_back_path: 'test/id-back.png',
+                bankbook_path: 'test/bankbook.png', created_at: now,
+            };
+            return json(route, acceptsObject ? row : [row]);
+        }
+        if (table === 'instructor_salary_summary') return json(route, acceptsObject ? null : []);
+        if (table === 'class_sessions') return json(route, appRole === 'admin' ? adminSessions : []);
+        return json(route, acceptsObject ? null : []);
+    }
+    return json(route, {}, 404);
+}
+
+const reservePort = () => new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+        const { port } = server.address();
+        server.close(() => resolve(port));
+    });
+});
+
+const results = [];
+const check = (name, condition) => {
+    results.push(Boolean(condition));
+    console.log(`${condition ? 'PASS' : 'FAIL'}  ${name}`);
+};
+
+async function contextFor(browser, viewport) {
+    const context = await browser.newContext({ viewport });
+    await context.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: storageKey, value: session });
+    await context.route('**/*', handleRoute);
+    return context;
+}
+
+const overflowOf = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+const alertText = async (page) => (await page.getByRole('alert').count()) ? (await page.getByRole('alert').innerText()).trim() : '';
+
+async function openReport(page, base) {
+    await page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
+    await page.getByRole('heading', { name: '登記課程回報' }).waitFor();
+}
+
+const courseSelect = (page) => page.locator('select:has(option[value="collab_lead"])');
+
+async function run() {
+    const port = await reservePort();
+    const base = `http://127.0.0.1:${port}`;
+    const viteBin = path.join(appDir, 'node_modules', '.bin', 'vite');
+    const vite = spawn(viteBin, ['--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: appDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    console.log(`vite dev pid=${vite.pid} port=${port}`);
+    let viteLog = '';
+    vite.stdout.on('data', chunk => { viteLog += chunk; });
+    vite.stderr.on('data', chunk => { viteLog += chunk; });
+    let browser;
+    try {
+        const deadline = Date.now() + 30000;
+        for (;;) {
+            try { if ((await fetch(base)).ok) break; } catch { /* dev server starting */ }
+            if (Date.now() > deadline) throw new Error(`vite dev did not start\n${viteLog}`);
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        browser = await chromium.launch(existsSync(chromeExecutable) ? { executablePath: chromeExecutable } : {});
+
+        // ── 桌機：三種課型的條件欄位切換與送出內容
+        appRole = 'teacher';
+        let context = await contextFor(browser, { width: 1280, height: 900 });
+        let page = await context.newPage();
+        await openReport(page, base);
+
+        // 直營（預設常態課）→ 只顯示交通補助
+        await page.getByPlaceholder('今天教到哪個段落、下一場預計教什麼…').fill('教到第一層十字');
+        check('直營課顯示交通補助開關', await page.getByLabel('申請交通補助').isVisible());
+        check('直營課不顯示上課單位／營隊梯次／教學期間',
+            await page.getByLabel('本次上課單位').count() === 0
+            && await page.getByLabel('營隊梯次').count() === 0
+            && await page.getByLabel('教學課程期間').count() === 0);
+        check('未勾交通補助時不顯示公里數', await page.getByLabel('單趟公里數').count() === 0);
+        await page.getByLabel('申請交通補助').check();
+        check('勾選交通補助後出現單趟公里數', await page.getByLabel('單趟公里數').isVisible());
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('勾了交通補助沒填公里數被擋', (await alertText(page)) === '申請交通補助請填寫單趟公里數。' && submitBodies.length === 0);
+        await page.getByLabel('單趟公里數').fill('501');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('公里數超過 500 被擋', (await alertText(page)) === '單趟公里數必須大於 0 且不超過 500 公里。' && submitBodies.length === 0);
+        await page.getByLabel('單趟公里數').fill('12.35');
+        await page.screenshot({ path: path.join(shotDir, 'desktop-direct-transport.png'), fullPage: true });
+
+        // 合作課 → 期間＋單位＋教材，交通補助隱藏
+        await courseSelect(page).selectOption('collab_lead');
+        check('合作課顯示教學課程期間／上課單位／教材數量',
+            await page.getByLabel('教學課程期間').isVisible()
+            && await page.getByLabel('本次上課單位').isVisible()
+            && await page.getByLabel('本次發出教材數量').isVisible());
+        check('合作課不顯示交通補助', await page.getByLabel('申請交通補助').count() === 0);
+        check('教材欄位提示照表單原文精神', (await page.getByLabel('本次發出教材數量').getAttribute('placeholder')).includes('楓葉10，無則打 0'));
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('合作課缺教學期間被擋', (await alertText(page)) === '合作課程請選擇教學課程期間。' && submitBodies.length === 0);
+        await page.getByLabel('教學課程期間').selectOption('semester');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('合作課缺上課單位被擋', (await alertText(page)) === '合作課程請選擇本次上課單位。' && submitBodies.length === 0);
+        const unitOptions = await page.getByLabel('本次上課單位').locator('option').allInnerTexts();
+        check('上課單位下拉含清單與「其它」', unitOptions.length === 5 && unitOptions.at(-1).startsWith('其它'));
+        await page.getByLabel('本次上課單位').selectOption('__other__');
+        check('選「其它」出現自填欄位', await page.getByLabel('本次上課單位（自行填寫）').isVisible());
+        await page.getByLabel('本次上課單位（自行填寫）').fill('【臺北】新開合作單位 週五班');
+        await page.getByLabel('本次發出教材數量').fill('楓葉10');
+        await page.screenshot({ path: path.join(shotDir, 'desktop-collab.png'), fullPage: true });
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        let body = submitBodies.at(-1);
+        check('合作課送出帶期間／自填單位／教材，交通補助為否',
+            submitBodies.length === 1 && body.p_course_type === 'collab_lead'
+            && body.p_term_period === 'semester' && body.p_unit_name === '【臺北】新開合作單位 週五班'
+            && body.p_materials_issued === '楓葉10' && body.p_transport_subsidy_requested === false
+            && body.p_transport_distance_km === null);
+
+        // 營隊 → 只顯示營隊梯次
+        await openReport(page, base);
+        await courseSelect(page).selectOption('camp');
+        check('營隊顯示營隊梯次與交通補助、不顯示期間／教材',
+            await page.getByLabel('營隊梯次').isVisible()
+            && await page.getByLabel('教學課程期間').count() === 0
+            && await page.getByLabel('本次發出教材數量').count() === 0
+            && await page.getByLabel('申請交通補助').count() === 1);
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('營隊缺梯次被擋', (await alertText(page)) === '營隊課程請選擇營隊梯次。' && submitBodies.length === 1);
+        await page.getByLabel('營隊梯次').selectOption('【臺北A】中山 | 7/1~7/3 三日營');
+        await page.locator('input[inputmode="numeric"]').fill('8');
+        await page.screenshot({ path: path.join(shotDir, 'desktop-camp.png'), fullPage: true });
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        body = submitBodies.at(-1);
+        check('營隊送出帶梯次，其餘新欄位為空',
+            submitBodies.length === 2 && body.p_course_type === 'camp'
+            && body.p_unit_name === '【臺北A】中山 | 7/1~7/3 三日營' && body.p_term_period === null
+            && body.p_materials_issued === null && body.p_transport_subsidy_requested === false);
+
+        // 直營到府＋交通補助
+        await openReport(page, base);
+        await courseSelect(page).selectOption('onsite_1_5hr');
+        await page.getByLabel('申請交通補助').check();
+        await page.getByLabel('單趟公里數').fill('12.35');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        body = submitBodies.at(-1);
+        check('直營送出交通補助＝是、單趟 12.4 km，合作／營隊欄位為空',
+            submitBodies.length === 3 && body.p_transport_subsidy_requested === true
+            && body.p_transport_distance_km === 12.4 && body.p_unit_name === null && body.p_term_period === null);
+        check('三次回報都只走受控 RPC', directSessionWrites === 0);
+        await context.close();
+
+        // 選項讀取失敗 → 自由輸入，不擋回報
+        optionsFail = true;
+        context = await contextFor(browser, { width: 1280, height: 900 });
+        page = await context.newPage();
+        await openReport(page, base);
+        await courseSelect(page).selectOption('collab_lead');
+        check('選項讀取失敗時上課單位改為文字輸入', await page.locator('input[aria-label="本次上課單位"]').isVisible());
+        check('選項讀取失敗時教學期間仍有內建三個選項', (await page.getByLabel('教學課程期間').locator('option').count()) === 4);
+        await page.getByLabel('教學課程期間').selectOption('summer_break');
+        await page.locator('input[aria-label="本次上課單位"]').fill('【新竹】愛丁堡');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        body = submitBodies.at(-1);
+        check('自由輸入的單位照樣送出', body.p_unit_name === '【新竹】愛丁堡' && body.p_term_period === 'summer_break');
+        optionsFail = false;
+        await context.close();
+
+        // ── 390px 手機：三種課型無水平溢出
+        context = await contextFor(browser, { width: 390, height: 844 });
+        page = await context.newPage();
+        await openReport(page, base);
+        await page.getByLabel('申請交通補助').check();
+        check('390px 直營＋交通補助無水平溢出', (await overflowOf(page)) === 0);
+        await page.screenshot({ path: path.join(shotDir, 'mobile-390-direct.png'), fullPage: true });
+        await courseSelect(page).selectOption('collab_lead');
+        await page.getByLabel('本次上課單位').selectOption('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動');
+        check('390px 合作課（選最長單位名）無水平溢出', (await overflowOf(page)) === 0);
+        await page.screenshot({ path: path.join(shotDir, 'mobile-390-collab.png'), fullPage: true });
+        await courseSelect(page).selectOption('camp');
+        await page.getByLabel('營隊梯次').selectOption('__other__');
+        check('390px 營隊（其它自填）無水平溢出', (await overflowOf(page)) === 0);
+        await page.screenshot({ path: path.join(shotDir, 'mobile-390-camp.png'), fullPage: true });
+        await context.close();
+
+        // ── 後台明細：桌機表格與手機卡片
+        appRole = 'admin';
+        context = await contextFor(browser, { width: 1280, height: 900 });
+        page = await context.newPage();
+        await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
+        await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+        const table = page.locator('table');
+        check('後台表格顯示交通補助「申請 ・ 單趟 12.4 km」', await table.getByText('申請 ・ 單趟 12.4 km').isVisible());
+        check('後台表格顯示合作課期間／單位／教材',
+            await table.getByText('學期間').isVisible()
+            && await table.getByText('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動').isVisible()
+            && await table.getByText('楓葉10').isVisible());
+        check('後台表格營隊顯示為「梯次」', await table.getByText('梯次：').isVisible() && await table.getByText('【臺北A】中山 | 7/1~7/3 三日營').isVisible());
+        await page.screenshot({ path: path.join(shotDir, 'admin-desktop.png'), fullPage: true });
+        await context.close();
+
+        context = await contextFor(browser, { width: 390, height: 844 });
+        page = await context.newPage();
+        await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
+        await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+        const cards = page.locator('.md\\:hidden');
+        check('後台手機卡片顯示交通補助與合作單位',
+            await cards.getByText('申請 ・ 單趟 12.4 km').isVisible()
+            && await cards.getByText('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動').isVisible());
+        check('390px 後台薪資登記無水平溢出', (await overflowOf(page)) === 0);
+        await page.screenshot({ path: path.join(shotDir, 'admin-mobile-390.png'), fullPage: true });
+        await context.close();
+    } finally {
+        if (browser) await browser.close();
+        vite.kill('SIGTERM');
+    }
+
+    const passed = results.filter(Boolean).length;
+    console.log(`\n=== ${passed}/${results.length} PASS ===`);
+    process.exitCode = passed === results.length ? 0 : 1;
+}
+
+run().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});

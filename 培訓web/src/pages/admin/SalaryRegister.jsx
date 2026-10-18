@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { Search, Plus, AlertTriangle, X, CheckCircle2, Clock, Wallet, Edit3, MessageSquare, RefreshCw } from 'lucide-react';
-import { COURSE_LABELS, ROLE_LABELS, speedQualificationLabel } from '../../lib/constants';
+import { COURSE_LABELS, ROLE_LABELS, TERM_PERIOD_LABELS, speedQualificationLabel } from '../../lib/constants';
+import { reportGroupFor } from '../../lib/salaryReportForm';
 import { getSalaryQuote, money, salaryErrorMessage, taipeiToday } from '../../lib/salary';
 import SalaryQuotePanel from '../../components/SalaryQuotePanel';
 
@@ -252,6 +253,30 @@ const recordState = (session) => {
     return { ...status, unpriced: false };
 };
 
+// 對齊 Google 課後回報表單的欄位：期間、單位／梯次、教材、交通補助（只顯示，不影響核薪）
+const ReportExtras = ({ session }) => {
+    const items = [];
+    if (session.term_period) items.push(['期間', TERM_PERIOD_LABELS[session.term_period] || session.term_period]);
+    if (session.unit_name) items.push([reportGroupFor(session.course_type) === 'camp' ? '梯次' : '單位', session.unit_name]);
+    if (session.materials_issued) items.push(['教材', session.materials_issued]);
+    if (session.transport_subsidy_requested) {
+        items.push(['交通補助', session.transport_distance_km !== null && session.transport_distance_km !== undefined
+            ? `申請 ・ 單趟 ${Number(session.transport_distance_km)} km`
+            : '申請']);
+    }
+    if (!items.length) return null;
+    return (
+        <dl className="mt-1 space-y-0.5 text-xs text-bauhaus-black/60 max-w-[260px]">
+            {items.map(([label, value]) => (
+                <div key={label} className="flex gap-1 min-w-0">
+                    <dt className="shrink-0 font-bold">{label}：</dt>
+                    <dd className="min-w-0 break-words">{value}</dd>
+                </div>
+            ))}
+        </dl>
+    );
+};
+
 const SalaryCard = ({ session, onEdit }) => {
     const state = recordState(session);
     const StateIcon = state.icon;
@@ -262,6 +287,7 @@ const SalaryCard = ({ session, onEdit }) => {
                     <div className="font-black text-bauhaus-black">{session.instructor_name}</div>
                     <div className="text-sm text-bauhaus-black/70 mt-1">{COURSE_LABELS[session.course_type] || session.course_type}</div>
                     <div className="text-xs text-bauhaus-black/50 mt-1">{session.session_date}{session.course_name ? `・${session.course_name}` : ''}</div>
+                    <ReportExtras session={session} />
                 </div>
                 <span className={`bh-chip shrink-0 ${state.color}`}><StateIcon className="w-3 h-3" />{state.label}</span>
             </div>
@@ -314,6 +340,7 @@ const SalaryRow = ({ session, onEdit }) => {
             <td className="px-4 py-3">
                 <div className="text-bauhaus-black/80">{COURSE_LABELS[s.course_type] || s.course_type}</div>
                 {s.course_name && <div className="text-xs text-bauhaus-black/50 truncate max-w-[200px]">{s.course_name}</div>}
+                <ReportExtras session={s} />
             </td>
             <td className="px-4 py-3 text-right text-bauhaus-black/70 text-xs">
                 {s.duration_hours ? `${s.duration_hours}h` : '–'}

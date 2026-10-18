@@ -172,6 +172,13 @@ CREATE TABLE IF NOT EXISTS public.class_sessions (
   incident_report   text,    -- 特殊狀況回報
   notes             text,    -- 一般備註
 
+  -- 對齊 Google 課後回報表單（2026-10-18；migration 20261018120000 同步）
+  term_period       text,    -- 合作課教學期間：winter_break / semester / summer_break
+  unit_name         text,    -- 合作課上課單位或營隊梯次（選項見 salary_report_options）
+  materials_issued  text,    -- 合作課發出教材數量，例：楓葉10；無則 0
+  transport_subsidy_requested boolean NOT NULL DEFAULT false,  -- 直營課是否申請交通補助
+  transport_distance_km numeric(6,1),  -- 交通補助單趟公里數；未申請時必為 NULL
+
   -- 異常標記
   is_anomaly        boolean DEFAULT false,
   anomaly_reasons   text[] DEFAULT '{}',
@@ -182,6 +189,54 @@ CREATE TABLE IF NOT EXISTS public.class_sessions (
   created_at        timestamptz DEFAULT now() NOT NULL,
   updated_at        timestamptz DEFAULT now() NOT NULL
 );
+
+-- 課後回報欄位約束；以名稱檢查，重跑或之後套 migration 20261018120000 都不會重複建立
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.class_sessions'::regclass
+       AND conname = 'class_sessions_term_period_check'
+  ) THEN
+    ALTER TABLE public.class_sessions
+      ADD CONSTRAINT class_sessions_term_period_check
+      CHECK (term_period IS NULL OR term_period IN ('winter_break', 'semester', 'summer_break'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.class_sessions'::regclass
+       AND conname = 'class_sessions_unit_name_length_check'
+  ) THEN
+    ALTER TABLE public.class_sessions
+      ADD CONSTRAINT class_sessions_unit_name_length_check
+      CHECK (unit_name IS NULL OR char_length(unit_name) <= 200);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.class_sessions'::regclass
+       AND conname = 'class_sessions_materials_issued_length_check'
+  ) THEN
+    ALTER TABLE public.class_sessions
+      ADD CONSTRAINT class_sessions_materials_issued_length_check
+      CHECK (materials_issued IS NULL OR char_length(materials_issued) <= 200);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'public.class_sessions'::regclass
+       AND conname = 'class_sessions_transport_distance_check'
+  ) THEN
+    ALTER TABLE public.class_sessions
+      ADD CONSTRAINT class_sessions_transport_distance_check
+      CHECK (
+        (transport_distance_km IS NULL OR (transport_distance_km > 0 AND transport_distance_km <= 500))
+        AND (transport_subsidy_requested OR transport_distance_km IS NULL)
+      );
+  END IF;
+END;
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_instructor ON public.class_sessions (instructor_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_date ON public.class_sessions (session_date DESC);
@@ -308,6 +363,53 @@ DROP TRIGGER IF EXISTS trg_session_anomaly ON public.class_sessions;
 CREATE TRIGGER trg_session_anomaly
   BEFORE INSERT OR UPDATE ON public.class_sessions
   FOR EACH ROW EXECUTE FUNCTION public.detect_session_anomaly();
+
+
+-- ──────────────────────────────────────────────────────────────────
+-- G. salary_report_options — 課後回報下拉選項(2026-10-18)
+-- ──────────────────────────────────────────────────────────────────
+-- 教學課程期間／合作單位／營隊梯次;管理員維護、講師唯讀、anon 無權限。
+-- 種子資料與 submit_my_class_session 新簽章在
+-- migrations/20261018120000_align_salary_report_with_forms.sql(新建庫仍需依序套 migration)。
+
+CREATE TABLE IF NOT EXISTS public.salary_report_options (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind        text NOT NULL CHECK (kind IN ('term_period', 'partner_unit', 'camp_batch')),
+  value       text NOT NULL CHECK (NULLIF(btrim(value), '') IS NOT NULL AND char_length(value) <= 200),
+  label       text NOT NULL CHECK (NULLIF(btrim(label), '') IS NOT NULL AND char_length(label) <= 200),
+  sort_order  integer NOT NULL DEFAULT 0,
+  is_active   boolean NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT salary_report_options_kind_value_key UNIQUE (kind, value)
+);
+
+CREATE INDEX IF NOT EXISTS salary_report_options_kind_sort_idx
+  ON public.salary_report_options (kind, sort_order);
+
+ALTER TABLE public.salary_report_options ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.salary_report_options FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.salary_report_options TO authenticated;
+
+DROP POLICY IF EXISTS "Authenticated can view active salary report options" ON public.salary_report_options;
+CREATE POLICY "Authenticated can view active salary report options"
+  ON public.salary_report_options FOR SELECT TO authenticated
+  USING (is_active = true);
+
+DROP POLICY IF EXISTS "Admins can manage salary report options" ON public.salary_report_options;
+CREATE POLICY "Admins can manage salary report options"
+  ON public.salary_report_options FOR ALL TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.users u
+       WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.users u
+       WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'
+    )
+  );
 
 
 -- ═══════════════════════════════════════════════════════════════════
