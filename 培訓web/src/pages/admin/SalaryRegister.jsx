@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Search, Plus, AlertTriangle, X, CheckCircle2, Clock, Wallet, Edit3, MessageSquare, RefreshCw } from 'lucide-react';
+import { Search, Plus, AlertTriangle, X, CheckCircle2, Clock, Wallet, Edit3, MessageSquare, RefreshCw, ListChecks } from 'lucide-react';
 import { COURSE_LABELS, ROLE_LABELS, TERM_PERIOD_LABELS, speedQualificationLabel } from '../../lib/constants';
 import { reportGroupFor } from '../../lib/salaryReportForm';
 import { getSalaryQuote, money, salaryErrorMessage, taipeiToday } from '../../lib/salary';
@@ -103,14 +104,21 @@ const SalaryRegister = () => {
                         先處理講師回報，確認報酬規則後再核准與付款。共 {sessions.length} 筆紀錄。
                     </p>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => setShowAdd(true)}
-                    disabled={loading || Boolean(loadError)}
-                    className="bh-btn bh-btn-blue px-4 py-2.5"
-                >
-                    <Plus className="w-4 h-4" /> 新增薪資紀錄
-                </button>
+                <div className="flex flex-wrap gap-2">
+                    {profile?.role === 'admin' && (
+                        <Link to="/admin/salary/options" className="bh-btn bh-btn-outline px-4 py-2.5 min-h-[44px]">
+                            <ListChecks className="w-4 h-4" /> 回報選項管理
+                        </Link>
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => setShowAdd(true)}
+                        disabled={loading || Boolean(loadError)}
+                        className="bh-btn bh-btn-blue px-4 py-2.5"
+                    >
+                        <Plus className="w-4 h-4" /> 新增薪資紀錄
+                    </button>
+                </div>
             </div>
 
             {(pendingCount > 0 || anomalyCount > 0) && (
