@@ -145,7 +145,8 @@ const ProfilePage = () => {
             const { data: docsData } = await supabase
                 .from('contract_documents')
                 .select('doc_type, version')
-                .eq('is_active', true);
+                .eq('is_active', true)
+                .eq('doc_category', 'contract'); // 行政表單（form）更新不應提示重新簽約
             if (docsData?.length) {
                 const versions = {};
                 docsData.forEach(d => { versions[d.doc_type] = d.version; });

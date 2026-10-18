@@ -1,9 +1,49 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-18（課程回報對齊 Google 表單欄位已上線；講師薪資可見範圍 2026-01 起＋參考表權限收緊已建置未上線）。
+> 最後更新：2026-10-18（講師簽約正式重開已建置未上線；課程回報對齊 Google 表單欄位已上線；講師薪資可見範圍 2026-01 起＋參考表權限收緊已建置未上線）。
 
 ---
+
+## ✍️ 2026-10-18：講師簽約正式重開——受控寫入 RPC＋恢復 Email 身分驗證（✅ 已建置未上線）
+
+**業主決定**：個人資料關卡體檢全過後，業主選「正式重開：補寫入通道，並恢復 Email 身分驗證；我會去 Supabase 改信件模板並設定 SMTP」。
+
+**為什麼不能只按開關**：8/19 資安修補（已套正式庫）移除了講師對 `instructor_contracts` 的 INSERT 政策，
+`contracts_setup.sql` 明寫恢復前必須改由可信 RPC 建立；只把 `featureFlags.INSTRUCTOR_CONTRACTS_ENABLED` 改 true，
+老師走完流程會在最後一步被 RLS 擋下。另 `ContractSigningFlow.jsx` 的 `OTP_BYPASS_FOR_TESTING` 自 7/09 起為 true（免驗證）。
+
+**做法**：
+- 新 migration `supabase/migrations/20261018180000_reopen_instructor_contract_signing.sql`（可重複執行）：冪等補 `verified_at`／`verify_method`
+  欄位；建 `submit_my_contract(...)`（SECURITY DEFINER、空 search_path、先 DROP 同名多載）為簽約唯一寫入通道，函式內依序檢查：
+  登入、角色非 pending、**Email 驗證只認 JWT `amr` 裡 otp／magiclink 且 30 分鐘內的紀錄**（不信任 client 任何「已驗證」欄位）、
+  輸入長度、文件版本必須等於目前啟用版本（只算 `doc_category<>'form'`，行政表單不屬簽約）、fill_sign 文件必附簽署 PDF、
+  簽名檔與 PDF 必須在自己的 `signed/<uid>/` 底下且 `storage.objects` 真的存在、IP 由 `cf-connecting-ip`／`x-forwarded-for` header 取；
+  同一交易＋advisory lock 作廢舊約、寫入新約。REVOKE anon、GRANT authenticated；**不新增任何 INSERT／UPDATE policy**。
+  `contracts_setup.sql` 同步放入同一份函式。
+- 前端：`featureFlags.js` 開關改 true；`ContractSigningFlow.jsx` 的 `OTP_BYPASS_FOR_TESTING` 改 false（常數保留，但後端獨立驗證，改 true 也繞不過）、
+  刪 client 作廢舊約與 ipify、送出改呼叫 `rpc('submit_my_contract')`，四種錯誤代碼對應白話文案；載入文件加 `doc_category='contract'`。
+  `ProfilePage.jsx` 合約版本比對同樣排除行政表單（否則已簽約講師會永遠看到「合約文件已更新」）。
+- 驗證腳本：新 `scripts/verify-contract-signing-rpc.{mjs,sql}`（隔離 PostgreSQL）；`verify-contract-feature-paused.mjs` 改名
+  `verify-contract-feature-enabled.mjs` 並改為啟用預期（T7–T10 報酬頁／後台填表／下載中心原樣保留）。package.json 新增
+  `verify:contract-signing`、`verify:contract-signing:browser`。
+
+**證據（主對話於 2026-10-18 親自重跑）**：`npm test` 59/59；`verify:contract-signing` SQL 16 項 PASS（migration 連跑兩次、anon 無 EXECUTE、
+pending／無 amr／amr 過期／版本不符／路徑越界／檔案未上傳／缺 PDF／輸入不合法全被擋、成功案作廢舊約且 verified_at＝amr 時間、
+authenticated 直接 INSERT 仍被 RLS 拒、新建庫路徑可用）＋靜態檢查 3 項；`verify:contract-signing:browser` 真瀏覽器 40/40
+（個人頁簽約區塊、合約通知、簽約頁最後一步出現 Email 驗證且無「測試模式」、未驗證不可送出、講師只走 RPC、390px 無溢出、後台上傳會通知），
+截圖 9 張在 `docs/verification/2026-10-18-contract-reopen/`；改動檔 ESLint 0 error、`git diff --check` 乾淨。
+security-auditor 審查：0 阻斷；amr 行為已對照 supabase/auth 原始碼（verify 一律建新 session、method=otp；refresh 不延長 timestamp）。
+
+**上線順序（還沒做）**：① 業主在 Supabase Dashboard：Authentication → Email Templates → Magic Link 模板把 `{{ .ConfirmationURL }}` 換成
+`{{ .Token }}`（7/09 診斷：這是驗證碼寄不出的根因）；Project Settings → Auth → SMTP 接 Resend（內建 2 封／小時不夠用）。
+② 正式庫套 `20261018180000_reopen_instructor_contract_signing.sql`（**先 RPC 後前端**；只建函式，不動既有資料）。③ 合併本分支到 main（Zeabur 自動部署）。
+④ 業主在後台確認啟用中的合約文件是新版、簽名欄位已在定位器擺好（8/27 修復後受影響版本要重擺）。⑤ 真帳號端到端：收信→輸 6 碼→簽名→合約檢視頁有紀錄；
+這一步同時驗證 amr 假設（若出現「請先完成 Email 身分驗證」即代表正式環境 JWT 無 otp 紀錄，回報我查）。
+
+**審查提到的既有設計債（非本次引入，未處理）**：簽署 PDF 由瀏覽器產生再上傳，RPC 只驗存在不驗內容（法律依據應以 doc_versions＋範本為準，
+長期可改伺服器端套印）；`contract_documents` SELECT 對 pending 也開放（任何 Google 帳號登入可讀合約範本）；mentor 可讀所有 `signed/` 檔但看不到合約列；
+開 Email OTP 等於多一條不經 Google 的登入路徑（信箱被盜＝帳號被盜）；後台上傳通知的 insert 未檢查 error。
 
 ## 🔒 2026-10-18：講師只看 2026 年 1 月起的薪資紀錄＋參考表限已核准角色（✅ 已建置未上線）
 

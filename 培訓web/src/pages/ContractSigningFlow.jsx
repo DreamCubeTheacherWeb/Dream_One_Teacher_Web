@@ -12,10 +12,26 @@ import {
   MapPin, Phone, CreditCard, ArrowLeft, BookOpen
 } from 'lucide-react';
 
-// ⚠️ 測試期開關（業主 2026-07-09 指示）：true＝簽約暫免 Email 驗證，讓老師先測流程。
-// Email 模板（{{ .Token }}）與 Resend SMTP 設定完成後，改回 false 恢復驗證。
-// 免驗證期間簽的合約 verify_method 記 'none'、verified_at 為 null，資料可辨識、不冒充已驗證。
-const OTP_BYPASS_FOR_TESTING = true;
+// 測試期開關（業主 2026-07-09 指示曾設為 true 讓老師免 Email 驗證測流程）。
+// 2026-10-18 業主決定正式重開簽約並恢復 Email 身分驗證，已改回 false。
+// 保留常數與分支只為日後緊急停用驗證；注意：就算前端改成 true，後端 RPC submit_my_contract
+// 仍會檢查 JWT 的 Email 驗證（amr），沒驗證過一律拒絕，因此改 true 並不能真的繞過。
+const OTP_BYPASS_FOR_TESTING = false;
+
+// 後端 RPC 以固定英文代碼回報失敗原因，這裡對應成給講師看的白話。
+const describeSubmitError = (err) => {
+  const message = err?.message || '';
+  if (message.includes('EMAIL_VERIFICATION_REQUIRED')) {
+    return '請先完成 Email 身分驗證後再送出（驗證 30 分鐘內有效）';
+  }
+  if (message.includes('DOC_VERSION_MISMATCH') || message.includes('NO_ACTIVE_DOCUMENTS')) {
+    return '合約文件已更新，請重新整理頁面後再簽署';
+  }
+  if (message.includes('FILE_NOT_UPLOADED') || message.includes('SIGNED_PDF_MISSING')) {
+    return '簽署檔案上傳不完整，請重試';
+  }
+  return '簽約送出失敗：' + (message || '未知錯誤');
+};
 
 const ContractSigningFlow = () => {
   const { user } = useAuth();
@@ -27,7 +43,6 @@ const ContractSigningFlow = () => {
   const [docUrls, setDocUrls] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [existingContract, setExistingContract] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '', instructorRole: '', idNumber: '', address: '', phone: '',
@@ -42,8 +57,7 @@ const ContractSigningFlow = () => {
 
   // 本人身分驗證（簽名前的 email OTP gate）
   const [verified, setVerified] = useState(false);
-  const [verifiedAt, setVerifiedAt] = useState(null);
-  // 測試期免驗證：開關開著就視同已驗證（送出資料仍誠實記錄 verify_method）
+  // 測試期免驗證：開關開著只放行前端畫面；後端 RPC 仍會獨立驗證 Email 身分
   const effectiveVerified = OTP_BYPASS_FOR_TESTING || verified;
   // 缺簽名欄位座標的文件（admin 未設定 → 會產出無效合約，須擋下）
   const [missingSigTitles, setMissingSigTitles] = useState([]);
@@ -81,6 +95,7 @@ const ContractSigningFlow = () => {
         .from('contract_documents')
         .select('*')
         .eq('is_active', true)
+        .eq('doc_category', 'contract') // 匯款申請書等後台行政表單（'form'）不屬於簽約流程
         .order('sort_order')
         .order('version', { ascending: false });
 
@@ -132,16 +147,6 @@ const ContractSigningFlow = () => {
           phone: instrData.phone_mobile || '',
         }));
       }
-
-      const { data: contractData } = await supabase
-        .from('instructor_contracts')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'signed')
-        .order('signed_at', { ascending: false })
-        .limit(1)
-        .single();
-      if (contractData) setExistingContract(contractData);
     } catch (e) {
       console.error('[ContractSigningFlow] loadData 失敗：', e);
       setLoadError('資料載入失敗，請重新整理頁面，或聯繫管理員。');
@@ -309,12 +314,6 @@ const ContractSigningFlow = () => {
         return;
       }
 
-      if (existingContract) {
-        await supabase.from('instructor_contracts')
-          .update({ status: 'voided' })
-          .eq('id', existingContract.id);
-      }
-
       const sigBlob = await (await fetch(signatureDataUrl)).blob();
       const sigFileName = `signed/${user.id}/signature_${Date.now()}.png`;
       const { error: sigErr } = await supabase.storage
@@ -339,44 +338,25 @@ const ContractSigningFlow = () => {
         if (doc) docVersions[s.docType] = doc.version;
       }
 
-      const firstSignedPath = Object.values(signedPdfPaths)[0] || null;
-
-      const contractRecord = {
-        user_id: user.id,
-        filled_name: formData.name.trim(),
-        filled_instructor_role: formData.instructorRole.trim(),
-        filled_id_number: formData.idNumber.trim(),
-        filled_address: formData.address.trim(),
-        filled_phone: formData.phone.trim(),
-        signature_path: sigFileName,
-        rules_doc_version: docVersions.rules || 0,
-        compensation_doc_version: docVersions.compensation || 0,
-        contract_doc_version: docVersions.contract || 0,
-        doc_versions: docVersions,
-        signed_pdf_paths: signedPdfPaths,
-        signed_pdf_path: firstSignedPath,
-        ip_address: null,
-        user_agent: navigator.userAgent,
-        verified_at: verifiedAt,
-        verify_method: verified ? 'email_otp' : 'none',
-      };
-
-      try {
-        const resp = await fetch('https://api.ipify.org?format=json');
-        contractRecord.ip_address = (await resp.json()).ip;
-      } catch { /* ignore */ }
-
-      const { data: newContract, error: insertErr } = await supabase
-        .from('instructor_contracts')
-        .insert(contractRecord)
-        .select()
-        .single();
+      // 唯一寫入通道：由後端 RPC 驗證 Email 身分（JWT amr）、文件版本與已上傳檔案，
+      // 並在同一交易作廢舊約、寫入新約；IP 由伺服器端 header 取得。
+      const { data: newContract, error: insertErr } = await supabase.rpc('submit_my_contract', {
+        p_filled_name: formData.name.trim(),
+        p_filled_instructor_role: formData.instructorRole.trim(),
+        p_filled_id_number: formData.idNumber.trim(),
+        p_filled_address: formData.address.trim(),
+        p_filled_phone: formData.phone.trim(),
+        p_signature_path: sigFileName,
+        p_signed_pdf_paths: signedPdfPaths,
+        p_doc_versions: docVersions,
+        p_user_agent: navigator.userAgent,
+      });
       if (insertErr) throw insertErr;
 
       setNewContractId(newContract.id);
       setCompleted(true);
     } catch (err) {
-      alert('簽約送出失敗：' + (err.message || '未知錯誤'));
+      alert(describeSubmitError(err));
     }
     setSubmitting(false);
   };
@@ -647,7 +627,7 @@ const ContractSigningFlow = () => {
                 <EmailOtpGate
                   email={user?.email}
                   verified={verified}
-                  onVerified={(ts) => { setVerified(true); setVerifiedAt(ts); }}
+                  onVerified={() => setVerified(true)}
                 />
               )}
 
