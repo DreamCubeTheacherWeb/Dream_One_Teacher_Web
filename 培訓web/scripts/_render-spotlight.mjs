@@ -1,0 +1,11 @@
+import { createRequire } from 'node:module';
+import path from 'node:path';
+const require = createRequire(import.meta.url);
+const { chromium } = require(path.resolve('node_modules/playwright-core'));
+const d = path.resolve('docs/reports/2026-10-18-salary-report-form-spotlight');
+const b = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+const p = await b.newPage({ viewport: { width: 1400, height: 800 }, deviceScaleFactor: 2 });
+await p.goto('file://' + d + '/spotlight.html');
+await p.waitForTimeout(500);
+await p.screenshot({ path: d + '/2026-10-18_我的報酬_課程回報對齊Google表單欄位.png', fullPage: true });
+await b.close();
