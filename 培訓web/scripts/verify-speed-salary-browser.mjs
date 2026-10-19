@@ -282,7 +282,7 @@ async function run() {
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
         check('管理端報酬登記頁已啟用', await page.getByRole('heading', { name: '報酬登記中心' }).isVisible());
         check('管理端沒有未啟用遮罩', await page.getByText('尚未啟用，敬請期待').count() === 0);
-        check('管理端優先顯示待核准紀錄', await page.getByText('待核准').first().isVisible());
+        check('管理端優先顯示待核准紀錄', await page.locator('tr[aria-label^="開啟"]').getByText('待核准').first().isVisible());
         await page.locator('tr[aria-label="開啟 速解測試老師 2026-08-14 報酬紀錄"]').click();
         await page.getByRole('heading', { name: '審核 / 編輯報酬紀錄' }).waitFor();
         check('管理端可開啟審核與重新試算', await page.getByRole('heading', { name: '審核 / 編輯報酬紀錄' }).isVisible());

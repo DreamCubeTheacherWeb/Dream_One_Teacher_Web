@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /*
- * 回歸驗證：講師名單管理（/admin/teachers）切換講師等級。
- * 修的 bug：切換後 optimistic 更新寫錯 map key（少 user: 前綴）→ 下拉立刻彈回舊值。
+ * 回歸驗證：講師資料總覽（/admin/instructors）切換講師等級。
+ * 原本修的 bug 在舊的講師名單管理（/admin/teachers）：切換後 optimistic 更新寫錯 map key → 下拉立刻彈回舊值；
+ * 等級下拉已搬到講師資料總覽（2026-10 TeacherManager 只剩帳號審核），斷言照舊。
  * 斷言：
  *  A1 切換後 PATCH 請求 body 含 {"instructor_role":"S"}
  *  A2 切換後 800ms，下拉仍顯示新值（不彈回）
  * 手法：假 admin session + mock Supabase（借 verify-profile-draft.mjs），真瀏覽器。
  * 用法：node scripts/verify-level-switch.mjs
  */
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -122,26 +123,16 @@ async function main() {
     let browser;
     try {
         await waitForServer(BASE, 15000);
-        browser = await chromium.launch();
+        const chromeExecutable = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+        browser = await chromium.launch(existsSync(chromeExecutable) ? { executablePath: chromeExecutable } : {});
         const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
         await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
         await ctx.route('**/*', handleRoute);
         const page = await ctx.newPage();
-        await page.goto(`${BASE}/admin/teachers`, { waitUntil: 'networkidle', timeout: 20000 });
-        await page.waitForTimeout(800);
-
-        // debug: 頁面文字與可見分頁
-        console.log('BODYTEXT:', (await page.evaluate(() => document.body.innerText.replace(/\s+/g,' ').slice(0,400))));
-        // 切到「講師名冊」以外、含使用者列的分頁：直接找含「已登入」或「講師 (」字樣的 tab
-        for (const t of ['已登入講師','講師名冊','全部']) {
-            const tab = page.getByText(new RegExp(t)).first();
-            if (await tab.count()) { await tab.click().catch(()=>{}); await page.waitForTimeout(300); }
-            const hit = await page.locator('text=測試老師').count();
-            console.log('TAB', t, 'hit 測試老師:', hit, 'selects:', await page.locator('select').count());
-            if (hit) break;
-        }
-        const row = page.locator('div,tr').filter({ hasText: '測試老師' }).filter({ has: page.locator('select') }).last();
-        // 等級下拉＝有 value="S" 選項的那個（身份/輔導員下拉沒有）
+        await page.goto(`${BASE}/admin/instructors`, { waitUntil: 'networkidle', timeout: 20000 });
+        await page.getByRole('heading', { name: '講師資料總覽' }).waitFor({ timeout: 10000 });
+        const row = page.locator('table tbody tr').filter({ hasText: '測試老師' }).first();
+        // 等級下拉＝有 value="S" 選項的那個
         const levelSelect = row.locator('select').filter({ has: page.locator('option[value="S"]') }).first();
         await levelSelect.waitFor({ timeout: 8000 });
         const before = await levelSelect.inputValue();
