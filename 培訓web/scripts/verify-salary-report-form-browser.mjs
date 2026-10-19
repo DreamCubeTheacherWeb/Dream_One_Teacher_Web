@@ -299,6 +299,8 @@ async function run() {
         check('直營課沒填課程名稱被擋', (await alertText(page)) === '請填寫課程名稱（學生代表姓名或課程地點）。' && submitBodies.length === 0);
         await fillBasics(page, { name: '王小明', hours: '1.5', students: '2' });
         check('直營課顯示交通補助開關', await page.getByLabel('申請交通補助').isVisible());
+        check('交通補助旁顯示業主備註（15 公里、事先和課程經理確認、交通方式提前報備）',
+            await page.getByText('備註：超過15公里才得以申請，需要事先和課程經理確認，交通方式也需提前報備確認。').isVisible());
         check('直營課不顯示上課單位／營隊梯次／教學期間',
             await page.getByLabel('本次上課單位').count() === 0
             && await page.getByLabel('營隊梯次').count() === 0

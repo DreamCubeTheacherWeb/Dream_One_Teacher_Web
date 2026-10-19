@@ -5,6 +5,8 @@ import { TERM_PERIOD_LABELS, courseCategoryFor, reportChannelFor, termScopeFor }
 export const OTHER_OPTION = '__other__';
 export const REPORT_TEXT_MAX = 200;
 export const TRANSPORT_DISTANCE_MAX = 500;
+// 業主 2026-10-19 指示加在回報頁交通補助旁的備註（只提示，不擋送出）
+export const TRANSPORT_SUBSIDY_NOTE = '備註：超過15公里才得以申請，需要事先和課程經理確認，交通方式也需提前報備確認。';
 
 export const EMPTY_REPORT_EXTRAS = {
     term_period: '',
