@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（回報頁改三層選單 B2B／B2C→課程類型→報酬項目，已改完並本機實測、**尚未 commit／上線**；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-19（回報頁改三層選單 B2B／B2C→課程類型→報酬項目已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
 
-## 🧭 2026-10-19：回報頁課程類型改三層選單（B2B／B2C → 課程類型 → 報酬項目）（🛠 已改完＋本機實測，尚未 commit／上線）
+## 🧭 2026-10-19：回報頁課程類型改三層選單（B2B／B2C → 課程類型 → 報酬項目）（✅ 正式環境已上線）
 
 **需求**：業主 2026-10-19 看回報頁截圖：課程類型應是常態課、營隊、到府課、合作單位、線上課程、速解課、站櫃；合作單位要像 Google 表單那樣
 選了才跑出單位下拉、選項後台可管。隨後改口：「照我本來給你的 Sheet，讓大家填寫格式和本來一樣，上面多一個選項是 b2b b2c，然後後面備注
@@ -28,10 +28,14 @@
 `npm run build` 通過；變更檔 ESLint 0 問題；`git diff --check` 乾淨。截圖 9 張在 `培訓web/docs/verification/2026-10-19-salary-report-form-channel/`，
 由 sonnet agent 判讀：桌機 B2B／B2C 與 390px 皆無破版、備註可讀（截圖 2 底部的紅色錯誤條是腳本先填 501 觸發、再改 12.35 未重送的殘留訊息，10/18 版亦同，非本次引入）。
 
-**待辦／注意**：① 業主確認分組；② 使用者點頭後 commit、推 main 自動部署（純前端，無上線順序問題）；③ 本 worktree 另有一批
+**正式環境證據（2026-10-19 10:55–11:01 台北）**：業主指示「分組照你排的可以，commit 並推上 main 部署」後，`62895ee` 由
+`feat/salary-report-channel-select` fast-forward 推上 `main`，GitHub deployment `7164631750` production success（02:56:07 UTC）；
+每 60 秒探測正式站，02:56 起連續 5 次命中新程式包 `/assets/index-s08QVe72.js`（SHA-256 前綴 `568ed22be60a7e37`），內含「B2C 直營課程」。
+本機 dist 雜湊不同是因為本機工作區當時混有另一條工作線的未提交檔（featureFlags 等），非正式站異常。上線後未送出任何回報、未改正式資料。
+
+**待辦／注意**：① 業主實際用講師帳號開 `/my/salary/new` 看一眼三層選單（本次驗證是 mock 資料）；② 本 worktree 另有一批
 「合約文件讀取權限收緊」的未提交檔（`20261019103000_restrict_contract_document_reads.sql`、featureFlags、contracts_setup.sql、
-verify-contract-document-reads.*、package.json），屬另一條工作線，commit 時只挑本次檔案：`constants.js`、`constants.test.js`、
-`MySalaryNew.jsx`、`verify-salary-report-form-browser.mjs`、新截圖目錄、STATUS.md。
+verify-contract-document-reads.*、package.json），屬另一條工作線，本次 commit 已刻意避開；該線稍後已自行提交為 `417c1a9`。
 
 ## ✍️ 2026-10-18：講師簽約正式重開——受控寫入 RPC＋恢復 Email 身分驗證（✅ 正式環境已上線 2026-10-19）
 
