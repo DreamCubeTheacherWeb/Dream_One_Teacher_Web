@@ -3,8 +3,8 @@
 // pdf-lib 內建字型不支援中文，故沿用 formGenerator.js 的作法：
 // 用 canvas 完整繪製整張證書 → 轉 PNG → 嵌入單頁 A4 橫式 PDF。
 // 這樣中文、裝飾、排版都由 canvas 完成，不受字型限制。
+// pdf-lib 體積大（約 400KB），只在按下「下載證書」時才動態載入，不拖慢頁面首次載入。
 // ═══════════════════════════════════════════════════════════════
-import { PDFDocument } from 'pdf-lib';
 
 // A4 橫式（單位：pt）
 const PAGE_W = 842;
@@ -388,6 +388,7 @@ export async function generateCertificatePdf({ name, date, message } = {}) {
     });
     const pngBytes = await blob.arrayBuffer();
 
+    const { PDFDocument } = await import('pdf-lib');
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([PAGE_W, PAGE_H]);
     const png = await pdfDoc.embedPng(pngBytes);

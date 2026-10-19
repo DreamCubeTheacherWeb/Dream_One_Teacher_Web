@@ -1,40 +1,45 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Component, lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
 import PendingApproval from './pages/PendingApproval';
-import CourseList from './pages/CourseList';
-import LessonView from './pages/LessonView';
-import LessonDetail from './pages/LessonDetail';
-import AdminDashboard from './pages/admin/Dashboard';
-import CMSManager from './pages/admin/CMSManager';
-import CategoryManager from './pages/admin/CategoryManager';
-import AssignmentReview from './pages/admin/AssignmentReview';
-import TeacherManager from './pages/admin/TeacherManager';
-import ProgressOverview from './pages/admin/ProgressOverview';
-import AnnouncementManager from './pages/admin/AnnouncementManager';
-import AnnouncementDetail from './pages/AnnouncementDetail';
-import ProfilePage from './pages/ProfilePage';
-import InstructorList from './pages/admin/InstructorList';
-import AdminInstructorEdit from './pages/admin/AdminInstructorEdit';
-import ContractSigningFlow from './pages/ContractSigningFlow';
-import ContractView from './pages/ContractView';
-import ContractAdmin from './pages/admin/ContractAdmin';
-import SalaryRegister from './pages/admin/SalaryRegister';
-import SalaryVendorExport from './pages/admin/SalaryVendorExport';
-import SalaryReportOptionsManager from './pages/admin/SalaryReportOptionsManager';
-import MySalary from './pages/MySalary';
-import MySalaryNew from './pages/MySalaryNew';
-import DownloadCenter from './pages/admin/DownloadCenter';
-import BadgeManager from './pages/admin/BadgeManager';
-import Leaderboard from './pages/Leaderboard';
-import CubeTimer from './pages/CubeTimer';
-import SalaryLinksManager from './pages/admin/SalaryLinksManager';
-import NotificationManager from './pages/admin/NotificationManager';
-import PrivacyPolicy from './pages/PrivacyPolicy';
-import TermsOfService from './pages/TermsOfService';
+import NotFound from './pages/NotFound';
 import { canAccessInstructorContracts } from './lib/featureFlags';
 import { isApprovedUser } from './lib/roles';
+
+// 路由頁面依需求才下載：首頁、登入後導向的待審頁、Layout 與守衛留在入口 chunk，
+// 其餘（含 pdf-lib／react-pdf／quill／jszip 等大型套件）各自成 chunk，講師手機首次開啟不必下載全站。
+const CourseList = lazy(() => import('./pages/CourseList'));
+const LessonView = lazy(() => import('./pages/LessonView'));
+const LessonDetail = lazy(() => import('./pages/LessonDetail'));
+const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
+const CMSManager = lazy(() => import('./pages/admin/CMSManager'));
+const CategoryManager = lazy(() => import('./pages/admin/CategoryManager'));
+const AssignmentReview = lazy(() => import('./pages/admin/AssignmentReview'));
+const TeacherManager = lazy(() => import('./pages/admin/TeacherManager'));
+const ProgressOverview = lazy(() => import('./pages/admin/ProgressOverview'));
+const AnnouncementManager = lazy(() => import('./pages/admin/AnnouncementManager'));
+const AnnouncementDetail = lazy(() => import('./pages/AnnouncementDetail'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const InstructorList = lazy(() => import('./pages/admin/InstructorList'));
+const AdminInstructorEdit = lazy(() => import('./pages/admin/AdminInstructorEdit'));
+const ContractSigningFlow = lazy(() => import('./pages/ContractSigningFlow'));
+const ContractView = lazy(() => import('./pages/ContractView'));
+const ContractAdmin = lazy(() => import('./pages/admin/ContractAdmin'));
+const SalaryRegister = lazy(() => import('./pages/admin/SalaryRegister'));
+const SalaryVendorExport = lazy(() => import('./pages/admin/SalaryVendorExport'));
+const SalaryReportOptionsManager = lazy(() => import('./pages/admin/SalaryReportOptionsManager'));
+const MySalary = lazy(() => import('./pages/MySalary'));
+const MySalaryNew = lazy(() => import('./pages/MySalaryNew'));
+const DownloadCenter = lazy(() => import('./pages/admin/DownloadCenter'));
+const BadgeManager = lazy(() => import('./pages/admin/BadgeManager'));
+const Leaderboard = lazy(() => import('./pages/Leaderboard'));
+const CubeTimer = lazy(() => import('./pages/CubeTimer'));
+const SalaryLinksManager = lazy(() => import('./pages/admin/SalaryLinksManager'));
+const NotificationManager = lazy(() => import('./pages/admin/NotificationManager'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 
 const ProtectedRoute = ({ children, adminOnly = false, staffOnly = false, allowPending = false, approvedOnly = false }) => {
   const { user, profile, claimState, loading } = useAuth();
@@ -63,20 +68,66 @@ const InstructorContractRoute = ({ children }) => {
   return children;
 };
 
+// 頁面檔下載失敗（手機訊號差、剛好換版）時，只讓內容區顯示提示，導覽列還在，不讓整站變空白。
+// 換到別的網址（resetKey 改變）時自動恢復；沒出錯時完全不影響子元件的保留與重建。
+class PageErrorBoundary extends Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidUpdate(prevProps) {
+    if (this.state.failed && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ failed: false });
+    }
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center p-6">
+        <div className="bh-card bg-white p-8 max-w-md w-full text-center">
+          <h1 className="text-xl font-black text-bauhaus-black mb-2">這個頁面暫時無法顯示</h1>
+          <p className="text-bauhaus-black/60 font-medium mb-6">可能是網路不穩或剛好更新版本，請重新整理再試一次。</p>
+          <button type="button" className="bh-btn bh-btn-blue px-6 py-3" onClick={() => window.location.reload()}>
+            重新整理
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
+// 頁面骨架：Layout（導覽列）立即顯示，只有內容區在頁面檔下載期間顯示「載入中...」，不會整頁閃白。
+// 所有路由都用同一個骨架，Layout 在路由之間保留或重建的行為和改動前完全一致。
+const PageLayout = ({ children }) => {
+  const { pathname } = useLocation();
+  return (
+    <Layout>
+      <PageErrorBoundary resetKey={pathname}>
+        <Suspense fallback={<div className="p-12 text-center text-slate-500 text-lg">載入中...</div>}>
+          {children}
+        </Suspense>
+      </PageErrorBoundary>
+    </Layout>
+  );
+};
+
 function App() {
   return (
     <AuthProvider>
       <Router>
         <Routes>
-          <Route path="/" element={<Layout><HomePage /></Layout>} />
-          <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
-          <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />
-          <Route path="/pending" element={<Layout><PendingApproval /></Layout>} />
+          <Route path="/" element={<PageLayout><HomePage /></PageLayout>} />
+          <Route path="/privacy" element={<PageLayout><PrivacyPolicy /></PageLayout>} />
+          <Route path="/terms" element={<PageLayout><TermsOfService /></PageLayout>} />
+          <Route path="/pending" element={<PageLayout><PendingApproval /></PageLayout>} />
           <Route
             path="/announcements/:id"
             element={
               <ProtectedRoute approvedOnly>
-                <Layout><AnnouncementDetail /></Layout>
+                <PageLayout><AnnouncementDetail /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -84,7 +135,7 @@ function App() {
             path="/profile"
             element={
               <ProtectedRoute allowPending>
-                <Layout><ProfilePage /></Layout>
+                <PageLayout><ProfilePage /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -92,7 +143,7 @@ function App() {
             path="/courses"
             element={
               <ProtectedRoute>
-                <Layout><CourseList /></Layout>
+                <PageLayout><CourseList /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -100,7 +151,7 @@ function App() {
             path="/leaderboard"
             element={
               <ProtectedRoute>
-                <Layout><Leaderboard /></Layout>
+                <PageLayout><Leaderboard /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -108,7 +159,7 @@ function App() {
             path="/cube"
             element={
               <ProtectedRoute>
-                <Layout><CubeTimer /></Layout>
+                <PageLayout><CubeTimer /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -116,7 +167,7 @@ function App() {
             path="/courses/:courseId"
             element={
               <ProtectedRoute>
-                <Layout><LessonView /></Layout>
+                <PageLayout><LessonView /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -124,7 +175,7 @@ function App() {
             path="/courses/:courseId/lessons/:lessonId"
             element={
               <ProtectedRoute>
-                <Layout><LessonDetail /></Layout>
+                <PageLayout><LessonDetail /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -132,7 +183,7 @@ function App() {
             path="/admin"
             element={
               <ProtectedRoute staffOnly={true}>
-                <Layout><AdminDashboard /></Layout>
+                <PageLayout><AdminDashboard /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -140,7 +191,7 @@ function App() {
             path="/admin/cms/:courseId"
             element={
               <ProtectedRoute staffOnly={true}>
-                <Layout><CMSManager /></Layout>
+                <PageLayout><CMSManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -148,7 +199,7 @@ function App() {
             path="/admin/course-categories"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><CategoryManager /></Layout>
+                <PageLayout><CategoryManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -156,7 +207,7 @@ function App() {
             path="/admin/assignments"
             element={
               <ProtectedRoute staffOnly={true}>
-                <Layout><AssignmentReview /></Layout>
+                <PageLayout><AssignmentReview /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -164,7 +215,7 @@ function App() {
             path="/admin/teachers"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><TeacherManager /></Layout>
+                <PageLayout><TeacherManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -172,7 +223,7 @@ function App() {
             path="/admin/progress"
             element={
               <ProtectedRoute staffOnly={true}>
-                <Layout><ProgressOverview /></Layout>
+                <PageLayout><ProgressOverview /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -180,7 +231,7 @@ function App() {
             path="/admin/announcements"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><AnnouncementManager /></Layout>
+                <PageLayout><AnnouncementManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -188,7 +239,7 @@ function App() {
             path="/admin/instructors"
             element={
               <ProtectedRoute staffOnly={true}>
-                <Layout><InstructorList /></Layout>
+                <PageLayout><InstructorList /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -196,7 +247,7 @@ function App() {
             path="/admin/instructors/:instructorId/edit"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><AdminInstructorEdit /></Layout>
+                <PageLayout><AdminInstructorEdit /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -209,7 +260,7 @@ function App() {
             element={
               <ProtectedRoute>
                 <InstructorContractRoute>
-                  <Layout><ContractSigningFlow /></Layout>
+                  <PageLayout><ContractSigningFlow /></PageLayout>
                 </InstructorContractRoute>
               </ProtectedRoute>
             }
@@ -219,7 +270,7 @@ function App() {
             element={
               <ProtectedRoute>
                 <InstructorContractRoute>
-                  <Layout><ContractView /></Layout>
+                  <PageLayout><ContractView /></PageLayout>
                 </InstructorContractRoute>
               </ProtectedRoute>
             }
@@ -228,7 +279,7 @@ function App() {
             path="/admin/contracts"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><ContractAdmin /></Layout>
+                <PageLayout><ContractAdmin /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -236,7 +287,7 @@ function App() {
             path="/admin/salary"
             element={
               <ProtectedRoute staffOnly={true}>
-                <Layout><SalaryRegister /></Layout>
+                <PageLayout><SalaryRegister /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -244,7 +295,7 @@ function App() {
             path="/admin/salary/export"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><SalaryVendorExport /></Layout>
+                <PageLayout><SalaryVendorExport /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -252,7 +303,7 @@ function App() {
             path="/admin/salary/options"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><SalaryReportOptionsManager /></Layout>
+                <PageLayout><SalaryReportOptionsManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -260,7 +311,7 @@ function App() {
             path="/admin/download-center"
             element={
               <ProtectedRoute staffOnly={true}>
-                <Layout><DownloadCenter /></Layout>
+                <PageLayout><DownloadCenter /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -268,7 +319,7 @@ function App() {
             path="/admin/badges"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><BadgeManager /></Layout>
+                <PageLayout><BadgeManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -276,7 +327,7 @@ function App() {
             path="/admin/salary-links"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><SalaryLinksManager /></Layout>
+                <PageLayout><SalaryLinksManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -284,7 +335,7 @@ function App() {
             path="/admin/notifications"
             element={
               <ProtectedRoute adminOnly={true}>
-                <Layout><NotificationManager /></Layout>
+                <PageLayout><NotificationManager /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -292,7 +343,7 @@ function App() {
             path="/my/salary"
             element={
               <ProtectedRoute>
-                <Layout><MySalary /></Layout>
+                <PageLayout><MySalary /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -300,10 +351,11 @@ function App() {
             path="/my/salary/new"
             element={
               <ProtectedRoute>
-                <Layout><MySalaryNew /></Layout>
+                <PageLayout><MySalaryNew /></PageLayout>
               </ProtectedRoute>
             }
           />
+          <Route path="*" element={<PageLayout><NotFound /></PageLayout>} />
         </Routes>
       </Router>
     </AuthProvider>
