@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（後台薪資登記中心改伺服器端篩選＋分頁，分支 `fix/salary-register-paging` 已驗證、上線中（見下）；回報頁第二版：欄位與選項對齊兩份 Google 表單，已改完本機實測、待業主同意上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-19（後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
 
-## 📄 2026-10-19：後台薪資登記中心改伺服器端篩選＋分頁（🟡 已驗證，未上線，push main 前要問使用者）
+## 📄 2026-10-19：後台薪資登記中心改伺服器端篩選＋分頁（✅ 正式環境已上線）
 
 **問題**：10/19 換新薪資總表後 `class_sessions` 有 5,535 筆（2024/02～2026/10），`/admin/salary`（`SalaryRegister.jsx`）只抓
 `session_date` 最新 500 筆再在瀏覽器裡篩月份／狀態／異常，管理員看不到較早月份；待處理與異常數字也只算那 500 筆。是既有程式限制，不是資料問題。
@@ -41,12 +41,21 @@
 概況舊回應蓋新數字→請求序號；打錯遠未來日期時月份選單缺本月→上限本月後 24 個月並補打錯的月份；核准後重載 100 筆一段太多請求→改 1,000 筆一段），
 另加「新增其他月份紀錄後自動切月」；未改的 1 個是「搜尋只在選定月份內」，屬設計選擇，已寫進行為變化⑥。
 
-**沒驗到的（上線後要補）**：mock 不是真的 PostgREST——`or()` 內雙引號包值的 ilike、`order=status.asc` 依 enum 宣告順序，都是依
-PostgREST／PostgreSQL 文件行為，正式庫未實測（正式庫的 enum 若非由 `2025_salary_system.sql` 建立、順序不同，只會影響排序不影響筆數；
-上線前可在 SQL Editor 唯讀跑 `select enum_range(null::session_status_enum);` 確認是 `{pending,approved,paid}`）。
-上線後用管理員帳號開 `/admin/salary`：選 2025/08 應看到約 607 筆（載入更多到底）、搜尋一位講師、點「待處理」各試一次。
+**正式環境證據（2026-10-19 21:32–21:40 台北）**：使用者指示「同意，把 fix/salary-register-paging 推上 main 上線，上線後確認正式站已換成新版」。
+第一次推送被拒（另一條工作線剛推上回報表單第二版 `0019174`）；fetch 後合併為 `d019ee6`（STATUS.md 衝突兩段都保留），合併後重跑
+`npm test` 97/97、build、ESLint、`verify:salary-register-paging:browser` 38/38、`verify:salary-report-form:browser` 43/43、
+`verify:salary-report-options:browser` 37/37；推送前核對線上部署 `0019174` 是候選的祖先（不會回滾別人），13:32 UTC fast-forward 到 `main`。
+GitHub deployment `7175179572` success（13:33:05 UTC），13:34:52 被另一條工作線的 STATUS 紀錄 commit `71e52ac`（接在 `d019ee6` 之後，含本次）取代。
+每 60 秒探測兩個網址，13:33 起連續 5 次命中含「載入更多（再」的新程式包 `index-bEU2INyI.js`（SHA-256 前綴 `b97a12b1ee7b1d5b`；推送前為 `index-s08QVe72.js`，0 次命中）。
+**真 PostgREST 語法實測**：以公開 anon key 對正式庫送與頁面相同的查詢（月份區間＋status＋is_anomaly＋`or=(…ilike."%A_B _%")`＋`order=status.asc,session_date.desc,id.desc`＋offset／limit）
+回 HTTP 200（anon 受 RLS 為 0 筆，未讀到任何資料）、HEAD 計數 200；對照組不加引號送含逗號括號的 or 回 400 PGRST100——語法確認被正式 PostgREST 接受。
+內建瀏覽器未登入，無法用管理員帳號開頁實看；未送出任何寫入、未改正式資料。
 
-**上線方式**：分支 `fix/salary-register-paging`（從 `origin/main` `b361e3b` 開），push main 即 Zeabur 自動部署；**尚未 push，需使用者同意**。
+**還沒驗到的**：① 管理員帳號實際開 `/admin/salary`：選 2025/08 應看到約 607 筆（載入更多到底）、搜尋一位講師、點「待處理」各試一次；
+② 排序「待核准→已核准→已付款」依正式庫 enum 宣告順序，anon 讀不到資料無法實測（若順序不同只影響排序不影響筆數；可在 SQL Editor 唯讀跑
+`select enum_range(null::session_status_enum);`，應為 `{pending,approved,paid}`）。
+**地雷**：`npm run verify:speed-salary:browser` 在講師回報頁那段找不到 `input[inputmode="decimal"]`（回報頁第二版把 B2C 時數改成下拉），
+乾淨的 `origin/main` `0019174` 同樣失敗，屬第二版未同步更新的舊腳本，非本次引入；後台那段的 HEAD 計數 mock 已由本次補上。
 
 ## 🧭 2026-10-19（第二版）：回報頁欄位與選項對齊兩份 Google 表單（✅ 正式環境已上線）
 
