@@ -14,6 +14,7 @@ import {
     defaultMonthKey,
     fetchRows,
     mergeById,
+    monthKeyOf,
     monthLabel,
     monthOptions,
     sumSalaryStats,
@@ -61,6 +62,7 @@ const SalaryRegister = () => {
     const [instructors, setInstructors] = useState([]);
     const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核薪、異常、月份選項
     const [listTotal, setListTotal] = useState(0);   // 目前篩選條件下的總筆數（伺服器端計算）
+    const [fetchedCount, setFetchedCount] = useState(0);  // 已向伺服器抓到的原始筆數＝下一頁的起點
     const [stats, setStats] = useState(EMPTY_STATS);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
@@ -74,6 +76,7 @@ const SalaryRegister = () => {
     const [showAdd, setShowAdd] = useState(false);
     const [editing, setEditing] = useState(null);  // session being edited
     const listRequest = useRef(0);
+    const overviewRequest = useRef(0);
 
     const filters = useMemo(() => ({
         month: monthFilter || '',
@@ -84,6 +87,7 @@ const SalaryRegister = () => {
 
     // 全庫概況：講師清單、待辦數、可選月份。待辦數不受月份篩選影響，早期月份的待處理也數得到。
     const loadOverview = useCallback(async () => {
+        const requestId = ++overviewRequest.current;
         const today = taipeiToday();
         const results = await Promise.all([
             supabase.from('instructors').select('id, full_name, instructor_role, speed_qualification').order('full_name'),
@@ -94,6 +98,8 @@ const SalaryRegister = () => {
             supabase.from('class_sessions').select('session_date').order('session_date', { ascending: true }).limit(1),
             supabase.from('class_sessions').select('session_date').order('session_date', { ascending: false }).limit(1),
         ]);
+        // 連續核准時會同時送出好幾次，只採用最後一次，避免較晚到的舊回應把數字蓋回去
+        if (requestId !== overviewRequest.current) return;
         const failed = results.find((result) => result.error);
         if (failed) {
             setLoadError(salaryErrorMessage(failed.error, '薪資資料載入失敗，請稍後再試。'));
@@ -124,17 +130,22 @@ const SalaryRegister = () => {
         setLoadMoreError('');
         try {
             const [page, totals] = await Promise.all([
-                fetchRows(() => listQuery(filters), { limit: Math.max(SALARY_REGISTER_PAGE_SIZE, keepCount) }),
-                fetchRows(() => sessionsQuery('total_salary, paid_amount', filters).order('id'), { chunkSize: SALARY_STATS_CHUNK_SIZE }),
+                fetchRows(() => listQuery(filters), {
+                    limit: Math.max(SALARY_REGISTER_PAGE_SIZE, keepCount),
+                    chunkSize: SALARY_STATS_CHUNK_SIZE,
+                }),
+                fetchRows(() => sessionsQuery('id, total_salary, paid_amount', filters).order('id'), { chunkSize: SALARY_STATS_CHUNK_SIZE }),
             ]);
             if (requestId !== listRequest.current) return;
             setSessions(page.rows);
+            setFetchedCount(page.fetched);
             setListTotal(page.total);
             setStats(sumSalaryStats(totals.rows, totals.total));
         } catch (error) {
             if (requestId !== listRequest.current) return;
             // 清掉舊條件的資料，「重新載入」才會從第一頁開始，不沿用上一個篩選的筆數
             setSessions([]);
+            setFetchedCount(0);
             setListTotal(0);
             setStats(EMPTY_STATS);
             setLoadError(salaryErrorMessage(error, '薪資資料載入失敗，請稍後再試。'));
@@ -147,9 +158,22 @@ const SalaryRegister = () => {
         setLoadingMore(true);
         setLoadMoreError('');
         try {
-            const page = await fetchRows(() => listQuery(filters), { from: sessions.length, limit: SALARY_REGISTER_PAGE_SIZE });
+            // 多抓上一頁的最後一筆當「接縫」：它還在同一個位置，代表前面的排序沒被別人動過，接著抓才不會漏筆
+            const page = await fetchRows(() => listQuery(filters), {
+                from: fetchedCount - 1,
+                limit: SALARY_REGISTER_PAGE_SIZE + 1,
+                chunkSize: SALARY_STATS_CHUNK_SIZE,
+            });
             if (requestId !== listRequest.current) return;
-            setSessions((current) => mergeById(current, page.rows));
+            const [seam, ...rows] = page.rows;
+            const merged = mergeById(sessions, rows);
+            // 瀏覽期間有人新增、刪除或改了狀態（排序位置變了），offset 分頁會漏筆或重複：整批重抓到同樣的筆數再多一頁
+            if (seam?.id !== sessions.at(-1)?.id || page.total !== listTotal || merged.length - sessions.length !== rows.length) {
+                loadList(fetchedCount + SALARY_REGISTER_PAGE_SIZE);
+                return;
+            }
+            setSessions(merged);
+            setFetchedCount(fetchedCount + page.fetched - 1);
             setListTotal(page.total);
         } catch (error) {
             if (requestId !== listRequest.current) return;
@@ -161,6 +185,17 @@ const SalaryRegister = () => {
     const refresh = () => {
         loadOverview();
         loadList(sessions.length);
+    };
+
+    // 新增的紀錄若不在目前看的月份，切到那個月，管理員才看得到剛存的那筆
+    const handleAdded = (sessionDate) => {
+        const month = monthKeyOf(sessionDate);
+        if (monthFilter && month && month !== monthFilter) {
+            loadOverview();
+            setMonthFilter(month);
+            return;
+        }
+        refresh();
     };
 
     const retry = () => {
@@ -205,8 +240,8 @@ const SalaryRegister = () => {
     const pendingCount = overview?.pending ?? 0;
     const needsPricingCount = overview?.needsPricing ?? 0;
     const anomalyCount = overview?.anomaly ?? 0;
-    const hasMore = sessions.length < listTotal;
-    const nextPageSize = Math.min(SALARY_REGISTER_PAGE_SIZE, listTotal - sessions.length);
+    const hasMore = fetchedCount < listTotal;
+    const nextPageSize = Math.min(SALARY_REGISTER_PAGE_SIZE, listTotal - fetchedCount);
 
     return (
         <div className="p-4 sm:p-8">
@@ -352,7 +387,7 @@ const SalaryRegister = () => {
             )}
 
             {showAdd && (
-                <AddSalaryModal instructors={instructors} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); }} profile={profile} />
+                <AddSalaryModal instructors={instructors} onClose={() => setShowAdd(false)} onSaved={(sessionDate) => { setShowAdd(false); handleAdded(sessionDate); }} profile={profile} />
             )}
 
             {editing && (
@@ -650,7 +685,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
         const { error } = await supabase.from('class_sessions').insert(payload);
         setSaving(false);
         if (error) { setError(salaryErrorMessage(error)); return; }
-        onSaved();
+        onSaved(payload.session_date);
     };
 
     const manualRequired = form.base_salary !== '' && quote && (

@@ -18,21 +18,32 @@
 統計卡（篩選筆數、總薪資、已付、未付）另外以 1,000 筆一段抓 `total_salary, paid_amount` 算整個篩選範圍，不是只算已載入那頁。
 **行為變化**：① 預設月份＝最新一筆紀錄的月份（不會跑到未來月份），月份選單列出最早到本月每個月；② 「待處理 N」「異常 N」改為全庫數字
 （HEAD＋count=exact），點下去會同時切到「全部月份」，早期月份的待辦也看得到；③ 標題「共 N 筆紀錄」是全庫筆數；④ 核准／修改儲存後
-重載會保留已載入的筆數，不會跳回第 1 頁；查詢失敗顯示錯誤＋「重新載入」，從第 1 頁重來。
+重載會保留已載入的筆數（以 1,000 筆一段重抓），不會跳回第 1 頁；查詢失敗顯示錯誤＋「重新載入」，從第 1 頁重來；⑤ 在某月份畫面新增
+另一個月份的紀錄，存檔後自動切到那個月，看得到剛存的那筆；⑥ 搜尋只在目前選的月份裡找（要找某講師全部紀錄請先選「全部月份」）。
+**多人同時操作**：「載入更多」每次多抓上一頁最後一筆當接縫，接縫位置變了（別人新增／刪除／改狀態讓排序移動）、總筆數變了、或出現重複，
+就自動整批重抓到「已載入＋100 筆」，不漏筆、不重複、按鈕不會卡住；概況數字只採用最後一次請求的回應。
 
-**驗證（2026-10-19 本 session 親跑，worktree `.claude/worktrees/salary-register-paging`）**：`npm test` 88/88（新增
-`salaryRegisterQuery.test.js` 16 項：月份區間跨年、月份選單、預設月份、搜尋字清理、篩選與排序都送到查詢端、分段抓資料在伺服器每次上限
-比 chunk 小時也不漏）；`npm run verify:salary-register-paging:browser`（新腳本，mock Supabase 照網址條件真的過濾／排序／分頁／計數，
-放 5,535 筆、2025/08 有 607 筆，本機 vite dev，沙盒外）**34/34**：選 2025/08 先顯示 100／607、統計卡為整月 607 筆、載入更多後 607 筆
+**驗證（2026-10-19 本 session 親跑，worktree `.claude/worktrees/salary-register-paging`）**：`npm test` 90/90（新增
+`salaryRegisterQuery.test.js` 18 項：月份區間跨年、月份選單（含打錯成 2062 年／0202 年仍有本月）、預設月份、搜尋字清理、篩選與排序都送到
+查詢端、分段抓資料在伺服器每次上限比 chunk 小時也不漏、分段之間有新增時不重複）；`npm run verify:salary-register-paging:browser`（新腳本，mock Supabase 照網址條件真的過濾／排序／分頁／計數，
+放 5,535 筆、2025/08 有 607 筆，本機 vite dev，沙盒外）**38/38**：正常載入更多每次 1 個請求（offset 99、199…，101 筆含接縫）、
+瀏覽中把 3 筆待核准改成已付款後按載入更多會自動重抓成伺服器現況且載到底 607 筆不卡、在 2026/10 新增 2025-08-15 的紀錄後自動切到 2025/08
+並看到該筆（608 筆），以及選 2025/08 先顯示 100／607、統計卡為整月 607 筆、載入更多後 607 筆
 全部看得到且順序與期望完全一致、狀態＋異常＋講師搜尋＋含逗號括號的搜尋、全部月份 100／5,535 且統計分 6 段抓完、點待處理切到全部月份
 看得到 2025/03 的待處理、第 2 頁修改儲存後仍 200 筆、查詢失敗可重新載入、mentor 可進入、桌機與 390px 無水平溢出、390px 載入更多按鈕
-滿版高度 ≥44px。截圖 10 張在 `培訓web/docs/verification/2026-10-19-salary-register-paging/`，由 sonnet agent 判讀：皆無跑版、錯誤框或截斷。
+滿版高度 ≥44px。截圖 11 張在 `培訓web/docs/verification/2026-10-19-salary-register-paging/`，由 sonnet agent 判讀：皆無跑版、錯誤框或截斷。
 回歸：`verify:salary-report-form:browser` 37/37、`verify:salary-report-options:browser` 37/37（第一次跑 36/37 是「改名後畫面顯示新文字」
 偶發時序，連跑兩次皆全過，與本改動無關）、`verify:speed-salary:browser` 13/13（該腳本 mock 補上 HEAD 計數，原本把 HEAD 當寫入回空值）。
 `npm run build` 通過（2.38MB 單一 bundle 警告為既有）；變更檔 ESLint 0 問題；`git diff --check` 乾淨。
 
+**審查**：fresh-context sonnet 審查員讀 diff：未發現會讓資料錯誤或頁面卡死的高風險問題；提出 6 個邊角問題，已修 5 個
+（載入更多遇到別人同時改狀態會漏筆且按鈕卡住→接縫檢查＋自動重抓；分段抓取中途新增會重複→fetchRows 依 id 去重、統計多抓 id；
+概況舊回應蓋新數字→請求序號；打錯遠未來日期時月份選單缺本月→上限本月後 24 個月並補打錯的月份；核准後重載 100 筆一段太多請求→改 1,000 筆一段），
+另加「新增其他月份紀錄後自動切月」；未改的 1 個是「搜尋只在選定月份內」，屬設計選擇，已寫進行為變化⑥。
+
 **沒驗到的（上線後要補）**：mock 不是真的 PostgREST——`or()` 內雙引號包值的 ilike、`order=status.asc` 依 enum 宣告順序，都是依
-PostgREST／PostgreSQL 文件行為，正式庫未實測（正式庫的 enum 若非由 `2025_salary_system.sql` 建立、順序不同，只會影響排序不影響筆數）。
+PostgREST／PostgreSQL 文件行為，正式庫未實測（正式庫的 enum 若非由 `2025_salary_system.sql` 建立、順序不同，只會影響排序不影響筆數；
+上線前可在 SQL Editor 唯讀跑 `select enum_range(null::session_status_enum);` 確認是 `{pending,approved,paid}`）。
 上線後用管理員帳號開 `/admin/salary`：選 2025/08 應看到約 607 筆（載入更多到底）、搜尋一位講師、點「待處理」各試一次。
 
 **上線方式**：分支 `fix/salary-register-paging`（從 `origin/main` `b361e3b` 開），push main 即 Zeabur 自動部署；**尚未 push，需使用者同意**。

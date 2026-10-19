@@ -150,6 +150,7 @@ let failNextList = false;
 let appRole = 'admin';
 const sessionRequests = [];
 const patches = [];
+const inserts = [];
 
 // 真正的 Supabase 會開放瀏覽器讀 Content-Range（總筆數就在裡面），mock 也要照做
 const CORS = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'Content-Range' };
@@ -166,6 +167,20 @@ async function handleClassSessions(route, request, url) {
     if (method === 'PATCH') {
         patches.push({ search: url.search, body: request.postDataJSON() });
         return route.fulfill({ status: 204, headers: CORS, body: '' });
+    }
+    if (method === 'POST') {
+        const body = request.postDataJSON();
+        const payload = Array.isArray(body) ? body[0] : body;
+        inserts.push(payload);
+        ALL_ROWS.push({
+            ...payload,
+            id: `50000000-0000-4000-8000-${String(inserts.length).padStart(12, '0')}`,
+            total_salary: Number(payload.base_salary || 0) + Number(payload.bonus || 0),
+            paid_amount: Number(payload.paid_amount || 0),
+            is_anomaly: false,
+            anomaly_reasons: [],
+        });
+        return route.fulfill({ status: 201, headers: CORS, body: '' });
     }
     if (!['GET', 'HEAD'].includes(method)) return json(route, { message: 'not allowed in this test' }, 405);
     const params = new URLSearchParams(url.search);
@@ -214,6 +229,13 @@ async function handleRoute(route) {
         return json(route, {});
     }
     if (url.pathname === '/rest/v1/rpc/link_my_instructor_by_email') return json(route, instructorId);
+    if (url.pathname === '/rest/v1/rpc/quote_salary') {
+        return json(route, [{
+            matched: true, needs_review: false, is_speed_course: false, message: '已依現行報酬表完成試算',
+            instructor_role: 'A', speed_qualification: null, pricing_basis: 'general_level', pricing_label: 'A',
+            rate_card_id: '20000000-0000-4000-8000-000000000071', pricing_mode: 'hourly', applied_rate: 400, base_salary: 600,
+        }]);
+    }
     if (url.pathname.startsWith('/rest/v1/rpc/')) return json(route, null);
     if (url.pathname.startsWith('/rest/v1/')) {
         const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
@@ -363,7 +385,13 @@ async function run() {
         await page.screenshot({ path: path.join(shotDir, 'desktop-2025-08-first-page.png'), fullPage: false });
         await page.getByRole('button', { name: /載入更多/ }).scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(shotDir, 'desktop-2025-08-load-more-button.png'), fullPage: false });
+        sessionRequests.length = 0;
         await loadAll(page, 607);
+        const loadMoreRequests = sessionRequests.filter(r => r.params.get('select') === '*');
+        check('正常載入更多：每次多抓 1 筆接縫（offset 99、199…599，各 101 筆），沒有觸發整批重抓',
+            JSON.stringify(loadMoreRequests.map(r => `${r.params.get('offset')}+${r.params.get('limit')}`))
+            === JSON.stringify(['99+101', '199+101', '299+101', '399+101', '499+101', '599+101']),
+            JSON.stringify(loadMoreRequests.map(r => `${r.params.get('offset')}+${r.params.get('limit')}`)));
         const augLabels = await tableLabels(page);
         check('載入更多後 2025/08 全部 607 筆都看得到、順序正確、沒有重複',
             augLabels.length === 607 && JSON.stringify(augLabels) === JSON.stringify(augRows.map(rowLabel)),
@@ -418,7 +446,7 @@ async function run() {
         sessionRequests.length = 0;
         await waitProgress(page, '已顯示 100／5,535 筆');
         const allTotal = ALL_ROWS.reduce((sum, row) => sum + row.total_salary, 0);
-        const statsRequests = sessionRequests.filter(r => r.params.get('select') === 'total_salary,paid_amount');
+        const statsRequests = sessionRequests.filter(r => r.params.get('select') === 'id,total_salary,paid_amount');
         check('全部月份：表格 100 列、統計卡 5,535 筆且總薪資為全庫加總',
             (await tableLabels(page)).length === 100 && await statValue(page, '篩選筆數') === '5,535'
             && await statValue(page, '總薪資') === money(allTotal),
@@ -462,6 +490,51 @@ async function run() {
         const julCount = expectedRows({ month: '2025-07' }).length;
         await waitProgress(page, `已顯示 100／${julCount} 筆`);
         check('按「重新載入」後恢復正常', await page.getByRole('alert').count() === 0);
+
+        // 瀏覽中別人把 3 筆待核准改成已付款（排序位置跨過分頁邊界）：接縫對不上 → 自動整批重抓，不漏不重
+        await monthSelect.selectOption('2025-08');
+        await waitProgress(page, '已顯示 100／607 筆');
+        const movedRows = ALL_ROWS.filter(row => row.session_date.startsWith('2025-08-') && row.status === 'pending');
+        movedRows.forEach(row => { row.status = 'paid'; });
+        sessionRequests.length = 0;
+        await page.getByRole('button', { name: /載入更多/ }).click();
+        await waitProgress(page, '已顯示 200／607 筆');
+        const shifted = expectedRows({ month: '2025-08' });
+        check('別人同時改了 3 筆狀態：按載入更多偵測到接縫變動，自動重抓成伺服器現況的前 200 筆',
+            movedRows.length === 3
+            && JSON.stringify(await tableLabels(page)) === JSON.stringify(shifted.slice(0, 200).map(rowLabel))
+            && sessionRequests.some(r => r.params.get('offset') === '99') && sessionRequests.some(r => r.params.get('offset') === '0' && r.params.get('limit') === '200'));
+        await loadAll(page, 607);
+        const shiftedLabels = await tableLabels(page);
+        check('之後載到底仍是 607 筆、與伺服器現況一致、按鈕消失（不會卡住）',
+            JSON.stringify(shiftedLabels) === JSON.stringify(shifted.map(rowLabel))
+            && await page.getByRole('button', { name: /載入更多/ }).count() === 0);
+        movedRows.forEach(row => { row.status = 'pending'; });
+
+        // 在 2026/10 畫面新增一筆 2025-08-15 的紀錄：存檔後自動切到 2025/08，看得到剛存的那筆
+        await monthSelect.selectOption('2026-10');
+        await waitProgress(page, '已顯示全部 45 筆');
+        await page.getByRole('button', { name: '新增薪資紀錄' }).click();
+        const dialog = page.getByRole('dialog');
+        await dialog.getByLabel('講師*').selectOption('10000000-0000-4000-8000-000000000000');  // 王大明
+        await dialog.getByLabel('日期*').fill('2025-08-15');
+        await dialog.getByLabel('時數').fill('1.5');
+        await dialog.getByLabel('人數').fill('2');
+        // 試算有 250ms 延遲，試算中按鈕會變「試算中…」；以名稱「儲存」找按鈕，Playwright 會等到試算完、可按才點
+        await page.waitForTimeout(400);
+        await dialog.getByRole('button', { name: '儲存', exact: true }).click();
+        await dialog.waitFor({ state: 'detached', timeout: 15000 });
+        await waitProgress(page, '已顯示 100／608 筆');
+        const withNew = expectedRows({ month: '2025-08' });
+        const newRow = ALL_ROWS.find(row => row.id.startsWith('50000000-'));
+        check('新增別的月份後自動切到 2025/08，剛存的那筆出現在列表（608 筆）',
+            inserts.length === 1 && inserts[0].session_date === '2025-08-15'
+            && await monthSelect.inputValue() === '2025-08'
+            && withNew.slice(0, 100).some(row => row.id === newRow?.id)
+            && JSON.stringify(await tableLabels(page)) === JSON.stringify(withNew.slice(0, 100).map(rowLabel)),
+            `inserts=${inserts.length} month=${await monthSelect.inputValue()}`);
+        await page.screenshot({ path: path.join(shotDir, 'desktop-after-add-other-month.png'), fullPage: false });
+        ALL_ROWS.splice(ALL_ROWS.indexOf(newRow), 1);
         check('桌機操作過程沒有前端例外', consoleErrors.length === 0, consoleErrors.join(' | '));
         check('桌機 1280px 無水平溢出', (await overflowOf(page)) === 0);
         await context.close();

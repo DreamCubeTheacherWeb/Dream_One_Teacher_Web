@@ -55,6 +55,20 @@ test('monthOptions 從最新到最早列出每個月，包含本月', () => {
     assert.deepEqual(monthOptions(null, null, '2026-10-19'), ['2026-10']);
 });
 
+test('monthOptions 遇到打錯年份（資料庫只標異常不擋）仍包含本月，打錯的月份另外補上', () => {
+    const future = monthOptions('2024-02-03', '2062-03-01', '2026-10-19');
+    assert.equal(future[0], '2062-03');
+    assert.equal(future[1], '2028-10');
+    assert.ok(future.includes('2026-10'));
+    assert.equal(future.at(-1), '2024-02');
+    assert.equal(future.length, 58);
+    const past = monthOptions('0202-03-01', '2026-10-15', '2026-10-19');
+    assert.equal(past[0], '2026-10');
+    assert.equal(past.at(-1), '0202-03');
+    assert.equal(past.length, 241);
+    assert.equal(defaultMonthKey('2062-03-01', '2026-10-19'), '2026-10');
+});
+
 test('defaultMonthKey 取最新一筆的月份，但不跑到未來', () => {
     assert.equal(defaultMonthKey('2026-10-15', '2026-10-19'), '2026-10');
     assert.equal(defaultMonthKey('2026-09-30', '2026-10-19'), '2026-09');
@@ -127,6 +141,7 @@ test('fetchRows 抓一頁：只要 100 筆並回報總筆數', async () => {
     const page = await fetchRows(buildQuery, { from: 0, limit: SALARY_REGISTER_PAGE_SIZE });
     assert.equal(page.rows.length, 100);
     assert.equal(page.total, 607);
+    assert.equal(page.fetched, 100);
     assert.deepEqual(requests, [[0, 99]]);
 });
 
@@ -156,8 +171,26 @@ test('fetchRows 保留後的大量重載（例如核准後保留已載入 300 �
 
 test('fetchRows 空資料與錯誤', async () => {
     const empty = await fetchRows(fakeServer([]).buildQuery, { limit: 100 });
-    assert.deepEqual(empty, { rows: [], total: 0 });
+    assert.deepEqual(empty, { rows: [], fetched: 0, total: 0 });
     await assert.rejects(fetchRows(fakeServer(makeRows(10), { failAt: 0 }).buildQuery), { message: 'boom' });
+});
+
+test('fetchRows 分段之間有人新增資料時不重複，fetched 仍是實際抓到的筆數', async () => {
+    const rows = makeRows(250);
+    let calls = 0;
+    const buildQuery = () => ({
+        range: async (from, to) => {
+            calls += 1;
+            // 第二段之前有一筆新資料插在最前面，整體往後擠一格
+            const current = calls >= 2 ? [{ id: 'new', total_salary: 1, paid_amount: 0 }, ...rows] : rows;
+            return { data: current.slice(from, to + 1), error: null, count: current.length };
+        },
+    });
+    const result = await fetchRows(buildQuery, { limit: 200 });
+    assert.equal(result.fetched, 200);
+    assert.equal(result.rows.length, 199);
+    assert.equal(new Set(result.rows.map((row) => row.id)).size, 199);
+    assert.equal(result.total, 251);
 });
 
 test('mergeById 合併時去掉重複的紀錄並保留順序', () => {
