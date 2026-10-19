@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
 const { chromium } = require(path.join(appDir, 'node_modules/playwright-core'));
+const { categoriesInChannel, courseCategoryConfig, courseCategoryFor, reportChannelFor, teacherCourseItems } = await import(path.join(appDir, 'src/lib/constants.js'));
 const chromeExecutable = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const port = 4237;
 const base = `http://localhost:${port}`;
@@ -69,6 +70,7 @@ const session = {
 let appRole = 'teacher';
 let speedQualification = 'speed_master';
 let submitCalls = 0;
+let lastSubmit = null;
 let directSessionWrites = 0;
 
 const json = (route, data, status = 200) => route.fulfill({
@@ -118,6 +120,7 @@ async function handleRoute(route) {
     }
     if (url.pathname === '/rest/v1/rpc/submit_my_class_session') {
         submitCalls += 1;
+        lastSubmit = request.postDataJSON();
         return json(route, '30000000-0000-4000-8000-000000000041');
     }
     if (url.pathname.startsWith('/rest/v1/rpc/')) return json(route, null);
@@ -199,6 +202,25 @@ const check = (name, condition) => {
     console.log(`${condition ? 'PASS' : 'FAIL'}  ${name}`);
 };
 
+// 2026-10-19 回報頁第二版照 Google 表單分層：回報類別 → 課程種類 → 報酬項目（只有一種時不顯示）；
+// 速解課在 B2C「速解研究所｜實體課程」，必填課程名稱、時數下拉、人數（同 verify-salary-report-form-browser.mjs）
+async function pickCourse(page, courseType) {
+    const categoryKey = courseCategoryFor(courseType);
+    const channel = reportChannelFor(courseType);
+    await page.getByLabel('回報類別').selectOption(channel);
+    if (categoriesInChannel(channel).length > 1) await page.getByLabel('課程種類').selectOption(categoryKey);
+    if (teacherCourseItems(categoryKey).length > 1) {
+        await page.getByLabel(courseCategoryConfig(categoryKey)?.itemLabel || '報酬項目', { exact: true }).selectOption(courseType);
+    }
+}
+
+async function fillSpeedReport(page) {
+    await pickCourse(page, 'speed_onsite');
+    await page.getByLabel('課程名稱', { exact: true }).fill(salarySession.course_name);
+    await page.getByLabel('上課時數', { exact: true }).selectOption('1.5');
+    await page.getByLabel('上課人數', { exact: true }).fill('2');
+}
+
 async function contextFor(browser) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await context.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: storageKey, value: session });
@@ -217,6 +239,7 @@ async function run() {
         appRole = 'teacher';
         speedQualification = 'speed_master';
         submitCalls = 0;
+        lastSubmit = null;
         directSessionWrites = 0;
         let context = await contextFor(browser);
         let page = await context.newPage();
@@ -226,9 +249,7 @@ async function run() {
         check('講師端保留舊表單轉換入口', await page.getByText('仍在使用舊表單？').isVisible());
         await page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
         await page.getByRole('heading', { name: '登記課程回報' }).waitFor();
-        await page.locator('select:has(option[value="speed_onsite"])').selectOption('speed_onsite');
-        await page.locator('input[inputmode="decimal"]').fill('1.5');
-        await page.locator('input[inputmode="numeric"]').fill('2');
+        await fillSpeedReport(page);
         await page.waitForFunction(() => document.body.innerText.includes('依據：速解大師'));
         const quoteText = await page.locator('body').innerText();
         const hasSpeedBasis = quoteText.includes('依據：速解大師');
@@ -237,7 +258,8 @@ async function run() {
         await page.screenshot({ path: '/tmp/dream-one-salary-report-desktop.png', fullPage: true });
         await page.getByRole('button', { name: '送出回報' }).click();
         await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
-        check('講師回報透過受控 RPC 送出', submitCalls === 1 && directSessionWrites === 0);
+        check('講師回報透過受控 RPC 送出（速解實體課）', submitCalls === 1 && directSessionWrites === 0
+            && lastSubmit?.p_course_type === 'speed_onsite');
         check('回報成功後顯示確認訊息', await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').isVisible());
         await context.close();
 
@@ -246,9 +268,11 @@ async function run() {
         page = await context.newPage();
         await page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
         await page.getByRole('heading', { name: '登記課程回報' }).waitFor();
-        await page.locator('select:has(option[value="speed_onsite"])').selectOption('speed_onsite');
-        await page.getByText('待管理員核薪').waitFor();
-        check('未取得速解資格顯示待核薪', await page.getByText('待核薪').first().isVisible());
+        // 時數、人數都填好，待核薪的原因只剩「沒有速解資格」
+        await fillSpeedReport(page);
+        await page.getByText('尚未設定速解資格，已保留回報並交由管理員核薪').waitFor();
+        check('未取得速解資格顯示待核薪', await page.getByText('待管理員核薪').isVisible()
+            && await page.getByText('依據：尚未符合資格／規則').isVisible());
         await context.close();
 
         appRole = 'admin';
