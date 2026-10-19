@@ -135,7 +135,7 @@ const AdminDashboard = () => {
                     <NavCard to="/admin/assignments" icon={ClipboardCheck} title="作業審核中心" desc="查看與回覆講師繳交的作業" color="amber" />
                     <NavCard to="/admin/progress" icon={BarChart3} title="培訓進度總覽" desc="檢視所有講師學習進度與狀態" color="emerald" />
                     <NavCard to="/admin/instructors" icon={ContactRound} title="講師資料總覽" desc="查看所有講師個人資料與文件" color="purple" />
-                    <NavCard to="/admin/salary" icon={Wallet} title="薪資登記中心" desc="登記每月薪資、查看異常與付款狀態" color="rose" />
+                    <NavCard to="/admin/salary" icon={Wallet} title="報酬登記中心" desc="登記每月報酬、查看異常與付款狀態" color="rose" />
                     {isAdmin && <NavCard to="/admin/salary/export" icon={FileSpreadsheet} title="報酬供應商 CSV" desc="依老師、日期區間或等級匯出財務供應商格式" color="blue" />}
                     {isAdmin && <NavCard to="/admin/salary/options" icon={ListChecks} title="回報選項管理" desc="設定講師課程回報的期間、合作單位、營隊梯次下拉選項" color="amber" />}
                     <NavCard to="/admin/download-center" icon={Download} title="表單預覽與下載" desc="預覽講師匯款申請書與其他自動填表，並支援批次下載" color="emerald" />
@@ -156,7 +156,7 @@ const AdminDashboard = () => {
                         <NavCard to="/admin/announcements" icon={Megaphone} title="佈告欄管理" desc="新增、編輯首頁公告內容" color="red" />
                         <NavCard to="/admin/contracts" icon={FileSignature} title="合約文件管理" desc="管理合約文件與查看簽約狀態" color="violet" />
                         <NavCard to="/admin/badges" icon={Award} title="徽章管理" desc="管理徽章清單規則、手動頒發或收回徽章" color="amber" />
-                        <NavCard to="/admin/salary-links" icon={Link2} title="網站連結管理" desc="編輯教材資源與薪資頁的外部連結" color="emerald" />
+                        <NavCard to="/admin/salary-links" icon={Link2} title="網站連結管理" desc="編輯教材資源與報酬頁的外部連結" color="emerald" />
                         <NavCard to="/admin/notifications" icon={Megaphone} title="廣播通知" desc="立即或排程發送小鈴鐺通知給講師" color="purple" />
                     </div>
                 </div>

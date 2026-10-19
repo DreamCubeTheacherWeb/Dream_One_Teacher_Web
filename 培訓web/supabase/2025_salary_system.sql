@@ -380,11 +380,15 @@ CREATE TABLE IF NOT EXISTS public.salary_report_options (
   sort_order  integer NOT NULL DEFAULT 0,
   is_active   boolean NOT NULL DEFAULT true,
   created_at  timestamptz NOT NULL DEFAULT now(),
+  -- 2026-10-19：合作單位分寒暑假／學期間兩組（回填與約束在 migrations/20261019220000）
+  term_scope  text,
   CONSTRAINT salary_report_options_kind_value_key UNIQUE (kind, value)
 );
 
 CREATE INDEX IF NOT EXISTS salary_report_options_kind_sort_idx
   ON public.salary_report_options (kind, sort_order);
+CREATE INDEX IF NOT EXISTS salary_report_options_kind_scope_sort_idx
+  ON public.salary_report_options (kind, term_scope, sort_order);
 
 ALTER TABLE public.salary_report_options ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.salary_report_options FROM PUBLIC, anon, authenticated;

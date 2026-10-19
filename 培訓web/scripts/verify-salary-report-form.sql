@@ -471,6 +471,61 @@ $$;
 \echo PASS table CHECK constraints block distance-without-request and invalid term_period
 
 
+-- (g) 2026-10-19：合作單位分寒暑假／學期間、期間文字照表單（migration 20261019220000）
+--     先把暑假的文字改成管理員自訂，確認 migration 不覆寫；再連跑兩次
+UPDATE public.salary_report_options SET label = '自訂暑假' WHERE kind = 'term_period' AND value = 'summer_break';
+\ir ../supabase/migrations/20261019220000_partner_units_by_term_and_period_labels.sql
+\ir ../supabase/migrations/20261019220000_partner_units_by_term_and_period_labels.sql
+DO $$
+DECLARE n_vac integer; n_sem integer; n_null integer; l_w text; l_s text; l_u text; n_sem_115 integer;
+BEGIN
+  SELECT count(*) FILTER (WHERE term_scope = 'vacation'),
+         count(*) FILTER (WHERE term_scope = 'semester'),
+         count(*) FILTER (WHERE term_scope IS NULL)
+    INTO n_vac, n_sem, n_null
+    FROM public.salary_report_options WHERE kind = 'partner_unit';
+  SELECT count(*) INTO n_sem_115 FROM public.salary_report_options
+   WHERE kind = 'partner_unit' AND value LIKE '%115上%' AND term_scope <> 'semester';
+  SELECT label INTO l_w FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'winter_break';
+  SELECT label INTO l_s FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'semester';
+  SELECT label INTO l_u FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'summer_break';
+  IF n_vac <> 48 OR n_sem <> 30 OR n_null <> 0 OR n_sem_115 <> 0 THEN
+    RAISE EXCEPTION 'term_scope backfill wrong: vacation=% semester=% null=% mis115=%', n_vac, n_sem, n_null, n_sem_115;
+  END IF;
+  IF l_w <> '寒假（改名）' OR l_s <> '115學年度上學期' OR l_u <> '自訂暑假' THEN
+    RAISE EXCEPTION 'term_period labels wrong: % / % / %', l_w, l_s, l_u;
+  END IF;
+  IF (SELECT count(*) FROM public.salary_report_options WHERE kind <> 'partner_unit' AND term_scope IS NOT NULL) <> 0 THEN
+    RAISE EXCEPTION 'non partner rows got term_scope';
+  END IF;
+END;
+$$;
+\echo PASS (g) term_scope backfill 48/30, 115上 rows all semester, default period label updated, admin-renamed labels kept, migration idempotent
+
+-- CHECK：合作單位沒有組別、或非合作單位帶組別，都會被擋
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label, sort_order) VALUES ('partner_unit', '沒組別的單位', '沒組別的單位', 9990);
+    RAISE EXCEPTION 'partner_unit without term_scope was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label, sort_order, term_scope) VALUES ('partner_unit', '怪組別', '怪組別', 9991, 'weekend');
+    RAISE EXCEPTION 'partner_unit with bad term_scope was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label, sort_order, term_scope) VALUES ('camp_batch', '帶組別的梯次', '帶組別的梯次', 9992, 'vacation');
+    RAISE EXCEPTION 'camp_batch with term_scope was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  INSERT INTO public.salary_report_options (kind, value, label, sort_order, term_scope) VALUES ('partner_unit', '【新竹】新學期單位115下', '【新竹】新學期單位115下', 790, 'semester');
+  DELETE FROM public.salary_report_options WHERE value = '【新竹】新學期單位115下';
+END;
+$$;
+\echo PASS (h) term_scope CHECK blocks missing/invalid scope and scope on other kinds; valid insert works
+
 -- ═══════════════════════════════════════════════════════════════════
 -- 第二段：新建庫路徑（2025_salary_system.sql 已同步新欄位與選項表）
 -- ═══════════════════════════════════════════════════════════════════
@@ -499,6 +554,8 @@ CREATE TABLE public.instructors (
 \ir ../supabase/migrations/20260826105841_restore_salary_workflow.sql
 \ir ../supabase/migrations/20261018120000_align_salary_report_with_forms.sql
 \ir ../supabase/migrations/20261018120000_align_salary_report_with_forms.sql
+\ir ../supabase/migrations/20261019220000_partner_units_by_term_and_period_labels.sql
+\ir ../supabase/migrations/20261019220000_partner_units_by_term_and_period_labels.sql
 
 INSERT INTO auth.users (id, email) VALUES ('00000000-0000-4000-8000-000000000001', 'teacher@test.local');
 INSERT INTO public.users (id, name, email, role) VALUES ('00000000-0000-4000-8000-000000000001', '老師一', 'teacher@test.local', 'teacher');
@@ -523,11 +580,13 @@ BEGIN
   SELECT count(*) INTO n_proc FROM pg_proc WHERE proname = 'submit_my_class_session';
   SELECT * INTO s FROM public.class_sessions WHERE source = 'self_report' AND session_date = '2026-08-12';
   IF n_constraints <> 4 OR n_proc <> 1 OR (SELECT count(*) FROM public.salary_report_options) <> 112
+     OR (SELECT count(*) FROM public.salary_report_options WHERE kind = 'partner_unit' AND term_scope = 'vacation') <> 48
+     OR (SELECT count(*) FROM public.salary_report_options WHERE kind = 'partner_unit' AND term_scope = 'semester') <> 30
      OR s.term_period <> 'summer_break' OR s.unit_name <> '【新竹】愛丁堡' OR s.materials_issued <> '0' THEN
     RAISE EXCEPTION 'fresh base path wrong: constraints=% proc=% row=%', n_constraints, n_proc, row_to_json(s);
   END IF;
 END;
 $$;
-\echo PASS fresh base path: 2025_salary_system.sql -> 20260826 -> 20261018 (x2) works, 4 constraints, 1 RPC, 112 options
+\echo PASS fresh base path: 2025_salary_system.sql -> 20260826 -> 20261018 (x2) -> 20261019 (x2) works, 4 constraints, 1 RPC, 112 options (48 vacation / 30 semester)
 
 \echo salary report form SQL verification passed

@@ -47,7 +47,7 @@ const useSalaryLinks = () => {
                 .select('key, label, description, url')
                 .in('key', DEFAULT_SALARY_LINKS.map(d => d.key));
             if (error) {
-                console.error('讀取薪資表單連結失敗,使用預設值：', error.message);
+                console.error('讀取報酬表單連結失敗,使用預設值：', error.message);
                 return;
             }
             if (!active || !data || data.length === 0) return;
@@ -191,7 +191,7 @@ const MySalary = () => {
                     <div className="w-16 h-16 border-2 border-bauhaus-black bg-bauhaus-muted rounded-full flex items-center justify-center mx-auto mb-4">
                         <Wallet className="w-8 h-8 text-bauhaus-black/40" />
                     </div>
-                    <h2 className="text-xl font-black text-bauhaus-black">還沒有薪資紀錄</h2>
+                    <h2 className="text-xl font-black text-bauhaus-black">還沒有報酬紀錄</h2>
                     <p className="text-bauhaus-black/60 mt-2 text-sm font-medium">完成接課後登記課程回報，你的鐘點與獎金就會顯示在這裡。</p>
                     <Link
                         to="/my/salary/new"
@@ -235,8 +235,8 @@ const MySalary = () => {
                 <div className="mb-6 bg-bauhaus-yellow/30 border-2 border-bauhaus-black rounded-xl p-4 flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                     <div className="text-sm text-bauhaus-black">
-                        <div className="font-black">有 {needsReviewCount} 筆回報正在等待管理員核薪</div>
-                        <div className="text-xs mt-1 text-bauhaus-black/70">這些紀錄不會顯示成 0 元；確認資格或規則後才會納入薪資金額。</div>
+                        <div className="font-black">有 {needsReviewCount} 筆回報正在等待管理員核准</div>
+                        <div className="text-xs mt-1 text-bauhaus-black/70">這些紀錄不會顯示成 0 元；確認資格或規則後才會納入報酬金額。</div>
                     </div>
                 </div>
             )}
@@ -254,7 +254,7 @@ const MySalary = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
                 <BigStat
                     icon={Calendar}
-                    label="本月薪資"
+                    label="本月報酬"
                     value={fmt(summary.this_month_salary)}
                     sub={`${summary.this_month_sessions} 場`}
                     tone="blue"
@@ -276,7 +276,7 @@ const MySalary = () => {
 
             {/* 細項:累計 + 三狀態分桶 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-                <MiniStat label="累計總薪資" value={fmt(summary.total_salary)} />
+                <MiniStat label="累計總報酬" value={fmt(summary.total_salary)} />
                 <MiniStat label="總場次" value={summary.total_sessions} sub={fmtHr(summary.total_hours)} />
                 <MiniStat label="待核准" value={fmt(summary.pending_salary)} accent="yellow" />
                 <MiniStat label="已核准未付" value={fmt(summary.approved_unpaid_salary)} accent="blue" />
@@ -336,13 +336,13 @@ const MySalary = () => {
                                         {s.student_count ? ` / ${s.student_count}人` : ''}
                                     </span>
                                     <span className="text-base font-bold text-bauhaus-black tabular-nums">
-                                        {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核薪' : fmt(s.total_salary))}
+                                        {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : fmt(s.total_salary))}
                                     </span>
                                 </div>
                             </div>
                         ))}
                         {filtered.length === 0 && (
-                            <div className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有薪資紀錄</div>
+                            <div className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有報酬紀錄</div>
                         )}
                     </div>
 
@@ -354,7 +354,7 @@ const MySalary = () => {
                                     <th className="px-4 py-3 text-left">日期</th>
                                     <th className="px-4 py-3 text-left">課程</th>
                                     <th className="px-4 py-3 text-right">時數/人</th>
-                                    <th className="px-4 py-3 text-right">薪資</th>
+                                    <th className="px-4 py-3 text-right">報酬</th>
                                     <th className="px-4 py-3 text-right">獎金</th>
                                     <th className="px-4 py-3 text-right">總計</th>
                                     <th className="px-4 py-3 text-left">狀態</th>
@@ -374,13 +374,13 @@ const MySalary = () => {
                                             {s.student_count ? ` / ${s.student_count}人` : ''}
                                         </td>
                                         <td className="px-4 py-3 text-right text-bauhaus-black/80">
-                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核薪' : (s.base_salary !== null ? fmt(s.base_salary) : '–'))}
+                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : (s.base_salary !== null ? fmt(s.base_salary) : '–'))}
                                         </td>
                                         <td className="px-4 py-3 text-right text-bauhaus-black/80">
                                             {s.bonus > 0 ? fmt(s.bonus) : '–'}
                                         </td>
                                         <td className="px-4 py-3 text-right font-bold text-bauhaus-black tabular-nums">
-                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核薪' : fmt(s.total_salary))}
+                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : fmt(s.total_salary))}
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className={`bh-chip ${s.pricing_status === 'rejected' ? 'bg-bauhaus-red text-white' : (STATUS_COLORS[s.status] || 'bg-bauhaus-muted text-bauhaus-black')}`}>
@@ -390,7 +390,7 @@ const MySalary = () => {
                                     </tr>
                                 ))}
                                 {filtered.length === 0 && (
-                                    <tr><td colSpan={7} className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有薪資紀錄</td></tr>
+                                    <tr><td colSpan={7} className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有報酬紀錄</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -406,7 +406,7 @@ const MySalary = () => {
 const SubmitSuccess = ({ onClose }) => (
     <div role="status" className="mb-6 bg-bauhaus-blue text-white border-2 lg:border-4 border-bauhaus-black rounded-xl px-4 py-3 flex items-center gap-3">
         <CheckCircle2 className="w-5 h-5 shrink-0" aria-hidden="true" />
-        <div className="font-bold flex-1">課程回報已送出，管理員核薪後會更新狀態。</div>
+        <div className="font-bold flex-1">課程回報已送出，管理員核准後會更新狀態。</div>
         <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl hover:bg-white/15" aria-label="關閉成功提示">
             <X className="w-4 h-4" aria-hidden="true" />
         </button>

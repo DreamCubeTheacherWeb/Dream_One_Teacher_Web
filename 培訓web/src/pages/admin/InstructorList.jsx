@@ -37,6 +37,10 @@ const STATUS_OPTIONS = [
 ];
 const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map(s => [s.key, s]));
 
+// 桌機表格：欄數與每格左右留白（lg 較窄、xl 放寬）
+const TABLE_COLS = 8;
+const CELL_X = 'px-1.5 xl:px-4 py-3';
+
 const DOC_KEYS = [
     { key: 'id_front', label: '身分證正面' },
     { key: 'id_back', label: '身分證反面' },
@@ -543,7 +547,7 @@ const InstructorList = () => {
                 </select>
             </div>
 
-            <div className="block md:hidden space-y-3">
+            <div className="block lg:hidden space-y-3">
                 {filtered.length === 0 ? (
                     <div className="bh-card p-8 text-center text-bauhaus-black/50">
                         {search ? '找不到符合的講師' : '尚無講師資料'}
@@ -572,19 +576,21 @@ const InstructorList = () => {
                 )}
             </div>
 
-            <div className="hidden md:block bh-card overflow-x-auto">
-                <table className="w-full text-left [&_.bh-chip]:whitespace-nowrap">
-                    <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider">
+            {/* 欄位多（8 欄），1024px 以下塞不下（標籤會被擠成直排），所以表格從 lg 起才顯示，以下用卡片；
+                外框用 overflow-x-auto，萬一還是太擠也只會出現橫向捲軸，不會把最右邊的按鈕切掉 */}
+            <div className="hidden lg:block bh-card overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider whitespace-nowrap">
                         <tr>
-                            <th className="px-3 py-4">姓名</th>
-                            <th className="px-3 py-4">Email</th>
-                            <th className="px-3 py-4">綁定</th>
-                            <th className="px-3 py-4">資料進度</th>
-                            <th className="px-3 py-4">等級</th>
-                            <th className="px-3 py-4">速解資格</th>
-                            <th className="px-3 py-4">地區</th>
-                            <th className="px-3 py-4">文件</th>
-                            <th className="px-3 py-4 text-right">操作</th>
+                            {/* 「講師」以外的欄寬度剛好包住內容（w-px），螢幕多出來的寬度都給「講師」欄，欄距才不會忽寬忽窄 */}
+                            <th className={CELL_X}>講師</th>
+                            <th className={`${CELL_X} w-px`}>綁定</th>
+                            <th className={`${CELL_X} w-px`}>資料進度</th>
+                            <th className={`${CELL_X} w-px`}>等級</th>
+                            <th className={`${CELL_X} w-px`}>速解資格</th>
+                            <th className={`${CELL_X} w-px`}>地區</th>
+                            <th className={`${CELL_X} w-px`}>文件</th>
+                            <th className={`${CELL_X} w-px`}>操作</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y-2 divide-bauhaus-black/20">
@@ -610,7 +616,7 @@ const InstructorList = () => {
                         ))}
                         {filtered.length === 0 && (
                             <tr>
-                                <td colSpan={9} className="px-3 py-12 text-center text-bauhaus-black/50">
+                                <td colSpan={TABLE_COLS} className="px-6 py-12 text-center text-bauhaus-black/50">
                                     {search ? '找不到符合的講師' : '尚無講師資料'}
                                 </td>
                             </tr>
@@ -655,35 +661,42 @@ const InstructorList = () => {
 // ───────────────────────────────────────────────────────────────
 const LinkBadge = ({ userId }) => (
     userId ? (
-        <span className="bh-chip bg-bauhaus-blue text-white">
+        <span className="bh-chip bg-bauhaus-blue text-white whitespace-nowrap">
             <Check className="w-3 h-3" /> 已認領
         </span>
     ) : (
-        <span className="bh-chip bg-bauhaus-muted text-bauhaus-black">
+        <span className="bh-chip bg-bauhaus-muted text-bauhaus-black whitespace-nowrap">
             未認領
         </span>
     )
 );
 
 // 「姓名認領」：管理員只填姓名建立的空位，被老師輸入姓名認領後綁定
+const isClaimedNameSlot = (inst) => Boolean(inst.name_slot && inst.user_id);
+
 const NameSlotBadge = ({ inst }) => (
-    inst.name_slot && inst.user_id ? (
-        <span className="bh-chip bg-white text-bauhaus-black" title="管理員只填姓名建立的空位，由老師輸入姓名認領">
+    isClaimedNameSlot(inst) ? (
+        <span className="bh-chip bg-white text-bauhaus-black whitespace-nowrap" title="管理員只填姓名建立的空位，由老師輸入姓名認領">
             姓名認領
         </span>
     ) : null
 );
 
 const NameSlotUnlinkHint = ({ inst, isAdmin }) => (
-    isAdmin && inst.name_slot && inst.user_id ? (
+    isAdmin && isClaimedNameSlot(inst) ? (
         <p className="text-[11px] leading-snug font-medium text-bauhaus-black/60" data-testid="name-slot-unlink-hint">{NAME_SLOT_UNLINK_HINT}</p>
     ) : null
 );
 
-// 已綁定的列顯示對方實際登入的 Google Email（與主檔 Email 相同時不重複顯示）
-const LoginEmailLine = ({ loginEmail, primaryEmail }) => (
+// 已綁定的列顯示對方實際登入的 Google Email（與主檔 Email 相同時不重複顯示）。
+// truncate＝表格版：和主檔 Email 同樣單行截斷、滑過去看全文，列高才不會被撐開；卡片版完整換行顯示。
+const LoginEmailLine = ({ loginEmail, primaryEmail, truncate = false }) => (
     loginEmail && loginEmail.toLowerCase() !== (primaryEmail || '').toLowerCase() ? (
-        <div className="text-xs text-bauhaus-black/60 mt-0.5 break-all" data-testid="login-email">
+        <div
+            className={`text-xs text-bauhaus-black/60 mt-0.5 ${truncate ? 'truncate w-0 min-w-full' : 'break-all'}`}
+            title={truncate ? `Google 登入：${loginEmail}` : undefined}
+            data-testid="login-email"
+        >
             Google 登入：{loginEmail}
         </div>
     ) : null
@@ -830,7 +843,7 @@ const StatusBadge = ({ status }) => {
     const s = STATUS_MAP[status];
     if (!s) return <span className="text-xs text-bauhaus-black/40">{status}</span>;
     return (
-        <span className={`bh-chip ${s.color}`}>
+        <span className={`bh-chip whitespace-nowrap ${s.color}`}>
             {s.label}
         </span>
     );
@@ -863,6 +876,13 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
                     <StatusBadge status={inst.employment_status} />
                     <LinkBadge userId={inst.user_id} />
                     <NameSlotBadge inst={inst} />
+                    {isAdmin && (
+                        inst.user_id ? (
+                            <button onClick={onUnlink} title={inst.name_slot ? NAME_SLOT_UNLINK_HINT : '解除綁定'} className="text-xs font-bold text-bauhaus-red hover:underline">解綁</button>
+                        ) : (
+                            <button onClick={onLink} className="text-xs font-bold text-bauhaus-blue hover:underline">綁定</button>
+                        )
+                    )}
                     {isAdmin ? (
                         <select
                             value={inst.instructor_role || ''}
@@ -884,32 +904,21 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
                         <span className="text-xs text-bauhaus-black/40">未設定</span>
                     )}
                     <SpeedQualificationBadge value={inst.speed_qualification} />
-                    <span className="inline-flex items-center gap-1 text-xs text-bauhaus-black/60">
-                        <MapPin className="w-3 h-3" />
-                        {inst.teaching_regions?.length || inst.teaching_regions_raw ? (inst.teaching_regions?.length || '–') : 0}
-                    </span>
-                    <span className={`bh-chip ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
+                    <RegionSummary inst={inst} />
+                    <span className={`bh-chip whitespace-nowrap ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
                         <FileImage className="w-3 h-3" />
                         {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
                     </span>
+                </div>
+                {/* 按鈕獨立一行，每張卡片的按鈕位置才會對齊 */}
+                <div className="flex flex-wrap items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
                     {isAdmin && (
                         <Link
                             to={`/admin/instructors/${inst.id}/edit`}
                             className="bh-btn bh-btn-blue px-3 py-2 text-xs"
-                            onClick={e => e.stopPropagation()}
                         >
                             <Pencil className="w-3.5 h-3.5" /> 編輯資料
                         </Link>
-                    )}
-                    {isAdmin && (
-                        inst.user_id ? (
-                            <button onClick={onUnlink} title={inst.name_slot ? NAME_SLOT_UNLINK_HINT : '解除綁定'} className="text-xs font-bold text-bauhaus-red hover:underline">解綁</button>
-                        ) : (
-                            <button onClick={onLink} className="text-xs font-bold text-bauhaus-blue hover:underline">綁定</button>
-                        )
-                    )}
-                    {isAdmin && isPristineNameSlot(inst) && (
-                        <button type="button" onClick={onDeleteSlot} className="text-xs font-bold text-bauhaus-red hover:underline">刪除空位</button>
                     )}
                     <button
                         type="button"
@@ -920,6 +929,9 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
                         {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
                         {previewing ? '產生預覽' : '預覽表單'}
                     </button>
+                    {isAdmin && isPristineNameSlot(inst) && (
+                        <button type="button" onClick={onDeleteSlot} className="text-xs font-bold text-bauhaus-red hover:underline">刪除空位</button>
+                    )}
                 </div>
                 <div className="mt-1.5" onClick={e => e.stopPropagation()}>
                     <NameSlotUnlinkHint inst={inst} isAdmin={isAdmin} />
@@ -940,18 +952,25 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
 const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, loginEmail, isAdmin, onRoleChange, onUnlink, onLink, onDeleteSlot, onPreview, previewDisabled, previewing }) => (
     <>
         <tr className="hover:bg-bauhaus-cream transition-colors cursor-pointer" onClick={onToggle}>
-            <td className="px-3 py-4">
-                <div className="font-bold text-bauhaus-black whitespace-nowrap">{inst.full_name}</div>
-                <div className="mt-1"><StatusBadge status={inst.employment_status} /></div>
+            {/* 姓名＋任職狀態一行、Email 在下面一行（Email 太長就截斷，滑過去看全文），省下一整欄；
+                已綁定且登入的 Google Email 和主檔 Email 不同時，再多一行顯示登入用的 Google Email。
+                Email 行用 w-0 min-w-full：不撐開欄寬，欄寬由「講師」欄吃剩下的空間決定，空間不夠就多截一點 */}
+            <td className={CELL_X}>
+                <div className="flex items-center gap-2">
+                    <span className="font-bold text-bauhaus-black whitespace-nowrap">{inst.full_name}</span>
+                    <StatusBadge status={inst.employment_status} />
+                </div>
+                <div
+                    className="mt-1 text-xs text-bauhaus-black/60 truncate w-0 min-w-full"
+                    title={inst.email_primary || undefined}
+                >
+                    {inst.email_primary || <span className="text-bauhaus-black/30">—</span>}
+                </div>
+                <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} truncate />
             </td>
-            <td className="px-3 py-4 text-sm text-bauhaus-black/60">
-                {inst.email_primary || <span className="text-bauhaus-black/30">—</span>}
-                <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} />
-            </td>
-            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
-                <div className="flex flex-wrap items-center gap-2">
+            <td className={CELL_X} onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2">
                     <LinkBadge userId={inst.user_id} />
-                    <NameSlotBadge inst={inst} />
                     {isAdmin && (
                         inst.user_id ? (
                             <button onClick={onUnlink} title={inst.name_slot ? NAME_SLOT_UNLINK_HINT : '解除綁定'} aria-label="解除綁定" className="text-bauhaus-red/70 hover:text-bauhaus-red transition-colors">
@@ -964,27 +983,33 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
                         )
                     )}
                 </div>
+                {/* 「姓名認領」標籤、刪除空位、解除綁定說明都疊在下面，不跟「已認領」併排，才不會把剛好包住內容的綁定欄撐寬；
+                    說明文字 w-0 min-w-full：跟著欄寬換行，不影響欄寬 */}
+                {isClaimedNameSlot(inst) && (
+                    <div className="mt-1"><NameSlotBadge inst={inst} /></div>
+                )}
                 {isAdmin && isPristineNameSlot(inst) && (
                     <button
                         type="button"
                         onClick={onDeleteSlot}
-                        className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-bauhaus-red hover:underline"
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-bauhaus-red hover:underline whitespace-nowrap"
                     >
                         <Trash2 className="w-3.5 h-3.5" /> 刪除空位
                     </button>
                 )}
-                <div className="mt-1 max-w-[180px]">
-                    <NameSlotUnlinkHint inst={inst} isAdmin={isAdmin} />
-                </div>
+                {isAdmin && isClaimedNameSlot(inst) && (
+                    <div className="mt-1 w-0 min-w-full"><NameSlotUnlinkHint inst={inst} isAdmin={isAdmin} /></div>
+                )}
             </td>
-            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
+            <td className={CELL_X} onClick={e => e.stopPropagation()}>
                 <ProgressBadge progress={progress} />
             </td>
-            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
+            <td className={CELL_X} onClick={e => e.stopPropagation()}>
                 {isAdmin ? (
                     <select
                         value={inst.instructor_role || ''}
                         onChange={e => onRoleChange(e.target.value)}
+                        aria-label={`${inst.full_name} 的等級`}
                         className={`bh-chip border-0 outline-none cursor-pointer ${
                             inst.instructor_role ? 'bg-bauhaus-black text-white' : 'bg-bauhaus-muted text-bauhaus-black'
                         }`}
@@ -995,52 +1020,48 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
                         ))}
                     </select>
                 ) : inst.instructor_role ? (
-                    <span className="bh-chip bg-bauhaus-black text-white">
+                    <span className="bh-chip bg-bauhaus-black text-white whitespace-nowrap">
                         {ROLE_LABELS[inst.instructor_role] || inst.instructor_role}
                     </span>
                 ) : (
-                    <span className="text-xs text-bauhaus-black/40">未設定</span>
+                    <span className="text-xs text-bauhaus-black/40 whitespace-nowrap">未設定</span>
                 )}
             </td>
-            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
+            <td className={CELL_X} onClick={e => e.stopPropagation()}>
                 <SpeedQualificationBadge value={inst.speed_qualification} />
             </td>
-            <td className="px-3 py-4">
-                <div className="flex items-center gap-1 text-xs text-bauhaus-black/60">
-                    <MapPin className="w-3 h-3" />
-                    {inst.teaching_regions?.length
-                        ? `${inst.teaching_regions.length} 個縣市`
-                        : inst.teaching_regions_raw
-                            ? <span className="text-bauhaus-black/40 truncate max-w-[120px] inline-block">{inst.teaching_regions_raw}</span>
-                            : <span className="text-bauhaus-black/30">—</span>}
-                </div>
+            <td className={CELL_X}>
+                <RegionSummary inst={inst} compact />
             </td>
-            <td className="px-3 py-4">
-                <span className={`bh-chip ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
+            <td className={CELL_X}>
+                <span className={`bh-chip whitespace-nowrap ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
                     <FileImage className="w-3 h-3" />
                     {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
                 </span>
             </td>
-            <td className="px-3 py-4 text-right">
-                <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+            {/* 1024–1279px 按鈕只寫「編輯／預覽」，1280px 以上才顯示完整文字；aria-label 固定是完整名稱 */}
+            <td className={CELL_X}>
+                <div className="flex items-center gap-1.5 xl:gap-2" onClick={e => e.stopPropagation()}>
                     {isAdmin && (
                         <Link
                             to={`/admin/instructors/${inst.id}/edit`}
-                            className="bh-btn bh-btn-blue px-3 py-2 text-xs whitespace-nowrap"
+                            aria-label="編輯資料"
+                            className="bh-btn bh-btn-blue px-2.5 xl:px-3 py-2 text-xs whitespace-nowrap"
                         >
-                            <Pencil className="w-3.5 h-3.5" /> 編輯資料
+                            <Pencil className="w-3.5 h-3.5" /><span>編輯<span className="hidden xl:inline">資料</span></span>
                         </Link>
                     )}
                     <button
                         type="button"
                         onClick={onPreview}
                         disabled={previewDisabled}
-                        className="bh-btn bh-btn-outline px-3 py-2 text-xs whitespace-nowrap disabled:opacity-40"
+                        aria-label={previewing ? '產生預覽' : '預覽表單'}
+                        className="bh-btn bh-btn-outline px-2.5 xl:px-3 py-2 text-xs whitespace-nowrap disabled:opacity-40"
                     >
                         {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
-                        {previewing ? '產生預覽' : '預覽表單'}
+                        <span>{previewing ? '產生' : '預覽'}<span className="hidden xl:inline">{previewing ? '預覽' : '表單'}</span></span>
                     </button>
-                    <button type="button" onClick={onToggle} className="p-2 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors" aria-label={expanded ? '收合講師資料' : '展開講師資料'}>
+                    <button type="button" onClick={onToggle} className="p-1.5 xl:p-2 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors" aria-label={expanded ? '收合講師資料' : '展開講師資料'}>
                         {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                     </button>
                 </div>
@@ -1049,7 +1070,7 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
 
         {expanded && (
             <tr>
-                <td colSpan={9} className="px-3 py-6 bg-bauhaus-cream">
+                <td colSpan={TABLE_COLS} className="px-6 py-6 bg-bauhaus-cream">
                     <InstructorExpandedContent inst={inst} urls={urls} progress={progress} />
                 </td>
             </tr>
@@ -1057,8 +1078,21 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
     </>
 );
 
+// 地區：有勾選縣市顯示「N 個縣市」；只有匯入的原始文字就截斷顯示（滑過看全文）。
+// compact＝表格版：1024–1279px 欄位多、寬度吃緊，原始文字少留一點，1280px 以上才放寬。
+const RegionSummary = ({ inst, compact = false }) => (
+    <div className="inline-flex items-center gap-1 text-xs text-bauhaus-black/60 whitespace-nowrap">
+        <MapPin className="w-3 h-3 shrink-0" />
+        {inst.teaching_regions?.length
+            ? `${inst.teaching_regions.length} 個縣市`
+            : inst.teaching_regions_raw
+                ? <span className={`text-bauhaus-black/40 truncate inline-block ${compact ? 'max-w-[4rem] xl:max-w-[5rem]' : 'max-w-[5rem]'}`} title={inst.teaching_regions_raw}>{inst.teaching_regions_raw}</span>
+                : <span className="text-bauhaus-black/30">—</span>}
+    </div>
+);
+
 const SpeedQualificationBadge = ({ value }) => (
-    <span className={`bh-chip ${value ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/60'}`}>
+    <span className={`bh-chip whitespace-nowrap ${value ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/60'}`}>
         {speedQualificationLabel(value)}
     </span>
 );

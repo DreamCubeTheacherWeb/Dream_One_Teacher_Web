@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 後台薪資登記中心改伺服器端篩選＋分頁：mock Supabase（照 PostgREST 網址條件真的過濾、排序、分頁、計數）
+// 後台報酬登記中心改伺服器端篩選＋分頁：mock Supabase（照 PostgREST 網址條件真的過濾、排序、分頁、計數）
 // 放 5,535 筆（2024/02～2026/10，其中 2025/08 有 607 筆），以本機 vite dev 實際操作桌機與 390px 手機。
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -266,7 +266,7 @@ const expectedRows = ({ month = '', status = '', anomalyOnly = false, search = '
         .filter(row => !regex || ['instructor_name', 'course_name', 'course_type'].some(column => regex.test(String(row[column] ?? ''))))
         .sort(compileOrder('status.asc,session_date.desc,id.desc'));
 };
-const rowLabel = (row) => `開啟 ${row.instructor_name} ${row.session_date} 薪資紀錄`;
+const rowLabel = (row) => `開啟 ${row.instructor_name} ${row.session_date} 報酬紀錄`;
 const money = (value) => `$${Math.round(value).toLocaleString()}`;
 
 const reservePort = () => new Promise((resolve, reject) => {
@@ -300,7 +300,7 @@ const waitEmpty = (page) => page.locator('table').getByText('沒有符合的紀�
 
 async function openPage(page, base) {
     await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-    await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+    await page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
 }
 
 // 一直按「載入更多」，每按一次都等進度文字變成下一個數字才繼續
@@ -353,9 +353,9 @@ async function run() {
         check('月份選單列出 2026/10～2024/02 共 33 個月＋全部月份',
             monthTexts.length === 34 && monthTexts[0] === '全部月份' && monthTexts[1] === '2026/10' && monthTexts.at(-1) === '2024/02' && monthTexts.includes('2025/08'),
             JSON.stringify(monthTexts.slice(0, 3)));
-        check(`待處理按鈕是全庫數字（${globalPending}，含待核薪 2）`,
+        check(`待處理按鈕是全庫數字（${globalPending}，含待核准 2）`,
             await page.getByRole('button', { name: new RegExp(`待處理 ${globalPending}`) }).isVisible()
-            && await page.getByText('（待核薪 2）').isVisible());
+            && await page.getByText('（待核准 2）').isVisible());
         check('2026/10 的 45 筆依「待處理優先、日期新到舊」排列',
             JSON.stringify(await tableLabels(page)) === JSON.stringify(expectedRows({ month: '2026-10' }).map(rowLabel)));
         check('第一次載入只抓一頁（每次 select=* 都有 limit≤100）',
@@ -375,9 +375,9 @@ async function run() {
         const augTotal = augRows.reduce((sum, row) => sum + row.total_salary, 0);
         const augPaid = augRows.reduce((sum, row) => sum + row.paid_amount, 0);
         check('統計卡是整個月 607 筆的數字（不是只算已載入的 100 筆）',
-            await statValue(page, '篩選筆數') === '607' && await statValue(page, '總薪資') === money(augTotal)
+            await statValue(page, '篩選筆數') === '607' && await statValue(page, '總報酬') === money(augTotal)
             && await statValue(page, '未付款') === money(augTotal - augPaid),
-            `${await statValue(page, '篩選筆數')} ${await statValue(page, '總薪資')} vs ${money(augTotal)}`);
+            `${await statValue(page, '篩選筆數')} ${await statValue(page, '總報酬')} vs ${money(augTotal)}`);
         check('第一頁表格 100 列，且最前面是該月 3 筆待核准',
             (await tableLabels(page)).length === 100
             && JSON.stringify((await tableLabels(page)).slice(0, 3)) === JSON.stringify(augRows.slice(0, 3).map(rowLabel)));
@@ -447,10 +447,10 @@ async function run() {
         await waitProgress(page, '已顯示 100／5,535 筆');
         const allTotal = ALL_ROWS.reduce((sum, row) => sum + row.total_salary, 0);
         const statsRequests = sessionRequests.filter(r => r.params.get('select') === 'id,total_salary,paid_amount');
-        check('全部月份：表格 100 列、統計卡 5,535 筆且總薪資為全庫加總',
+        check('全部月份：表格 100 列、統計卡 5,535 筆且總報酬為全庫加總',
             (await tableLabels(page)).length === 100 && await statValue(page, '篩選筆數') === '5,535'
-            && await statValue(page, '總薪資') === money(allTotal),
-            `${await statValue(page, '總薪資')} vs ${money(allTotal)}`);
+            && await statValue(page, '總報酬') === money(allTotal),
+            `${await statValue(page, '總報酬')} vs ${money(allTotal)}`);
         check('統計以 1,000 筆一段分 6 次抓完，沒有一次抓全部明細',
             statsRequests.length === 6 && sessionRequests.filter(r => r.params.get('select') === '*').every(r => Number(r.params.get('limit')) <= 100),
             `stats=${statsRequests.length}`);
@@ -514,7 +514,7 @@ async function run() {
         // 在 2026/10 畫面新增一筆 2025-08-15 的紀錄：存檔後自動切到 2025/08，看得到剛存的那筆
         await monthSelect.selectOption('2026-10');
         await waitProgress(page, '已顯示全部 45 筆');
-        await page.getByRole('button', { name: '新增薪資紀錄' }).click();
+        await page.getByRole('button', { name: '新增報酬紀錄' }).click();
         const dialog = page.getByRole('dialog');
         await dialog.getByLabel('講師*').selectOption('10000000-0000-4000-8000-000000000000');  // 王大明
         await dialog.getByLabel('日期*').fill('2025-08-15');

@@ -1,7 +1,123 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-20（總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+
+---
+
+## 🧱 2026-10-20：課程頁章節改成網格（桌機一列 4 個）（🛠 已改完＋本機實測，尚未 commit／上線）
+
+**需求**：業主看「教你怎麼教 - 各種教學項目」課程頁截圖：「下方做成一列四個的呈現方式，不然這樣太長了」。
+
+**改動**（只動 `培訓web/src/pages/LessonView.jsx`）：頁面寬度 `max-w-3xl`→`max-w-6xl`（說明文字仍限 `max-w-3xl` 保持好讀）；
+章節卡片由單欄橫式改為網格 `grid-cols-2 md:grid-cols-3 lg:grid-cols-4`，卡片改直式（上：完成圈＋章節 N＋箭頭；中：標題／預覽各最多兩行；
+下：hashtag／影片數／文章數標籤貼底，同列等高）；無章節時空狀態改在網格外渲染。資料讀取、連結、進度計算都沒動。
+
+**證據（2026-10-20 本機實跑，沙盒外，mock Supabase）**：新腳本 `培訓web/scripts/verify-lesson-grid.mjs` 34/34 PASS——
+1440／1280／1024 每列 4/4/1、820 每列 3/3/3、375 每列 2/2/2/2/1；同列高度差 0px、標題 ≤2 行、整頁無橫向捲軸、卡片最窄 166px（手機）；
+已完成勾勾與「2 / 9 章節」、「4 影片」標籤正確、點卡片進入該章節、空課程顯示空狀態。章節區高度：桌機 555px（9 張卡片）。
+截圖 `培訓web/docs/verification/2026-10-20-lesson-grid/`（6 張），fresh agent 看圖判讀：網格、陰影、截斷、對齊皆無問題。ESLint 該檔 0 問題。
+
+**待辦**：業主同意後 commit 並上線（本 worktree 目前在 `security/restrict-contract-document-reads` 分支，上線需另拉到 main）。
+
+**地雷（既有、非本次）**：頂部選單列在 768px 以上就切成桌機版（`Layout.jsx:135` `hidden md:flex`），管理員選單項目多，平板寬（約 820px）
+時選單文字被擠成直排、右側使用者名稱被切掉；講師帳號項目較少是否也會擠到未驗。建議把切換點改到 `lg`。
+同 worktree 另有並行工作的未提交改動（`InstructorList.jsx`、`verify-instructor-list-layout.mjs`），非本次，commit 時勿混入。
+
+---
+
+## 🧹 2026-10-20：後台「講師資料總覽」表格版面修正（🛠 已改完＋本機實測，尚未 commit／上線）
+
+**需求**：業主截圖「這個頁面下面的欄位看起來亂亂的，有一些還有奇怪的換行」——「未認領」「未取得」被擠成直排、表頭「速解資格」斷兩行、最右邊「預覽表單」被外框切掉。
+
+**原因**：8 欄每格左右 24px 留白＋Email 獨立一欄，後台內容區最寬也只有 1216px（Layout `max-w-7xl`），整張表塞不下，標籤被擠成直排，外框 `overflow-hidden` 又把最右欄切掉。不是螢幕太小。
+
+**改了什麼**（只動 `培訓web/src/pages/admin/InstructorList.jsx`）：
+- Email 收進姓名欄下方（lg 最寬 14rem／xl 20rem，一般長度完整顯示、超長才截斷，滑過看全文），表格 8 欄→7 欄；留白 lg 10px／xl 16px；標籤、表頭、按鈕一律不換行。
+- 綁定～操作 6 欄寬度貼齊內容（`w-px`），多出來的寬度給「講師」欄；「操作」表頭改靠左、對準按鈕。
+- 表格改從 1024px（lg）起顯示，以下用卡片；1024–1279px 按鈕縮成「編輯／預覽」（aria-label 仍是完整名稱，舊驗證腳本不受影響）；外框改 `overflow-x-auto`，再擠也只會出現捲軸、不會切掉按鈕。
+- 卡片版：綁定／解綁緊跟認領標籤、地區顯示「N 個縣市」（原本只有數字）、按鈕獨立一行對齊；地區摘要抽成共用 `RegionSummary`。
+
+**證據（2026-10-20 本機實跑，沙盒外）**：新腳本 `node scripts/verify-instructor-list-layout.mjs` **49/49 PASS**（mock Supabase、1024／1280／1440 桌機＋900 平板：表頭 7 欄單行、28 個標籤單行、14 顆按鈕單行且沒被切、表格不超出外框、列高一致 69–70px、「操作」對準按鈕差 0px、精簡欄多餘空白 0px、一般長度 Email 不截斷、展開列跨 7 欄、卡片按鈕對齊；另派兩輪 agent 看截圖判讀，指出的欄距不均／操作標題錯位／卡片按鈕參差都已修）；截圖 `培訓web/docs/verification/2026-10-20-instructor-list-layout/`。回歸：`verify-claim-admin-ui` 6/6、`verify-admin-instructor-editor-ui` 3/3、`verify-contract-feature-enabled` 40/40（重生的 10-18 截圖已還原）、`npm run build` 通過、ESLint 0 問題。
+
+**待業主**：同意後上線（本 worktree 目前在 `security/restrict-contract-document-reads` 分支且有並行對話的 `LessonView.jsx` 改動，上線要另開乾淨 worktree 從 origin/main 只帶這個檔）。
+
+**地雷／順手發現（未處理）**：頂端導覽列在 900–1024px 寬時「我的課程」「後台管理」等會被擠成直排／兩行、「管理員」徽章斷行（`src/components/Layout.jsx`，所有頁共用，另案處理）。
+
+---
+
+## 🔒 2026-10-19：合約範本讀取只給已核准角色＋簽署 PDF 可信度評估（🟡 已完成、待業主套正式庫）
+
+**來源**：10-18 簽約重開的資安審查提到兩筆既有設計債（非該次引入）：① `contract_documents` 的 SELECT 政策是 `USING (true)`、
+storage 對 `contract-documents` bucket 非 `signed/` 路徑全體登入者可讀——任何 Google 帳號首次登入即為 `pending`，等於任何人登入後
+直打 PostgREST／Storage API 就能列出並下載「講師委任報酬表」等範本；② 簽署 PDF 由瀏覽器產生再上傳，RPC 只驗存在不驗內容。
+
+**第一部分（已實作，分支 `security/restrict-contract-document-reads`，未推 main、未碰正式 Supabase）**：
+- 新 migration `supabase/migrations/20261019103000_restrict_contract_document_reads.sql`（可重複執行、只改政策）：
+  `contract_documents` 讀取改為單一政策「Approved roles can read contract documents」＝`users.role IN ('teacher','mentor','admin')`，
+  同時移除舊的 `USING (true)` 政策與後台若手動加過的其他 SELECT 專用政策（迴圈清掉，permissive 政策是 OR 關係，留著等於沒收緊），
+  並 `REVOKE ALL … FROM anon`；管理員 FOR ALL 政策不動。storage 的「read contract documents scoped」重建：本人 `signed/<uid>/`、
+  admin／mentor 整個 bucket 兩條規則原樣保留，**非 `signed/` 路徑（範本）改為只給已核准角色**。`contracts_setup.sql` 同步同一組政策。
+- 前端：`featureFlags.canAccessInstructorContracts` 原本開關打開時對 pending 也回 true，待審帳號的個人頁會顯示「尚未簽約」區塊並查
+  `contract_documents`（點進 `/contract` 又被導回待審頁）；改為只有 teacher／mentor（admin 永遠可）才為 true，與後端 RLS 一致。
+  pending 可到達的路由只有 `/profile`（allowPending），其餘 `/contract`、`/contract/view`、所有 `/admin/*` 都會把 pending 導走，
+  所以前端沒有任何 pending 需要讀 `contract_documents` 的路徑（驗證腳本有靜態檢查）。
+- 新驗證腳本 `scripts/verify-contract-document-reads.{mjs,sql}`、npm `verify:contract-document-reads`。
+
+**證據（2026-10-19 本機實跑，沙盒外）**：`npm run verify:contract-document-reads` SQL 11 項 PASS＋靜態 4 項：引導區先重現漏洞
+（pending 讀到 6 列文件、5 個範本檔）→ migration 連跑兩次 → `contract_documents` 只剩 1 條 SELECT 政策＋管理員 FOR ALL、storage 讀取政策
+1 條且含 teacher 條件、anon 無表級權限（直查回 42501、storage 0 列）；pending 文件 0 列、範本 0 檔、只看得到自己 `signed/` 底下那個檔、不能寫；
+teacher 看到的列與收緊前相同（全部 6 列；簽約頁 3 份且順序 rules→compensation→contract；個人頁版本比對 3；合約檢視頁 4；匯款表單模板取到 v2），
+範本 5 檔可讀、自己的簽署檔可讀、別人的 `signed/` 讀不到、不能寫；mentor 讀全部 6 列與 bucket 全部 9 檔（行為未變）；admin 讀全部、講師名單 1、
+下載中心 2、增改刪照常；新建庫路徑（`contracts_setup.sql` 兩次＋再疊 migration）政策集合相同。另 `npm run verify:contract-signing`
+16＋3 項 PASS、`npm run verify:contract-signing:browser` 40/40（截圖重生後已還原，不入本 commit）、`npm test` 74/74（新增 featureFlags 2 項）、
+`npm run build` 通過、變更檔 ESLint 0 問題（全專案 5 個既有問題在 FieldPositionEditor／ContractView／AssignmentReview／ProgressOverview，非本次）、
+`git diff --check` 乾淨。
+
+**待業主**：① 在 Supabase SQL Editor 以單一交易套用 `20261019103000_restrict_contract_document_reads.sql`（只改政策、不動資料；
+套用後 pending 帳號個人頁不再顯示簽約區塊、講師與管理員不受影響）；② 套完合併本分支到 main 推前端（順序無硬性要求：先套 migration 時，
+pending 的個人頁查詢只是回 0 列不報錯；先推前端時 pending 單純看不到區塊）；③ 套用後用一個 pending 帳號對 `/rest/v1/contract_documents`
+與 `/storage/v1/object/contract-documents/<範本路徑>` 各打一次確認拿不到，再用講師帳號開簽約頁確認三份文件仍載入。
+
+**第二部分（評估，未實作）**：`培訓web/docs/decisions/2026-10-19-signed-pdf-trust-options.md`。結論：**建議先做輕量方案 B**
+（範本上傳時記 SHA-256、已被引用的版本凍結不可改、RPC 寫入時由伺服器端把範本雜湊抄進 `instructor_contracts`、管理員可隨時重製 PDF，
+估 0.5–1 天、零新基礎設施）；伺服器端套印（Edge Function）估 3–5 天，要新增 Deno 部署管線與嵌入繁中字型，留待法務要求「PDF 檔本身必須是正本」
+或簽約量成長時再做。文件第 5 節另列「mentor 是否該讀 `signed/` 檔」：現況 mentor 可用 Storage API 列出並下載所有講師含個資的簽署 PDF，
+但畫面上沒有合約入口（「畫面沒有、API 有」）；建議選②從 storage 政策拿掉 mentor 的整個 bucket 讀取，業主決定。
+
+**地雷**：`contract_field_positions` 的 SELECT 仍是 `USING (true)`（只有座標、無個資，先不動）。驗證腳本在沙盒內會因 PostgreSQL 共享記憶體
+（`shmget: Operation not permitted`）起不來，要在沙盒外跑並帶 `LC_ALL=C`。
+
+---
+
+## 👥 2026-10-19 晚：表單新講師 10 位建檔（✅ 正式庫已寫入）
+
+**需求**：業主說「表單回應1」約第 213 列以後有新老師加入，請為他們建檔。來源是「講師 資料總表 23年啟用永久版」試算表的「表單回應1」分頁，最後一列是第 227 列。
+**比對（唯讀）**：第 201～227 列共 27 位，以 Email 和姓名比對 `instructors`：有 17 位已有主檔（第 213 列曾唯銘、214 謝祐萱、216 黃于倫、222 蔣礪等），**10 位沒有**：
+第 217 楊宙學、218 林俊諺、219 王晨瑄、220 劉浩鈞、221 方羿淳、223 藍恩熹、224 江鎧任、225 呂姿瑩、226 陳鈺昊、227 羅青昊。
+10 位都沒有登入帳號（`auth.users`、`public.users` 皆無）。
+
+**做法**：在 Supabase SQL Editor 跑單一交易（業主的 Chrome 分頁，業主在對話同意「10 位全部建」「上課紀錄要，順便掛上」）。
+- 欄位對應與正規化沿用 `scripts/instructor_data_reconciliation.py`：clean、性別依身分證、生日、地區、bio_notes 組合、戶籍／通訊地址分欄、`nickname`＝Line 名字。
+- 另有 3 處補充規則：手機少了開頭 0 就補回（試算表吃掉的）、「苗栗市」對到苗栗縣、Email 存小寫。
+- 等級一律「實習」（10 位表單都選實習講師），`employment_status`＝`active`。身分證、存摺照片的 Drive 連結也寫入。
+- 每列 `note_internal`＝「2026-10-19 依講師資料總表「表單回應1」第 N 列建檔（後台代建，未認領）」，之後就靠這句話找回這 10 筆。
+- **銀行分欄（bank_code／name／branch／account）刻意留空**：手邊沒有金管會機構代號表，不猜；而且這些欄位寫入後講師本人就改不了。匯款原文存在 `bank_info_raw`。
+- 同一交易把 3 位既有的 4 筆上課紀錄掛上 `instructor_id`（10/19 新總表匯入的：楊宙學 9/1 兩筆、藍恩熹 9/12、陳鈺昊 9/12），金額與狀態不動。
+
+**證據**：
+- 先跑預演（同一份腳本，結尾故意拋錯取消），回 `REHEARSAL_OK 主檔 10 身分證正面 10 反面 10 相片 9 存摺 10 上課紀錄 4`。之後查講師總數仍 265、未掛紀錄仍 4，確認沒留下東西。
+- 正式跑回 Success。讀回核對：新列 10、講師總數 265→275、10 位皆未認領、Email 全庫唯一（首次 Google 登入能自動認領，不會撞名）、存摺連結 10、銀行分欄 10 位皆空、4 筆上課紀錄已掛上且仍是 approved（300／375／1950／1641）、未掛紀錄 0。
+- 正式站 `teacher.dreamcube.tw/admin/instructors` 頁面文字可找到全部 10 個姓名。
+
+**副作用（預期內）**：楊宙學 9/1 兩筆同日同課名（臺中科博館－預約課程，300 與 375），掛上講師後 `detect_session_anomaly` 把其中 375 那筆標為「同講師同日同課程名可能重複」。後台「異常」數會多 1，請業主看一眼是否真的是兩堂。
+
+**待辦／地雷**：
+- 藍恩熹：沒有身分證字號（表單填「沒有」，智利籍），地址只寫「台南」，匯款原文看不出銀行，講師照片沒上傳。需本人補資料；是否要居留證號請業主決定。
+- 陳鈺昊：2010-05-01 生，未滿 18 歲。簽約是否需要法定代理人同意，請業主確認。
+- 10 位第一次登入會被導到個人資料頁補銀行分欄（系統原本就這樣設計）。
+- 還原方法：先把 `class_sessions` 中 `instructor_id` 屬於這 10 位（用上面那句 `note_internal` 找）的紀錄改回 null，再刪除 `note_internal like '2026-10-19 依講師資料總表「表單回應1」%' and user_id is null` 的列。
+- 下次再有新表單回應，可照同一流程，從第 228 列往後比對。
 
 ---
 
@@ -125,6 +241,50 @@ pending 排最前無法在正式資料上看到）；2025/08 內搜尋第一位�
 乾淨的 `origin/main` `0019174` 同樣失敗，屬第二版未同步更新的舊腳本，非本次引入；後台那段的 HEAD 計數 mock 已由本次補上。
 → 已修（分支 `fix/speed-salary-verify-v2-form`，只改測試腳本）：講師段改照第二版三層選課（B2C → 速解研究所｜實體課程）、
 填課程名稱／時數下拉／人數；未取得資格那段改為時數人數都填好、只剩「沒有速解資格」才待核薪，並驗送出的課程類型；`npm run build` 後 13/13 PASS、ESLint 0。
+
+## 🧭 2026-10-19（第三版）：全站「薪資」改「報酬」、合作單位分寒暑假／學期間、期間文字照表單、到府課免選報酬項目（✅ 正式環境已上線）
+
+**需求（業主 2026-10-19 晚間）**：① 全部提到「薪資」的部分改成「報酬」；② B2B 寒暑假和學期間兩題分開，後台可各自改，選到某個期間時下面的單位選項對應好；
+③ 寒假／學期間／暑假文字要和表單一樣（2026年寒假、115學年度上學期、2026年暑假），後台可設定、好設定且直覺；④ B2C 上課日期欄位位置固定，不要跳來跳去；
+⑤ 到府課不要「報酬項目」（同時有到府 1.5 又可選時數很怪）。
+
+**做法**：
+- **migration `supabase/migrations/20261019220000_partner_units_by_term_and_period_labels.sql`**（可重複執行，只加欄位與回填，不刪資料、不動 RLS／RPC）：
+  `salary_report_options` 加 `term_scope`（vacation＝寒暑假、semester＝學期間；只有 partner_unit 有值）；回填 10/18 種子的 78 個單位（名稱含「115上」或 sort_order ≥ 490 → 學期間，
+  其餘寒暑假 → 48／30）；加 CHECK（合作單位必有組別且只能是這兩值，其他種類必為 NULL；**明寫 IS NOT NULL**，否則 NULL 會讓 CHECK 放行——隔離庫測出來才補的）；
+  期間三列 label 只在仍是預設「寒假／學期間／暑假」時改成表單文字，管理員改過的不覆寫。`2025_salary_system.sql` 同步欄位與索引。UNIQUE (kind, value) 不變 → 同一單位名稱不能同時在兩組。
+- **講師回報頁 `MySalaryNew.jsx`**：上課日期固定在「回報類別」之後第二格，三個類別都一樣；選期間才出現對應那組單位（未選期間時下拉停用並提示「請先選擇教學課程期間」；
+  換期間會清掉已選單位；選項還沒有 term_scope 時退回整份清單不擋回報）；到府課不顯示報酬項目，時數 ≤ 1.5 自動送 `onsite_1_5hr`、其餘 `onsite_2hr`（`deriveCourseType`）。
+- **後台回報選項管理頁**（sonnet agent 實作，主對話覆核）：合作單位分頁改兩顆切換鈕「寒暑假清單／學期間清單」各自新增、組內排序、每列可「移到另一組」；
+  期間分頁改三列固定卡片（用途／講師會看到的文字／帶出哪組清單）＋說明「每學期開始前改成當期名稱，例如 115學年度下學期、2027年寒假」。
+- **「薪資」→「報酬」**：`MySalary.jsx`、`MySalaryNew.jsx`、`SalaryRegister.jsx`（頁名改「報酬登記中心」）、`Dashboard.jsx`、`NotificationManager.jsx`、`PrivacyPolicy.jsx`、`salary.js`、
+  `SalaryReportOptionsManager.jsx`、`salaryReportOptions.js` 與相關驗證腳本；程式識別字（salary）與網址（/admin/salary）不變。「核薪」「待核薪」沒有「薪資」二字，維持原樣。
+
+**驗證（主對話 2026-10-19 親跑）**：`npm test` 106/106；`npm run verify:salary-report-form`（隔離 PostgreSQL）全 PASS，含新增 (g) 回填 48／30、含 115上 的列全在學期間、
+預設期間文字已改、管理員改過的保留、migration 連跑兩次；(h) CHECK 擋無組別／怪組別／非合作單位帶組別；新建庫路徑 2025 → 20260826 → 20261018 → 20261019 可用；
+`verify:salary-report-form:browser` 50/50（新增：日期固定第二格 ×3 類別、到府無報酬項目、時數 2→onsite_2hr／1.5→onsite_1_5hr、期間文字照表單、選寒假只列寒暑假清單、
+改學期間清掉已選單位、未選期間提示）；`verify:salary-report-options:browser` 56/56；`npm run build` 通過；ESLint 0；`git diff --check` 乾淨；src 內「薪資」0 處。
+截圖：`docs/verification/2026-10-19-salary-report-form-channel/`（10 張）與 `docs/verification/2026-10-18-salary-report-options/`（6 張，本次覆寫）。
+
+**追加（2026-10-19 深夜，業主：「核薪／待核薪改成核准和待核准，有薪這個字全名不就是薪資嗎」）**：介面文字「待核薪」→「待核准」、「核薪」→「核准」、
+「時薪」→「每小時」；後台報酬登記中心原本「（待核薪 N）」改為「（N 筆尚無金額）」，保留「還沒有金額」這個資訊（否則與既有的「待核准」狀態分不出來）。
+`pricing_status=needs_review` 的意義不變（仍是管理員要填金額），只是講師與管理員看到的字一樣叫「待核准」。驗證：`npm test` 106/106、變更檔 ESLint 0、
+`verify-speed-salary-ui` 9/9、`verify:salary-report-form:browser` 51/51、build 通過；src／scripts 內「薪」字 0 處（另一條工作線的 `salaryRegisterQuery.js` 註解除外）。
+**上線證據**：業主「可以，推上 main 部署」後 `52f2b4a` fast-forward 推上 `main`（15:39 UTC），GitHub deployment `7178131174` success（15:40:50 UTC）；
+每 60 秒探測正式站，15:41 起連續 5 次命中 `index-CX0z0Cbk.js`（SHA-256 前綴 `37d682368cc6e644`），內含「筆尚無金額」、不含「核薪／待核薪／時薪」。
+
+**正式環境證據（2026-10-19 23:15–23:32 台北）**：業主指示「可以，幫我把 migration 貼進 Supabase SQL Editor，我按 Run，然後推上 main 部署」，
+隨後明確要求「你按 Run」。Claude 透過 Chrome 擴充功能在 DreamCube_teacher（PRODUCTION，ref `mnovjlicwzwkefkhstte`）SQL Editor 先跑唯讀核對：
+term_scope 欄位 0、合作單位 78、sort_order ≥ 490 者 30、含「115上」28、期間文字仍為預設、種子後無新增單位——與 migration 假設一致；
+再以 `BEGIN … COMMIT` 單一交易套用 `20261019220000`，回 Success；套用後核對：欄位 1、約束 1、寒暑假 48、學期間 30、無組別 0、非合作單位帶組別 0、
+總數 112 不變、三個期間文字為「2026年寒假／115學年度上學期／2026年暑假」、學期間不含「115上」者 2（與種子相符）。
+接著 `e781745` fast-forward 推上 `main`（15:23 UTC），GitHub deployment `7177831901` success（15:24:44 UTC）；每 60 秒探測正式站，15:28 起連續 5 次
+命中新程式包 `index-65O15yza.js`（SHA-256 前綴 `93388917308a7dd7`），內含「請先選擇教學課程期間，再選單位」與「報酬登記中心」、不含「薪資登記中心」。
+驗證過程未送出任何回報、未改既有回報資料。
+
+**原上線順序（已照做）**：① 業主在 Supabase SQL Editor 套 `20261019220000_partner_units_by_term_and_period_labels.sql`（只加欄位、回填、改三個 label）；
+② 再推 main。順序反了，新前端 select 的 `term_scope` 欄位不存在 → 選項讀取失敗 → 退回自由輸入（可回報但沒有下拉）。先套 migration 時舊前端照常運作。
+套完可在後台「回報選項管理 → 合作單位」確認兩組筆數 48／30，分錯的用「移到另一組」調整。
 
 ## 🧭 2026-10-19（第二版）：回報頁欄位與選項對齊兩份 Google 表單（✅ 正式環境已上線）
 

@@ -101,3 +101,10 @@ export const TERM_PERIOD_LABELS = {
     semester: '學期間',
     summer_break: '暑假',
 };
+
+// 合作單位清單分兩組（salary_report_options.term_scope）：寒假／暑假 → 寒暑假清單、學期間 → 學期間清單
+export const TERM_SCOPE_LABELS = { vacation: '寒暑假清單', semester: '學期間清單' };
+export const termScopeFor = (termPeriod = '') => {
+    if (!termPeriod) return null;
+    return termPeriod === 'semester' ? 'semester' : 'vacation';
+};

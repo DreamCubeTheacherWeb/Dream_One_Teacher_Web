@@ -30,18 +30,18 @@ const checks = [
         assert.doesNotMatch(mySalaryNew, /from\('class_sessions'\)\.insert/);
     }],
     ['講師送出前會向後端試算', () => assert.match(mySalaryNew, /getSalaryQuote/)],
-    ['缺資格顯示待核薪而非零元', () => {
-        assert.match(quotePanel, /待管理員核薪/);
-        assert.match(salaryHelpers, /待核薪/);
+    ['缺資格顯示待核准而非零元', () => {
+        assert.match(quotePanel, /待管理員核准/);
+        assert.match(salaryHelpers, /待核准/);
         assert.match(mySalary, /pricing_status === 'needs_review'/);
     }],
-    ['管理端薪資登記已解除遮罩並提供手機待處理清單', () => {
+    ['管理端報酬登記已解除遮罩並提供手機待處理清單', () => {
         assert.doesNotMatch(salaryRegister, /尚未啟用，敬請期待/);
         assert.match(salaryRegister, /const SalaryCard/);
         assert.match(salaryRegister, /待處理/);
     }],
     ['管理端改價必須留下原因', () => {
-        assert.match(salaryRegister, /人工調整薪資時必須填寫調整原因/);
+        assert.match(salaryRegister, /人工調整報酬時必須填寫調整原因/);
         assert.match(salaryRegister, /manual_adjustment_reason/);
     }],
     ['管理端可重新試算與退回回報', () => {

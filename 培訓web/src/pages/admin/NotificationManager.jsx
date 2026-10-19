@@ -341,7 +341,7 @@ const NotificationManager = () => {
                             value={scheduleForm.title}
                             onChange={(e) => setScheduleForm((f) => ({ ...f, title: e.target.value }))}
                             className="bh-input"
-                            placeholder="例：每月薪資公告提醒"
+                            placeholder="例：每月報酬公告提醒"
                         />
                     </div>
                     <div>

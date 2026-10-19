@@ -60,7 +60,7 @@ const SalaryRegister = () => {
     const { profile } = useAuth();
     const [sessions, setSessions] = useState([]);
     const [instructors, setInstructors] = useState([]);
-    const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核薪、異常、月份選項
+    const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核准、異常、月份選項
     const [listTotal, setListTotal] = useState(0);   // 目前篩選條件下的總筆數（伺服器端計算）
     const [fetchedCount, setFetchedCount] = useState(0);  // 已向伺服器抓到的原始筆數＝下一頁的起點
     const [stats, setStats] = useState(EMPTY_STATS);
@@ -102,7 +102,7 @@ const SalaryRegister = () => {
         if (requestId !== overviewRequest.current) return;
         const failed = results.find((result) => result.error);
         if (failed) {
-            setLoadError(salaryErrorMessage(failed.error, '薪資資料載入失敗，請稍後再試。'));
+            setLoadError(salaryErrorMessage(failed.error, '報酬資料載入失敗，請稍後再試。'));
             setLoading(false);
             return;
         }
@@ -148,7 +148,7 @@ const SalaryRegister = () => {
             setFetchedCount(0);
             setListTotal(0);
             setStats(EMPTY_STATS);
-            setLoadError(salaryErrorMessage(error, '薪資資料載入失敗，請稍後再試。'));
+            setLoadError(salaryErrorMessage(error, '報酬資料載入失敗，請稍後再試。'));
         }
         if (requestId === listRequest.current) setLoading(false);
     }, [filters, monthFilter]);
@@ -247,7 +247,7 @@ const SalaryRegister = () => {
         <div className="p-4 sm:p-8">
             <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
                 <div>
-                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">薪資登記中心</h1>
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">報酬登記中心</h1>
                     <p className="text-bauhaus-black/60 font-medium mt-1 text-sm">
                         先處理講師回報，確認報酬規則後再核准與付款。共 {overview ? overview.total.toLocaleString() : '…'} 筆紀錄。
                     </p>
@@ -264,7 +264,7 @@ const SalaryRegister = () => {
                         disabled={!overview || Boolean(loadError)}
                         className="bh-btn bh-btn-blue px-4 py-2.5"
                     >
-                        <Plus className="w-4 h-4" /> 新增薪資紀錄
+                        <Plus className="w-4 h-4" /> 新增報酬紀錄
                     </button>
                 </div>
             </div>
@@ -276,7 +276,7 @@ const SalaryRegister = () => {
                             aria-pressed={statusFilter === 'pending'}
                             className={`bh-btn px-4 py-2.5 ${statusFilter === 'pending' ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bh-btn-outline'}`}>
                             <Clock className="w-4 h-4" />待處理 {pendingCount}
-                            {needsPricingCount > 0 && <span className="text-xs">（待核薪 {needsPricingCount}）</span>}
+                            {needsPricingCount > 0 && <span className="text-xs">（{needsPricingCount} 筆尚無金額）</span>}
                         </button>
                     )}
                     {anomalyCount > 0 && (
@@ -291,7 +291,7 @@ const SalaryRegister = () => {
             {/* 統計卡 */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                 <StatCard label="篩選筆數" value={stats.count.toLocaleString()} idx={0} />
-                <StatCard label="總薪資" value={`$${Math.round(stats.total).toLocaleString()}`} color="text-bauhaus-blue" idx={1} />
+                <StatCard label="總報酬" value={`$${Math.round(stats.total).toLocaleString()}`} color="text-bauhaus-blue" idx={1} />
                 <StatCard label="已付款" value={`$${Math.round(stats.paid).toLocaleString()}`} color="text-bauhaus-blue" idx={2} />
                 <StatCard label="未付款" value={`$${Math.round(stats.unpaid).toLocaleString()}`} color="text-bauhaus-red" idx={0} />
             </div>
@@ -352,7 +352,7 @@ const SalaryRegister = () => {
                                     <th className="px-4 py-3 text-left">講師</th>
                                     <th className="px-4 py-3 text-left">課程</th>
                                     <th className="px-4 py-3 text-right">時數/人</th>
-                                    <th className="px-4 py-3 text-right">薪資</th>
+                                    <th className="px-4 py-3 text-right">報酬</th>
                                     <th className="px-4 py-3 text-right">獎金</th>
                                     <th className="px-4 py-3 text-right">總計</th>
                                     <th className="px-4 py-3 text-left">狀態</th>
@@ -418,13 +418,13 @@ const recordState = (session) => {
         return { label: '已退回', color: 'bg-bauhaus-red text-white', icon: AlertTriangle, unpriced: true };
     }
     if (session.pricing_status === 'needs_review') {
-        return { label: '待核薪', color: 'bg-bauhaus-yellow text-bauhaus-black', icon: Clock, unpriced: true };
+        return { label: '待核准', color: 'bg-bauhaus-yellow text-bauhaus-black', icon: Clock, unpriced: true };
     }
     const status = STATUS_STYLES[session.status] || STATUS_STYLES.approved;
     return { ...status, unpriced: false };
 };
 
-// 對齊 Google 課後回報表單的欄位：期間、單位／梯次、教材、交通補助（只顯示，不影響核薪）
+// 對齊 Google 課後回報表單的欄位：期間、單位／梯次、教材、交通補助（只顯示，不影響核准）
 const ReportExtras = ({ session }) => {
     const items = [];
     if (session.term_period) items.push(['期間', TERM_PERIOD_LABELS[session.term_period] || session.term_period]);
@@ -490,7 +490,7 @@ const SalaryRow = ({ session, onEdit }) => {
                 }
             }}
             tabIndex={0}
-            aria-label={`開啟 ${s.instructor_name} ${s.session_date} 薪資紀錄`}
+            aria-label={`開啟 ${s.instructor_name} ${s.session_date} 報酬紀錄`}
             className={`cursor-pointer ${s.is_anomaly ? 'bg-bauhaus-red/10 hover:bg-bauhaus-red/20' : s.status === 'pending' ? 'bg-bauhaus-yellow/20 hover:bg-bauhaus-yellow/30' : 'hover:bg-bauhaus-cream'}`}
         >
             <td className="px-4 py-3">
@@ -587,7 +587,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
             } catch (err) {
                 if (active) {
                     setQuote(null);
-                    setQuoteError(salaryErrorMessage(err, '薪資試算失敗，請稍後再試。'));
+                    setQuoteError(salaryErrorMessage(err, '報酬試算失敗，請稍後再試。'));
                 }
             } finally {
                 if (active) setQuoteLoading(false);
@@ -628,12 +628,12 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
             });
         } catch (err) {
             setSaving(false);
-            setError(salaryErrorMessage(err, '薪資試算失敗，請稍後再試。'));
+            setError(salaryErrorMessage(err, '報酬試算失敗，請稍後再試。'));
             return;
         }
         if (!freshQuote) {
             setSaving(false);
-            setError('薪資試算沒有回傳結果，請稍後再試');
+            setError('報酬試算沒有回傳結果，請稍後再試');
             return;
         }
         const instr = instructors.find(i => i.id === form.instructor_id);
@@ -647,7 +647,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
 
         if (isManual && !form.manual_adjustment_reason.trim()) {
             setSaving(false);
-            setError('人工調整薪資時必須填寫調整原因');
+            setError('人工調整報酬時必須填寫調整原因');
             return;
         }
 
@@ -671,7 +671,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
             base_salary: unresolved ? null : (hasManualAmount ? Number(form.base_salary) : freshQuote?.base_salary ?? null),
             bonus: form.bonus ? Number(form.bonus) : 0,
             pricing_status: isManual ? 'manual_override' : (unresolved ? 'needs_review' : 'quoted'),
-            pricing_message: isManual ? '管理員人工調整薪資' : freshQuote?.message,
+            pricing_message: isManual ? '管理員人工調整報酬' : freshQuote?.message,
             pricing_quoted_at: new Date().toISOString(),
             manual_adjustment_reason: isManual ? form.manual_adjustment_reason.trim() : null,
             notes: form.notes || null,
@@ -698,8 +698,8 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
         <div className="fixed inset-0 bg-bauhaus-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
             <form role="dialog" aria-modal="true" aria-labelledby="add-salary-title" className="bh-card shadow-hard-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto" onSubmit={submit} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between p-6 border-b-2 border-bauhaus-black">
-                    <h2 id="add-salary-title" className="text-xl font-black text-bauhaus-black">新增薪資紀錄</h2>
-                    <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-bauhaus-black/50 hover:text-bauhaus-black hover:bg-bauhaus-muted" aria-label="關閉新增薪資紀錄">
+                    <h2 id="add-salary-title" className="text-xl font-black text-bauhaus-black">新增報酬紀錄</h2>
+                    <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-bauhaus-black/50 hover:text-bauhaus-black hover:bg-bauhaus-muted" aria-label="關閉新增報酬紀錄">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -754,7 +754,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
 
                     <SalaryQuotePanel quote={quote} loading={quoteLoading} error={quoteError} />
 
-                    <Field label={quote?.needs_review ? '人工核定基本薪資（可留空待後續處理）' : '最終基本薪資'}>
+                    <Field label={quote?.needs_review ? '人工核定基本報酬（可留空待後續處理）' : '最終基本報酬'}>
                         <input type="number" value={form.base_salary} onChange={e => setForm({ ...form, base_salary: e.target.value })}
                             className="bh-input" />
                     </Field>
@@ -806,7 +806,7 @@ const Field = ({ label, children, full = false }) => (
 
 
 // ───────────────────────────────────────────────────────────────
-// 編輯/審核 Modal:可改薪資、狀態、付款金額,並做核薪動作
+// 編輯/審核 Modal:可改報酬、狀態、付款金額,並做核准動作
 // ───────────────────────────────────────────────────────────────
 const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) => {
     useDialogDismiss(onClose);
@@ -856,7 +856,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                 manual_adjustment_reason: '',
             }));
         } catch (err) {
-            setQuoteError(salaryErrorMessage(err, '薪資試算失敗，請稍後再試。'));
+            setQuoteError(salaryErrorMessage(err, '報酬試算失敗，請稍後再試。'));
         } finally {
             setQuoteLoading(false);
         }
@@ -871,7 +871,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
         const salaryChanged = Number(form.base_salary || 0) !== Number(session.base_salary || 0);
 
         if (form.manual_override && (form.base_salary === '' || !form.manual_adjustment_reason.trim())) {
-            setError('人工調整薪資必須填寫金額與原因');
+            setError('人工調整報酬必須填寫金額與原因');
             return;
         }
         if (!form.session_date || form.session_date > TAIPEI_TODAY) {
@@ -887,7 +887,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
             return;
         }
         if ([form.base_salary, form.bonus, form.paid_amount].some(value => value !== '' && Number(value) < 0)) {
-            setError('薪資、獎金與已付金額不得為負數');
+            setError('報酬、獎金與已付金額不得為負數');
             return;
         }
         if (!form.manual_override && pricingInputsChanged && !calculatedQuote) {
@@ -895,7 +895,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
             return;
         }
         if (!form.manual_override && salaryChanged && !calculatedQuote) {
-            setError('直接變更基本薪資時，請勾選人工調整並填寫原因');
+            setError('直接變更基本報酬時，請勾選人工調整並填寫原因');
             return;
         }
         const nextStatus = overrides.status || form.status;
@@ -927,7 +927,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                 pricing_status: 'manual_override',
                 pricing_basis: 'manual',
                 pricing_label: '人工調整',
-                pricing_message: '管理員人工調整薪資',
+                pricing_message: '管理員人工調整報酬',
                 manual_adjustment_reason: form.manual_adjustment_reason.trim(),
             });
         } else if (calculatedQuote) {
@@ -992,7 +992,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                 <div className="flex items-center justify-between p-6 border-b-2 border-bauhaus-black">
                     <div>
                         <h2 id="edit-salary-title" className="text-xl font-black text-bauhaus-black">
-                            審核 / 編輯薪資紀錄
+                            審核 / 編輯報酬紀錄
                         </h2>
                         <p className="text-sm text-bauhaus-black/60 mt-0.5">
                             {session.instructor_name} {session.instructor_role_at_time && `(${session.instructor_role_at_time})`}
@@ -1000,7 +1000,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                             {session.source === 'historical_import' && <span className="bh-chip ml-2 bg-bauhaus-muted text-bauhaus-black">歷史匯入</span>}
                         </p>
                     </div>
-                    <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-bauhaus-black/50 hover:text-bauhaus-black hover:bg-bauhaus-muted" aria-label="關閉薪資紀錄">
+                    <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-bauhaus-black/50 hover:text-bauhaus-black hover:bg-bauhaus-muted" aria-label="關閉報酬紀錄">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -1073,11 +1073,11 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                     </Field>
                 </div>
 
-                {/* 薪資區塊 */}
+                {/* 報酬區塊 */}
                 <div className="mx-6 mb-4 bg-bauhaus-cream rounded-xl border-2 border-bauhaus-black p-4">
                     <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                         <div>
-                            <div className="text-xs font-bold text-bauhaus-black/70 uppercase tracking-widest">薪資設定</div>
+                            <div className="text-xs font-bold text-bauhaus-black/70 uppercase tracking-widest">報酬設定</div>
                             <div className="text-xs text-bauhaus-black/50 mt-1">
                                 原採用：{session.pricing_label || session.instructor_role_at_time || '舊資料'}
                                 {session.pricing_message && ` · ${session.pricing_message}`}
@@ -1090,7 +1090,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                     </div>
                     <SalaryQuotePanel quote={calculatedQuote} loading={quoteLoading} error={quoteError} />
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <Field label="基本薪資">
+                        <Field label="基本報酬">
                             <input type="number" min="0" value={form.base_salary} onChange={e => setForm({ ...form, base_salary: e.target.value })}
                                 className="bh-input" />
                         </Field>
@@ -1115,7 +1115,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                             onChange={e => setForm({ ...form, manual_override: e.target.checked })}
                             className="w-5 h-5 accent-bauhaus-blue"
                         />
-                        人工調整基本薪資
+                        人工調整基本報酬
                     </label>
                     {form.manual_override && (
                         <div className="mt-3">

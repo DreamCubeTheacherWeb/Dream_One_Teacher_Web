@@ -1,13 +1,25 @@
 // 後台「回報選項管理」的純函式：排序、驗證、下一個排序值、上移／下移。
 // 不碰網路與畫面，方便 node --test 直接驗證。
 
+import { TERM_PERIOD_LABELS, TERM_SCOPE_LABELS, termScopeFor } from './constants.js';
+
 export const OPTION_LABEL_MAX = 200;
 export const SORT_STEP = 10;
 
 // 三個分頁；term_period 的 value 是固定代碼，只允許改名與啟用，不可新增
 export const OPTION_KINDS = [
-    { kind: 'term_period', title: '教學課程期間', canAdd: false, hint: '寒假、學期間、暑假是系統固定代碼，只能改顯示文字或停用。' },
-    { kind: 'partner_unit', title: '合作單位', canAdd: true, hint: '合作課講師回報時的「本次上課單位」下拉選項。' },
+    {
+        kind: 'term_period',
+        title: '教學課程期間',
+        canAdd: false,
+        hint: '這裡的文字會原樣出現在講師回報頁的下拉；每學期開始前改成當期名稱，例如「115學年度下學期」「2027年寒假」。寒假與暑假會帶出寒暑假清單，學期間帶出學期間清單。',
+    },
+    {
+        kind: 'partner_unit',
+        title: '合作單位',
+        canAdd: true,
+        hint: '合作課講師回報時的「本次上課單位」下拉選項。講師選了寒假或暑假會看到「寒暑假清單」，選了學期間會看到「學期間清單」。',
+    },
     { kind: 'camp_batch', title: '營隊梯次', canAdd: true, hint: '營隊課講師回報時的「營隊梯次」下拉選項。' },
 ];
 
@@ -23,6 +35,31 @@ export const sortOptions = (options) => [...(Array.isArray(options) ? options : 
 export const optionsOfKind = (options, kind) => sortOptions(
     (Array.isArray(options) ? options : []).filter((option) => option?.kind === kind),
 );
+
+// 合作單位的兩組清單（salary_report_options.term_scope）
+export const TERM_SCOPES = ['vacation', 'semester'];
+export const scopeLabel = (scope) => TERM_SCOPE_LABELS[scope] || scope;
+export const otherScope = (scope) => (scope === 'semester' ? 'vacation' : 'semester');
+
+// 該分頁裡屬於某一組清單的列（只對 partner_unit 有意義）
+export const optionsOfScope = (options, kind, scope) => sortOptions(
+    (Array.isArray(options) ? options : []).filter((option) => option?.kind === kind && option?.term_scope === scope),
+);
+
+// 把單位移到另一組：回傳要送出的 patch；排序接在目標組最後（目標組最大值＋10）
+export const planScopeChange = (kindOptions, id, targetScope) => {
+    const list = Array.isArray(kindOptions) ? kindOptions : [];
+    const row = list.find((option) => option.id === id);
+    if (!row || !TERM_SCOPES.includes(targetScope) || row.term_scope === targetScope) return null;
+    const target = list.filter((option) => option.term_scope === targetScope);
+    return { term_scope: targetScope, sort_order: nextSortOrder(target) };
+};
+
+// 教學課程期間三列：用途（寒假／學期間／暑假）與它會帶出哪一組清單
+export const termPeriodInfo = (value) => ({
+    usage: TERM_PERIOD_LABELS[value] || String(value ?? ''),
+    scopeLabel: TERM_SCOPE_LABELS[termScopeFor(value)] || '',
+});
 
 // 新增時的排序預設：目前最大值＋10（沒有任何選項時為 10）
 export const nextSortOrder = (options) => {

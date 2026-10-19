@@ -104,9 +104,9 @@ async function handleRoute(route) {
             needs_review: needsReview,
             is_speed_course: isSpeed,
             message: missingQualification
-                ? '尚未設定速解資格，已保留回報並交由管理員核薪'
+                ? '尚未設定速解資格，已保留回報並交由管理員核准'
                 : missingDuration
-                    ? '此報酬規則需要填寫時數，已交由管理員核薪'
+                    ? '此報酬規則需要填寫時數，已交由管理員核准'
                     : '已依現行報酬表完成試算',
             instructor_role: 'A',
             speed_qualification: speedQualification,
@@ -128,7 +128,7 @@ async function handleRoute(route) {
     if (url.pathname.startsWith('/rest/v1/')) {
         const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
         const acceptsObject = ((await request.allHeaders()).accept || '').includes('vnd.pgrst.object+json');
-        // 後台薪資登記頁 2026-10-19 起用 HEAD＋count=exact 向伺服器要全庫待辦數（只讀，不算寫入）
+        // 後台報酬登記頁 2026-10-19 起用 HEAD＋count=exact 向伺服器要全庫待辦數（只讀，不算寫入）
         if (request.method() === 'HEAD' && table === 'class_sessions') {
             const rows = (appRole === 'admin' ? [salarySession] : []).filter(row => ['status', 'pricing_status', 'is_anomaly']
                 .every(column => !url.searchParams.get(column) || url.searchParams.get(column) === `eq.${row[column]}`));
@@ -257,10 +257,10 @@ async function run() {
         check('講師端顯示自動試算金額', await page.getByText('$1,350').first().isVisible());
         await page.screenshot({ path: '/tmp/dream-one-salary-report-desktop.png', fullPage: true });
         await page.getByRole('button', { name: '送出回報' }).click();
-        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         check('講師回報透過受控 RPC 送出（速解實體課）', submitCalls === 1 && directSessionWrites === 0
             && lastSubmit?.p_course_type === 'speed_onsite');
-        check('回報成功後顯示確認訊息', await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').isVisible());
+        check('回報成功後顯示確認訊息', await page.getByText('課程回報已送出，管理員核准後會更新狀態。').isVisible());
         await context.close();
 
         speedQualification = null;
@@ -268,10 +268,10 @@ async function run() {
         page = await context.newPage();
         await page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
         await page.getByRole('heading', { name: '登記課程回報' }).waitFor();
-        // 時數、人數都填好，待核薪的原因只剩「沒有速解資格」
+        // 時數、人數都填好，待核准的原因只剩「沒有速解資格」
         await fillSpeedReport(page);
-        await page.getByText('尚未設定速解資格，已保留回報並交由管理員核薪').waitFor();
-        check('未取得速解資格顯示待核薪', await page.getByText('待管理員核薪').isVisible()
+        await page.getByText('尚未設定速解資格，已保留回報並交由管理員核准').waitFor();
+        check('未取得速解資格顯示待核准', await page.getByText('待管理員核准').isVisible()
             && await page.getByText('依據：尚未符合資格／規則').isVisible());
         await context.close();
 
@@ -280,13 +280,13 @@ async function run() {
         context = await contextFor(browser);
         page = await context.newPage();
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        check('管理端薪資登記頁已啟用', await page.getByRole('heading', { name: '薪資登記中心' }).isVisible());
+        check('管理端報酬登記頁已啟用', await page.getByRole('heading', { name: '報酬登記中心' }).isVisible());
         check('管理端沒有未啟用遮罩', await page.getByText('尚未啟用，敬請期待').count() === 0);
-        check('管理端優先顯示待核薪紀錄', await page.getByText('待核薪').first().isVisible());
-        await page.locator('tr[aria-label="開啟 速解測試老師 2026-08-14 薪資紀錄"]').click();
-        await page.getByRole('heading', { name: '審核 / 編輯薪資紀錄' }).waitFor();
-        check('管理端可開啟審核與重新試算', await page.getByRole('heading', { name: '審核 / 編輯薪資紀錄' }).isVisible());
-        await page.getByRole('button', { name: '關閉薪資紀錄' }).click();
+        check('管理端優先顯示待核准紀錄', await page.getByText('待核准').first().isVisible());
+        await page.locator('tr[aria-label="開啟 速解測試老師 2026-08-14 報酬紀錄"]').click();
+        await page.getByRole('heading', { name: '審核 / 編輯報酬紀錄' }).waitFor();
+        check('管理端可開啟審核與重新試算', await page.getByRole('heading', { name: '審核 / 編輯報酬紀錄' }).isVisible());
+        await page.getByRole('button', { name: '關閉報酬紀錄' }).click();
         await page.screenshot({ path: '/tmp/dream-one-salary-admin-desktop.png', fullPage: true });
         await context.close();
 
@@ -297,15 +297,15 @@ async function run() {
         appRole = 'teacher';
         await page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
         await page.getByRole('heading', { name: '登記課程回報' }).waitFor();
-        await page.getByText('待管理員核薪').waitFor();
+        await page.getByText('待管理員核准').waitFor();
         const teacherOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         check('390px 講師回報頁無水平溢出', teacherOverflow === 0);
         await page.screenshot({ path: '/tmp/dream-one-salary-report-mobile.png', fullPage: true });
         appRole = 'admin';
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+        await page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
         const adminOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-        check('390px 薪資登記中心無水平溢出', adminOverflow === 0);
+        check('390px 報酬登記中心無水平溢出', adminOverflow === 0);
         await page.screenshot({ path: '/tmp/dream-one-salary-admin-mobile.png', fullPage: true });
         await context.close();
     } finally {

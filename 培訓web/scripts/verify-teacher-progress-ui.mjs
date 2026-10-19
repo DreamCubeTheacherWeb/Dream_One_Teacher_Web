@@ -539,7 +539,8 @@ async function main() {
         const heights = await page.locator('[data-progress-filter]').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
         assert.ok(heights.length >= 8 && heights.every((height) => height >= 44), JSON.stringify(heights));
         // 手機卡片也有進度標籤與解綁說明
-        const cards = page.locator('.md\\:hidden .bh-card');
+        // 卡片版在 lg（1024px）以下顯示（版面整理後由 md 改成 lg）
+        const cards = page.locator('.lg\\:hidden .bh-card');
         assert.ok(await cards.locator('[data-progress]').count() >= 6);
         assert.equal(await cards.getByTestId('name-slot-unlink-hint').count(), 1);
       });
