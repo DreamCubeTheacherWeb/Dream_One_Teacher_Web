@@ -103,6 +103,14 @@ def raw_checksum(rows):
     return hashlib.md5("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+def derived_checksum(rows):
+    """換算欄位的指紋（同樣的算法套在 DERIVED_COLS）。上傳工具若弄壞中文字，原文與換算欄都要抓得到。"""
+    lines = []
+    for r in sorted(rows, key=lambda x: int(x["row_no"])):
+        lines.append("\x1f".join([r["row_no"]] + [r[c] for c in DERIVED_COLS]))
+    return hashlib.md5("\n".join(lines).encode("utf-8")).hexdigest()
+
+
 def main():
     src = list(csv.DictReader(open(SRC, encoding="utf-8-sig")))
     out, fixed, problems = [], 0, []
@@ -157,7 +165,8 @@ def main():
     total = lambda k: sum(float(o[k] or 0) for o in out)
     print(f"rows={len(out)} date_fixed={fixed} base_salary_sum={total('base_salary'):.0f} "
           f"bonus_sum={total('bonus'):.0f} paid_sum={total('paid_amount'):.0f} "
-          f"paid_status={sum(o['status'] == 'paid' for o in out)} raw_checksum={raw_checksum(out)}")
+          f"paid_status={sum(o['status'] == 'paid' for o in out)} raw_checksum={raw_checksum(out)} "
+          f"derived_checksum={derived_checksum(out)}")
     print(f"wrote {OUT.relative_to(ROOT)}")
 
 

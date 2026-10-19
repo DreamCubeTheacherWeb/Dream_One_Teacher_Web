@@ -17,10 +17,13 @@ DECLARE
   v_reason     constant text := '2026-05 從舊總表「所有薪資登記」一次匯入；業主 2026-10-19 指示改以新總表為準，舊資料隔離待整理';
   v_rows_exp   constant int := 5535;
   v_sum_exp    constant text := '9f352eadbbd4e1947b9b78f624483b58';
+  v_der_exp    constant text := '918701e66d70059cf5b1d39ab2b6d95d';
   v_base_exp   constant numeric := 10271061;
   v_bonus_exp  constant numeric := 453547;
   v_rows       int;
   v_checksum   text;
+  v_derived    text;
+  v_bad_chars  int;
   v_hist       int;
   v_moved      int;
   v_deleted    int;
@@ -43,6 +46,14 @@ BEGIN
     FROM public.salary_master_rows WHERE batch = v_batch;
   IF v_rows <> v_rows_exp OR v_checksum IS DISTINCT FROM v_sum_exp THEN
     RAISE EXCEPTION '暫存表與本機 CSV 不符：筆數 %（應為 %）、checksum %（應為 %）', v_rows, v_rows_exp, v_checksum, v_sum_exp;
+  END IF;
+  -- 換算欄位也必須逐字相同，且任何欄位都不得含亂碼（U+FFFD，上傳工具切斷中文字時會出現）
+  SELECT md5(string_agg(concat_ws(E'\x1f', row_no, coalesce(course_type, ''), coalesce(role_in_session, ''), coalesce(instructor_name, ''), coalesce(instructor_role_at_time, ''), coalesce(session_date, ''), coalesce(course_name, ''), coalesce(notes, ''), coalesce(duration_hours, ''), coalesce(student_count, ''), coalesce(base_salary, ''), coalesce(bonus, ''), coalesce(paid_amount, ''), coalesce(status, ''), coalesce(registered_by_name, ''), coalesce(self_review, ''), coalesce(progress_note, ''), coalesce(incident_report, ''), coalesce(date_fixed, ''), coalesce(original_date, '')), E'\n' ORDER BY row_no::int)),
+         count(*) FILTER (WHERE strpos(coalesce(raw_month, ''), chr(65533)) > 0 OR strpos(coalesce(raw_instructor, ''), chr(65533)) > 0 OR strpos(coalesce(raw_course_kind, ''), chr(65533)) > 0 OR strpos(coalesce(raw_date, ''), chr(65533)) > 0 OR strpos(coalesce(raw_registrar, ''), chr(65533)) > 0 OR strpos(coalesce(raw_level, ''), chr(65533)) > 0 OR strpos(coalesce(raw_course_name, ''), chr(65533)) > 0 OR strpos(coalesce(raw_notes, ''), chr(65533)) > 0 OR strpos(coalesce(raw_hours, ''), chr(65533)) > 0 OR strpos(coalesce(raw_students, ''), chr(65533)) > 0 OR strpos(coalesce(raw_salary, ''), chr(65533)) > 0 OR strpos(coalesce(raw_bonus, ''), chr(65533)) > 0 OR strpos(coalesce(raw_paid, ''), chr(65533)) > 0 OR strpos(coalesce(raw_self_review, ''), chr(65533)) > 0 OR strpos(coalesce(raw_progress, ''), chr(65533)) > 0 OR strpos(coalesce(raw_incident, ''), chr(65533)) > 0 OR strpos(coalesce(course_type, ''), chr(65533)) > 0 OR strpos(coalesce(role_in_session, ''), chr(65533)) > 0 OR strpos(coalesce(instructor_name, ''), chr(65533)) > 0 OR strpos(coalesce(instructor_role_at_time, ''), chr(65533)) > 0 OR strpos(coalesce(session_date, ''), chr(65533)) > 0 OR strpos(coalesce(course_name, ''), chr(65533)) > 0 OR strpos(coalesce(notes, ''), chr(65533)) > 0 OR strpos(coalesce(duration_hours, ''), chr(65533)) > 0 OR strpos(coalesce(student_count, ''), chr(65533)) > 0 OR strpos(coalesce(base_salary, ''), chr(65533)) > 0 OR strpos(coalesce(bonus, ''), chr(65533)) > 0 OR strpos(coalesce(paid_amount, ''), chr(65533)) > 0 OR strpos(coalesce(status, ''), chr(65533)) > 0 OR strpos(coalesce(registered_by_name, ''), chr(65533)) > 0 OR strpos(coalesce(self_review, ''), chr(65533)) > 0 OR strpos(coalesce(progress_note, ''), chr(65533)) > 0 OR strpos(coalesce(incident_report, ''), chr(65533)) > 0 OR strpos(coalesce(date_fixed, ''), chr(65533)) > 0 OR strpos(coalesce(original_date, ''), chr(65533)) > 0)
+    INTO v_derived, v_bad_chars
+    FROM public.salary_master_rows WHERE batch = v_batch;
+  IF v_derived IS DISTINCT FROM v_der_exp OR v_bad_chars <> 0 THEN
+    RAISE EXCEPTION '暫存表換算欄位不符：derived %（應為 %）、含亂碼列 %', v_derived, v_der_exp, v_bad_chars;
   END IF;
   IF EXISTS (SELECT 1 FROM public.salary_master_rows WHERE batch = v_batch AND imported_at IS NOT NULL) THEN
     RAISE EXCEPTION '批次 % 已經匯入過，不可重複執行（要重來請先跑 99_rollback.sql）', v_batch;

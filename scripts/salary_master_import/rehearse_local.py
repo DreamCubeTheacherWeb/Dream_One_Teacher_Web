@@ -243,7 +243,25 @@ def rehearse(pg, label, null_empty):
     print("      預檢 anomaly:", pre["anomaly"], pre["anomaly_reasons"])
 
     load_upload(pg, db, null_empty)
+    # 模擬正式環境實際發生的狀況：上傳工具把中文字切壞成 U+FFFD（原文欄與換算欄各一格）
+    pg.psql(db, "UPDATE public.salary_master_rows SET raw_course_kind = '合作課程 ' || chr(65533) || chr(65533) || chr(65533) || '講' "
+                "WHERE row_no = '1878'; UPDATE public.salary_master_rows SET notes = notes || chr(65533) WHERE row_no = '3364'")
+    bad = pg.json(db, HERE / "02_check_upload.sql")
+    check("02 上傳核對：切壞的中文字會被抓到（兩種指紋都不符、亂碼 2 列）",
+          bad["raw_checksum"] != "9f352eadbbd4e1947b9b78f624483b58"
+          and bad["derived_checksum"] != "918701e66d70059cf5b1d39ab2b6d95d" and bad["replacement_char_rows"] == 2)
+    blocked = pg.psql(db, file=HERE / "03_apply.sql", expect_fail=True)
+    check("03 遇到切壞的暫存表會拒絕執行、資料不動", blocked.returncode != 0 and "不符" in blocked.stderr
+          and pg.psql(db, "SELECT count(*) FROM public.class_sessions WHERE source = 'historical_import'") == "9532")
+    spec_r = importlib.util.spec_from_file_location("repair_rows", HERE / "repair_rows.py")
+    R = importlib.util.module_from_spec(spec_r)
+    spec_r.loader.exec_module(R)
+    repair = pg.dir / f"{db}_repair.sql"
+    repair.write_text(R.build_sql(["1878:raw_course_kind", "3364:notes"]), encoding="utf-8")
+    pg.psql(db, file=repair)
     up = pg.json(db, HERE / "02_check_upload.sql")
+    check("修補後兩種指紋回到預期、無亂碼", up["derived_checksum"] == "918701e66d70059cf5b1d39ab2b6d95d"
+          and up["replacement_char_rows"] == 0)
     check("02 上傳核對：5,535 筆、列號不重複", up["rows"] == 5535 and up["distinct_row_no"] == 5535)
     check("02 上傳核對：原文 checksum 與本機相同", up["raw_checksum"] == "9f352eadbbd4e1947b9b78f624483b58", up["raw_checksum"])
     check("02 上傳核對：薪資／獎金／已領合計", float(up["base_salary_sum"]) == 10271061 and float(up["bonus_sum"]) == 453547

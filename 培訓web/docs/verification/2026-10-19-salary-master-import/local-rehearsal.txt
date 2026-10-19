@@ -5,6 +5,9 @@ PASS  migration 連跑兩次無誤
 PASS  01 預檢：historical 9,532、網站端 3 筆  {'manual': 1, 'self_report': 2, 'historical_import': 9532}
 PASS  01 預檢：沒有其他表以外鍵指向 class_sessions
       預檢 anomaly: {'total': 9535, 'flagged': 785} {'日期早於 2020 年': 8, '有時數但薪資為 0': 158, '日期超過 2 個月後': 19, '同講師同日同課程名可能重複': 616}
+PASS  02 上傳核對：切壞的中文字會被抓到（兩種指紋都不符、亂碼 2 列）
+PASS  03 遇到切壞的暫存表會拒絕執行、資料不動
+PASS  修補後兩種指紋回到預期、無亂碼
 PASS  02 上傳核對：5,535 筆、列號不重複
 PASS  02 上傳核對：原文 checksum 與本機相同  9f352eadbbd4e1947b9b78f624483b58
 PASS  02 上傳核對：薪資／獎金／已領合計
@@ -14,7 +17,7 @@ PASS  02 上傳核對：同名講師被列為 ambiguous
 PASS  02 上傳核對：網站端紀錄與新總表重疊會被列出  []
 PASS  03 搬移＋匯入成功
 PASS  03 重跑會被擋（已匯入過）   99_rollback.sql）
-CONTEXT:  PL/pgSQL function inline_code_block line 36 at RAISE
+CONTEXT:  PL/pgSQL function inline_code_block line 47 at RAISE
 PASS  04 核對：class_sessions = 新總表 5,535 ＋ 網站端 3  {'manual': 1, 'self_report': 2, 'historical_import': 5535}
 PASS  04 核對：新總表每列都在 class_sessions、金額合計一致
 PASS  04 核對：隔離區 9,532 筆  {'rows': 9532, 'date_max': '2026-12-31', 'date_min': '2000-01-18', 'bonus_sum': 1747477.0, 'not_in_master': 5962, 'base_salary_sum': 17170952.0, 'matched_in_master': 3570}
@@ -40,6 +43,9 @@ PASS  migration 連跑兩次無誤
 PASS  01 預檢：historical 9,532、網站端 3 筆  {'manual': 1, 'self_report': 2, 'historical_import': 9532}
 PASS  01 預檢：沒有其他表以外鍵指向 class_sessions
       預檢 anomaly: {'total': 9535, 'flagged': 785} {'日期早於 2020 年': 8, '有時數但薪資為 0': 158, '日期超過 2 個月後': 19, '同講師同日同課程名可能重複': 616}
+PASS  02 上傳核對：切壞的中文字會被抓到（兩種指紋都不符、亂碼 2 列）
+PASS  03 遇到切壞的暫存表會拒絕執行、資料不動
+PASS  修補後兩種指紋回到預期、無亂碼
 PASS  02 上傳核對：5,535 筆、列號不重複
 PASS  02 上傳核對：原文 checksum 與本機相同  9f352eadbbd4e1947b9b78f624483b58
 PASS  02 上傳核對：薪資／獎金／已領合計
@@ -49,7 +55,7 @@ PASS  02 上傳核對：同名講師被列為 ambiguous
 PASS  02 上傳核對：網站端紀錄與新總表重疊會被列出  []
 PASS  03 搬移＋匯入成功
 PASS  03 重跑會被擋（已匯入過）   99_rollback.sql）
-CONTEXT:  PL/pgSQL function inline_code_block line 36 at RAISE
+CONTEXT:  PL/pgSQL function inline_code_block line 47 at RAISE
 PASS  04 核對：class_sessions = 新總表 5,535 ＋ 網站端 3  {'manual': 1, 'self_report': 2, 'historical_import': 5535}
 PASS  04 核對：新總表每列都在 class_sessions、金額合計一致
 PASS  04 核對：隔離區 9,532 筆  {'rows': 9532, 'date_max': '2026-12-31', 'date_min': '2000-01-18', 'bonus_sum': 1747477.0, 'not_in_master': 5962, 'base_salary_sum': 17170952.0, 'matched_in_master': 3570}
@@ -70,4 +76,4 @@ PASS  99 還原：隔離區清空、暫存表保留
 PASS  還原後可再次執行 03，結果與第一次相同
 PASS  兩種上傳情境結果一致
 
-55/55 PASS
+61/61 PASS
