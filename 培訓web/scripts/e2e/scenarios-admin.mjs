@@ -244,7 +244,7 @@ export async function scenarioAdminMentor(ctx) {
     const pdfPath = api.sql(`SELECT signed_pdf_paths->>'contract' FROM public.instructor_contracts WHERE id = :'id'`, { id: signer.contractId });
     const file = await api.request(mentor.token, 'GET', `/storage/v1/object/authenticated/contract-documents/${pdfPath}`);
     if (file.status === 200) {
-      ctx.known('ADM 輔導員讀得到所有人的已簽契約檔', `ADM［待業主決定］storage 政策讓 mentor 讀整個 contract-documents（含所有人的 signed/）：supabase/migrations/20261019103000_restrict_contract_document_reads.sql 的「read contract documents scoped」，註解已寫「mentor 是否該讀待業主決定」。畫面上輔導員看不到簽約，但知道路徑就能下載已簽 PDF（身分證字號、地址都在上面）。`);
+      ctx.known('ADM 輔導員讀得到所有人的已簽契約檔', `ADM［待業主決定］storage 政策讓 mentor 讀整個 contract-documents（含所有人的 signed/）：supabase/migrations/20261019103000_restrict_contract_document_reads.sql:60 的「read contract documents scoped」，註解已寫「mentor 是否該讀待業主決定」。畫面上輔導員看不到簽約，但知道路徑就能下載已簽 PDF（身分證字號、地址都在上面）。`);
     }
     r.check('ADM 記錄：輔導員直接下載已簽契約檔的結果', [200, 400].includes(file.status), `HTTP ${file.status}`);
   } finally {

@@ -188,7 +188,7 @@ export async function secInterrupted(ctx) {
     const cooled = notice.includes('剛剛已經寄出驗證碼') && !(await page.locator('#email-otp-code').isVisible());
     r.check('SEC 60 秒內回來再要簽約碼：顯示冷卻提示（已驗證過的碼不會再給輸入）', cooled, notice);
     if (cooled) {
-      ctx.known('SEC 簽署中斷後 60 秒內要等冷卻', 'SEC［UX 小缺口］簽約 OTP 驗證通過後關頁再回來（60 秒內），重新要碼會回 cooldown，但冷卻回覆只帶「未驗證」的碼（supabase/migrations/20261020100000_claim_activation_esign_evidence.sql:1424-1437），剛驗證過的那組前端也已遺失，老師只能等倒數結束再按「重新寄送」。資料面正確（不會留下半套紀錄）。');
+      ctx.known('SEC 簽署中斷後 60 秒內要等冷卻', 'SEC［UX 小缺口］簽約 OTP 驗證通過後關頁再回來（60 秒內），重新要碼會回 cooldown，但冷卻回覆只帶「未驗證」的碼（supabase/migrations/20261020100000_claim_activation_esign_evidence.sql:1419-1437），剛驗證過的那組前端也已遺失，老師只能等倒數結束再按「重新寄送」。資料面正確（不會留下半套紀錄）。');
     }
     await page.getByRole('dialog').getByRole('button', { name: '取消' }).click();
     skipOtpCooldown(ctx.api, user.id, 'contract_sign'); // 模擬等了 61 秒

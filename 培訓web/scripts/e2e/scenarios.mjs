@@ -295,7 +295,7 @@ export async function scenarioE(ctx) {
       && !(await s.page.getByText('請選擇你的講師身分').isVisible()) && await fieldControl(s.page, '姓名').inputValue() === name);
     const message = await s.page.getByTestId('activation-message').innerText().catch(() => '');
     if (message === NEEDS_EMAIL_TEXT) {
-      ctx.known('E 後台「填完整資料」建的講師仍要另外確認 Email', 'E［流程缺口］管理員用「新增講師 → 填完整資料」輸入的 Email（src/pages/admin/InstructorList.jsx:1350-1372 FullInstructorForm）不會登錄成已確認 Email，老師登入自動綁定後看到「你的 Email 尚未經公司確認，請聯絡行政人員」；管理員要再到同一列按「確認 Email」並寫註記。成功訊息仍寫「登入時會自動綁定」，沒提醒還要確認 Email。');
+      ctx.known('E 後台「填完整資料」建的講師仍要另外確認 Email', 'E［流程缺口］管理員用「新增講師 → 填完整資料」輸入的 Email（src/pages/admin/InstructorList.jsx:1338-1371 FullInstructorForm）不會登錄成已確認 Email，老師登入自動綁定後看到「你的 Email 尚未經公司確認，請聯絡行政人員」；管理員要再到同一列按「確認 Email」並寫註記。成功訊息仍寫「登入時會自動綁定」，沒提醒還要確認 Email。');
     }
     r.check('E 啟用卡依規則顯示（沒有已確認 Email → 請聯絡行政人員）', message === NEEDS_EMAIL_TEXT, message);
     await dualShot(ctx, s, 'E-01-auto-linked-needs-email');
@@ -478,7 +478,7 @@ export async function scenarioG(ctx) {
   const realTeacher = await newUser(ctx, 'g-real', '真老師甲', { email: realEmail });
   const blocked = await api.rpc(realTeacher.token, 'claim_instructor_name_slot', { provided_full_name: slotName });
   r.check('G 冒認者已在空位填了手機／身分證 → 解除後不能再只靠姓名認領（設計如此）', blocked.data?.status === 'not_found', JSON.stringify(blocked.data));
-  ctx.known('G 解除冒認後要手動清掉冒認者填的資料', 'G［流程缺口，設計使然］冒認者若已填個資，管理員按「解除綁定」後空位仍留著冒認者的手機、身分證、銀行、證件檔路徑，真老師無法再用姓名認領；後台沒有「清除冒認資料」的按鈕（src/pages/admin/InstructorList.jsx:262 handleUnlink 只呼叫 admin_unlink_instructor），測試以管理員 REST 清空後才繼續。');
+  ctx.known('G 解除冒認後要手動清掉冒認者填的資料', 'G［流程缺口，設計使然］冒認者若已填個資，管理員按「解除綁定」後空位仍留著冒認者的手機、身分證、銀行、證件檔路徑，真老師無法再用姓名認領；後台沒有「清除冒認資料」的按鈕（src/pages/admin/InstructorList.jsx:260 handleUnlink 只呼叫 admin_unlink_instructor），測試以管理員 REST 清空後才繼續。');
   const piiFields = ['nickname', 'gender', 'birth_date', 'id_number', 'phone_mobile', 'line_id', 'address', 'household_address', 'email_primary',
     'teaching_freq_semester', 'teaching_freq_vacation', 'bio_notes', 'bank_account_name', 'bank_name', 'bank_branch', 'bank_account_number', 'bank_code',
     'id_front_path', 'id_back_path', 'bankbook_path', 'id_front_mime', 'id_back_mime', 'bankbook_mime', 'id_front_size', 'id_back_size', 'bankbook_size',
