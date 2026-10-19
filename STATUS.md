@@ -1,11 +1,11 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-18（講師簽約正式重開已建置未上線；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-19（講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
 
-## ✍️ 2026-10-18：講師簽約正式重開——受控寫入 RPC＋恢復 Email 身分驗證（✅ 已建置未上線）
+## ✍️ 2026-10-18：講師簽約正式重開——受控寫入 RPC＋恢復 Email 身分驗證（✅ 正式環境已上線 2026-10-19）
 
 **業主決定**：個人資料關卡體檢全過後，業主選「正式重開：補寫入通道，並恢復 Email 身分驗證；我會去 Supabase 改信件模板並設定 SMTP」。
 
@@ -35,7 +35,14 @@ authenticated 直接 INSERT 仍被 RLS 拒、新建庫路徑可用）＋靜態�
 截圖 9 張在 `docs/verification/2026-10-18-contract-reopen/`；改動檔 ESLint 0 error、`git diff --check` 乾淨。
 security-auditor 審查：0 阻斷；amr 行為已對照 supabase/auth 原始碼（verify 一律建新 session、method=otp；refresh 不延長 timestamp）。
 
-**上線順序（還沒做）**：① 業主在 Supabase Dashboard：Authentication → Email Templates → Magic Link 模板把 `{{ .ConfirmationURL }}` 換成
+**正式環境證據（2026-10-19）**：業主已改 Supabase Magic Link 模板（`{{ .Token }}`）並設定 SMTP。migration 由 Claude 透過 Chrome 擴充功能
+貼進 DreamCube_teacher 的 SQL Editor、業主親按 Run（Success）；anon 探測 `submit_my_contract` 回 42501 permission denied（函式存在、匿名被擋；
+套用前同探測回 PGRST202 找不到）。分支併入 main 快轉推送 `8f84be2..073d745`，GitHub deployment `7164265290` production success；
+正式站載入 `index-E52GxsdS.js`，SHA-256 `4da021ed6018da4639ff2…` 與本機 build 逐位元一致，連續 3 次抓取皆含 `submit_my_contract`；
+以正式站 bundle 跑 `verify-complete-gate.mjs` 37/37。**待業主真帳號端到端**：個人資料 → 簽約 → 收驗證碼 → 輸 6 碼 → 簽名送出 → 合約檢視頁有紀錄；
+若出現「請先完成 Email 身分驗證」代表正式環境 JWT 無 otp 紀錄（amr 假設不成立），回報即查。
+
+**原上線順序（已完成）**：① 業主在 Supabase Dashboard：Authentication → Email Templates → Magic Link 模板把 `{{ .ConfirmationURL }}` 換成
 `{{ .Token }}`（7/09 診斷：這是驗證碼寄不出的根因）；Project Settings → Auth → SMTP 接 Resend（內建 2 封／小時不夠用）。
 ② 正式庫套 `20261018180000_reopen_instructor_contract_signing.sql`（**先 RPC 後前端**；只建函式，不動既有資料）。③ 合併本分支到 main（Zeabur 自動部署）。
 ④ 業主在後台確認啟用中的合約文件是新版、簽名欄位已在定位器擺好（8/27 修復後受影響版本要重擺）。⑤ 真帳號端到端：收信→輸 6 碼→簽名→合約檢視頁有紀錄；
