@@ -666,7 +666,8 @@ try {
             // 既有講師一律 UPDATE（不用 upsert，避免 INSERT trigger 擋下認領過的講師）
             equal(saveMethod, 'PATCH', '存檔方式');
             equal(params.user_id, `eq.${UID}`, 'user_id 條件');
-            equal(payload.user_id, UID, 'payload.user_id');
+            // 主線 fa7f5a1 起 UPDATE 不送 user_id（避免觸發身分 Email 守門），條件只靠 user_id=eq.<uid>
+            ok(!('user_id' in payload), `UPDATE 不應送 user_id：${payload.user_id}`);
             equal(payload.id_front_path, uploadedPath, 'payload.id_front_path 應是新路徑');
             equal(payload.id_front_mime, 'image/png', 'payload.id_front_mime');
             unchangedOrOmitted(payload, 'id_back_path', oldBackPath);

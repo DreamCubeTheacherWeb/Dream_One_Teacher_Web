@@ -37,7 +37,10 @@
 - `npm run verify:doc-edit-unlock:admin-browser` 35/35（過期的開放顯示鎖定中、開放／收回 RPC 參數、連點只送一次、未認領停用、修改紀錄四種、管理員換檔不刪舊身分證但照刪舊大頭照、缺表照常、390px）。
 - 既有 `node scripts/verify-profile-draft.mjs` 31/31（merge origin/main 後；T9d 改為只看存摺卡；T11c/d 改為先模擬管理員開放、且換身分證後不刪舊檔）、
   `npm run verify:admin-instructor-editor` 全過（標題列「尚未認領帳號」斷言收窄）、`node scripts/verify-complete-gate.mjs` 37/37。
-- `npm test` 124/124（含新增 10 項）；production build 通過；變更檔 ESLint 0 問題；截圖 `培訓web/docs/verification/2026-10-20-doc-edit-unlock/`（admin-desktop／admin-mobile／teacher-locked-desktop／teacher-unlocked-desktop／teacher-unlocked-mobile），
+- 2026-10-20 深夜再 merge origin/main（5a89fda：UPDATE 不送 user_id、Email 守門中文化、頁面 lazy 載入）後重跑：`npm run e2e:profile-save`（真 PostgreSQL＋PostgREST，套 repo 全部 SQL 含本 migration）81/81
+  （P4 改為先由管理員開放一次再換身分證，並新增 3 項：開放被用掉、修改紀錄寫入、畫面鎖回；A／P6／P10 的 trigger 清單改為新規則，且確認舊的存摺／匯款 trigger 已不存在）、
+  `verify:code-split` 187/187、`verify-profile-draft` 34/34、`verify-complete-gate` 37/37、`verify:admin-instructor-editor` 全過、本功能三支 18／36／35 全過、`npm run lint` 全專案 0 問題。
+- `npm test` 129/129（含新增 10 項）；production build 通過；變更檔 ESLint 0 問題；截圖 `培訓web/docs/verification/2026-10-20-doc-edit-unlock/`（admin-desktop／admin-mobile／teacher-locked-desktop／teacher-unlocked-desktop／teacher-unlocked-mobile），
   另派 agent 逐張判讀：可交付。
 
 **上線步驟（交總指揮）**：① Supabase SQL Editor 套 `20261020120000_instructor_document_edit_unlocks.sql`；套完檢查
