@@ -16,7 +16,7 @@
 - **講師回報頁 `MySalaryNew.jsx`**：回報類別、日期、課程種類、報酬項目固定在最上面，其後欄位照後台設定的順序畫；隱藏的內建欄位不顯示、不驗證、不送出；自訂欄位（單行／多行文字、數字、下拉、是否）；合作單位跟著選到的期間、營隊梯次依期間分組並送出梯次所屬期間；設定或選項讀不到時退回預設欄位與自由輸入；填寫途中管理員改了欄位 → 送出被擋時自動重新載入欄位、已填內容保留。B2B「教材數量」原本標 * 卻沒擋，現在照標示必填（後台可改）。另修總指揮提的「今天」日期只在載入時算一次的問題。
 - **後台報酬登記中心**：期間名稱改讀資料庫（新期間正常顯示）；審核視窗加顯示期間／單位／教材／交通補助與自訂欄位答案；列表顯示「自訂欄位 N 項」。
 
-**驗證（主對話 2026-10-20 親跑，已併入 origin/main `c8842e7` 後重跑）**：`npm test` 128/128；`npm run build` 通過；改動檔 ESLint 0（全站剩 5 個舊問題在 ContractView／AssignmentReview／ProgressOverview／FieldPositionEditor，非本次）；
+**驗證（主對話 2026-10-20 親跑；再併入 origin/main `5a89fda`（頁面 lazy 載入、試算作廢等）後全部重跑：npm test 133/133、build、全專案 lint 0、verify:salary-report-form 36 項 PASS、report-form 瀏覽器 63/63、report-options 99/99、register-paging 38/38、speed-salary 9/9＋瀏覽器 13/13、salary-fixes 32/32、code-split 187/187）**；併 `c8842e7` 時的紀錄：`npm test` 128/128；`npm run build` 通過；改動檔 ESLint 0（全站剩 5 個舊問題在 ContractView／AssignmentReview／ProgressOverview／FieldPositionEditor，非本次）；
 `npm run verify:salary-report-form`（臨時 PostgreSQL，含新段落 (i) 7 組：連跑兩次、回填 48／30／48／31、舊前端 term_scope 視角仍 48／30、唯一性與 CHECK、管理員新增期間複製清單、欄位守門、排序 RPC 權限、RPC 新期間／停用期間／自訂欄位快照／未知或隱藏欄位擋、改名刪除後快照不變、新建庫路徑）全 PASS；
 `verify:salary-report-form:browser` 63/63、`verify:salary-report-options:browser` 99/99、`verify:salary-register-paging:browser` 38/38、`verify:speed-salary:browser` 13/13、`verify:salary-visibility` 全 PASS（需 `LC_ALL=en_US.UTF-8`，否則臨時資料庫起不來）。
 截圖 18 張：`培訓web/docs/verification/2026-10-20-report-options-v4/`（7）、`培訓web/docs/verification/2026-10-20-report-form-fields/`（11），由另一個 sonnet agent 判讀 8 項驗收全過（列高約 54px、期間 chip＋下方兩區、欄位分頁鎖頭／開關、390px 無溢出、B2B 欄位順序、審核視窗顯示自訂欄位答案）。opus 審查：無高嚴重度；中低 5 項已修 4 項（NOTIFY、只複製單位、期間名稱讀取失敗的顯示、欄位更新後自動重載），第 5 項見地雷。
