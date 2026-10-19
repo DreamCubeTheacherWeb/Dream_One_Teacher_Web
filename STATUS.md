@@ -124,7 +124,12 @@
    只有 STATUS.md 衝突、兩邊保留；已推 GitHub 備份），2026-10-20 02:25 依序單獨跑 43 項驗證全過（含 doc-edit-unlock 三支、
    e2e:profile-save 81/81、report-options 99/99——偶發的提示訊息時間差已修，重跑 3 次皆 99/99）。上線步驟：①②③④ 套完 → 確認
    origin/main 仍是 5a89fda（若前進就先 merge 再重跑）→ 推此分支到 main → 兩網域換版確認＋訪客煙霧測試。
-2. 認領＋電子簽約（分支 feat/teacher-name-placeholder）：業主新規格（OTP 啟用、Resend 寄信、簽署證據）仍在做，需要 Resend API key、已驗證寄件網域、正式庫 pg_net＋Vault。
+2. 認領＋電子簽約（分支 feat/teacher-name-placeholder，HEAD a9d3ec3，可交付）：**不併入明早那批，單獨上線**。前提：業主在 Resend 驗證寄件網域＋建 API key；
+   Supabase 確認 pg_net、pg_cron 已啟用，Vault 新增 resend_api_key、resend_from。之後依序套 `20261019233000_instructor_name_slots` →
+   `20261020100000_claim_activation_esign_evidence`，**套完立刻推前端**（新舊前後端兩個方向都不相容）。已確認：明早先套 010000／120000／130000
+   不影響這兩支（照正式庫實際順序模擬：verify-claim-activation-esign 219/219、e2e:onboarding 251/251）；與本批分支試合併只有 4 處新增型衝突，
+   合併後 npm test 218/218、e2e:onboarding 251/251、e2e:profile-save 81/81 全過。上線後用測試講師實收驗證碼並查 email_delivery_log。
+   法規待業主：R2 隱私權政策補「記錄 IP」與寄信服務商、R3 未成年講師電子簽署。
 3. 業務決定：到府課時數 1／2.5／3 小時對不到報酬表規則（全部進「待核准」）；排行榜／徽章是否計入待審與被退回時數；mentor 是否該讀整個 instructor_uploads 與所有已簽合約。
 4. 上線後找一位 form-import 講師實測個人頁存檔（真資料庫 e2e 已過，但正式庫可能有版控外的 trigger 改動）。
 
