@@ -127,10 +127,12 @@ async function handleRoute(route) {
                         body: JSON.stringify({ code: '42501', message: 'instructor file paths must remain inside the current user folder' }),
                     });
                 }
+                // 這位老師已有主檔：PATCH 回傳更新到的那一列，前端就不會再補 INSERT。
+                const savedRows = method === 'PATCH' ? JSON.stringify([{ updated_at: NOW }]) : '[]';
                 return route.fulfill({
-                    status: 201,
+                    status: method === 'PATCH' ? 200 : 201,
                     headers: { 'content-type': 'application/json' },
-                    body: wantsObject ? JSON.stringify({ updated_at: NOW }) : '[]',
+                    body: wantsObject ? JSON.stringify({ updated_at: NOW }) : savedRows,
                 });
             }
             if (table === 'instructor_profile_drafts') {
