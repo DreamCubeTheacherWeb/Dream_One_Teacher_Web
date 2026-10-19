@@ -49,3 +49,6 @@ scripts/__pycache__/
 
 # Python 快取
 __pycache__/
+
+# 薪資等真人資料的本機工作資料夾（不進版控）
+data-private/
