@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { Save, ChevronLeft, Plus, Trash2, FileText, Video, Edit3, ClipboardCheck, Hash, Layers3 } from 'lucide-react';
@@ -53,6 +53,8 @@ const CMSManager = () => {
     const [lessons, setLessons] = useState([]);
     const [loading, setLoading] = useState(true);
     const [editingLessonId, setEditingLessonId] = useState(null);
+    // 每章「已確定存進資料庫」的標題；標題存檔失敗時還原成這個值
+    const savedTitlesRef = useRef({});
 
     useEffect(() => {
         const fetchCourseData = async () => {
@@ -88,6 +90,7 @@ const CMSManager = () => {
                     .select('*')
                     .eq('course_id', courseId)
                     .order('order', { ascending: true });
+                savedTitlesRef.current = Object.fromEntries((lessonsData || []).map(l => [l.id, l.title]));
                 setLessons(lessonsData || []);
             }
             setLoading(false);
@@ -150,7 +153,32 @@ const CMSManager = () => {
             .eq('course_id', courseId)
             .order('order', { ascending: true });
 
+        savedTitlesRef.current = Object.fromEntries((refreshed || []).map(l => [l.id, l.title]));
         setLessons(refreshed || []);
+    };
+
+    const patchLesson = (lessonId, patch) => {
+        setLessons(prev => prev.map(l => l.id === lessonId ? { ...l, ...patch } : l));
+    };
+
+    // 先改畫面再寫入；寫入失敗就把畫面還原成 prevValue 並提示，避免畫面顯示已存、實際沒存
+    const saveLessonField = async (lessonId, field, nextValue, prevValue, label) => {
+        patchLesson(lessonId, { [field]: nextValue });
+        const { error } = await supabase.from('lessons').update({ [field]: nextValue }).eq('id', lessonId);
+        if (error) {
+            patchLesson(lessonId, { [field]: prevValue });
+            alert(`${label}儲存失敗，已還原：${error.message}`);
+        }
+    };
+
+    const saveLessonTitle = async (lesson) => {
+        const { error } = await supabase.from('lessons').update({ title: lesson.title }).eq('id', lesson.id);
+        if (error) {
+            patchLesson(lesson.id, { title: savedTitlesRef.current[lesson.id] ?? lesson.title });
+            alert('章節標題儲存失敗，已還原：' + error.message);
+            return;
+        }
+        savedTitlesRef.current[lesson.id] = lesson.title;
     };
 
     const deleteLesson = async (lesson) => {
@@ -282,13 +310,8 @@ const CMSManager = () => {
                                         <input
                                             type="text"
                                             value={lesson.title}
-                                            onChange={async (e) => {
-                                                const newTitle = e.target.value;
-                                                setLessons(lessons.map(l => l.id === lesson.id ? { ...l, title: newTitle } : l));
-                                            }}
-                                            onBlur={async () => {
-                                                await supabase.from('lessons').update({ title: lesson.title }).eq('id', lesson.id);
-                                            }}
+                                            onChange={(e) => patchLesson(lesson.id, { title: e.target.value })}
+                                            onBlur={() => saveLessonTitle(lesson)}
                                             className="flex-1 bg-transparent font-bold text-bauhaus-black outline-none focus:text-bauhaus-blue"
                                             placeholder="輸入章節標題..."
                                         />
@@ -314,11 +337,7 @@ const CMSManager = () => {
                                             <input
                                                 type="checkbox"
                                                 checked={!!lesson.requires_assignment}
-                                                onChange={async (e) => {
-                                                    const val = e.target.checked;
-                                                    setLessons(lessons.map(l => l.id === lesson.id ? { ...l, requires_assignment: val } : l));
-                                                    await supabase.from('lessons').update({ requires_assignment: val }).eq('id', lesson.id);
-                                                }}
+                                                onChange={(e) => saveLessonField(lesson.id, 'requires_assignment', e.target.checked, !!lesson.requires_assignment, '「需繳交作業」設定')}
                                                 className="w-5 h-5 border-2 border-bauhaus-black rounded-none text-bauhaus-blue"
                                             />
                                             <span className="text-xs font-bold text-bauhaus-black/60 flex items-center gap-1">
@@ -328,11 +347,7 @@ const CMSManager = () => {
                                         {lesson.requires_assignment && (
                                             <select
                                                 value={lesson.assignment_for || 'all'}
-                                                onChange={async (e) => {
-                                                    const val = e.target.value;
-                                                    setLessons(lessons.map(l => l.id === lesson.id ? { ...l, assignment_for: val } : l));
-                                                    await supabase.from('lessons').update({ assignment_for: val }).eq('id', lesson.id);
-                                                }}
+                                                onChange={(e) => saveLessonField(lesson.id, 'assignment_for', e.target.value, lesson.assignment_for, '作業對象設定')}
                                                 className="text-xs px-2 py-1 bg-white border-2 border-bauhaus-black rounded-xl outline-none text-bauhaus-black font-bold"
                                             >
                                                 <option value="all">全部講師需繳</option>

@@ -18,7 +18,8 @@ const clearLegacyProfileDrafts = () => {
 };
 
 // 用原生 fetch 查 PostgREST，完全繞開 Supabase SDK 的 AbortController
-async function rawQuery(table, params, accessToken) {
+// strict：非 2xx（5xx、逾時閘道等）改丟錯而不是回 null，讓呼叫端分得出「查無此列」與「查詢失敗」
+async function rawQuery(table, params, accessToken, { strict = false } = {}) {
     const qs = new URLSearchParams(params).toString();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${qs}`, {
         headers: {
@@ -27,9 +28,52 @@ async function rawQuery(table, params, accessToken) {
             Accept: 'application/json',
         },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+        if (strict) throw new Error(`${table} 查詢失敗（HTTP ${res.status}）`);
+        return null;
+    }
     return res.json();
 }
+
+const PROFILE_LOAD_RETRIES = 2;
+const PROFILE_RETRY_DELAY_MS = 1000;
+const PROFILE_LOAD_ERROR = '帳號資料載入失敗，請重新整理';
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 查 public.users 自己的那一列。只有 2xx 才算有答案：空陣列＝確定查無此列（才可走新使用者流程）；
+// 5xx、逾時、斷線一律重試 PROFILE_LOAD_RETRIES 次（間隔約 1 秒），仍失敗就丟錯，
+// 絕不能把「查不到答案」當成「沒有這個帳號」而捏造 pending（會把已存在的老師／管理員導去 /pending）。
+async function queryUserRows(userId) {
+    let lastError;
+    for (let attempt = 0; attempt <= PROFILE_LOAD_RETRIES; attempt += 1) {
+        if (attempt > 0) await sleep(PROFILE_RETRY_DELAY_MS);
+        try {
+            const token = (await supabase.auth.getSession()).data?.session?.access_token;
+            const rows = await rawQuery('users', { select: '*', id: `eq.${userId}` }, token, { strict: true });
+            if (!Array.isArray(rows)) throw new Error('users 查詢回應格式不符');
+            return rows;
+        } catch (err) {
+            lastError = err;
+            console.warn(`users 查詢失敗（第 ${attempt + 1} 次）：`, err.message);
+        }
+    }
+    throw lastError;
+}
+
+const ProfileLoadError = ({ message, onRetry, onSignOut }) => (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-bauhaus-cream">
+        <div role="alert" className="bh-card max-w-md w-full p-6 sm:p-8 text-center">
+            <h1 className="text-xl font-black text-bauhaus-black mb-2">{message}</h1>
+            <p className="text-sm font-medium text-bauhaus-black/60 mb-6">
+                可能是網路或伺服器暫時忙碌，您的帳號資料沒有任何變動。請按「重試」，若持續失敗再稍後回來。
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button type="button" onClick={onRetry} className="bh-btn bh-btn-blue px-5 py-3 text-sm">重試</button>
+                <button type="button" onClick={onSignOut} className="bh-btn bh-btn-outline px-5 py-3 text-sm">登出</button>
+            </div>
+        </div>
+    </div>
+);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -38,6 +82,7 @@ export const AuthProvider = ({ children }) => {
     const [avatarUrl, setAvatarUrl] = useState(null);
     const [claimState, setClaimState] = useState(null);
     const [accessError, setAccessError] = useState(null);
+    const [profileError, setProfileError] = useState(null);
     const [loading, setLoading] = useState(true);
     const fetchingRef = useRef(false);
 
@@ -45,17 +90,17 @@ export const AuthProvider = ({ children }) => {
         if (!authUser?.id) { setLoading(false); return; }
         if (fetchingRef.current) return;
         fetchingRef.current = true;
+        let profileLoaded = false;
 
         try {
             const token = (await supabase.auth.getSession()).data?.session?.access_token;
 
-            // 1. 查 public.users（用原生 fetch，不被 Supabase abort）
-            const rows = await rawQuery('users', {
-                select: '*',
-                id: `eq.${authUser.id}`,
-            }, token);
+            // 1. 查 public.users（用原生 fetch，不被 Supabase abort）。
+            // 查詢失敗時 queryUserRows 會重試後丟錯，這裡不捏造 pending，直接進 catch 顯示可重試的錯誤。
+            setProfileError(null);
+            const rows = await queryUserRows(authUser.id);
 
-            let profileData = rows?.[0] || null;
+            let profileData = rows[0] || null;
 
             if (!profileData) {
                 const { error: createErr } = await supabase.from('users').insert({
@@ -91,13 +136,12 @@ export const AuthProvider = ({ children }) => {
             }
 
             if (claimResult?.status === 'claimed') {
-                const refreshed = await rawQuery('users', {
-                    select: '*', id: `eq.${authUser.id}`,
-                }, token);
-                if (refreshed?.[0]) profileData = refreshed[0];
+                const refreshed = await queryUserRows(authUser.id);
+                if (refreshed[0]) profileData = refreshed[0];
             }
 
             setProfile(profileData);
+            profileLoaded = true;
 
             // 2. 查 instructors（顯示名稱、頭貼）
             const instrRows = await rawQuery('instructors', {
@@ -122,6 +166,7 @@ export const AuthProvider = ({ children }) => {
             }
         } catch (err) {
             console.error('fetchProfile error:', err);
+            if (!profileLoaded) setProfileError(PROFILE_LOAD_ERROR);
         } finally {
             fetchingRef.current = false;
             setLoading(false);
@@ -141,6 +186,7 @@ export const AuthProvider = ({ children }) => {
                 setInstructorProfile(null);
                 setAvatarUrl(null);
                 setClaimState(null);
+                setProfileError(null);
                 setLoading(false);
                 return;
             }
@@ -170,6 +216,14 @@ export const AuthProvider = ({ children }) => {
         }
     }, [user, profile, fetchProfile]);
 
+    const retryProfile = useCallback(() => {
+        if (!user) return Promise.resolve();
+        setProfileError(null);
+        setLoading(true);
+        fetchingRef.current = false;
+        return fetchProfile(user);
+    }, [user, fetchProfile]);
+
     const signInWithGoogle = async () => {
         setAccessError(null);
         const { error } = await supabase.auth.signInWithOAuth({
@@ -193,12 +247,14 @@ export const AuthProvider = ({ children }) => {
     return (
         <AuthContext.Provider value={{
             user, profile, instructorProfile, avatarUrl,
-            claimState, accessError,
+            claimState, accessError, profileError,
             signInWithGoogle, signOut,
             refreshProfile: () => { fetchingRef.current = false; return fetchProfile(user); },
             loading,
         }}>
-            {children}
+            {user && !profile && profileError && !loading
+                ? <ProfileLoadError message={profileError} onRetry={retryProfile} onSignOut={signOut} />
+                : children}
         </AuthContext.Provider>
     );
 };
