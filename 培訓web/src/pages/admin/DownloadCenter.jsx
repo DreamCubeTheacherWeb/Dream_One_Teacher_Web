@@ -158,12 +158,6 @@ const DownloadCenter = () => {
         .upload(filePath, file, { contentType: 'application/pdf' });
       if (uploadErr) throw uploadErr;
 
-      if (currentDoc) {
-        await supabase.from('contract_documents')
-          .update({ is_active: false })
-          .eq('id', currentDoc.id);
-      }
-
       const dt = formTypes.find(d => d.doc_type === docType);
       const { error: insertErr } = await supabase.from('contract_documents').insert({
         doc_type: docType,
@@ -179,9 +173,20 @@ const DownloadCenter = () => {
       });
       if (insertErr) throw insertErr;
 
+      // 新版寫入成功後才停用舊版：寫入失敗時舊版仍可下載；停用失敗時下載一律取版本號最高的啟用版本（新版），只提醒管理員。
+      let deactivateWarning = '';
+      if (currentDoc) {
+        const { error: deactivateErr } = await supabase.from('contract_documents')
+          .update({ is_active: false })
+          .eq('id', currentDoc.id);
+        if (deactivateErr) {
+          deactivateWarning = `\n注意：舊版（第 ${currentDoc.version} 版）停用失敗：${deactivateErr.message}。下載會使用新版，但舊版仍標示為啟用，請重新整理確認並處理。`;
+        }
+      }
+
       if (fileRefs.current[docType]) fileRefs.current[docType].value = '';
       await loadData();
-      alert('上傳成功！新版本需重新設定欄位位置（按「定位欄位」），設定前無法產生表單。');
+      alert('上傳成功！新版本需重新設定欄位位置（按「定位欄位」），設定前無法產生表單。' + deactivateWarning);
     } catch (err) {
       alert('上傳失敗：' + (err.message || '未知錯誤'));
     }
