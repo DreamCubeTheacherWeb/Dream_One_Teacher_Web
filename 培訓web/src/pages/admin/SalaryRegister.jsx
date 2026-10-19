@@ -830,11 +830,23 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
     const [calculatedQuote, setCalculatedQuote] = useState(null);
     const [quoteLoading, setQuoteLoading] = useState(false);
     const [quoteError, setQuoteError] = useState('');
+    // 每次定價輸入或基本報酬被改動就 +1：還在路上的舊試算回來時對不上版本就丟掉
+    const quoteVersionRef = useRef(0);
 
     const total = Number(form.base_salary || 0) + Number(form.bonus || 0);
     const instructor = instructors.find(i => i.id === session.instructor_id);
 
+    // 定價輸入（課程類型、日期、時數、人數、角色）或基本報酬一變，先前的試算就失效：
+    // 清掉 calculatedQuote，儲存時由「需重新試算／人工調整」的既有檢查接手，
+    // 不會再用舊試算蓋掉新的輸入或手動金額。
+    const changePricingField = (field, value) => {
+        quoteVersionRef.current += 1;
+        setCalculatedQuote(null);
+        setForm(prev => ({ ...prev, [field]: value }));
+    };
+
     const recalculate = async () => {
+        const quoteVersion = quoteVersionRef.current;
         setQuoteLoading(true);
         setQuoteError('');
         setError('');
@@ -847,6 +859,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                 durationHours: form.duration_hours,
                 studentCount: form.student_count,
             });
+            if (quoteVersion !== quoteVersionRef.current) return;
             setCalculatedQuote(nextQuote);
             setForm(prev => ({
                 ...prev,
@@ -1036,13 +1049,13 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
 
                 <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Field label="課程類型">
-                        <select value={form.course_type} onChange={e => setForm({ ...form, course_type: e.target.value })}
+                        <select value={form.course_type} onChange={e => changePricingField('course_type', e.target.value)}
                             className="bh-input">
                             {Object.entries(COURSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                     </Field>
                     <Field label="日期">
-                        <input type="date" max={TAIPEI_TODAY} value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
+                        <input type="date" max={TAIPEI_TODAY} value={form.session_date} onChange={e => changePricingField('session_date', e.target.value)}
                             className="bh-input" />
                     </Field>
                     <Field label="課程名稱" full>
@@ -1050,15 +1063,15 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                             className="bh-input" />
                     </Field>
                     <Field label="時數">
-                        <input type="number" min="0.5" max="24" step="0.5" value={form.duration_hours} onChange={e => setForm({ ...form, duration_hours: e.target.value })}
+                        <input type="number" min="0.5" max="24" step="0.5" value={form.duration_hours} onChange={e => changePricingField('duration_hours', e.target.value)}
                             className="bh-input" />
                     </Field>
                     <Field label="人數">
-                        <input type="number" min="1" max="999" step="1" value={form.student_count} onChange={e => setForm({ ...form, student_count: e.target.value })}
+                        <input type="number" min="1" max="999" step="1" value={form.student_count} onChange={e => changePricingField('student_count', e.target.value)}
                             className="bh-input" />
                     </Field>
                     <Field label="角色">
-                        <select value={form.role_in_session} onChange={e => setForm({ ...form, role_in_session: e.target.value })}
+                        <select value={form.role_in_session} onChange={e => changePricingField('role_in_session', e.target.value)}
                             className="bh-input">
                             {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
@@ -1091,7 +1104,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                     <SalaryQuotePanel quote={calculatedQuote} loading={quoteLoading} error={quoteError} />
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <Field label="基本報酬">
-                            <input type="number" min="0" value={form.base_salary} onChange={e => setForm({ ...form, base_salary: e.target.value })}
+                            <input type="number" min="0" value={form.base_salary} onChange={e => changePricingField('base_salary', e.target.value)}
                                 className="bh-input" />
                         </Field>
                         <Field label="獎金">
