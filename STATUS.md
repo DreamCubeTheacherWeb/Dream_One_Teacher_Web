@@ -42,6 +42,12 @@ security-auditor 審查：0 阻斷；amr 行為已對照 supabase/auth 原始碼
 以正式站 bundle 跑 `verify-complete-gate.mjs` 37/37。**待業主真帳號端到端**：個人資料 → 簽約 → 收驗證碼 → 輸 6 碼 → 簽名送出 → 合約檢視頁有紀錄；
 若出現「請先完成 Email 身分驗證」代表正式環境 JWT 無 otp 紀錄（amr 假設不成立），回報即查。
 
+**⚠️ 2026-10-19 上線後探測發現阻斷**：以 anon 對 `/auth/v1/otp`（info@dropout.tw、create_user=false）探測回 422
+`email_provider_disabled`「Email logins are disabled」——Supabase 的 **Email 登入提供者目前關閉**（7/09 探測時為開啟，中間被關掉）。
+不開啟的話講師按「寄送驗證碼」會失敗、無人能完成簽約。需業主在 Dashboard → Authentication → Sign In / Providers → Email 開啟
+（本站只用 Google 登入畫面，簽約 OTP 呼叫帶 shouldCreateUser=false，不會因此開放註冊；但依資安審查備註，開啟後任何既有帳號的信箱
+都可走 magic link 登入，信箱被盜＝帳號被盜，業主已知情）。開啟後再寄一次測試碼確認信內有 6 碼，才進行真帳號端到端。
+
 **原上線順序（已完成）**：① 業主在 Supabase Dashboard：Authentication → Email Templates → Magic Link 模板把 `{{ .ConfirmationURL }}` 換成
 `{{ .Token }}`（7/09 診斷：這是驗證碼寄不出的根因）；Project Settings → Auth → SMTP 接 Resend（內建 2 封／小時不夠用）。
 ② 正式庫套 `20261018180000_reopen_instructor_contract_signing.sql`（**先 RPC 後前端**；只建函式，不動既有資料）。③ 合併本分支到 main（Zeabur 自動部署）。
