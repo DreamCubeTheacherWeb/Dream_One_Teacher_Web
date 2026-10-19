@@ -25,7 +25,8 @@
     "verify:salary-report-form": "node scripts/verify-salary-report-form.mjs",
     "verify:salary-report-form:browser": "node scripts/verify-salary-report-form-browser.mjs",
     "verify:contract-signing": "node scripts/verify-contract-signing-rpc.mjs",
-    "verify:contract-signing:browser": "node scripts/verify-contract-feature-enabled.mjs"
+    "verify:contract-signing:browser": "node scripts/verify-contract-feature-enabled.mjs",
+    "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

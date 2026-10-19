@@ -20,7 +20,8 @@ AS $$ SELECT DATE '2026-01-01' $$;
 COMMENT ON FUNCTION public.instructor_salary_visible_from() IS
   '講師端可見的最早課程日期（含）。要往前開放：CREATE OR REPLACE 改回傳日期即可。';
 
-REVOKE ALL ON FUNCTION public.instructor_salary_visible_from() FROM PUBLIC;
+-- Supabase 的預設權限會自動把新函式的 EXECUTE 給 anon，REVOKE PUBLIC 擋不到，必須明寫 anon
+REVOKE ALL ON FUNCTION public.instructor_salary_visible_from() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.instructor_salary_visible_from() TO authenticated;
 
 DROP POLICY IF EXISTS "Instructors view own sessions" ON public.class_sessions;

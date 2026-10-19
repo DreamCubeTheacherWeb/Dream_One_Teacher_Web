@@ -22,6 +22,7 @@ import ContractView from './pages/ContractView';
 import ContractAdmin from './pages/admin/ContractAdmin';
 import SalaryRegister from './pages/admin/SalaryRegister';
 import SalaryVendorExport from './pages/admin/SalaryVendorExport';
+import SalaryReportOptionsManager from './pages/admin/SalaryReportOptionsManager';
 import MySalary from './pages/MySalary';
 import MySalaryNew from './pages/MySalaryNew';
 import DownloadCenter from './pages/admin/DownloadCenter';
@@ -244,6 +245,14 @@ function App() {
             element={
               <ProtectedRoute adminOnly={true}>
                 <Layout><SalaryVendorExport /></Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/salary/options"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <Layout><SalaryReportOptionsManager /></Layout>
               </ProtectedRoute>
             }
           />

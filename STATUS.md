@@ -1,7 +1,7 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-18（講師簽約正式重開已建置未上線；課程回報對齊 Google 表單欄位已上線；講師薪資可見範圍 2026-01 起＋參考表權限收緊已建置未上線）。
+> 最後更新：2026-10-18（講師簽約正式重開已建置未上線；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
 
@@ -45,7 +45,36 @@ security-auditor 審查：0 阻斷；amr 行為已對照 supabase/auth 原始碼
 長期可改伺服器端套印）；`contract_documents` SELECT 對 pending 也開放（任何 Google 帳號登入可讀合約範本）；mentor 可讀所有 `signed/` 檔但看不到合約列；
 開 Email OTP 等於多一條不經 Google 的登入路徑（信箱被盜＝帳號被盜）；後台上傳通知的 insert 未檢查 error。
 
-## 🔒 2026-10-18：講師只看 2026 年 1 月起的薪資紀錄＋參考表限已核准角色（✅ 已建置未上線）
+## 🗂️ 2026-10-18：後台回報選項管理頁（✅ 正式環境已上線）
+
+**需求**：業主 2026-10-18：「後台管理員也會需要可以定義這些欄位，像是哪些選單的欄位可以有哪些選項可以選」。講師回報頁的三個下拉
+（教學課程期間、上課單位、營隊梯次）選項存在 `salary_report_options`，原本只能進 Supabase 改，沒有管理畫面。
+
+**做法**：新頁 `/admin/salary/options`（`src/pages/admin/SalaryReportOptionsManager.jsx`，路由 adminOnly，mentor 與講師會被導走）。
+入口：薪資登記中心頁首「回報選項管理」按鈕（只有 admin 看得到）、後台首頁多一張卡片。三個分頁籤各列全部選項（停用的灰色＋刪除線）；
+可新增（value 自動＝文字、排序＝目前最大＋10）、改名、上移／下移（交換兩筆排序值）、停用／啟用。**不提供刪除**（舊回報的上課單位是文字快照，
+停用即可，畫面有說明）。教學課程期間的 value 是固定代碼（winter_break／semester／summer_break），該籤只能改名與啟用、不能新增。
+合作單位／營隊梯次改名時 value 一起改（講師回報存的是 value，不同步的話舊名會繼續寫進新回報）；期間改名只改 label。
+每個資料庫呼叫都檢查 error；更新用 `.select()` 確認真的更新到列（RLS 擋下時不會靜默成功）；文字空白或超過 200 字、同分頁重複會擋，
+伺服器回唯一鍵衝突（23505）顯示友善訊息。純函式在 `src/lib/salaryReportOptions.js`（排序、驗證、下一個排序值、上移下移）。
+
+**驗證**：`npm test` 69/69（含新增 10 項選項純函式測試）；`npm run build` 通過；變更檔 ESLint 0 問題；`git diff --check` 乾淨。
+`npm run verify:salary-report-options:browser`（mock Supabase＋本機 dev，沙盒外執行）37/37：三籤切換、期間籤無新增、新增 payload
+（kind／value／label／sort_order）、改名／停用／啟用／上移／下移送出的 update 內容、空白／超長／重複被擋、23505 與「更新 0 筆」訊息、
+teacher 與 mentor 進頁被導走、mentor 看不到入口、390px 三籤皆無水平溢出且所有操作熱區 ≥44px。
+截圖在 `培訓web/docs/verification/2026-10-18-salary-report-options/`（桌機 3 張＋390px 1 張）。
+
+**上線邊界**：純前端，無 migration；RLS 早已存在於 `20261018120000_align_salary_report_with_forms.sql`（admin 可增改刪、已核准角色只讀啟用項），
+推前端即可。尚未對真實 Supabase 實操過（驗證用 mock），上線後請 admin 登入實際加／停用一筆確認。
+
+---
+
+**正式環境證據（2026-10-18 22:34–22:39 台北）**：業主指示「把後台回報選項管理頁推上線」後，`3efa1f5` fast-forward 推上 `main`，
+GitHub deployment `7155998549`（14:34:23 UTC）；每 60 秒探測連續 5 次命中 `/assets/index-CDQApnMb.js`（2,366,882 bytes、SHA-256 前綴
+`e86f33ea771ba24b`），`dream-one-teacher.zeabur.app` 與 `teacher.dreamcube.tw` 相同且與本機 build 逐位元一致，bundle 含「回報選項管理」。
+純前端發布，未改 Supabase。**待業主**：用管理員帳號實際新增一筆、停用一筆，確認對正式庫的寫入正常（本機只用 mock 驗過）。
+
+## 🔒 2026-10-18：講師只看 2026 年 1 月起的薪資紀錄＋參考表限已核准角色（✅ 正式環境已上線）
 
 **需求**：業主 2026-10-18 指示「講師薪資可以看到的資料範圍先從 2026 年一月開始就好，那之前的有些可能還要整理」，並要求「權限的部分幫我檢查一下」。
 
@@ -66,9 +95,18 @@ security-auditor 審查：0 阻斷；amr 行為已對照 supabase/auth 原始碼
 **正式庫現況（2026-10-18 唯讀查詢）**：`users.role` CHECK 含 mentor；目前 mentor 0 人、teacher 2、pending 1、admin 14。報酬表的管理政策在線上叫
 「Staff can manage rate card」（admin＋mentor），與原始碼「Admins can manage rate card」不同，是後台另行放寬過的。
 
-**待業主決定**：①是否套用本 migration 到正式庫（套完要推前端）；②資安審查的「高・條件式」：mentor 對 class_sessions 是 FOR ALL（可改任何人薪資、
+**正式環境證據（2026-10-18 22:10–22:23 台北）**：業主指示「請套用講師可見範圍與參考表權限的 migration 到正式庫，套完推前端上線」後，
+在 Supabase SQL Editor 以單一交易套用 `20261018150000_limit_instructor_salary_visibility.sql`，回 Success。套用後核對：門檻函式回 `2026-01-01`、
+class_sessions 政策 2 條且講師 SELECT 條件含 `session_date >= instructor_salary_visible_from()`、報酬表與選項表各只剩一條「Approved roles」SELECT 政策。
+**發現並當場修正**：Supabase 預設權限會自動把新函式 EXECUTE 給 anon，`REVOKE FROM PUBLIC` 擋不到——外部匿名呼叫門檻函式一度回 200；
+已手動 `REVOKE … FROM anon`（查到 anon=false、authenticated=true，外部再呼叫回 401 `42501`），migration 檔同步改為明寫 anon（commit `bde11f4`）。
+外部匿名讀 class_sessions／salary_rate_card 回空陣列、salary_report_options 回 401。前端 `20e2c46` 推上 `main`，GitHub deployment
+`7155808916`（14:18:50 UTC）；每 60 秒探測連續 5 次命中 `/assets/index-C27VOsNp.js`（2,355,287 bytes、SHA-256 前綴 `94c417e17b2151ab`），
+兩個正式網域相同且與本機 build 逐位元一致，bundle 含「2026 年 1 月起」提示。未以講師帳號實機登入檢視（無講師測試帳號）。
+
+**待業主決定**：①資安審查的「高・條件式」：mentor 對 class_sessions 是 FOR ALL（可改任何人薪資、
 刪回報），目前 mentor 0 人所以休眠，但 CHECK 允許新增 mentor；若 mentor 定位是「可看不可改薪資」，應把寫入收成 admin only；
-③「低」：`quote_salary` 收了 `p_role_in_session` 但沒用，助教回報會照主講規則試算，核薪時要看角色。
+②「低」：`quote_salary` 收了 `p_role_in_session` 但沒用，助教回報會照主講規則試算，核薪時要看角色。
 
 ---
 
