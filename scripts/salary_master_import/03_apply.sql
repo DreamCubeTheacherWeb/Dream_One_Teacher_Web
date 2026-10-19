@@ -69,6 +69,17 @@ BEGIN
      SET instructor_id = ins.id
     FROM public.instructors ins
    WHERE m.batch = v_batch AND m.instructor_match = 'matched' AND trim(ins.full_name) = m.instructor_name;
+  -- 同名多位時：若 5 月舊紀錄裡這個名字一律掛在同一位講師，就沿用那一位（維持現狀，不另做判斷）；否則留空
+  UPDATE public.salary_master_rows m
+     SET instructor_id = p.instructor_id, instructor_match = 'matched_previous'
+    FROM (SELECT instructor_name, min(instructor_id::text)::uuid AS instructor_id
+            FROM public.class_sessions
+           WHERE source = 'historical_import' AND instructor_id IS NOT NULL
+           GROUP BY instructor_name
+          HAVING count(DISTINCT instructor_id) = 1) p
+   WHERE m.batch = v_batch AND m.instructor_match = 'ambiguous' AND p.instructor_name = m.instructor_name
+     AND EXISTS (SELECT 1 FROM public.instructors ins
+                  WHERE ins.id = p.instructor_id AND trim(ins.full_name) = m.instructor_name);
 
   -- 3. 舊匯入整批搬到隔離區（欄位動態取兩表共有者，含當下的 month_label／total_salary 值）
   SELECT string_agg(quote_ident(c.column_name), ', ' ORDER BY c.ordinal_position)

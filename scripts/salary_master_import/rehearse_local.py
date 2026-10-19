@@ -211,8 +211,8 @@ def build_db(pg, db, null_empty):
       UNION ALL
       SELECT 'other', NULL, '後台手動', DATE '2026-09-30', 0, 500, 'manual', 'approved', 'legacy', '後台手動 C';
     """)
-    # 同名兩位講師：驗證「同名多位不亂配」
-    pg.psql(db, "INSERT INTO public.instructors (full_name) VALUES ('王威皓')")
+    # 同名兩位講師：王威皓（舊紀錄已掛在其中一位 → 沿用）、温浩志（新面孔、兩位同名且無舊紀錄 → 留空不亂配）
+    pg.psql(db, "INSERT INTO public.instructors (full_name) VALUES ('王威皓'), ('温浩志'), ('温浩志')")
     return len(rows)
 
 
@@ -250,7 +250,7 @@ def rehearse(pg, label, null_empty):
           and float(up["paid_sum"]) == 6000)
     check("02 上傳核對：22 筆年份更正、無壞日期／狀態／角色", up["date_fixed"] == 22 and up["bad_session_date"] == 0
           and up["bad_status"] == 0 and up["bad_role"] == 0 and up["empty_name"] == 0)
-    check("02 上傳核對：同名講師被列為 ambiguous", any(x["name"] == "王威皓" for x in up["names_ambiguous"]))
+    check("02 上傳核對：同名講師被列為 ambiguous", {"王威皓", "温浩志"} <= {x["name"] for x in up["names_ambiguous"]})
     print(f"      名字對應：{up['names_matched']}/{up['names_total']} 位唯一對應、{len(up['names_unmatched'])} 位找不到、"
           f"{len(up['names_ambiguous'])} 位同名")
     check("02 上傳核對：網站端紀錄與新總表重疊會被列出", isinstance(up["overlap_with_website_rows"], list),
@@ -277,9 +277,14 @@ def rehearse(pg, label, null_empty):
     fixed = post["date_fixed_rows"]
     check("04 核對：22 筆年份已更正（無 2026-12、無 2020 年前）", len(fixed) == 22
           and all(not x["to"].startswith("2026-12") and x["to"] >= "2020" for x in fixed))
-    amb = pg.psql(db, "SELECT count(*) FROM public.class_sessions WHERE instructor_name = '王威皓' AND instructor_id IS NOT NULL "
-                      "AND source = 'historical_import'")
-    check("04 核對：同名講師的紀錄沒有被亂配 instructor_id", amb == "0", amb)
+    prev = pg.psql(db, "SELECT count(DISTINCT q.instructor_id) || '/' || count(DISTINCT cs.instructor_id) || '/' || "
+                       "bool_and(cs.instructor_id = q.instructor_id) FROM public.class_sessions cs, "
+                       "(SELECT DISTINCT instructor_id FROM public.class_sessions_quarantine WHERE instructor_name = '王威皓') q "
+                       "WHERE cs.instructor_name = '王威皓' AND cs.source = 'historical_import'")
+    check("04 核對：同名但舊紀錄有固定對應者（王威皓）沿用舊對應", prev == "1/1/true", prev)
+    amb = pg.psql(db, "SELECT count(*) FILTER (WHERE instructor_id IS NOT NULL) || '/' || count(*) FROM public.class_sessions "
+                      "WHERE instructor_name = '温浩志' AND source = 'historical_import'")
+    check("04 核對：同名且無舊對應者（温浩志）一律留空不亂配", amb.startswith("0/") and amb != "0/0", amb)
     web = pg.psql(db, "SELECT string_agg(course_name, ',' ORDER BY course_name) FROM public.class_sessions WHERE source <> 'historical_import'")
     check("04 核對：網站端 3 筆原封不動", sorted(web.split(",")) == sorted(["網站回報 A", "網站回報 B", "後台手動 C"]), web)
 
