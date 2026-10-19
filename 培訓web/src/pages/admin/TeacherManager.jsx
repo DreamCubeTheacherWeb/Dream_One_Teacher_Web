@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Clock, RefreshCw, Search, ShieldCheck, UserCheck, Users } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock, RefreshCw, Search, ShieldCheck, UserCheck, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { getInstructorProfileCompletion } from '../../lib/profileCompletion';
+import { findUnclaimedNameSlots } from '../../lib/instructorNameSlots';
 
 const DEFAULT_MENTORS = ['懶懶', '叮叮', '樹懶'];
 const ROLE_CONFIG = {
@@ -202,6 +203,10 @@ const TeacherManager = () => {
                     const completion = getInstructorProfileCompletion(instructor);
                     const blocked = BLOCKED_STATUSES.has(instructor?.employment_status);
                     const canApprove = account.role === 'pending' && instructor && completion.complete && !blocked;
+                    // 後台只填姓名建立的空位若與這個待審核帳號同名，可能是同一位老師誤選「新建帳號」。
+                    const sameNameSlots = account.role === 'pending'
+                        ? findUnclaimedNameSlots(instructor?.full_name || account.name, instructors)
+                        : [];
                     return (
                         <div key={account.id} className="bh-card p-4 sm:p-5">
                             <div className="flex flex-col lg:flex-row lg:items-center gap-4">
@@ -226,6 +231,18 @@ const TeacherManager = () => {
                                     {account.role === 'pending' && completion.complete && !blocked && (
                                         <div className="text-xs text-bauhaus-blue font-bold mt-2 flex items-center gap-1">
                                             <CheckCircle2 className="w-4 h-4" /> 資料已完成，可核准
+                                        </div>
+                                    )}
+                                    {sameNameSlots.length > 0 && (
+                                        <div
+                                            role="alert"
+                                            data-testid="same-name-slot-warning"
+                                            className="mt-3 flex items-start gap-2 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl px-3 py-2 text-xs font-bold text-bauhaus-black"
+                                        >
+                                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            <span>
+                                                後台有同名空位未認領{sameNameSlots.length > 1 ? `（${sameNameSlots.length} 個）` : ''}，可能是同一位老師選成「新建帳號」。可刪除空位後再核准，或請老師改用「認領帳號」。
+                                            </span>
                                         </div>
                                     )}
                                 </div>

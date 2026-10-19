@@ -90,12 +90,35 @@ check('Email 衝突帳號不會進入新主檔填寫流程', () => {
   assert.match(pendingApproval, /claimState\?\.status !== 'conflict'/);
 });
 
-check('Email 未命中時先選新進或非新進，不會直接建立空白主檔', () => {
-  assert.match(pendingApproval, />新進</);
-  assert.match(pendingApproval, />非新進</);
-  assert.match(pendingApproval, /8\/25 後才加入講師群組/);
+check('Email 未命中時先選認領帳號或新建帳號，不會直接建立空白主檔', () => {
+  assert.match(pendingApproval, />認領帳號</);
+  assert.match(pendingApproval, />新建帳號</);
+  assert.match(pendingApproval, /claim_instructor_name_slot/);
   assert.match(pendingApproval, /claim_existing_instructor_by_identity/);
   assert.doesNotMatch(pendingApproval, /!data && claimState\?\.status === 'new'[\s\S]{0,120}navigate\('\/profile'/);
+});
+
+check('認領帳號分兩步：先只填姓名，姓名沒命中（not_found）才要手機與身分證末四碼', () => {
+  assert.match(pendingApproval, /provided_full_name:\s*fullName/);
+  assert.match(pendingApproval, /data\?\.status === 'not_found'[\s\S]{0,160}setClaimStep\('identity'\)/);
+  assert.match(pendingApproval, /claimStep === 'identity'/);
+  assert.match(pendingApproval, /onSubmit=\{claimStep === 'name' \? handleNameClaim : handleExistingClaim\}/);
+});
+
+check('後台可只填姓名新增空位，並用資料進度追蹤到簽約', () => {
+  assert.match(instructorList, /name_slot:\s*true/);
+  assert.match(instructorList, /\.insert\(rows\)/);
+  assert.match(instructorList, /searchParams\.get\('progress'\)/);
+  assert.match(instructorList, /findNameConflicts/);
+  assert.match(instructorList, /我確定要再新增同名空位（同名同姓不同人）/);
+  assert.match(instructorList, /若認領錯人：按解除綁定，對方會回到待審核/);
+  assert.match(teacherManager, /findUnclaimedNameSlots/);
+  assert.match(teacherManager, /後台有同名空位未認領/);
+  assert.match(read('src/pages/admin/Dashboard.jsx'), /\/admin\/instructors\?progress=todo/);
+  const progress = read('src/lib/instructorProgress.js');
+  assert.match(progress, /getInstructorProfileCompletion/);
+  assert.match(read('src/lib/instructorProgressLoader.js'), /\.from\('instructor_contracts'\)/);
+  assert.match(progress, /signedUserIds\.has\(instructor\.user_id\)/);
 });
 
 check('既有講師以姓名、完整手機與身分證末四碼直接認領並限制重試', () => {

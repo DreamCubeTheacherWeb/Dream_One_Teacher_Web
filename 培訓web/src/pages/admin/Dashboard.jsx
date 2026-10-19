@@ -6,6 +6,7 @@ import {
     ClipboardCheck, UserCog, BarChart3, Megaphone, ChevronRight,
     ContactRound, BookOpen, GraduationCap, Settings, Shield, FileSignature, Wallet, Download, Award, Layers3, FileSpreadsheet, ListChecks
 } from 'lucide-react';
+import { loadInstructorProgressSummary } from '../../lib/instructorProgressLoader';
 import { Link2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -26,6 +27,8 @@ const AdminDashboard = () => {
     const isAdmin = profile?.role === 'admin';
     const [courses, setCourses] = useState([]);
     const [stats, setStats] = useState({ teachers: 0, courses: 0, assignments: 0 });
+    // 老師資料追蹤：{ counts, contractKnown }；讀取失敗時 counts 為 null，卡片顯示「—」
+    const [tracking, setTracking] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -44,11 +47,19 @@ const AdminDashboard = () => {
                 courses: coursesData?.length || 0,
                 assignments: assignCount || 0
             });
+
+            // 簽約紀錄只有管理員讀得到；輔導員的追蹤數字不含「待簽約」。
+            try {
+                setTracking(await loadInstructorProgressSummary({ includeContracts: isAdmin }));
+            } catch (error) {
+                console.error('讀取老師資料追蹤失敗：', error);
+                setTracking({ counts: null, contractKnown: false, supportError: true });
+            }
             setLoading(false);
         };
 
         fetchData();
-    }, []);
+    }, [isAdmin]);
 
     const toggleCourseStatus = async (course) => {
         const { error } = await supabase
@@ -89,7 +100,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-10">
                 {STATS_CONFIG.map((s, idx) => {
                     const deco = CORNER_DECOS[idx % 3];
                     const Icon = s.icon;
@@ -110,6 +121,7 @@ const AdminDashboard = () => {
                         </div>
                     );
                 })}
+                <TrackingCard tracking={tracking} isAdmin={isAdmin} />
             </div>
 
             {/* ── 培訓管理 ── */}
@@ -291,6 +303,41 @@ const AdminDashboard = () => {
                 </div>
             </div>
         </div>
+    );
+};
+
+// 老師資料追蹤：還沒完成（未認領＋待審核＋資料未完整＋待簽約）的人數，點了直接看名單
+const TrackingCard = ({ tracking, isAdmin }) => {
+    const counts = tracking?.counts;
+    const contractKnown = Boolean(tracking?.contractKnown);
+    const parts = counts ? [
+        `未認領 ${counts.byKey.unclaimed}`,
+        `待審核 ${counts.byKey.pending_review}`,
+        `資料未完整 ${counts.byKey.incomplete}`,
+        ...(contractKnown ? [`待簽約 ${counts.byKey.awaiting_contract}`] : []),
+    ] : [];
+    return (
+        <Link
+            to="/admin/instructors?progress=todo"
+            aria-label={`老師資料追蹤，還沒完成 ${counts ? counts.todo : '讀取失敗'} 位，查看名單`}
+            className="bh-card bh-card-hover group relative overflow-hidden p-6 flex items-center gap-4"
+        >
+            <span aria-hidden="true" className="absolute -top-2 -right-2 w-4 h-4 bg-bauhaus-red rounded-full" />
+            <div className="w-12 h-12 rounded-lg border-2 border-bauhaus-black bg-bauhaus-red text-white flex items-center justify-center shrink-0">
+                <ListChecks className="w-6 h-6" />
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="text-4xl font-black text-bauhaus-black tabular-nums">{counts ? counts.todo : '—'}</div>
+                <div className="text-sm font-bold text-bauhaus-black/50 uppercase tracking-wide">老師資料追蹤</div>
+                {parts.length > 0 && (
+                    <div className="text-xs font-medium text-bauhaus-black/50 mt-1">
+                        還沒完成：{parts.join('・')}
+                        {!isAdmin && !contractKnown && '（簽約狀態僅管理員可見）'}
+                    </div>
+                )}
+            </div>
+            <ChevronRight className="w-5 h-5 text-bauhaus-black/30 group-hover:text-bauhaus-black transition-colors shrink-0" />
+        </Link>
     );
 };
 

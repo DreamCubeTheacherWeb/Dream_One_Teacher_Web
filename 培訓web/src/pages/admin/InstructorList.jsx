@@ -1,10 +1,29 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Eye, FileText, Loader2, Settings, AlertCircle, Pencil } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Eye, FileText, Loader2, Settings, AlertCircle, Pencil, ListChecks, Trash2 } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import { REQUIRED_PROFILE_DOCUMENTS, hasInstructorDocument } from '../../lib/profileCompletion';
+import {
+    PROFILE_READY_STAGE,
+    PROGRESS_STAGES,
+    PROGRESS_TODO_FILTER,
+    buildProgressRows,
+    countProgress,
+    isProgressFilterKey,
+    matchesProgressFilter,
+} from '../../lib/instructorProgress';
+import { fetchAllPages, loadProgressSupport } from '../../lib/instructorProgressLoader';
+import {
+    MAX_NAME_SLOT_BATCH,
+    describeBatchDuplicate,
+    describeRosterConflict,
+    findNameConflicts,
+    isPristineNameSlot,
+    normalizePersonName,
+    parseNameLines,
+} from '../../lib/instructorNameSlots';
 import FilledFormPreviewModal from '../../components/FilledFormPreviewModal';
 import { INSTRUCTOR_LEVEL_LABELS as ROLE_LABELS, SPEED_QUALIFICATION_LABELS, speedQualificationLabel } from '../../lib/constants';
 
@@ -24,6 +43,18 @@ const DOC_KEYS = [
     { key: 'photo', label: '講師照片' },
     { key: 'bankbook', label: '存摺封面' },
 ];
+// 資料進度標籤的配色（階段定義與判斷在 lib/instructorProgress.js，這裡只管樣式）
+const PROGRESS_STYLES = {
+    [PROGRESS_TODO_FILTER]: 'bg-bauhaus-red text-white',
+    unclaimed: 'bg-bauhaus-muted text-bauhaus-black',
+    pending_review: 'bg-bauhaus-yellow text-bauhaus-black',
+    incomplete: 'bg-bauhaus-red text-white',
+    awaiting_contract: 'bg-bauhaus-black text-white',
+    complete: 'bg-bauhaus-blue text-white',
+    profile_ready: 'bg-bauhaus-blue text-white',
+    disabled: 'bg-white text-bauhaus-black/60',
+};
+const NAME_SLOT_UNLINK_HINT = '若認領錯人：按解除綁定，對方會回到待審核';
 const LINK_FILTERS = [
     { key: '', label: '全部', color: 'bg-bauhaus-black text-white' },
     { key: 'linked', label: '已認領', color: 'bg-bauhaus-blue text-white' },
@@ -38,7 +69,15 @@ const InstructorList = () => {
     const linkFilter = requestedLinkFilter === 'linked' || requestedLinkFilter === 'unlinked'
         ? requestedLinkFilter
         : '';
+    const requestedProgress = searchParams.get('progress');
+    const progressFilterParam = isProgressFilterKey(requestedProgress) ? requestedProgress : '';
     const [instructors, setInstructors] = useState([]);
+    // 資料進度需要的輔助資料：登入帳號（role、Google Email）與已簽約的 user_id。
+    // null＝讀不到（例如輔導員看不到簽約紀錄），畫面會誠實標示「簽約狀態未知」而不是亂猜。
+    const [usersById, setUsersById] = useState(null);
+    const [signedUserIds, setSignedUserIds] = useState(null);
+    const [supportError, setSupportError] = useState(false);
+    const [notice, setNotice] = useState('');
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -56,11 +95,12 @@ const InstructorList = () => {
     const formPreviewUrl = formPreview?.url;
 
     const loadInstructors = useCallback(async () => {
-        const [instructorResult, formResult] = await Promise.all([
-            supabase
+        const [instructorResult, formResult, support] = await Promise.all([
+            fetchAllPages(() => supabase
                 .from('instructors')
                 .select('*')
-                .order('created_at', { ascending: false }),
+                .order('created_at', { ascending: false })
+                .order('id')),
             supabase
                 .from('contract_documents')
                 .select('doc_type, display_name, version, sort_order')
@@ -68,9 +108,13 @@ const InstructorList = () => {
                 .eq('is_active', true)
                 .order('sort_order')
                 .order('version', { ascending: false }),
+            loadProgressSupport({ includeContracts: isAdmin }),
         ]);
 
         setInstructors(instructorResult.data || []);
+        setUsersById(support.usersById);
+        setSignedUserIds(support.signedUserIds);
+        setSupportError(support.supportError);
 
         const activeByType = new Map();
         (formResult.data || []).forEach((form) => {
@@ -91,7 +135,7 @@ const InstructorList = () => {
             console.error('讀取自動填表模板失敗：', formResult.error.message);
         }
         setLoading(false);
-    }, []);
+    }, [isAdmin]);
 
     useEffect(() => {
         const timer = window.setTimeout(loadInstructors, 0);
@@ -109,6 +153,12 @@ const InstructorList = () => {
         const nextParams = new URLSearchParams(searchParams);
         if (nextFilter) nextParams.set('claim', nextFilter);
         else nextParams.delete('claim');
+        setSearchParams(nextParams, { replace: true });
+    };
+    const applyProgressFilter = (nextFilter) => {
+        const nextParams = new URLSearchParams(searchParams);
+        if (nextFilter) nextParams.set('progress', nextFilter);
+        else nextParams.delete('progress');
         setSearchParams(nextParams, { replace: true });
     };
     const toggleExpand = async (inst) => {
@@ -132,7 +182,34 @@ const InstructorList = () => {
         setSignedUrls(prev => ({ ...prev, [inst.id]: urls }));
     };
 
+    const progressRows = useMemo(
+        () => buildProgressRows(instructors, { usersById, signedUserIds }),
+        [instructors, usersById, signedUserIds],
+    );
+    const progressById = useMemo(
+        () => new Map(progressRows.map(({ instructor, progress }) => [instructor.id, progress])),
+        [progressRows],
+    );
+    const progressCounts = useMemo(() => countProgress(progressRows), [progressRows]);
+    // 讀不到簽約紀錄時，用「資料已完整」取代「待簽約／已完成」兩顆，避免誤導。
+    const contractKnown = signedUserIds !== null;
+    const progressChips = [
+        { key: '', label: '全部', count: instructors.length },
+        { key: PROGRESS_TODO_FILTER, label: '還沒完成', count: progressCounts.todo },
+        ...(contractKnown
+            ? PROGRESS_STAGES
+            : [
+                ...PROGRESS_STAGES.filter(stage => ['unclaimed', 'pending_review', 'incomplete'].includes(stage.key)),
+                PROFILE_READY_STAGE,
+                ...PROGRESS_STAGES.filter(stage => stage.key === 'disabled'),
+            ]
+        ).map(stage => ({ key: stage.key, label: stage.label, count: progressCounts.byKey[stage.key] || 0 })),
+    ];
+    const progressFilter = progressChips.some(chip => chip.key === progressFilterParam) ? progressFilterParam : '';
+    const loginEmailOf = (inst) => (inst.user_id ? usersById?.get(inst.user_id)?.email || null : null);
+
     const filtered = instructors.filter(i => {
+        if (progressFilter && !matchesProgressFilter(progressById.get(i.id), progressFilter)) return false;
         if (statusFilter && i.employment_status !== statusFilter) return false;
         if (roleFilter && i.instructor_role !== roleFilter) return false;
         if (speedFilter === 'none' && i.speed_qualification) return false;
@@ -143,6 +220,7 @@ const InstructorList = () => {
             const s = search.toLowerCase();
             return i.full_name?.toLowerCase().includes(s)
                 || i.email_primary?.toLowerCase().includes(s)
+                || loginEmailOf(i)?.toLowerCase().includes(s)
                 || i.phone_mobile?.includes(search);
         }
         return true;
@@ -174,11 +252,38 @@ const InstructorList = () => {
     };
 
     const handleUnlink = async (inst) => {
-        if (!confirm(`確定要解除 ${inst.full_name} 的帳號認領嗎?\n解綁後，同一 Email 的 Google 帳號下次登入會再次自動認領這筆主檔。`)) return;
+        const confirmText = inst.name_slot
+            ? `確定要解除 ${inst.full_name} 的帳號認領嗎?\n${NAME_SLOT_UNLINK_HINT}。\n（這個空位若已被填入個資，之後就不能只靠姓名認領，要改用姓名＋手機＋身分證末四碼核對。）`
+            : `確定要解除 ${inst.full_name} 的帳號認領嗎?\n解綁後，同一 Email 的 Google 帳號下次登入會再次自動認領這筆主檔。`;
+        if (!confirm(confirmText)) return;
         const { error } = await supabase.rpc('admin_unlink_instructor', { target_instructor_id: inst.id });
         if (error) {
             alert('解綁失敗:' + error.message);
             return;
+        }
+        await loadInstructors();
+    };
+
+    // 刪除「只填姓名、還沒人認領、沒有任何資料」的空位（打錯字或誤建時用）。
+    // 查詢條件本身再鎖一次 name_slot／未認領，即使畫面狀態過期也刪不到已被認領或有資料的主檔。
+    const handleDeleteSlot = async (inst) => {
+        if (!isPristineNameSlot(inst)) return;
+        if (!confirm(`確定要刪除空位「${inst.full_name}」嗎?\n這個空位還沒有人認領，也沒有任何資料；刪除後無法復原。`)) return;
+        const { data, error } = await supabase
+            .from('instructors')
+            .delete()
+            .eq('id', inst.id)
+            .eq('name_slot', true)
+            .is('user_id', null)
+            .select('id');
+        if (error) {
+            alert('刪除空位失敗:' + error.message);
+            return;
+        }
+        if (!data?.length) {
+            alert('沒有刪除任何資料：這個空位可能剛被認領或已被刪除，請重新整理確認。');
+        } else {
+            setNotice(`已刪除空位「${inst.full_name}」。`);
         }
         await loadInstructors();
     };
@@ -310,6 +415,23 @@ const InstructorList = () => {
                 </div>
             )}
 
+            {notice && (
+                <div role="status" className="mb-6 bg-bauhaus-blue/10 text-bauhaus-black border-2 border-bauhaus-blue rounded-xl px-4 py-3 text-sm font-bold flex items-start gap-2">
+                    <Check className="w-4 h-4 mt-0.5 shrink-0 text-bauhaus-blue" />
+                    <span className="flex-1">{notice}</span>
+                    <button type="button" onClick={() => setNotice('')} className="text-bauhaus-black/50 hover:text-bauhaus-black" aria-label="關閉通知">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+
+            {supportError && (
+                <div role="alert" className="mb-6 bg-bauhaus-yellow text-bauhaus-black border-2 border-bauhaus-black rounded-xl px-4 py-3 text-sm font-bold flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>部分進度資訊暫時讀不到（登入帳號或簽約紀錄），資料進度標籤可能不完整，請稍後重新整理。</span>
+                </div>
+            )}
+
             <div className="relative mb-3">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-bauhaus-black/40" />
                 <input
@@ -321,7 +443,42 @@ const InstructorList = () => {
                 />
             </div>
 
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div role="group" aria-label="資料進度篩選" className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="inline-flex items-center gap-1 text-xs font-black text-bauhaus-black/60 mr-1">
+                    <ListChecks className="w-4 h-4" /> 資料進度
+                </span>
+                {progressChips.map(chip => {
+                    const active = progressFilter === chip.key;
+                    return (
+                        <button
+                            key={chip.key || 'all'}
+                            type="button"
+                            onClick={() => applyProgressFilter(chip.key)}
+                            aria-pressed={active}
+                            data-progress-filter={chip.key || 'all'}
+                            className={`bh-chip transition-colors min-h-[44px] ${
+                                active
+                                    ? (PROGRESS_STYLES[chip.key] || 'bg-bauhaus-black text-white')
+                                    : 'bg-white text-bauhaus-black/60 hover:bg-bauhaus-muted'
+                            }`}
+                        >
+                            {chip.label} {chip.count}
+                        </button>
+                    );
+                })}
+            </div>
+            {!contractKnown && (
+                <p className="text-xs font-medium text-bauhaus-black/50 mb-3">
+                    {isAdmin
+                        ? '簽約紀錄暫時讀不到，所以「待簽約」「已完成」先合併顯示為「資料已完整」。'
+                        : '簽約狀態只有管理員看得到，所以資料完整的老師顯示為「資料已完整」。'}
+                </p>
+            )}
+
+            <div role="group" aria-label="帳號綁定篩選" className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="inline-flex items-center gap-1 text-xs font-black text-bauhaus-black/60 mr-1">
+                    <Link2 className="w-4 h-4" /> 帳號綁定
+                </span>
                 {LINK_FILTERS.map(f => {
                     const count = f.key === '' ? instructors.length : f.key === 'linked' ? linkedCount : unlinkedCount;
                     const active = linkFilter === f.key;
@@ -400,10 +557,13 @@ const InstructorList = () => {
                             onToggle={() => toggleExpand(inst)}
                             urls={signedUrls[inst.id] || {}}
                             docCount={docCount(inst)}
+                            progress={progressById.get(inst.id)}
+                            loginEmail={loginEmailOf(inst)}
                             isAdmin={isAdmin}
                             onRoleChange={(newRole) => handleRoleChange(inst, newRole)}
                             onUnlink={() => handleUnlink(inst)}
                             onLink={() => setLinkingInst(inst)}
+                            onDeleteSlot={() => handleDeleteSlot(inst)}
                             onPreview={() => handlePreviewForm(inst)}
                             previewDisabled={!selectedFormType || generatingFor !== null}
                             previewing={generatingFor === inst.id}
@@ -412,18 +572,19 @@ const InstructorList = () => {
                 )}
             </div>
 
-            <div className="hidden md:block bh-card overflow-hidden">
-                <table className="w-full text-left">
+            <div className="hidden md:block bh-card overflow-x-auto">
+                <table className="w-full text-left [&_.bh-chip]:whitespace-nowrap">
                     <thead className="bg-bauhaus-black text-white text-xs font-bold uppercase tracking-wider">
                         <tr>
-                            <th className="px-6 py-4">姓名</th>
-                            <th className="px-6 py-4">Email</th>
-                            <th className="px-6 py-4">綁定</th>
-                            <th className="px-6 py-4">等級</th>
-                            <th className="px-6 py-4">速解資格</th>
-                            <th className="px-6 py-4">地區</th>
-                            <th className="px-6 py-4">文件</th>
-                            <th className="px-6 py-4 text-right">操作</th>
+                            <th className="px-3 py-4">姓名</th>
+                            <th className="px-3 py-4">Email</th>
+                            <th className="px-3 py-4">綁定</th>
+                            <th className="px-3 py-4">資料進度</th>
+                            <th className="px-3 py-4">等級</th>
+                            <th className="px-3 py-4">速解資格</th>
+                            <th className="px-3 py-4">地區</th>
+                            <th className="px-3 py-4">文件</th>
+                            <th className="px-3 py-4 text-right">操作</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y-2 divide-bauhaus-black/20">
@@ -435,10 +596,13 @@ const InstructorList = () => {
                                 onToggle={() => toggleExpand(inst)}
                                 urls={signedUrls[inst.id] || {}}
                                 docCount={docCount(inst)}
+                                progress={progressById.get(inst.id)}
+                                loginEmail={loginEmailOf(inst)}
                                 isAdmin={isAdmin}
                                 onRoleChange={(newRole) => handleRoleChange(inst, newRole)}
                                 onUnlink={() => handleUnlink(inst)}
                                 onLink={() => setLinkingInst(inst)}
+                                onDeleteSlot={() => handleDeleteSlot(inst)}
                                 onPreview={() => handlePreviewForm(inst)}
                                 previewDisabled={!selectedFormType || generatingFor !== null}
                                 previewing={generatingFor === inst.id}
@@ -446,7 +610,7 @@ const InstructorList = () => {
                         ))}
                         {filtered.length === 0 && (
                             <tr>
-                                <td colSpan={8} className="px-6 py-12 text-center text-bauhaus-black/50">
+                                <td colSpan={9} className="px-3 py-12 text-center text-bauhaus-black/50">
                                     {search ? '找不到符合的講師' : '尚無講師資料'}
                                 </td>
                             </tr>
@@ -457,8 +621,13 @@ const InstructorList = () => {
 
             {showAddModal && (
                 <AddInstructorModal
+                    instructors={instructors}
                     onClose={() => setShowAddModal(false)}
-                    onCreated={() => { setShowAddModal(false); loadInstructors(); }}
+                    onCreated={(message) => {
+                        setShowAddModal(false);
+                        if (message) setNotice(message);
+                        loadInstructors();
+                    }}
                 />
             )}
 
@@ -496,12 +665,69 @@ const LinkBadge = ({ userId }) => (
     )
 );
 
+// 「姓名認領」：管理員只填姓名建立的空位，被老師輸入姓名認領後綁定
+const NameSlotBadge = ({ inst }) => (
+    inst.name_slot && inst.user_id ? (
+        <span className="bh-chip bg-white text-bauhaus-black" title="管理員只填姓名建立的空位，由老師輸入姓名認領">
+            姓名認領
+        </span>
+    ) : null
+);
+
+const NameSlotUnlinkHint = ({ inst, isAdmin }) => (
+    isAdmin && inst.name_slot && inst.user_id ? (
+        <p className="text-[11px] leading-snug font-medium text-bauhaus-black/60" data-testid="name-slot-unlink-hint">{NAME_SLOT_UNLINK_HINT}</p>
+    ) : null
+);
+
+// 已綁定的列顯示對方實際登入的 Google Email（與主檔 Email 相同時不重複顯示）
+const LoginEmailLine = ({ loginEmail, primaryEmail }) => (
+    loginEmail && loginEmail.toLowerCase() !== (primaryEmail || '').toLowerCase() ? (
+        <div className="text-xs text-bauhaus-black/60 mt-0.5 break-all" data-testid="login-email">
+            Google 登入：{loginEmail}
+        </div>
+    ) : null
+);
+
+const ProgressBadge = ({ progress }) => {
+    if (!progress) return null;
+    const showMissing = (progress.key === 'incomplete' || progress.key === 'pending_review') && progress.missingCount > 0;
+    const title = progress.missingItems.length && progress.key !== 'disabled'
+        ? `${progress.description}\n還缺：${progress.missingItems.join('、')}`
+        : progress.description;
+    return (
+        <span className="inline-flex flex-col items-start gap-1" title={title} data-progress={progress.key}>
+            <span className={`bh-chip whitespace-nowrap ${PROGRESS_STYLES[progress.key] || 'bg-white text-bauhaus-black'}`}>
+                {progress.label}
+            </span>
+            {showMissing && (
+                <span className="text-[11px] font-bold text-bauhaus-red whitespace-nowrap">缺 {progress.missingCount} 項</span>
+            )}
+        </span>
+    );
+};
+
 // ───────────────────────────────────────────────────────────────
 // 展開內容
 // ───────────────────────────────────────────────────────────────
-const InstructorExpandedContent = ({ inst, urls }) => (
+const InstructorExpandedContent = ({ inst, urls, progress }) => (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-3">
+            {progress && (
+                <>
+                    <h3 className="bh-label">資料進度</h3>
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <ProgressBadge progress={progress} />
+                        <span className="text-bauhaus-black/60">{progress.description}</span>
+                    </div>
+                    {progress.key !== 'disabled' && progress.missingItems.length > 0 && (
+                        <p className="text-xs font-bold text-bauhaus-red leading-relaxed">
+                            還缺 {progress.missingCount} 項：{progress.missingItems.join('、')}
+                        </p>
+                    )}
+                    <div className="pt-1" />
+                </>
+            )}
             <h3 className="bh-label">基本資料</h3>
             <InfoRow label="出生年月日" value={inst.birth_date} />
             <InfoRow label="身分證字號" value={inst.id_number ? '••••••' + inst.id_number.slice(-4) : null} />
@@ -617,7 +843,7 @@ const BioBlock = ({ label, text }) => (
     </div>
 );
 
-const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink, onPreview, previewDisabled, previewing }) => (
+const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, loginEmail, isAdmin, onRoleChange, onUnlink, onLink, onDeleteSlot, onPreview, previewDisabled, previewing }) => (
     <div className="bh-card overflow-hidden">
         <div
             className="p-4 flex items-start gap-3 cursor-pointer hover:bg-bauhaus-cream transition-colors"
@@ -631,9 +857,12 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                     )}
                 </div>
                 <div className="text-sm text-bauhaus-black/60 mt-0.5 truncate">{inst.email_primary}</div>
+                <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} />
                 <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
+                    <ProgressBadge progress={progress} />
                     <StatusBadge status={inst.employment_status} />
                     <LinkBadge userId={inst.user_id} />
+                    <NameSlotBadge inst={inst} />
                     {isAdmin ? (
                         <select
                             value={inst.instructor_role || ''}
@@ -674,10 +903,13 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                     )}
                     {isAdmin && (
                         inst.user_id ? (
-                            <button onClick={onUnlink} className="text-xs font-bold text-bauhaus-red hover:underline">解綁</button>
+                            <button onClick={onUnlink} title={inst.name_slot ? NAME_SLOT_UNLINK_HINT : '解除綁定'} className="text-xs font-bold text-bauhaus-red hover:underline">解綁</button>
                         ) : (
                             <button onClick={onLink} className="text-xs font-bold text-bauhaus-blue hover:underline">綁定</button>
                         )
+                    )}
+                    {isAdmin && isPristineNameSlot(inst) && (
+                        <button type="button" onClick={onDeleteSlot} className="text-xs font-bold text-bauhaus-red hover:underline">刪除空位</button>
                     )}
                     <button
                         type="button"
@@ -689,6 +921,9 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                         {previewing ? '產生預覽' : '預覽表單'}
                     </button>
                 </div>
+                <div className="mt-1.5" onClick={e => e.stopPropagation()}>
+                    <NameSlotUnlinkHint inst={inst} isAdmin={isAdmin} />
+                </div>
             </div>
             <button className="shrink-0 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors p-1">
                 {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -696,37 +931,56 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
         </div>
         {expanded && (
             <div className="px-4 pb-4 pt-0 bg-bauhaus-cream border-t-2 border-bauhaus-black">
-                <InstructorExpandedContent inst={inst} urls={urls} />
+                <InstructorExpandedContent inst={inst} urls={urls} progress={progress} />
             </div>
         )}
     </div>
 );
 
-const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRoleChange, onUnlink, onLink, onPreview, previewDisabled, previewing }) => (
+const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, loginEmail, isAdmin, onRoleChange, onUnlink, onLink, onDeleteSlot, onPreview, previewDisabled, previewing }) => (
     <>
         <tr className="hover:bg-bauhaus-cream transition-colors cursor-pointer" onClick={onToggle}>
-            <td className="px-6 py-4">
-                <div className="font-bold text-bauhaus-black">{inst.full_name}</div>
+            <td className="px-3 py-4">
+                <div className="font-bold text-bauhaus-black whitespace-nowrap">{inst.full_name}</div>
                 <div className="mt-1"><StatusBadge status={inst.employment_status} /></div>
             </td>
-            <td className="px-6 py-4 text-sm text-bauhaus-black/60">{inst.email_primary || <span className="text-bauhaus-black/30">—</span>}</td>
-            <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center gap-2">
+            <td className="px-3 py-4 text-sm text-bauhaus-black/60">
+                {inst.email_primary || <span className="text-bauhaus-black/30">—</span>}
+                <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} />
+            </td>
+            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
+                <div className="flex flex-wrap items-center gap-2">
                     <LinkBadge userId={inst.user_id} />
+                    <NameSlotBadge inst={inst} />
                     {isAdmin && (
                         inst.user_id ? (
-                            <button onClick={onUnlink} title="解除綁定" className="text-bauhaus-red/70 hover:text-bauhaus-red transition-colors">
+                            <button onClick={onUnlink} title={inst.name_slot ? NAME_SLOT_UNLINK_HINT : '解除綁定'} aria-label="解除綁定" className="text-bauhaus-red/70 hover:text-bauhaus-red transition-colors">
                                 <Unlink className="w-3.5 h-3.5" />
                             </button>
                         ) : (
-                            <button onClick={onLink} title="手動綁定" className="text-bauhaus-blue/70 hover:text-bauhaus-blue transition-colors">
+                            <button onClick={onLink} title="手動綁定" aria-label="手動綁定" className="text-bauhaus-blue/70 hover:text-bauhaus-blue transition-colors">
                                 <Link2 className="w-3.5 h-3.5" />
                             </button>
                         )
                     )}
                 </div>
+                {isAdmin && isPristineNameSlot(inst) && (
+                    <button
+                        type="button"
+                        onClick={onDeleteSlot}
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-bauhaus-red hover:underline"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" /> 刪除空位
+                    </button>
+                )}
+                <div className="mt-1 max-w-[180px]">
+                    <NameSlotUnlinkHint inst={inst} isAdmin={isAdmin} />
+                </div>
             </td>
-            <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
+                <ProgressBadge progress={progress} />
+            </td>
+            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
                 {isAdmin ? (
                     <select
                         value={inst.instructor_role || ''}
@@ -748,10 +1002,10 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                     <span className="text-xs text-bauhaus-black/40">未設定</span>
                 )}
             </td>
-            <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+            <td className="px-3 py-4" onClick={e => e.stopPropagation()}>
                 <SpeedQualificationBadge value={inst.speed_qualification} />
             </td>
-            <td className="px-6 py-4">
+            <td className="px-3 py-4">
                 <div className="flex items-center gap-1 text-xs text-bauhaus-black/60">
                     <MapPin className="w-3 h-3" />
                     {inst.teaching_regions?.length
@@ -761,13 +1015,13 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                             : <span className="text-bauhaus-black/30">—</span>}
                 </div>
             </td>
-            <td className="px-6 py-4">
+            <td className="px-3 py-4">
                 <span className={`bh-chip ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
                     <FileImage className="w-3 h-3" />
                     {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
                 </span>
             </td>
-            <td className="px-6 py-4 text-right">
+            <td className="px-3 py-4 text-right">
                 <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
                     {isAdmin && (
                         <Link
@@ -795,8 +1049,8 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
 
         {expanded && (
             <tr>
-                <td colSpan={8} className="px-6 py-6 bg-bauhaus-cream">
-                    <InstructorExpandedContent inst={inst} urls={urls} />
+                <td colSpan={9} className="px-3 py-6 bg-bauhaus-cream">
+                    <InstructorExpandedContent inst={inst} urls={urls} progress={progress} />
                 </td>
             </tr>
         )}
@@ -821,8 +1075,171 @@ const InfoRow = ({ label, value }) => {
 
 // ═══════════════════════════════════════════════════════════════
 // 新增講師 Modal
+//   模式一（預設）「只填姓名」：一行一個姓名，建立 name_slot 空位；老師用 Google 登入後，
+//   在待審核頁選「認領帳號」輸入同一個姓名就直接綁定並開通（資料庫函式 claim_instructor_name_slot）。
+//   模式二「填完整資料」：原本的做法，用 Email 登入自動對應。
 // ═══════════════════════════════════════════════════════════════
-const AddInstructorModal = ({ onClose, onCreated }) => {
+const AddInstructorModal = ({ instructors, onClose, onCreated }) => {
+    const [mode, setMode] = useState('names');
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
+            <div className="bh-card shadow-hard-lg max-w-md w-full max-h-[85dvh] overflow-y-auto" role="dialog" aria-modal="true" aria-label="新增講師">
+                <div className="flex items-center justify-between px-6 py-4 border-b-2 border-bauhaus-black bg-bauhaus-black text-white">
+                    <h2 className="font-black uppercase tracking-wide">新增講師</h2>
+                    <button onClick={onClose} className="text-white/70 hover:text-white" aria-label="關閉">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                <div className="px-6 pt-5">
+                    <div role="tablist" aria-label="新增方式" className="grid grid-cols-2 gap-2">
+                        {[
+                            { key: 'names', label: '只填姓名', hint: '老師登入後輸入姓名認領' },
+                            { key: 'full', label: '填完整資料', hint: '含 Email，登入自動對應' },
+                        ].map(tab => (
+                            <button
+                                key={tab.key}
+                                type="button"
+                                role="tab"
+                                aria-selected={mode === tab.key}
+                                onClick={() => setMode(tab.key)}
+                                className={`rounded-xl border-2 border-bauhaus-black px-3 py-2 text-left transition-colors ${
+                                    mode === tab.key ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'
+                                }`}
+                            >
+                                <span className="block text-sm font-black">{tab.label}</span>
+                                <span className={`block text-[11px] font-medium ${mode === tab.key ? 'text-white/80' : 'text-bauhaus-black/60'}`}>{tab.hint}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {mode === 'names'
+                    ? <NameOnlyForm instructors={instructors} onClose={onClose} onCreated={onCreated} />
+                    : <FullInstructorForm onClose={onClose} onCreated={onCreated} />}
+            </div>
+        </div>
+    );
+};
+
+const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
+    const [text, setText] = useState('');
+    const [confirmedDuplicate, setConfirmedDuplicate] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState('');
+
+    const parsed = useMemo(() => parseNameLines(text), [text]);
+    const conflicts = useMemo(
+        () => findNameConflicts(parsed.names, instructors),
+        [parsed.names, instructors],
+    );
+    const blockedByDuplicate = conflicts.hasConflict && !confirmedDuplicate;
+    const hasInvalid = parsed.tooLong.length > 0 || parsed.overLimit;
+    const canSubmit = parsed.names.length > 0 && !hasInvalid && !blockedByDuplicate && !saving;
+
+    const submit = async (e) => {
+        e.preventDefault();
+        setErr('');
+        if (parsed.names.length === 0) return setErr('請至少輸入一個姓名');
+        if (hasInvalid) return setErr('請先修正標示的姓名');
+        if (blockedByDuplicate) return setErr('有同名的姓名，請先勾選確認');
+
+        setSaving(true);
+        const rows = parsed.names.map(name => ({
+            full_name: name,
+            employment_status: 'active',
+            name_slot: true,
+        }));
+        const { error } = await supabase.from('instructors').insert(rows);
+        setSaving(false);
+        if (error) {
+            setErr('新增失敗:' + error.message);
+            return;
+        }
+        onCreated(`已新增 ${rows.length} 位空位：${parsed.names.join('、')}。請通知老師用 Google 登入，選「認領帳號」並輸入相同姓名，就會直接綁定。`);
+    };
+
+    return (
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+            <Field
+                label="姓名（一行一個）"
+                required
+                hint="建好後，老師用 Google 登入、選「認領帳號」輸入同一個姓名就會直接綁定並開通。同名同姓可建立多個空位，各自被認領。"
+            >
+                <textarea
+                    value={text}
+                    onChange={e => { setText(e.target.value); setConfirmedDuplicate(false); }}
+                    className="bh-input text-sm min-h-[8rem]"
+                    rows={6}
+                    placeholder={'王小明\n李小華'}
+                    aria-label="老師姓名，一行一個"
+                    autoFocus
+                />
+            </Field>
+
+            {parsed.names.length > 0 && (
+                <p className="text-sm font-bold text-bauhaus-black" data-testid="name-slot-count">
+                    將新增 {parsed.names.length} 位空位
+                </p>
+            )}
+
+            {parsed.tooLong.length > 0 && (
+                <div role="alert" className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
+                    姓名太長（上限 50 字）：{parsed.tooLong.join('、')}
+                </div>
+            )}
+            {parsed.overLimit && (
+                <div role="alert" className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
+                    一次最多新增 {MAX_NAME_SLOT_BATCH} 位，請分批輸入。
+                </div>
+            )}
+
+            {conflicts.hasConflict && (
+                <div role="alert" className="bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl px-3 py-3 space-y-2" data-testid="name-slot-conflicts">
+                    <div className="flex items-start gap-2 text-sm font-black text-bauhaus-black">
+                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                        <span>發現同名，請確認不是重複建立：</span>
+                    </div>
+                    <ul className="list-disc pl-9 text-sm font-bold text-bauhaus-black space-y-0.5">
+                        {conflicts.rosterConflicts.map(item => (
+                            <li key={`roster-${normalizePersonName(item.name)}`}>{describeRosterConflict(item)}</li>
+                        ))}
+                        {conflicts.batchDuplicates.map(item => (
+                            <li key={`batch-${normalizePersonName(item.name)}`}>{describeBatchDuplicate(item)}</li>
+                        ))}
+                    </ul>
+                    <label className="flex items-start gap-2 text-sm font-bold text-bauhaus-black cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={confirmedDuplicate}
+                            onChange={e => setConfirmedDuplicate(e.target.checked)}
+                            className="mt-1 w-4 h-4 accent-bauhaus-blue"
+                        />
+                        <span>我確定要再新增同名空位（同名同姓不同人）</span>
+                    </label>
+                </div>
+            )}
+
+            {err && (
+                <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
+                    {err}
+                </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={onClose}
+                    className="bh-btn bh-btn-outline px-4 py-2 text-sm">
+                    取消
+                </button>
+                <button type="submit" disabled={!canSubmit}
+                    className="bh-btn bh-btn-blue px-5 py-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                    {saving ? '新增中⋯' : parsed.names.length > 1 ? `新增 ${parsed.names.length} 位` : '新增'}
+                </button>
+            </div>
+        </form>
+    );
+};
+
+const FullInstructorForm = ({ onClose, onCreated }) => {
     const [form, setForm] = useState({
         full_name: '',
         email_primary: '',
@@ -855,99 +1272,89 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
             setErr('新增失敗:' + error.message);
             return;
         }
-        onCreated();
+        onCreated(`已新增 ${payload.full_name}。對方用 ${payload.email_primary} 的 Google 帳號登入時會自動綁定。`);
     };
 
     const inputCls = 'bh-input text-sm';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bauhaus-black/60 p-4">
-            <div className="bh-card shadow-hard-lg max-w-md w-full max-h-[85dvh] overflow-y-auto">
-                <div className="flex items-center justify-between px-6 py-4 border-b-2 border-bauhaus-black bg-bauhaus-black text-white">
-                    <h2 className="font-black uppercase tracking-wide">新增講師</h2>
-                    <button onClick={onClose} className="text-white/70 hover:text-white">
-                        <X className="w-5 h-5" />
-                    </button>
-                </div>
-                <form onSubmit={submit} className="px-6 py-5 space-y-4">
-                    <Field label="姓名" required>
-                        <input
-                            type="text" value={form.full_name}
-                            onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))}
-                            className={inputCls} autoFocus
-                        />
-                    </Field>
-                    <Field label="Email(登入用)" required hint="講師用此 Email 的 Google 帳號登入時會自動綁定">
-                        <input
-                            type="email" value={form.email_primary}
-                            onChange={e => setForm(p => ({ ...p, email_primary: e.target.value }))}
-                            className={inputCls} placeholder="example@gmail.com"
-                        />
-                    </Field>
-                    <Field label="手機(選填)" hint="供日後人工認領核對使用">
-                        <input
-                            type="tel" value={form.phone_mobile}
-                            onChange={e => setForm(p => ({ ...p, phone_mobile: e.target.value }))}
-                            className={inputCls} placeholder="0912345678"
-                        />
-                    </Field>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <Field label="業務狀態">
-                            <select
-                                value={form.employment_status}
-                                onChange={e => setForm(p => ({ ...p, employment_status: e.target.value }))}
-                                className={inputCls}
-                            >
-                                {STATUS_OPTIONS.map(s => (
-                                    <option key={s.key} value={s.key}>{s.label}</option>
-                                ))}
-                            </select>
-                        </Field>
-                        <Field label="講師等級">
-                            <select
-                                value={form.instructor_role}
-                                onChange={e => setForm(p => ({ ...p, instructor_role: e.target.value }))}
-                                className={inputCls}
-                            >
-                                <option value="">未設定</option>
-                                {Object.entries(ROLE_LABELS).map(([k, v]) => (
-                                    <option key={k} value={k}>{v}</option>
-                                ))}
-                            </select>
-                        </Field>
-                        <Field label="速解專業資格">
-                            <select
-                                value={form.speed_qualification}
-                                onChange={e => setForm(p => ({ ...p, speed_qualification: e.target.value }))}
-                                className={inputCls}
-                            >
-                                <option value="">未取得</option>
-                                {Object.entries(SPEED_QUALIFICATION_LABELS).map(([k, v]) => (
-                                    <option key={k} value={k}>{v}</option>
-                                ))}
-                            </select>
-                        </Field>
-                    </div>
-
-                    {err && (
-                        <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
-                            {err}
-                        </div>
-                    )}
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button type="button" onClick={onClose}
-                            className="bh-btn bh-btn-outline px-4 py-2 text-sm">
-                            取消
-                        </button>
-                        <button type="submit" disabled={saving}
-                            className="bh-btn bh-btn-blue px-5 py-2 text-sm">
-                            {saving ? '新增中⋯' : '新增'}
-                        </button>
-                    </div>
-                </form>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+            <Field label="姓名" required>
+                <input
+                    type="text" value={form.full_name}
+                    onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))}
+                    className={inputCls} autoFocus
+                />
+            </Field>
+            <Field label="Email(登入用)" required hint="講師用此 Email 的 Google 帳號登入時會自動綁定">
+                <input
+                    type="email" value={form.email_primary}
+                    onChange={e => setForm(p => ({ ...p, email_primary: e.target.value }))}
+                    className={inputCls} placeholder="example@gmail.com"
+                />
+            </Field>
+            <Field label="手機(選填)" hint="供日後人工認領核對使用">
+                <input
+                    type="tel" value={form.phone_mobile}
+                    onChange={e => setForm(p => ({ ...p, phone_mobile: e.target.value }))}
+                    className={inputCls} placeholder="0912345678"
+                />
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="業務狀態">
+                    <select
+                        value={form.employment_status}
+                        onChange={e => setForm(p => ({ ...p, employment_status: e.target.value }))}
+                        className={inputCls}
+                    >
+                        {STATUS_OPTIONS.map(s => (
+                            <option key={s.key} value={s.key}>{s.label}</option>
+                        ))}
+                    </select>
+                </Field>
+                <Field label="講師等級">
+                    <select
+                        value={form.instructor_role}
+                        onChange={e => setForm(p => ({ ...p, instructor_role: e.target.value }))}
+                        className={inputCls}
+                    >
+                        <option value="">未設定</option>
+                        {Object.entries(ROLE_LABELS).map(([k, v]) => (
+                            <option key={k} value={k}>{v}</option>
+                        ))}
+                    </select>
+                </Field>
+                <Field label="速解專業資格">
+                    <select
+                        value={form.speed_qualification}
+                        onChange={e => setForm(p => ({ ...p, speed_qualification: e.target.value }))}
+                        className={inputCls}
+                    >
+                        <option value="">未取得</option>
+                        {Object.entries(SPEED_QUALIFICATION_LABELS).map(([k, v]) => (
+                            <option key={k} value={k}>{v}</option>
+                        ))}
+                    </select>
+                </Field>
             </div>
-        </div>
+
+            {err && (
+                <div className="text-sm text-white bg-bauhaus-red border-2 border-bauhaus-black px-3 py-2 font-bold">
+                    {err}
+                </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={onClose}
+                    className="bh-btn bh-btn-outline px-4 py-2 text-sm">
+                    取消
+                </button>
+                <button type="submit" disabled={saving}
+                    className="bh-btn bh-btn-blue px-5 py-2 text-sm">
+                    {saving ? '新增中⋯' : '新增'}
+                </button>
+            </div>
+        </form>
     );
 };
 

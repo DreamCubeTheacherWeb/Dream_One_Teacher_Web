@@ -154,7 +154,13 @@ try {
     assert.equal(await unclaimedCard.count(), 1);
     await unclaimedCard.click();
     await adminPage.waitForURL(`${baseUrl}/admin/instructors?claim=unlinked`);
-    assert.equal(await adminPage.getByRole('button', { name: '未認領 1' }).getAttribute('aria-pressed'), 'true');
+    // 「資料進度」與「帳號綁定」兩排篩選都有「未認領」，這裡要點的是帳號綁定那一排
+    const claimFilters = adminPage.getByRole('group', { name: '帳號綁定篩選' });
+    assert.equal(await claimFilters.getByRole('button', { name: '未認領 1' }).getAttribute('aria-pressed'), 'true');
+    const progressFilters = adminPage.getByRole('group', { name: '資料進度篩選' });
+    assert.equal(await progressFilters.getByRole('button', { name: '待簽約' }).count(), 1);
+    assert.equal(await progressFilters.getByRole('button', { name: '已完成' }).count(), 1);
+    assert.equal(await progressFilters.getByRole('button', { name: '資料已完整' }).count(), 0);
     const instructorRow = adminPage.locator('tr').filter({ hasText: '林測試' }).first();
     assert.equal(await instructorRow.getByRole('link', { name: '編輯資料' }).count(), 1);
     await instructorRow.getByRole('link', { name: '編輯資料' }).click();
@@ -192,6 +198,12 @@ try {
     const mentorPage = await mentorContext.newPage();
     await mentorPage.goto(`${baseUrl}/admin/instructors`, { waitUntil: 'networkidle' });
     assert.equal(await mentorPage.getByRole('link', { name: '編輯資料' }).count(), 0);
+    // 輔導員讀不到簽約紀錄：進度篩選改成「資料已完整」，不顯示待簽約／已完成，也沒有新增講師按鈕
+    const mentorProgress = mentorPage.getByRole('group', { name: '資料進度篩選' });
+    assert.equal(await mentorProgress.getByRole('button', { name: '資料已完整' }).count(), 1);
+    assert.equal(await mentorProgress.getByRole('button', { name: '待簽約' }).count(), 0);
+    assert.equal(await mentorProgress.getByRole('button', { name: '已完成' }).count(), 0);
+    assert.equal(await mentorPage.getByRole('button', { name: '新增講師' }).count(), 0);
     await mentorPage.goto(`${baseUrl}/admin/instructors/${instructorId}/edit`, { waitUntil: 'networkidle' });
     await mentorPage.waitForURL(`${baseUrl}/`);
     assert.equal(patchRequests.filter((request) => request.role === 'mentor').length, 0);
