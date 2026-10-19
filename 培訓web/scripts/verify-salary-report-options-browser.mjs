@@ -702,6 +702,8 @@ async function run() {
         await materialsRow.getByRole('switch', { name: '必填「本次發出教材數量」' }).click();
         await until(() => writes.length === 1);
         check('builtin 改必填送 PATCH is_required=false', writes.length === 1 && sameBody(writes[0].body, { is_required: false }));
+        // PATCH 送出後提示訊息要等回應才出現；先等它出現再判斷，避免偶發的時間差誤判
+        await panelOf(page, 'fields').locator('[data-notice]').first().waitFor({ timeout: 5000 }).catch(() => {});
         check('提示訊息有「關閉」鈕，按了就收起', await noticeOf(page, 'fields') !== '');
         await panelOf(page, 'fields').locator('[data-notice] button[aria-label="關閉訊息"]').click();
         check('按關閉後提示訊息消失', await panelOf(page, 'fields').locator('[data-notice]').count() === 0);
