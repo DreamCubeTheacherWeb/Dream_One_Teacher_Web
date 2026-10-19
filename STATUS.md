@@ -21,7 +21,7 @@
 `verify:salary-report-form:browser` 63/63、`verify:salary-report-options:browser` 99/99、`verify:salary-register-paging:browser` 38/38、`verify:speed-salary:browser` 13/13、`verify:salary-visibility` 全 PASS（需 `LC_ALL=en_US.UTF-8`，否則臨時資料庫起不來）。
 截圖 18 張：`培訓web/docs/verification/2026-10-20-report-options-v4/`（7）、`培訓web/docs/verification/2026-10-20-report-form-fields/`（11），由另一個 sonnet agent 判讀 8 項驗收全過（列高約 54px、期間 chip＋下方兩區、欄位分頁鎖頭／開關、390px 無溢出、B2B 欄位順序、審核視窗顯示自訂欄位答案）。opus 審查：無高嚴重度；中低 5 項已修 4 項（NOTIFY、只複製單位、期間名稱讀取失敗的顯示、欄位更新後自動重載），第 5 項見地雷。
 
-**上線步驟（給總指揮）**：① 正式庫 SQL Editor 套 `20261020130000_report_periods_and_custom_fields.sql`（以無登入身分執行；套完核對：選項 160 筆＝期間 3＋單位 126＋梯次 31、無期間的單位／梯次 0、`salary_report_fields` 24 筆、`submit_my_class_session` 只有 1 個 16 參數版本）；② 再部署前端。順序反了，新前端讀 `period_id`／`salary_report_fields` 會失敗 → 退回預設欄位與自由輸入（仍可回報，但沒有單位下拉）。
+**上線步驟（給總指揮）**：⓪ 檔名原為 20261020120000，因與證件鎖定分支撞號改為 130000；明早順序 `20261020120000_instructor_document_edit_unlocks.sql` → 本檔，兩支無共用要修改的物件（本檔對 instructors／users 只讀），先後不互相影響。空窗期相容性已實測：舊前端 c8842e7 實際送出的 15 鍵 JSON（合作／營隊／直營＋交通補助）照 PostgREST 的 json_to_record＋具名參數方式打新版 16 參數函式，三筆皆成功且存值正確（verify-salary-report-form.sql (i) gap window）。① 正式庫 SQL Editor 套 `20261020130000_report_periods_and_custom_fields.sql`（以無登入身分執行；套完核對：選項 160 筆＝期間 3＋單位 126＋梯次 31、無期間的單位／梯次 0、`salary_report_fields` 24 筆、`submit_my_class_session` 只有 1 個 16 參數版本）；② 再部署前端。順序反了，新前端讀 `period_id`／`salary_report_fields` 會失敗 → 退回預設欄位與自由輸入（仍可回報，但沒有單位下拉）。
 **半成品**：無（程式完成，未上線）。
 **下一步**：上線後業主用管理員帳號實際拖曳一次、新增一個「115學年度下學期」（從 115學年度上學期複製）確認正式庫寫入；講師真帳號看一次回報頁。
 **地雷**：
