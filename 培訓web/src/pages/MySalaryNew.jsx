@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
@@ -11,8 +11,6 @@ import {
     courseCategoryFor,
     reportChannelFor,
     reportItemLabel,
-    TERM_SCOPE_LABELS,
-    termScopeFor,
     speedQualificationLabel,
     teacherCourseItems,
 } from '../lib/constants';
@@ -30,17 +28,22 @@ import {
     buildReportExtrasParams,
     deriveCourseType,
     groupReportOptions,
-    partnerUnitsFor,
-    reportFieldsFor,
+    periodByValue,
     reportGroupFor,
     reportLayoutFor,
     roleForCourseType,
     termPeriodChoices,
+    unitChoicesFor,
     validateReportBasics,
     validateReportExtras,
 } from '../lib/salaryReportForm';
+import {
+    CUSTOM_ANSWER_MAX,
+    buildExtraFieldsParam,
+    validateCustomAnswers,
+    visibleFieldsOfLayout,
+} from '../lib/salaryReportFields';
 
-const TAIPEI_TODAY = taipeiToday();
 const PROGRESS_REQUIRED_COURSES = new Set(['regular_basic', 'regular_advanced']);
 // 講師端可見範圍門檻（與 migration 20261018150000 的 instructor_salary_visible_from() 一致）
 const SALARY_VISIBLE_FROM = '2026-01-01';
@@ -54,7 +57,7 @@ const MySalaryNew = () => {
     const [form, setForm] = useState({
         course_type: DEFAULT_COURSE_TYPE,
         course_name: '',
-        session_date: TAIPEI_TODAY,
+        session_date: taipeiToday(),
         role_in_session: roleForCourseType(DEFAULT_COURSE_TYPE),
         duration_hours: '',
         student_count: '',
@@ -66,6 +69,9 @@ const MySalaryNew = () => {
     const [hoursOther, setHoursOther] = useState(false);
     const [extras, setExtras] = useState(EMPTY_REPORT_EXTRAS);
     const [reportOptions, setReportOptions] = useState(() => groupReportOptions([]));
+    // 後台「回報表單欄位」設定；讀不到時用預設欄位（null／[] 都會退回預設）
+    const [fieldRows, setFieldRows] = useState(null);
+    const [customAnswers, setCustomAnswers] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [instructorLoading, setInstructorLoading] = useState(true);
@@ -98,7 +104,7 @@ const MySalaryNew = () => {
             try {
                 const { data, error: optionsError } = await supabase
                     .from('salary_report_options')
-                    .select('kind, value, label, sort_order, is_active, term_scope')
+                    .select('id, kind, value, label, sort_order, is_active, period_id')
                     .eq('is_active', true)
                     .order('sort_order', { ascending: true });
                 if (active) setReportOptions(groupReportOptions(optionsError ? [] : data));
@@ -108,6 +114,27 @@ const MySalaryNew = () => {
         })();
         return () => { active = false; };
     }, [user]);
+
+    // 回報表單欄位設定（顯示哪些欄位、順序、自訂欄位）；讀取失敗就用預設欄位，不擋回報
+    useEffect(() => {
+        if (!user) return undefined;
+        let active = true;
+        (async () => {
+            try {
+                const { data, error: fieldsError } = await supabase
+                    .from('salary_report_fields')
+                    .select('layout, field_key, source, label, field_type, options, help_text, is_required, is_visible, sort_order')
+                    .order('sort_order', { ascending: true });
+                if (active) setFieldRows(fieldsError ? [] : (data || []));
+            } catch {
+                if (active) setFieldRows([]);
+            }
+        })();
+        return () => { active = false; };
+    }, [user]);
+
+    const layout = reportLayoutFor(form.course_type);
+    const layoutFields = useMemo(() => visibleFieldsOfLayout(fieldRows, layout), [fieldRows, layout]);
 
     useEffect(() => {
         if (!instructor?.id || !form.course_type || !form.session_date) return undefined;
@@ -145,7 +172,7 @@ const MySalaryNew = () => {
     ]);
 
     // 講師改任何欄位就清掉上一次送出的錯誤訊息（避免修正後紅字還掛著）
-    useEffect(() => { setError(''); }, [form, extras]);
+    useEffect(() => { setError(''); }, [form, extras, customAnswers]);
 
     // 到府課不問報酬項目：依時數自動落到 1.5hr／2hr 規則
     useEffect(() => {
@@ -156,8 +183,12 @@ const MySalaryNew = () => {
     }, [form.course_type, form.duration_hours]);
 
     // 換報酬項目時角色跟著推定（表單沒有角色欄位；「其他課程」版仍可手動改）
+    // 換到另一種回報（合作課／營隊／直營）時清掉已選的單位或梯次，避免殘留到別的清單
     const setCourseType = (courseType) => {
         if (!courseType) return;
+        if (reportGroupFor(courseType) !== reportGroupFor(form.course_type)) {
+            setExtras(current => ({ ...current, unit_choice: '', unit_other: '' }));
+        }
         setForm(current => ({ ...current, course_type: courseType, role_in_session: roleForCourseType(courseType) }));
     };
 
@@ -166,8 +197,9 @@ const MySalaryNew = () => {
         setError('');
         if (!form.course_type) { setError('請選擇課程類型'); return; }
         if (!form.session_date) { setError('請填寫日期'); return; }
-        if (form.session_date > TAIPEI_TODAY) { setError('請在課程結束後再回報，日期不能晚於今天。'); return; }
-        const basicsError = validateReportBasics(form.course_type, form);
+        // 每次送出時重算「今天」：分頁開過午夜仍能回報當天的課
+        if (form.session_date > taipeiToday()) { setError('請在課程結束後再回報，日期不能晚於今天。'); return; }
+        const basicsError = validateReportBasics(form.course_type, form, layoutFields);
         if (basicsError) { setError(basicsError); return; }
         if (form.duration_hours !== '' && (Number(form.duration_hours) <= 0 || Number(form.duration_hours) > 24)) {
             setError('時數必須大於 0 且不得超過 24 小時。'); return;
@@ -178,17 +210,23 @@ const MySalaryNew = () => {
         if (PROGRESS_REQUIRED_COURSES.has(form.course_type) && !form.progress_note.trim()) {
             setError('常態課請填寫學習進度。'); return;
         }
-        const extrasError = validateReportExtras(form.course_type, extras);
+        const extrasContext = { fields: layoutFields, options: reportOptions };
+        const extrasError = validateReportExtras(form.course_type, extras, extrasContext);
         if (extrasError) { setError(extrasError); return; }
+        const customError = validateCustomAnswers(layoutFields, customAnswers);
+        if (customError) { setError(customError); return; }
         if (!instructor) { setError('找不到您的講師資料，請聯絡管理員。'); return; }
 
         setSubmitting(true);
         try {
+            // 沒有自訂欄位時不帶 p_extra_fields，資料庫更新前的舊版函式也收得到
+            const extraFields = buildExtraFieldsParam(layoutFields, customAnswers);
             const { error: submitError } = await supabase.rpc('submit_my_class_session', {
                 p_course_type: form.course_type,
                 p_session_date: form.session_date,
-                ...buildReportBasicParams(form.course_type, form),
-                ...buildReportExtrasParams(form.course_type, extras),
+                ...buildReportBasicParams(form.course_type, form, layoutFields),
+                ...buildReportExtrasParams(form.course_type, extras, extrasContext),
+                ...(extraFields ? { p_extra_fields: extraFields } : {}),
             });
             if (submitError) throw submitError;
             navigate('/my/salary', { replace: true, state: { salaryReportSubmitted: true } });
@@ -200,16 +238,13 @@ const MySalaryNew = () => {
     };
 
     const progressRequired = PROGRESS_REQUIRED_COURSES.has(form.course_type);
-    const reportGroup = reportGroupFor(form.course_type);
     const courseCategory = courseCategoryFor(form.course_type);
     const categoryConfig = courseCategoryConfig(courseCategory);
     const reportChannel = reportChannelFor(form.course_type);
     const channelCategories = categoriesInChannel(reportChannel);
     const courseItems = courseCategory === 'onsite' ? [] : teacherCourseItems(courseCategory);
-    const partnerUnits = partnerUnitsFor(reportOptions, extras.term_period);
-    const termScope = termScopeFor(extras.term_period);
-    const layout = reportLayoutFor(form.course_type);
-    const fields = reportFieldsFor(form.course_type);
+    const unitChoices = unitChoicesFor(form.course_type, reportOptions, extras.term_period);
+    const selectedPeriod = periodByValue(reportOptions, extras.term_period);
     const itemLabel = categoryConfig?.itemLabel || '報酬項目';
     const hoursChoice = hoursOther
         ? OTHER_OPTION
@@ -217,6 +252,186 @@ const MySalaryNew = () => {
     const studentLabel = { b2b: '本次上課人數 *', b2c_direct: '實際上課人數 *', b2c_camp: '上課人數 *', other: '人數' }[layout];
     const updateExtras = (patch) => setExtras(current => ({ ...current, ...patch }));
     const pickTermPeriod = (termPeriod) => setExtras(current => ({ ...current, term_period: termPeriod, unit_choice: '', unit_other: '' }));
+    const setCustomAnswer = (fieldKey, value) => setCustomAnswers(current => ({ ...current, [fieldKey]: value }));
+
+    // 依後台設定的順序逐一畫出欄位（回報類別、日期、課程種類、報酬項目固定在最上面，不在設定裡）
+    const renderField = (field) => {
+        const required = field.is_required;
+        switch (field.field_key) {
+        case 'term_period':
+            return (
+                <Field key="term_period" label="請點選目前教學課程期間 *" icon={Calendar}>
+                    <select value={extras.term_period} onChange={e => pickTermPeriod(e.target.value)}
+                        className="bh-input" aria-label="教學課程期間">
+                        <option value="">請選擇教學課程期間</option>
+                        {termPeriodChoices(reportOptions).map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                </Field>
+            );
+        case 'unit':
+            return extras.term_period ? (
+                <OptionPicker
+                    key="unit"
+                    label="本次上課單位名稱 *"
+                    ariaLabel="本次上課單位"
+                    icon={Building2}
+                    options={unitChoices}
+                    placeholder="請選擇合作單位"
+                    otherPlaceholder="清單沒有時，請填寫單位全名與班別"
+                    hint={selectedPeriod && unitChoices.length ? `列出「${selectedPeriod.label}」的合作單位。` : ''}
+                    extras={extras}
+                    onChange={updateExtras}
+                />
+            ) : (
+                <Field key="unit" label="本次上課單位名稱 *" icon={Building2} full>
+                    <select value="" disabled className="bh-input opacity-60" aria-label="本次上課單位">
+                        <option value="">請先選擇教學課程期間，再選單位</option>
+                    </select>
+                </Field>
+            );
+        case 'camp_batch':
+            return (
+                <OptionPicker
+                    key="camp_batch"
+                    label="營隊梯次 *"
+                    ariaLabel="營隊梯次"
+                    icon={Tent}
+                    options={unitChoices}
+                    placeholder="請選擇營隊梯次"
+                    otherPlaceholder="清單沒有時，請填寫地區、日期與營隊名稱"
+                    extras={extras}
+                    onChange={updateExtras}
+                />
+            );
+        case 'role':
+            return (
+                <Field key="role" label="角色">
+                    <select value={form.role_in_session} onChange={e => setForm({ ...form, role_in_session: e.target.value })}
+                        className="bh-input" aria-label="角色">
+                        {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                </Field>
+            );
+        case 'course_name':
+            return (
+                <Field key="course_name" label={`課程名稱${required ? ' *' : ''}`}>
+                    <input type="text" maxLength={160}
+                        placeholder={layout === 'b2c_direct' ? '請打上學生代表姓名 or 課程地點' : '例：OO 國小週二班'}
+                        value={form.course_name}
+                        onChange={e => setForm({ ...form, course_name: e.target.value })}
+                        className="bh-input" aria-label="課程名稱" />
+                    {layout === 'b2c_direct' && <span className="block text-xs text-bauhaus-black/50 mt-1">方便登記並辨識課程。</span>}
+                </Field>
+            );
+        case 'hours':
+            if (layout === 'b2c_direct') {
+                return (
+                    <Field key="hours" label="上課時數 (小時) *" icon={Clock}>
+                        <select value={hoursChoice} onChange={e => pickHours(e.target.value)} className="bh-input" aria-label="上課時數">
+                            <option value="">請選擇</option>
+                            {HOURS_PRESETS.map(hours => <option key={hours} value={hours}>{hours}</option>)}
+                            <option value={OTHER_OPTION}>其他（自行填寫）</option>
+                        </select>
+                        {hoursChoice === OTHER_OPTION && (
+                            <input type="number" min="0.5" max="24" step="0.5" inputMode="decimal" placeholder="如 90 分鐘則為 1.5"
+                                value={form.duration_hours} onChange={e => setForm({ ...form, duration_hours: e.target.value })}
+                                className="bh-input mt-2" aria-label="上課時數（自行填寫）" />
+                        )}
+                        <span className="block text-xs text-bauhaus-black/50 mt-1">如 90 分鐘則為 1.5；請據實填寫。</span>
+                    </Field>
+                );
+            }
+            return (
+                <Field key="hours" label={layout === 'b2b' ? '上課時數 (單位 HR) *' : '時數'} icon={Clock}>
+                    <input type="number" min="0.5" max="24" step="0.5" inputMode="decimal" placeholder="例：1.5" value={form.duration_hours}
+                        onChange={e => setForm({ ...form, duration_hours: e.target.value })}
+                        className="bh-input" aria-label="上課時數" />
+                    {layout === 'b2b' && <span className="block text-xs text-bauhaus-black/50 mt-1">填寫數字即可；低於 1 小時或有零頭請換算成小數。</span>}
+                </Field>
+            );
+        case 'students':
+            return (
+                <Field key="students" label={studentLabel} icon={Users}>
+                    <input type="number" min="1" max="999" step="1" inputMode="numeric" placeholder={layout === 'b2b' ? '例：20' : '例：6'} value={form.student_count}
+                        onChange={e => setForm({ ...form, student_count: e.target.value })}
+                        className="bh-input" aria-label="上課人數" />
+                    {layout === 'b2c_camp' && <span className="block text-xs text-bauhaus-black/50 mt-1">帶營隊時負責的學員數量。</span>}
+                </Field>
+            );
+        case 'materials':
+            return (
+                <Field key="materials" label={`本次發出教材數量${required ? ' *' : '（選填）'}`} icon={Package}>
+                    <input type="text" maxLength={REPORT_TEXT_MAX} placeholder="例：楓葉10，無則打 0"
+                        value={extras.materials_issued} onChange={e => updateExtras({ materials_issued: e.target.value })}
+                        className="bh-input" aria-label="本次發出教材數量" />
+                    <span className="block text-xs text-bauhaus-black/50 mt-1">填寫項目簡稱＋數字；沒有發教材請填 0。</span>
+                </Field>
+            );
+        case 'location':
+            return (
+                <Field key="location" label={`地點${required ? ' *' : ''}`} full>
+                    <input type="text" maxLength={160} placeholder={required ? '例：台北市大安區 OO 教室' : '選填'} value={form.location}
+                        onChange={e => setForm({ ...form, location: e.target.value })}
+                        className="bh-input" aria-label="地點" />
+                </Field>
+            );
+        case 'transport':
+            return (
+                <section key="transport" aria-label="交通補助" className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <label className="sm:col-span-2 flex items-start gap-3 min-h-[44px] cursor-pointer rounded-xl border-2 border-bauhaus-black/20 px-3 py-2.5 hover:border-bauhaus-black">
+                        <input type="checkbox" checked={extras.transport_requested}
+                            onChange={e => updateExtras({ transport_requested: e.target.checked })}
+                            className="mt-0.5 h-5 w-5 shrink-0 accent-bauhaus-blue" aria-label="申請交通補助" />
+                        <span className="min-w-0">
+                            <span className="flex items-center gap-1 text-sm font-bold text-bauhaus-black"><Car className="w-4 h-4" /> 是否需要申請交通補助？</span>
+                            <span className="block text-xs text-bauhaus-black/60 mt-0.5">需要時勾選並填寫【單趟】公里數；不需要就不用勾。</span>
+                            <span className="block text-xs font-bold text-bauhaus-red mt-1">{TRANSPORT_SUBSIDY_NOTE}</span>
+                        </span>
+                    </label>
+                    {extras.transport_requested && (
+                        <Field label="單趟公里數 *" icon={Car}>
+                            <input type="number" min="0.1" max={TRANSPORT_DISTANCE_MAX} step="0.1" inputMode="decimal"
+                                placeholder="例：12.5（只填單趟）" value={extras.transport_distance_km}
+                                onChange={e => updateExtras({ transport_distance_km: e.target.value })}
+                                className="bh-input" aria-label="單趟公里數" />
+                        </Field>
+                    )}
+                </section>
+            );
+        case 'self_review':
+            return (
+                <Field key="self_review" label={`課程自評${required ? ' *' : ''}`} icon={MessageSquare} full>
+                    <textarea rows={3} maxLength={4000} placeholder="這場課的整體狀況、學生反應…" value={form.self_review}
+                        onChange={e => setForm({ ...form, self_review: e.target.value })}
+                        className="bh-input" aria-label="課程自評" />
+                </Field>
+            );
+        case 'progress':
+            return (
+                <Field key="progress" label={`學習進度${progressRequired ? ' *' : '（非常態課選填）'}`} full>
+                    <textarea rows={2} maxLength={4000} required={progressRequired} placeholder="今天教到哪個段落、下一場預計教什麼…" value={form.progress_note}
+                        onChange={e => setForm({ ...form, progress_note: e.target.value })}
+                        className="bh-input" aria-label="學習進度" />
+                </Field>
+            );
+        case 'incident':
+            return (
+                <Field key="incident" label={required ? INCIDENT_LABELS[layout].replace('（選填）', ' *') : INCIDENT_LABELS[layout]} icon={MessageSquare} full>
+                    <textarea rows={2} maxLength={4000}
+                        placeholder={layout === 'other' ? '如有突發狀況、需要管理員注意的事（例：臨時換教室、學員缺席）' : '若沒有可以不用填，有建議也歡迎填寫'}
+                        value={form.incident_report}
+                        onChange={e => setForm({ ...form, incident_report: e.target.value })}
+                        className="bh-input" aria-label="特殊狀況回報" />
+                </Field>
+            );
+        default:
+            if (field.source !== 'custom') return null;
+            return (
+                <CustomField key={field.field_key} field={field} value={customAnswers[field.field_key]}
+                    onChange={value => setCustomAnswer(field.field_key, value)} />
+            );
+        }
+    };
 
     const pickHours = (value) => {
         if (value === OTHER_OPTION) {
@@ -275,7 +490,7 @@ const MySalaryNew = () => {
                     </Field>
 
                     <Field label="上課日期 *" icon={Calendar}>
-                        <input type="date" min={SALARY_VISIBLE_FROM} max={TAIPEI_TODAY} required value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
+                        <input type="date" min={SALARY_VISIBLE_FROM} max={taipeiToday()} required value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
                             className="bh-input" aria-label="上課日期" />
                         {layout === 'b2b' && <span className="block text-xs text-bauhaus-black/50 mt-1">當日課程日期，不是填寫日期。</span>}
                     </Field>
@@ -300,171 +515,11 @@ const MySalaryNew = () => {
                         </Field>
                     )}
 
-                    {reportGroup === 'collab' && (
-                        <>
-                            <Field label="請點選目前教學課程期間 *" icon={Calendar}>
-                                <select value={extras.term_period} onChange={e => pickTermPeriod(e.target.value)}
-                                    className="bh-input" aria-label="教學課程期間">
-                                    <option value="">請選擇寒假、學期間或暑假</option>
-                                    {termPeriodChoices(reportOptions).map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
-                                </select>
-                            </Field>
-                            {termScope ? (
-                                <OptionPicker
-                                    label={`本次上課單位名稱 *（${TERM_SCOPE_LABELS[termScope]}）`}
-                                    ariaLabel="本次上課單位"
-                                    icon={Building2}
-                                    options={partnerUnits}
-                                    placeholder="請選擇合作單位"
-                                    otherPlaceholder="清單沒有時，請填寫單位全名與班別"
-                                    extras={extras}
-                                    onChange={updateExtras}
-                                />
-                            ) : (
-                                <Field label="本次上課單位名稱 *" icon={Building2} full>
-                                    <select value="" disabled className="bh-input opacity-60" aria-label="本次上課單位">
-                                        <option value="">請先選擇教學課程期間，再選單位</option>
-                                    </select>
-                                </Field>
-                            )}
-                        </>
-                    )}
+                    {layoutFields.map(renderField)}
 
-                    {reportGroup === 'camp' && (
-                        <OptionPicker
-                            label="營隊梯次 *"
-                            ariaLabel="營隊梯次"
-                            icon={Tent}
-                            options={reportOptions.camp_batch}
-                            placeholder="請選擇營隊梯次"
-                            otherPlaceholder="清單沒有時，請填寫地區、日期與營隊名稱"
-                            extras={extras}
-                            onChange={updateExtras}
-                        />
-                    )}
-
-                    {fields.has('role') && (
-                        <Field label="角色">
-                            <select value={form.role_in_session} onChange={e => setForm({ ...form, role_in_session: e.target.value })}
-                                className="bh-input" aria-label="角色">
-                                {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                            </select>
-                        </Field>
-                    )}
-
-                    {fields.has('course_name') && (
-                        <Field label={layout === 'b2c_direct' ? '課程名稱 *' : '課程名稱'}>
-                            <input type="text" maxLength={160}
-                                placeholder={layout === 'b2c_direct' ? '請打上學生代表姓名 or 課程地點' : '例：OO 國小週二班'}
-                                value={form.course_name}
-                                onChange={e => setForm({ ...form, course_name: e.target.value })}
-                                className="bh-input" aria-label="課程名稱" />
-                            {layout === 'b2c_direct' && <span className="block text-xs text-bauhaus-black/50 mt-1">方便登記並辨識課程。</span>}
-                        </Field>
-                    )}
-
-                    {fields.has('hours_preset') && (
-                        <Field label="上課時數 (小時) *" icon={Clock}>
-                            <select value={hoursChoice} onChange={e => pickHours(e.target.value)} className="bh-input" aria-label="上課時數">
-                                <option value="">請選擇</option>
-                                {HOURS_PRESETS.map(hours => <option key={hours} value={hours}>{hours}</option>)}
-                                <option value={OTHER_OPTION}>其他（自行填寫）</option>
-                            </select>
-                            {hoursChoice === OTHER_OPTION && (
-                                <input type="number" min="0.5" max="24" step="0.5" inputMode="decimal" placeholder="如 90 分鐘則為 1.5"
-                                    value={form.duration_hours} onChange={e => setForm({ ...form, duration_hours: e.target.value })}
-                                    className="bh-input mt-2" aria-label="上課時數（自行填寫）" />
-                            )}
-                            <span className="block text-xs text-bauhaus-black/50 mt-1">如 90 分鐘則為 1.5；請據實填寫。</span>
-                        </Field>
-                    )}
-
-                    {fields.has('hours') && (
-                        <Field label={layout === 'b2b' ? '上課時數 (單位 HR) *' : '時數'} icon={Clock}>
-                            <input type="number" min="0.5" max="24" step="0.5" inputMode="decimal" placeholder="例：1.5" value={form.duration_hours}
-                                onChange={e => setForm({ ...form, duration_hours: e.target.value })}
-                                className="bh-input" aria-label="上課時數" />
-                            {layout === 'b2b' && <span className="block text-xs text-bauhaus-black/50 mt-1">填寫數字即可；低於 1 小時或有零頭請換算成小數。</span>}
-                        </Field>
-                    )}
-
-                    {fields.has('students') && (
-                        <Field label={studentLabel} icon={Users}>
-                            <input type="number" min="1" max="999" step="1" inputMode="numeric" placeholder={layout === 'b2b' ? '例：20' : '例：6'} value={form.student_count}
-                                onChange={e => setForm({ ...form, student_count: e.target.value })}
-                                className="bh-input" aria-label="上課人數" />
-                            {layout === 'b2c_camp' && <span className="block text-xs text-bauhaus-black/50 mt-1">帶營隊時負責的學員數量。</span>}
-                        </Field>
-                    )}
-
-                    {reportGroup === 'collab' && (
-                        <Field label="本次發出教材數量 *" icon={Package}>
-                            <input type="text" maxLength={REPORT_TEXT_MAX} placeholder="例：楓葉10，無則打 0"
-                                value={extras.materials_issued} onChange={e => updateExtras({ materials_issued: e.target.value })}
-                                className="bh-input" aria-label="本次發出教材數量" />
-                            <span className="block text-xs text-bauhaus-black/50 mt-1">填寫項目簡稱＋數字；沒有發教材請填 0。</span>
-                        </Field>
-                    )}
-
-                    {fields.has('location') && (
-                        <Field label="地點" full>
-                            <input type="text" maxLength={160} placeholder="選填" value={form.location}
-                                onChange={e => setForm({ ...form, location: e.target.value })}
-                                className="bh-input" aria-label="地點" />
-                        </Field>
-                    )}
-
+                    <hr className="sm:col-span-2 border-t-2 border-bauhaus-black/10" />
                     <SalaryQuotePanel quote={quote} loading={quoteLoading} error={quoteError} />
                 </div>
-
-                {fields.has('transport') && (
-                    <section aria-label="交通補助" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <label className="sm:col-span-2 flex items-start gap-3 min-h-[44px] cursor-pointer rounded-xl border-2 border-bauhaus-black/20 px-3 py-2.5 hover:border-bauhaus-black">
-                            <input type="checkbox" checked={extras.transport_requested}
-                                onChange={e => updateExtras({ transport_requested: e.target.checked })}
-                                className="mt-0.5 h-5 w-5 shrink-0 accent-bauhaus-blue" aria-label="申請交通補助" />
-                            <span className="min-w-0">
-                                <span className="flex items-center gap-1 text-sm font-bold text-bauhaus-black"><Car className="w-4 h-4" /> 是否需要申請交通補助？</span>
-                                <span className="block text-xs text-bauhaus-black/60 mt-0.5">需要時勾選並填寫【單趟】公里數；不需要就不用勾。</span>
-                                <span className="block text-xs font-bold text-bauhaus-red mt-1">{TRANSPORT_SUBSIDY_NOTE}</span>
-                            </span>
-                        </label>
-                        {extras.transport_requested && (
-                            <Field label="單趟公里數 *" icon={Car}>
-                                <input type="number" min="0.1" max={TRANSPORT_DISTANCE_MAX} step="0.1" inputMode="decimal"
-                                    placeholder="例：12.5（只填單趟）" value={extras.transport_distance_km}
-                                    onChange={e => updateExtras({ transport_distance_km: e.target.value })}
-                                    className="bh-input" aria-label="單趟公里數" />
-                            </Field>
-                        )}
-                    </section>
-                )}
-
-                <hr className="border-t-2 border-bauhaus-black/10" />
-
-                {fields.has('self_review') && (
-                    <Field label="課程自評" icon={MessageSquare}>
-                        <textarea rows={3} maxLength={4000} placeholder="這場課的整體狀況、學生反應…" value={form.self_review}
-                            onChange={e => setForm({ ...form, self_review: e.target.value })}
-                            className="bh-input" aria-label="課程自評" />
-                    </Field>
-                )}
-
-                {fields.has('progress') && (
-                    <Field label={`學習進度${progressRequired ? ' *' : '（非常態課選填）'}`}>
-                        <textarea rows={2} maxLength={4000} required={progressRequired} placeholder="今天教到哪個段落、下一場預計教什麼…" value={form.progress_note}
-                            onChange={e => setForm({ ...form, progress_note: e.target.value })}
-                            className="bh-input" aria-label="學習進度" />
-                    </Field>
-                )}
-
-                <Field label={INCIDENT_LABELS[layout]} icon={MessageSquare}>
-                    <textarea rows={2} maxLength={4000}
-                        placeholder={layout === 'other' ? '如有突發狀況、需要管理員注意的事（例：臨時換教室、學員缺席）' : '若沒有可以不用填，有建議也歡迎填寫'}
-                        value={form.incident_report}
-                        onChange={e => setForm({ ...form, incident_report: e.target.value })}
-                        className="bh-input" aria-label="特殊狀況回報" />
-                </Field>
 
                 {error && <div role="alert" className="text-sm font-bold text-white bg-bauhaus-red border-2 border-bauhaus-black rounded-xl px-3 py-2">{error}</div>}
 
@@ -481,8 +536,9 @@ const MySalaryNew = () => {
     );
 };
 
-// 清單選項＋「其它」自填；清單讀不到時直接改成自由輸入
-const OptionPicker = ({ label, ariaLabel, icon, options, placeholder, otherPlaceholder, extras, onChange }) => {
+// 清單選項＋「其它」自填；清單讀不到時直接改成自由輸入。
+// 選項的 key 是列 id（不同期間可能同名）；跨多個期間時依期間分組顯示
+const OptionPicker = ({ label, ariaLabel, icon, options, placeholder, otherPlaceholder, extras, onChange, hint = '' }) => {
     if (!options.length) {
         return (
             <Field label={label} icon={icon} full>
@@ -493,14 +549,22 @@ const OptionPicker = ({ label, ariaLabel, icon, options, placeholder, otherPlace
             </Field>
         );
     }
-    const known = extras.unit_choice === OTHER_OPTION || options.some(option => option.value === extras.unit_choice);
+    const known = extras.unit_choice === OTHER_OPTION || options.some(option => option.key === extras.unit_choice);
     const selected = known ? extras.unit_choice : '';
+    const groups = [...new Set(options.map(option => option.period_label || ''))];
+    const renderOption = option => <option key={option.key} value={option.key}>{option.label}</option>;
     return (
         <Field label={label} icon={icon} full>
             <select value={selected} onChange={e => onChange({ unit_choice: e.target.value })}
                 className="bh-input" aria-label={ariaLabel}>
                 <option value="">{placeholder}</option>
-                {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {groups.length > 1
+                    ? groups.map(group => (
+                        <optgroup key={group || 'none'} label={group || '其他'}>
+                            {options.filter(option => (option.period_label || '') === group).map(renderOption)}
+                        </optgroup>
+                    ))
+                    : options.map(renderOption)}
                 <option value={OTHER_OPTION}>其它（清單沒有，自行填寫）</option>
             </select>
             {selected === OTHER_OPTION && (
@@ -508,6 +572,56 @@ const OptionPicker = ({ label, ariaLabel, icon, options, placeholder, otherPlace
                     value={extras.unit_other} onChange={e => onChange({ unit_other: e.target.value })}
                     className="bh-input mt-2" aria-label={`${ariaLabel}（自行填寫）`} />
             )}
+            {hint && <span className="block text-xs text-bauhaus-black/50 mt-1">{hint}</span>}
+        </Field>
+    );
+};
+
+// 管理員在後台新增的自訂欄位
+const CustomField = ({ field, value, onChange }) => {
+    const label = `${field.label}${field.is_required ? ' *' : ''}`;
+    const help = field.help_text ? <span className="block text-xs text-bauhaus-black/50 mt-1">{field.help_text}</span> : null;
+    if (field.field_type === 'boolean') {
+        return (
+            <label className="sm:col-span-2 flex items-start gap-3 min-h-[44px] cursor-pointer rounded-xl border-2 border-bauhaus-black/20 px-3 py-2.5 hover:border-bauhaus-black">
+                <input type="checkbox" checked={Boolean(value)} onChange={e => onChange(e.target.checked)}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-bauhaus-blue" aria-label={field.label} />
+                <span className="min-w-0">
+                    <span className="block text-sm font-bold text-bauhaus-black">{field.label}</span>
+                    {field.help_text && <span className="block text-xs text-bauhaus-black/60 mt-0.5">{field.help_text}</span>}
+                </span>
+            </label>
+        );
+    }
+    if (field.field_type === 'textarea') {
+        return (
+            <Field label={label} full>
+                <textarea rows={3} maxLength={CUSTOM_ANSWER_MAX} value={value ?? ''} onChange={e => onChange(e.target.value)}
+                    className="bh-input" aria-label={field.label} />
+                {help}
+            </Field>
+        );
+    }
+    if (field.field_type === 'select') {
+        return (
+            <Field label={label}>
+                <select value={value ?? ''} onChange={e => onChange(e.target.value)} className="bh-input" aria-label={field.label}>
+                    <option value="">請選擇</option>
+                    {field.options.map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
+                {help}
+            </Field>
+        );
+    }
+    return (
+        <Field label={label}>
+            <input type={field.field_type === 'number' ? 'number' : 'text'}
+                inputMode={field.field_type === 'number' ? 'decimal' : undefined}
+                step={field.field_type === 'number' ? 'any' : undefined}
+                maxLength={field.field_type === 'number' ? undefined : CUSTOM_ANSWER_MAX}
+                value={value ?? ''} onChange={e => onChange(e.target.value)}
+                className="bh-input" aria-label={field.label} />
+            {help}
         </Field>
     );
 };

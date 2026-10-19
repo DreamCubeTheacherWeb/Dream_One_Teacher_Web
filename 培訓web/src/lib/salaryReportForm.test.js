@@ -12,10 +12,12 @@ import {
     validateReportBasics,
     buildReportBasicParams,
     partnerUnitsFor,
+    campBatchesFor,
     deriveCourseType,
     termPeriodChoices,
     validateReportExtras,
 } from './salaryReportForm.js';
+import { DEFAULT_REPORT_FIELDS, visibleFieldsOfLayout } from './salaryReportFields.js';
 
 const extras = (patch = {}) => ({ ...EMPTY_REPORT_EXTRAS, ...patch });
 
@@ -36,7 +38,8 @@ test('collab reports require term period and unit, matching the RPC messages', (
     assert.equal(validateReportExtras('collab_lead', extras({ term_period: 'semester' })), '合作課程請選擇本次上課單位。');
     assert.equal(validateReportExtras('collab_lead', extras({ term_period: 'semester', unit_choice: OTHER_OPTION, unit_other: '  ' })), '合作課程請選擇本次上課單位。');
     assert.equal(validateReportExtras('collab_lead', extras({ term_period: 'semester', unit_choice: OTHER_OPTION, unit_other: '新單位', materials_issued: '楓'.repeat(201) })), '上課單位／營隊梯次或教材數量不得超過 200 字。');
-    assert.equal(validateReportExtras('collab_lead', extras({ term_period: 'semester', unit_choice: '【臺北】新生國小' })), '');
+    assert.equal(validateReportExtras('collab_lead', extras({ term_period: 'semester', unit_choice: '【臺北】新生國小' })), '請填寫本次發出教材數量（沒有發教材請填 0）。');
+    assert.equal(validateReportExtras('collab_lead', extras({ term_period: 'semester', unit_choice: '【臺北】新生國小', materials_issued: '0' })), '');
 });
 
 test('camp reports require a batch', () => {
@@ -109,9 +112,9 @@ test('版面依回報類別：B2B／B2C 直營／B2C 營隊／其他', () => {
 });
 
 test('B2B 與 B2C 只保留表單上的基本欄位；其他課程維持完整欄位', () => {
-    assert.deepEqual([...reportFieldsFor('collab_lead')], ['hours', 'students']);
-    assert.deepEqual([...reportFieldsFor('online')], ['course_name', 'hours_preset', 'students', 'transport']);
-    assert.deepEqual([...reportFieldsFor('camp')], ['students', 'transport']);
+    assert.deepEqual([...reportFieldsFor('collab_lead')], ['term_period', 'unit', 'hours', 'students', 'materials', 'incident']);
+    assert.deepEqual([...reportFieldsFor('online')], ['course_name', 'hours', 'students', 'transport', 'incident']);
+    assert.deepEqual([...reportFieldsFor('camp')], ['camp_batch', 'students', 'transport', 'incident']);
     assert.ok(reportFieldsFor('regular_basic').has('location') && reportFieldsFor('regular_basic').has('progress'));
 });
 
@@ -158,20 +161,88 @@ test('只送出目前版面看得到的基本欄位', () => {
     assert.equal(other.p_progress_note, '進度');
 });
 
-test('合作單位依教學期間分組；未選期間為空；沒有 term_scope 時退回整份', () => {
-    const options = groupReportOptions([
-        { kind: 'partner_unit', term_scope: 'vacation', value: 'A校', label: 'A校', sort_order: 10, is_active: true },
-        { kind: 'partner_unit', term_scope: 'semester', value: 'B校115上', label: 'B校115上', sort_order: 490, is_active: true },
-    ]);
+const periodRows = [
+    { kind: 'term_period', id: 'p-w', value: 'winter_break', label: '2026年寒假', sort_order: 10, is_active: true },
+    { kind: 'term_period', id: 'p-s', value: 'semester', label: '115學年度上學期', sort_order: 20, is_active: true },
+    { kind: 'term_period', id: 'p-u', value: 'summer_break', label: '2026年暑假', sort_order: 30, is_active: true },
+    { kind: 'partner_unit', id: 'u-1', period_id: 'p-w', value: 'A校', label: 'A校', sort_order: 10, is_active: true },
+    { kind: 'partner_unit', id: 'u-2', period_id: 'p-s', value: 'B校115上', label: 'B校115上', sort_order: 10, is_active: true },
+    { kind: 'partner_unit', id: 'u-3', period_id: 'p-u', value: 'A校', label: 'A校', sort_order: 10, is_active: true },
+    { kind: 'camp_batch', id: 'c-2', period_id: 'p-u', value: '暑假梯次', label: '暑假梯次', sort_order: 10, is_active: true },
+    { kind: 'camp_batch', id: 'c-1', period_id: 'p-w', value: '寒假梯次', label: '寒假梯次', sort_order: 10, is_active: true },
+];
+
+test('合作單位跟著選到的期間；未選或找不到期間為空', () => {
+    const options = groupReportOptions(periodRows);
     assert.deepEqual(partnerUnitsFor(options, '').map(u => u.value), []);
-    assert.deepEqual(partnerUnitsFor(options, 'winter_break').map(u => u.value), ['A校']);
-    assert.deepEqual(partnerUnitsFor(options, 'summer_break').map(u => u.value), ['A校']);
+    assert.deepEqual(partnerUnitsFor(options, 'no_such').map(u => u.value), []);
+    assert.deepEqual(partnerUnitsFor(options, 'winter_break').map(u => u.key), ['u-1']);
+    assert.deepEqual(partnerUnitsFor(options, 'summer_break').map(u => u.key), ['u-3']);
     assert.deepEqual(partnerUnitsFor(options, 'semester').map(u => u.value), ['B校115上']);
-    const legacy = groupReportOptions([
-        { kind: 'partner_unit', value: 'A校', label: 'A校', sort_order: 10, is_active: true },
-        { kind: 'partner_unit', value: 'B校', label: 'B校', sort_order: 20, is_active: true },
+});
+
+test('期間停用（講師讀不到期間列）時，它底下的單位與梯次一起收掉', () => {
+    const options = groupReportOptions(periodRows.filter(row => row.id !== 'p-w'));
+    assert.deepEqual(options.partner_unit.map(u => u.id), ['u-2', 'u-3']);
+    assert.deepEqual(campBatchesFor(options).map(b => b.key), ['c-2']);
+});
+
+test('營隊梯次依期間順序排列，送出時帶上梯次所屬的期間', () => {
+    const options = groupReportOptions(periodRows);
+    const batches = campBatchesFor(options);
+    assert.deepEqual(batches.map(b => [b.key, b.period_label]), [['c-1', '2026年寒假'], ['c-2', '2026年暑假']]);
+    const params = buildReportExtrasParams('camp', extras({ unit_choice: 'c-2' }), { options });
+    assert.equal(params.p_unit_name, '暑假梯次');
+    assert.equal(params.p_term_period, 'summer_break');
+    const typed = buildReportExtrasParams('camp', extras({ unit_choice: OTHER_OPTION, unit_other: '自辦營隊' }), { options });
+    assert.equal(typed.p_term_period, null);
+    assert.equal(validateReportExtras('camp', extras({ unit_choice: 'c-1' }), { options }), '');
+});
+
+test('合作課：單位以 id 選取、送出文字；期間要在啟用清單裡（新增的期間代碼也可以）', () => {
+    const options = groupReportOptions([
+        ...periodRows,
+        { kind: 'term_period', id: 'p-n', value: 'term_abc123', label: '2027年寒假', sort_order: 40, is_active: true },
+        { kind: 'partner_unit', id: 'u-9', period_id: 'p-n', value: 'C校', label: 'C校', sort_order: 10, is_active: true },
     ]);
-    assert.deepEqual(partnerUnitsFor(legacy, 'semester').map(u => u.value), ['A校', 'B校']);
+    const filled = extras({ term_period: 'term_abc123', unit_choice: 'u-9', materials_issued: '0' });
+    assert.equal(validateReportExtras('collab_lead', filled, { options }), '');
+    assert.equal(validateReportExtras('collab_lead', { ...filled, term_period: 'spring' }, { options }), '教學課程期間不正確。');
+    assert.deepEqual(buildReportExtrasParams('collab_lead', filled, { options }), {
+        p_term_period: 'term_abc123',
+        p_unit_name: 'C校',
+        p_materials_issued: '0',
+        p_transport_subsidy_requested: false,
+        p_transport_distance_km: null,
+    });
+});
+
+test('後台隱藏內建欄位：不顯示、不驗證、不送出；改必填會擋', () => {
+    const hidden = (layout, keys) => visibleFieldsOfLayout(
+        DEFAULT_REPORT_FIELDS.map(row => (row.layout === layout && keys.includes(row.field_key) ? { ...row, is_visible: false } : row)),
+        layout,
+    );
+    const campFields = hidden('b2c_camp', ['transport', 'incident']);
+    assert.deepEqual([...reportFieldsFor('camp', campFields)], ['camp_batch', 'students']);
+    const camp = buildReportExtrasParams('camp', extras({ unit_choice: 'X', transport_requested: true, transport_distance_km: '' }), { fields: campFields });
+    assert.equal(camp.p_transport_subsidy_requested, false);
+    assert.equal(validateReportExtras('camp', extras({ unit_choice: 'X', transport_requested: true }), { fields: campFields }), '');
+    assert.equal(buildReportBasicParams('camp', { student_count: '3', incident_report: '殘留' }, campFields).p_incident_report, null);
+
+    const b2bFields = hidden('b2b', ['materials']);
+    assert.equal(validateReportExtras('collab_lead', extras({ term_period: 'semester', unit_choice: 'A' }), { fields: b2bFields }), '');
+    assert.equal(buildReportExtrasParams('collab_lead', extras({ term_period: 'semester', unit_choice: 'A', materials_issued: '5' }), { fields: b2bFields }).p_materials_issued, null);
+
+    const directFields = hidden('b2c_direct', ['course_name']);
+    assert.equal(validateReportBasics('online', { course_name: '', duration_hours: '1', student_count: '1' }, directFields), '');
+    assert.equal(buildReportBasicParams('online', { course_name: '殘留', duration_hours: '1', student_count: '1' }, directFields).p_course_name, null);
+
+    const otherFields = visibleFieldsOfLayout(
+        DEFAULT_REPORT_FIELDS.map(row => (row.layout === 'other' && row.field_key === 'location' ? { ...row, is_required: true } : row)),
+        'other',
+    );
+    assert.equal(validateReportBasics('regular_basic', { location: ' ' }, otherFields), '請填寫地點。');
+    assert.equal(validateReportBasics('regular_basic', { location: '台北' }, otherFields), '');
 });
 
 test('到府課依時數自動落到 1.5hr／2hr；其他課型不變', () => {
@@ -182,4 +253,10 @@ test('到府課依時數自動落到 1.5hr／2hr；其他課型不變', () => {
     assert.equal(deriveCourseType('onsite_1_5hr', ''), 'onsite_2hr');
     assert.equal(deriveCourseType('online', '1.5'), 'online');
     assert.equal(deriveCourseType('collab_lead', '1'), 'collab_lead');
+});
+
+test('切換課型後殘留、對不到清單的選擇視為未選，不會把 id 當單位名稱送出', () => {
+    const options = groupReportOptions(periodRows);
+    assert.equal(validateReportExtras('camp', extras({ unit_choice: 'u-1' }), { options }), '營隊課程請選擇營隊梯次。');
+    assert.equal(buildReportExtrasParams('camp', extras({ unit_choice: 'u-1' }), { options }).p_unit_name, null);
 });
