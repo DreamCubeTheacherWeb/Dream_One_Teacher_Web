@@ -1,6 +1,9 @@
 // 站內課程回報對齊 Google 課後回報表單的條件欄位（合作課／營隊／直營交通補助）。
-// 驗證訊息與 submit_my_class_session（migration 20261018120000）一致；後端仍是最終防線。
-import { TERM_PERIOD_LABELS, courseCategoryFor, reportChannelFor, termScopeFor } from './constants.js';
+// 驗證訊息與 submit_my_class_session（migration 20261020130000）一致；後端仍是最終防線。
+// 2026-10-20 起：欄位顯示與順序依後台「回報表單欄位」設定（salary_report_fields）；
+// 合作單位與營隊梯次掛在教學期間底下（salary_report_options.period_id）。
+import { TERM_PERIOD_LABELS, courseCategoryFor, reportChannelFor } from './constants.js';
+import { fieldKeySet, isFieldRequired, visibleFieldsOfLayout } from './salaryReportFields.js';
 
 export const OTHER_OPTION = '__other__';
 export const REPORT_TEXT_MAX = 200;
@@ -28,20 +31,60 @@ export const groupReportOptions = (rows) => {
     const grouped = { term_period: [], partner_unit: [], camp_batch: [] };
     for (const row of Array.isArray(rows) ? rows : []) {
         if (!row || !grouped[row.kind] || row.is_active === false) continue;
-        grouped[row.kind].push({ value: row.value, label: row.label || row.value, sort_order: row.sort_order ?? 0, term_scope: row.term_scope ?? null });
+        grouped[row.kind].push({
+            id: row.id ?? null,
+            value: row.value,
+            label: row.label || row.value,
+            sort_order: row.sort_order ?? 0,
+            period_id: row.period_id ?? null,
+        });
     }
     for (const list of Object.values(grouped)) list.sort((a, b) => a.sort_order - b.sort_order);
+    // 期間停用時講師讀不到期間那一列：它底下的單位與梯次一起收掉
+    const periodIds = new Set(grouped.term_period.map(period => period.id).filter(Boolean));
+    for (const kind of ['partner_unit', 'camp_batch']) {
+        grouped[kind] = grouped[kind].filter(item => !item.period_id || periodIds.has(item.period_id));
+    }
     return grouped;
 };
 
-// 依選到的教學期間給對應那組合作單位；還沒選期間 → 空清單（畫面會提示先選期間）。
-// 選項還沒有 term_scope（migration 尚未套用）時退回整份清單，不擋回報。
+// 下拉選項：key 用列 id（不同期間可能同名），value 是存進回報的文字
+const choiceOf = (item, period = null) => ({
+    key: item.id || item.value,
+    value: item.value,
+    label: item.label || item.value,
+    period_value: period?.value ?? null,
+    period_label: period?.label ?? null,
+});
+
+export const periodByValue = (options, termPeriod) => (options?.term_period || [])
+    .find(period => period.value === termPeriod) || null;
+
+// 選到的教學期間底下的合作單位；還沒選期間或找不到期間 → 空清單（畫面提示先選期間／改自由輸入）
 export const partnerUnitsFor = (options, termPeriod) => {
-    const units = options?.partner_unit || [];
-    const scope = termScopeFor(termPeriod);
-    if (!scope) return [];
-    if (!units.some(unit => unit.term_scope)) return units;
-    return units.filter(unit => unit.term_scope === scope);
+    const period = termPeriod ? periodByValue(options, termPeriod) : null;
+    if (!period?.id) return [];
+    return (options?.partner_unit || [])
+        .filter(unit => unit.period_id === period.id)
+        .map(unit => choiceOf(unit, period));
+};
+
+// 營隊梯次：所有啟用中期間的梯次，依期間順序排列（畫面依期間分組顯示）
+export const campBatchesFor = (options) => {
+    const periods = options?.term_period || [];
+    const batches = options?.camp_batch || [];
+    const ordered = periods.flatMap(period => batches
+        .filter(batch => batch.period_id && batch.period_id === period.id)
+        .map(batch => choiceOf(batch, period)));
+    const loose = batches.filter(batch => !batch.period_id).map(batch => choiceOf(batch));
+    return [...ordered, ...loose];
+};
+
+export const unitChoicesFor = (courseType, options, termPeriod) => {
+    const group = reportGroupFor(courseType);
+    if (group === 'collab') return partnerUnitsFor(options, termPeriod);
+    if (group === 'camp') return campBatchesFor(options);
+    return [];
 };
 
 // 到府課不問報酬項目：時數 ≤ 1.5 走「到府 1.5hr/節」，其餘走「到府 2hr/節」（業主 2026-10-19）
@@ -56,28 +99,47 @@ export const termPeriodChoices = (options) => (options?.term_period?.length
     ? options.term_period.map(({ value, label }) => ({ value, label }))
     : Object.entries(TERM_PERIOD_LABELS).map(([value, label]) => ({ value, label })));
 
-export const resolveUnitName = (extras) => (extras.unit_choice === OTHER_OPTION
-    ? extras.unit_other
-    : extras.unit_choice).trim();
+export const resolveUnitChoice = (extras, choices = []) => (extras.unit_choice && extras.unit_choice !== OTHER_OPTION
+    ? (choices || []).find(choice => choice.key === extras.unit_choice) || null
+    : null);
+
+// 有清單時只認清單裡的選項（切換課型後殘留、對不到的選擇視為未選）；沒有清單時 unit_choice 就是文字本身
+export const resolveUnitName = (extras, choices = []) => {
+    if (extras.unit_choice === OTHER_OPTION) return String(extras.unit_other || '').trim();
+    if (!choices?.length) return String(extras.unit_choice || '').trim();
+    return String(resolveUnitChoice(extras, choices)?.value || '').trim();
+};
+
+// 依回報類別取得目前要顯示的欄位設定（沒給就用預設）
+const fieldsFor = (courseType, fields) => fields || visibleFieldsOfLayout([], reportLayoutFor(courseType));
 
 const roundDistance = (value) => Math.round(Number(value) * 10) / 10;
 
-export const validateReportExtras = (courseType, extras) => {
+// context：{ fields：目前版面的欄位設定, options：groupReportOptions 的結果 }，都可省略（用預設）
+export const validateReportExtras = (courseType, extras, { fields, options } = {}) => {
     const group = reportGroupFor(courseType);
-    const unitName = resolveUnitName(extras);
+    const layoutFields = fieldsFor(courseType, fields);
+    const keys = fieldKeySet(layoutFields);
+    const unitName = resolveUnitName(extras, unitChoicesFor(courseType, options, extras.term_period));
     const materials = extras.materials_issued.trim();
+    const periodValues = options?.term_period?.length
+        ? options.term_period.map(period => period.value)
+        : Object.keys(TERM_PERIOD_LABELS);
 
     if (group === 'collab') {
         if (!extras.term_period) return '合作課程請選擇教學課程期間。';
-        if (!TERM_PERIOD_LABELS[extras.term_period]) return '教學課程期間不正確。';
+        if (!periodValues.includes(extras.term_period)) return '教學課程期間不正確。';
         if (!unitName) return '合作課程請選擇本次上課單位。';
+        if (keys.has('materials') && isFieldRequired(layoutFields, 'materials') && !materials) {
+            return '請填寫本次發出教材數量（沒有發教材請填 0）。';
+        }
     }
     if (group === 'camp' && !unitName) return '營隊課程請選擇營隊梯次。';
     if (group !== 'direct' && (unitName.length > REPORT_TEXT_MAX || (group === 'collab' && materials.length > REPORT_TEXT_MAX))) {
         return '上課單位／營隊梯次或教材數量不得超過 200 字。';
     }
-    // 表單 B 的直營課與營隊都有交通補助；合作單位課沒有
-    if (group !== 'collab' && extras.transport_requested) {
+    // 表單 B 的直營課與營隊都有交通補助；合作單位課沒有；後台可隱藏
+    if (group !== 'collab' && keys.has('transport') && extras.transport_requested) {
         if (String(extras.transport_distance_km).trim() === '') return '申請交通補助請填寫單趟公里數。';
         const distance = roundDistance(extras.transport_distance_km);
         if (!Number.isFinite(distance) || distance <= 0 || distance > TRANSPORT_DISTANCE_MAX) {
@@ -87,15 +149,19 @@ export const validateReportExtras = (courseType, extras) => {
     return '';
 };
 
-// 只送出目前課型會顯示的欄位，切換課型時殘留的隱藏值不會被寫入
-export const buildReportExtrasParams = (courseType, extras) => {
+// 只送出目前課型會顯示的欄位，切換課型時殘留的隱藏值不會被寫入。
+// 營隊梯次掛在期間底下：選清單裡的梯次時，連同它的期間一起送出（後台可看出是哪一期的營隊）
+export const buildReportExtrasParams = (courseType, extras, { fields, options } = {}) => {
     const group = reportGroupFor(courseType);
-    const unitName = resolveUnitName(extras);
-    const transportRequested = group !== 'collab' && Boolean(extras.transport_requested);
+    const keys = fieldKeySet(fieldsFor(courseType, fields));
+    const choices = unitChoicesFor(courseType, options, extras.term_period);
+    const unitName = resolveUnitName(extras, choices);
+    const campPeriod = group === 'camp' ? resolveUnitChoice(extras, choices)?.period_value || null : null;
+    const transportRequested = group !== 'collab' && keys.has('transport') && Boolean(extras.transport_requested);
     return {
-        p_term_period: group === 'collab' ? (extras.term_period || null) : null,
+        p_term_period: group === 'collab' ? (extras.term_period || null) : campPeriod,
         p_unit_name: group === 'direct' ? null : (unitName || null),
-        p_materials_issued: group === 'collab' ? (extras.materials_issued.trim() || null) : null,
+        p_materials_issued: group === 'collab' && keys.has('materials') ? (extras.materials_issued.trim() || null) : null,
         p_transport_subsidy_requested: transportRequested,
         p_transport_distance_km: transportRequested ? roundDistance(extras.transport_distance_km) : null,
     };
@@ -115,14 +181,8 @@ export const reportLayoutFor = (courseType = '') => {
     return 'other';
 };
 
-const LAYOUT_FIELDS = {
-    b2b: ['hours', 'students'],
-    b2c_direct: ['course_name', 'hours_preset', 'students', 'transport'],
-    b2c_camp: ['students', 'transport'],
-    other: ['role', 'course_name', 'hours', 'students', 'location', 'transport', 'self_review', 'progress'],
-};
-
-export const reportFieldsFor = (courseType) => new Set(LAYOUT_FIELDS[reportLayoutFor(courseType)]);
+// 目前版面要顯示的欄位代碼（依後台設定；沒給設定就用預設）。b2c_direct 的 hours 以 1／1.5／2… 下拉呈現
+export const reportFieldsFor = (courseType, fields) => fieldKeySet(fieldsFor(courseType, fields));
 
 export const INCIDENT_LABELS = {
     b2b: '特殊狀況或其他問題回報（選填）',
@@ -140,10 +200,25 @@ export const roleForCourseType = (courseType = '') => {
     return 'lead';
 };
 
-// 表單上的必填欄位（後端對這些欄位仍允許空值，前端照表單要求）
-export const validateReportBasics = (courseType, form) => {
+// 後台可改必填的內建文字欄位 → 回報表單上的欄位名
+const REQUIRABLE_TEXT_FIELDS = [
+    ['course_name', 'course_name'],
+    ['location', 'location'],
+    ['self_review', 'self_review'],
+    ['incident', 'incident_report'],
+];
+
+// 表單上的必填欄位（後端對這些欄位仍允許空值，前端照表單要求與後台設定）
+export const validateReportBasics = (courseType, form, fields) => {
     const layout = reportLayoutFor(courseType);
-    if (layout === 'b2c_direct' && !String(form.course_name || '').trim()) return '請填寫課程名稱（學生代表姓名或課程地點）。';
+    const layoutFields = fieldsFor(courseType, fields);
+    const keys = fieldKeySet(layoutFields);
+    for (const [fieldKey, formKey] of REQUIRABLE_TEXT_FIELDS) {
+        if (!keys.has(fieldKey) || !isFieldRequired(layoutFields, fieldKey) || String(form[formKey] || '').trim()) continue;
+        if (fieldKey === 'course_name' && layout === 'b2c_direct') return '請填寫課程名稱（學生代表姓名或課程地點）。';
+        const label = layoutFields.find(field => field.field_key === fieldKey)?.label || fieldKey;
+        return `請填寫${label}。`;
+    }
     if ((layout === 'b2b' || layout === 'b2c_direct') && String(form.duration_hours ?? '').trim() === '') return '請填寫上課時數。';
     if (layout !== 'other' && String(form.student_count ?? '').trim() === '') return '請填寫本次上課人數。';
     return '';
@@ -151,18 +226,17 @@ export const validateReportBasics = (courseType, form) => {
 
 const textOrNull = (value) => String(value || '').trim() || null;
 
-// 只送出目前版面看得到的基本欄位，切換類別時殘留的隱藏值不會被寫入
-export const buildReportBasicParams = (courseType, form) => {
-    const fields = reportFieldsFor(courseType);
-    const hasHours = fields.has('hours') || fields.has('hours_preset');
+// 只送出目前版面看得到的基本欄位，切換類別或後台隱藏的欄位不會被寫入
+export const buildReportBasicParams = (courseType, form, fields) => {
+    const keys = reportFieldsFor(courseType, fields);
     return {
-        p_role_in_session: fields.has('role') ? form.role_in_session : roleForCourseType(courseType),
-        p_course_name: fields.has('course_name') ? textOrNull(form.course_name) : null,
-        p_location: fields.has('location') ? textOrNull(form.location) : null,
-        p_duration_hours: hasHours && String(form.duration_hours ?? '') !== '' ? Number(form.duration_hours) : null,
-        p_student_count: String(form.student_count ?? '') !== '' ? Number(form.student_count) : null,
-        p_self_review: fields.has('self_review') ? textOrNull(form.self_review) : null,
-        p_progress_note: fields.has('progress') ? textOrNull(form.progress_note) : null,
-        p_incident_report: textOrNull(form.incident_report),
+        p_role_in_session: keys.has('role') ? form.role_in_session : roleForCourseType(courseType),
+        p_course_name: keys.has('course_name') ? textOrNull(form.course_name) : null,
+        p_location: keys.has('location') ? textOrNull(form.location) : null,
+        p_duration_hours: keys.has('hours') && String(form.duration_hours ?? '') !== '' ? Number(form.duration_hours) : null,
+        p_student_count: keys.has('students') && String(form.student_count ?? '') !== '' ? Number(form.student_count) : null,
+        p_self_review: keys.has('self_review') ? textOrNull(form.self_review) : null,
+        p_progress_note: keys.has('progress') ? textOrNull(form.progress_note) : null,
+        p_incident_report: keys.has('incident') ? textOrNull(form.incident_report) : null,
     };
 };

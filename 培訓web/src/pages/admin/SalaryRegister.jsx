@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, createContext, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { Search, Plus, AlertTriangle, X, CheckCircle2, Clock, Wallet, Edit3, MessageSquare, RefreshCw, ListChecks, ChevronDown } from 'lucide-react';
 import { COURSE_LABELS, ROLE_LABELS, TERM_PERIOD_LABELS, speedQualificationLabel } from '../../lib/constants';
 import { reportGroupFor } from '../../lib/salaryReportForm';
+import { extraFieldEntries } from '../../lib/salaryReportFields';
 import { getSalaryQuote, money, salaryErrorMessage, taipeiToday } from '../../lib/salary';
 import {
     SALARY_REGISTER_PAGE_SIZE,
@@ -56,8 +57,12 @@ const countSessions = (apply = (query) => query) => apply(
     supabase.from('class_sessions').select('id', { count: 'exact', head: true }),
 );
 
+// 教學期間代碼 → 名稱（期間可在「回報選項管理」新增，名稱以資料庫為準）；null＝還沒讀到或讀取失敗
+const PeriodLabelsContext = createContext(null);
+
 const SalaryRegister = () => {
     const { profile } = useAuth();
+    const [periodLabels, setPeriodLabels] = useState(null);
     const [sessions, setSessions] = useState([]);
     const [instructors, setInstructors] = useState([]);
     const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核准、異常、月份選項
@@ -210,6 +215,23 @@ const SalaryRegister = () => {
     }, [loadOverview]);
 
     useEffect(() => {
+        let active = true;
+        (async () => {
+            const { data, error } = await supabase
+                .from('salary_report_options')
+                .select('value, label')
+                .eq('kind', 'term_period');
+            if (!active) return;
+            if (error) {
+                console.warn('教學期間名稱讀取失敗，先以期間代碼顯示', error);
+                return;
+            }
+            setPeriodLabels(Object.fromEntries((data || []).map(row => [row.value, row.label])));
+        })();
+        return () => { active = false; };
+    }, []);
+
+    useEffect(() => {
         const timer = window.setTimeout(() => setSearchTerm(search.trim()), 300);
         return () => window.clearTimeout(timer);
     }, [search]);
@@ -244,6 +266,7 @@ const SalaryRegister = () => {
     const nextPageSize = Math.min(SALARY_REGISTER_PAGE_SIZE, listTotal - fetchedCount);
 
     return (
+        <PeriodLabelsContext.Provider value={periodLabels}>
         <div className="p-4 sm:p-8">
             <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
                 <div>
@@ -394,6 +417,7 @@ const SalaryRegister = () => {
                 <EditSalaryModal session={editing} instructors={instructors} profile={profile} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />
             )}
         </div>
+        </PeriodLabelsContext.Provider>
     );
 };
 
@@ -425,9 +449,16 @@ const recordState = (session) => {
 };
 
 // 對齊 Google 課後回報表單的欄位：期間、單位／梯次、教材、交通補助（只顯示，不影響核准）
-const ReportExtras = ({ session }) => {
+// 名稱還沒讀到（或讀取失敗）時先顯示內建名稱或代碼，讀到後才判斷「已停用」（講師端讀不到停用期間）
+const periodLabelOf = (periodLabels, value) => {
+    if (periodLabels?.[value]) return periodLabels[value];
+    if (!periodLabels) return TERM_PERIOD_LABELS[value] || value;
+    return TERM_PERIOD_LABELS[value] || `已停用的期間（${value}）`;
+};
+
+const reportExtraItems = (session, periodLabels) => {
     const items = [];
-    if (session.term_period) items.push(['期間', TERM_PERIOD_LABELS[session.term_period] || session.term_period]);
+    if (session.term_period) items.push(['期間', periodLabelOf(periodLabels, session.term_period)]);
     if (session.unit_name) items.push([reportGroupFor(session.course_type) === 'camp' ? '梯次' : '單位', session.unit_name]);
     if (session.materials_issued) items.push(['教材', session.materials_issued]);
     if (session.transport_subsidy_requested) {
@@ -435,6 +466,14 @@ const ReportExtras = ({ session }) => {
             ? `申請 ・ 單趟 ${Number(session.transport_distance_km)} km`
             : '申請']);
     }
+    return items;
+};
+
+const ReportExtras = ({ session }) => {
+    const periodLabels = useContext(PeriodLabelsContext);
+    const items = reportExtraItems(session, periodLabels);
+    const customCount = extraFieldEntries(session.extra_fields).length;
+    if (customCount) items.push(['自訂欄位', `${customCount} 項（點開查看）`]);
     if (!items.length) return null;
     return (
         <dl className="mt-1 space-y-0.5 text-xs text-bauhaus-black/60 max-w-[260px]">
@@ -810,6 +849,9 @@ const Field = ({ label, children, full = false }) => (
 // ───────────────────────────────────────────────────────────────
 const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) => {
     useDialogDismiss(onClose);
+    const periodLabels = useContext(PeriodLabelsContext);
+    const reportItems = reportExtraItems(session, periodLabels);
+    const customEntries = extraFieldEntries(session.extra_fields);
     const [form, setForm] = useState({
         course_type: session.course_type,
         course_name: session.course_name || '',
@@ -1029,8 +1071,8 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                     </div>
                 )}
 
-                {/* 講師原本填的回報 */}
-                {(session.self_review || session.progress_note || session.incident_report) && (
+                {/* 講師原本填的回報（含表單的期間／單位／教材／交通補助與後台新增的自訂欄位） */}
+                {(session.self_review || session.progress_note || session.incident_report || reportItems.length > 0 || customEntries.length > 0) && (
                     <div className="mx-6 mt-4 bg-bauhaus-cream rounded-xl border-2 border-bauhaus-black p-4 space-y-2">
                         <div className="text-xs font-bold text-bauhaus-black/70 flex items-center gap-1">
                             <MessageSquare className="w-3.5 h-3.5" /> 講師回報
@@ -1044,6 +1086,12 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
                         {session.incident_report && (
                             <div><span className="text-xs text-bauhaus-black/50">特殊狀況:</span><div className="text-sm text-bauhaus-red whitespace-pre-wrap">{session.incident_report}</div></div>
                         )}
+                        {[...reportItems, ...customEntries.map(entry => [entry.label, entry.text])].map(([label, value], index) => (
+                            <div key={`${label}-${index}`} className="flex gap-1 min-w-0 text-sm">
+                                <span className="shrink-0 text-xs text-bauhaus-black/50 pt-0.5">{label}：</span>
+                                <span className="min-w-0 break-words text-bauhaus-black/80 whitespace-pre-wrap">{value}</span>
+                            </div>
+                        ))}
                     </div>
                 )}
 

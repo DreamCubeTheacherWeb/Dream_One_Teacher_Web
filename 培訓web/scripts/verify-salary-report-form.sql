@@ -526,6 +526,391 @@ END;
 $$;
 \echo PASS (h) term_scope CHECK blocks missing/invalid scope and scope on other kinds; valid insert works
 
+-- (i) 2026-10-20：每個期間各一份清單、營隊梯次掛期間、自訂回報欄位、拖曳排序 RPC（migration 20261020130000）
+--     migration 在 SQL Editor 以無登入身分執行：先清掉測試設定的登入身分，再連跑兩次
+SELECT set_config('request.jwt.claim.sub', '', false) AS jwt_sub \gset
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
+DO $$
+DECLARE
+  v_winter uuid; v_semester uuid; v_summer uuid;
+  n_w integer; n_s integer; n_u integer; n_camp integer; n_orphan integer; n_copy_scope integer; n_mismatch integer;
+BEGIN
+  SELECT id INTO v_winter   FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'winter_break';
+  SELECT id INTO v_semester FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'semester';
+  SELECT id INTO v_summer   FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'summer_break';
+  SELECT count(*) INTO n_w FROM public.salary_report_options WHERE kind = 'partner_unit' AND period_id = v_winter;
+  SELECT count(*) INTO n_s FROM public.salary_report_options WHERE kind = 'partner_unit' AND period_id = v_semester;
+  SELECT count(*) INTO n_u FROM public.salary_report_options WHERE kind = 'partner_unit' AND period_id = v_summer;
+  SELECT count(*) INTO n_camp FROM public.salary_report_options WHERE kind = 'camp_batch' AND period_id = v_summer;
+  SELECT count(*) INTO n_orphan FROM public.salary_report_options WHERE kind <> 'term_period' AND period_id IS NULL;
+  SELECT count(*) INTO n_copy_scope FROM public.salary_report_options WHERE kind = 'partner_unit' AND period_id = v_summer AND term_scope IS NOT NULL;
+  -- 暑假複本與寒假原本逐筆相同（名稱、排序、啟用狀態）
+  SELECT count(*) INTO n_mismatch
+    FROM public.salary_report_options w
+    LEFT JOIN public.salary_report_options s
+      ON s.kind = 'partner_unit' AND s.period_id = v_summer AND s.value = w.value
+     AND s.label = w.label AND s.sort_order = w.sort_order AND s.is_active = w.is_active
+   WHERE w.kind = 'partner_unit' AND w.period_id = v_winter AND s.id IS NULL;
+  IF n_w <> 48 OR n_s <> 30 OR n_u <> 48 OR n_camp <> 31 OR n_orphan <> 0 OR n_copy_scope <> 0 OR n_mismatch <> 0 THEN
+    RAISE EXCEPTION 'period backfill wrong: winter=% semester=% summer=% camp=% orphan=% copy_scope=% mismatch=%',
+      n_w, n_s, n_u, n_camp, n_orphan, n_copy_scope, n_mismatch;
+  END IF;
+  IF (SELECT count(*) FROM public.salary_report_options) <> 160 THEN
+    RAISE EXCEPTION 'expected 160 option rows after copy, got %', (SELECT count(*) FROM public.salary_report_options);
+  END IF;
+  -- 舊前端（套 migration 後、部署前）依 term_scope 篩選的結果不變：48／30，不會多出重複選項
+  IF (SELECT count(*) FROM public.salary_report_options WHERE kind = 'partner_unit' AND term_scope = 'vacation') <> 48
+     OR (SELECT count(*) FROM public.salary_report_options WHERE kind = 'partner_unit' AND term_scope = 'semester') <> 30 THEN
+    RAISE EXCEPTION 'old frontend term_scope view changed';
+  END IF;
+  IF (SELECT count(*) FROM public.salary_report_fields) <> 24
+     OR (SELECT count(*) FROM public.salary_report_fields WHERE layout = 'b2b') <> 6
+     OR (SELECT count(*) FROM public.salary_report_fields WHERE layout = 'b2c_direct') <> 5
+     OR (SELECT count(*) FROM public.salary_report_fields WHERE layout = 'b2c_camp') <> 4
+     OR (SELECT count(*) FROM public.salary_report_fields WHERE layout = 'other') <> 9 THEN
+    RAISE EXCEPTION 'field seed counts wrong';
+  END IF;
+  IF (SELECT count(*) FROM pg_proc WHERE proname = 'submit_my_class_session') <> 1
+     OR to_regprocedure('public.submit_my_class_session(text, date, text, text, text, numeric, integer, text, text, text, text, text, text, boolean, numeric, jsonb)') IS NULL THEN
+    RAISE EXCEPTION 'submit_my_class_session should have exactly one 16-arg signature';
+  END IF;
+END;
+$$;
+\echo PASS (i) migration x2: winter 48 / semester 30 / summer 48 copies (identical, term_scope NULL) / camp 31 -> summer; 160 rows; old term_scope view still 48/30; 24 seeded fields; one 16-arg RPC
+
+-- 唯一性與 CHECK：同一期間不可同名、不同期間可以；期間代碼唯一；單位必須掛期間、只能掛到期間列
+DO $$
+DECLARE v_winter uuid; v_summer uuid; v_unit uuid;
+BEGIN
+  SELECT id INTO v_winter FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'winter_break';
+  SELECT id INTO v_summer FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'summer_break';
+  SELECT id INTO v_unit FROM public.salary_report_options WHERE kind = 'partner_unit' AND period_id = v_winter LIMIT 1;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label, period_id)
+    SELECT 'partner_unit', value, label, v_winter FROM public.salary_report_options WHERE id = v_unit;
+    RAISE EXCEPTION 'duplicate unit in same period accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label) VALUES ('term_period', 'semester', '重複代碼');
+    RAISE EXCEPTION 'duplicate period code accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label) VALUES ('partner_unit', '沒期間的單位', '沒期間的單位');
+    RAISE EXCEPTION 'unit without period accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label, period_id) VALUES ('term_period', 'term_bad', '期間掛期間', v_winter);
+    RAISE EXCEPTION 'period with period_id accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label, period_id) VALUES ('camp_batch', '掛到單位的梯次', '掛到單位的梯次', v_unit);
+    RAISE EXCEPTION 'period_id pointing to a unit accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+  BEGIN
+    INSERT INTO public.salary_report_options (kind, value, label, term_scope, period_id) VALUES ('camp_batch', '帶組別梯次', '帶組別梯次', 'vacation', v_summer);
+    RAISE EXCEPTION 'camp_batch with term_scope accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    DELETE FROM public.salary_report_options WHERE id = v_winter;
+    RAISE EXCEPTION 'period with units was deleted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+END;
+$$;
+\echo PASS (i) uniqueness per period, period code unique, unit needs period, period_id must point at a period, period with units cannot be deleted
+
+-- 管理員：新增期間（含複製清單）、建自訂欄位；欄位守門 trigger
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000003', false) AS jwt_sub \gset
+SET ROLE authenticated;
+DO $$
+DECLARE v_new uuid; v_semester uuid; n integer; denied boolean; v_field uuid;
+BEGIN
+  INSERT INTO public.salary_report_options (kind, value, label, sort_order)
+  VALUES ('term_period', 'term_test2027w', '2027年寒假', 40) RETURNING id INTO v_new;
+  SELECT id INTO v_semester FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'semester';
+  INSERT INTO public.salary_report_options (kind, value, label, sort_order, is_active, period_id)
+  SELECT kind, value, label, sort_order, is_active, v_new FROM public.salary_report_options
+   WHERE period_id = v_semester AND kind = 'partner_unit';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 30 THEN RAISE EXCEPTION 'copy semester list into new period copied %', n; END IF;
+  INSERT INTO public.salary_report_options (kind, value, label, sort_order, is_active)
+  VALUES ('term_period', 'term_test_closed', '已結束期間', 50, false);
+
+  INSERT INTO public.salary_report_fields (layout, field_key, source, label, field_type, options, is_required, sort_order)
+  VALUES ('b2b', 'custom_satisfaction', 'custom', '家長滿意度', 'select', '["滿意","普通","不滿意"]', true, 70);
+  INSERT INTO public.salary_report_fields (layout, field_key, source, label, field_type, sort_order)
+  VALUES ('b2b', 'custom_helpers', 'custom', '協助人數', 'number', 80);
+  INSERT INTO public.salary_report_fields (layout, field_key, source, label, field_type, sort_order)
+  VALUES ('b2b', 'custom_photo_ok', 'custom', '可拍照', 'boolean', 90);
+  INSERT INTO public.salary_report_fields (layout, field_key, source, label, field_type, sort_order, is_visible)
+  VALUES ('b2b', 'custom_hidden', 'custom', '隱藏中的欄位', 'text', 100, false);
+  -- 自訂欄位可改名、改型別、刪除
+  UPDATE public.salary_report_fields SET label = '協助人員數' WHERE field_key = 'custom_helpers';
+  INSERT INTO public.salary_report_fields (layout, field_key, source, label, sort_order)
+  VALUES ('other', 'custom_temp', 'custom', '暫時欄位', 100) RETURNING id INTO v_field;
+  DELETE FROM public.salary_report_fields WHERE id = v_field;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN RAISE EXCEPTION 'admin could not delete custom field'; END IF;
+
+  -- 內建欄位：可隱藏、可改必填；不可刪、不可改名
+  UPDATE public.salary_report_fields SET is_visible = false WHERE layout = 'b2c_camp' AND field_key = 'transport';
+  UPDATE public.salary_report_fields SET is_required = true WHERE layout = 'other' AND field_key = 'location';
+  denied := false;
+  BEGIN DELETE FROM public.salary_report_fields WHERE layout = 'b2b' AND field_key = 'materials';
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'builtin field was deleted'; END IF;
+  denied := false;
+  BEGIN UPDATE public.salary_report_fields SET label = '改名' WHERE layout = 'b2b' AND field_key = 'materials';
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'builtin field was renamed'; END IF;
+  -- 系統欄位：不可刪、不可隱藏、不可改必填
+  denied := false;
+  BEGIN DELETE FROM public.salary_report_fields WHERE layout = 'b2b' AND field_key = 'hours';
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'system field was deleted'; END IF;
+  denied := false;
+  BEGIN UPDATE public.salary_report_fields SET is_visible = false WHERE layout = 'b2b' AND field_key = 'hours';
+  EXCEPTION WHEN check_violation THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'system field was hidden'; END IF;
+  denied := false;
+  BEGIN UPDATE public.salary_report_fields SET is_required = true WHERE layout = 'b2b' AND field_key = 'hours';
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'system field required flag changed'; END IF;
+  -- 後台只能新增自訂欄位；代碼、版面不可改
+  denied := false;
+  BEGIN INSERT INTO public.salary_report_fields (layout, field_key, source, label) VALUES ('b2b', 'fake_system', 'system', '偽系統欄位');
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'admin inserted a system field'; END IF;
+  denied := false;
+  BEGIN UPDATE public.salary_report_fields SET layout = 'other' WHERE field_key = 'custom_helpers';
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'custom field layout changed'; END IF;
+  -- 自訂欄位代碼必須 custom_ 開頭；下拉至少一個選項
+  denied := false;
+  BEGIN INSERT INTO public.salary_report_fields (layout, field_key, source, label) VALUES ('b2b', 'satisfaction', 'custom', '沒前綴');
+  EXCEPTION WHEN check_violation THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'custom field without prefix accepted'; END IF;
+  denied := false;
+  BEGIN INSERT INTO public.salary_report_fields (layout, field_key, source, label, field_type) VALUES ('b2b', 'custom_empty_select', 'custom', '空下拉', 'select');
+  EXCEPTION WHEN check_violation THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'select without options accepted'; END IF;
+END;
+$$;
+RESET ROLE;
+\echo PASS (i) admin adds period with copied list, manages custom fields; builtin hide/required ok but no delete/rename; system fields locked; admin cannot insert system fields
+
+-- 拖曳排序 RPC：管理員可排同一份清單；混兩份清單、重複、講師、匿名都擋
+SET ROLE authenticated;
+DO $$
+DECLARE v_semester uuid; v_ids uuid[]; v_mixed uuid[]; n integer; denied boolean;
+BEGIN
+  SELECT id INTO v_semester FROM public.salary_report_options WHERE kind = 'term_period' AND value = 'semester';
+  SELECT array_agg(id ORDER BY sort_order DESC, id) INTO v_ids
+    FROM public.salary_report_options WHERE kind = 'partner_unit' AND period_id = v_semester;
+  n := public.reorder_salary_report_options(v_ids);
+  IF n <> 30 THEN RAISE EXCEPTION 'reorder updated % rows', n; END IF;
+  IF (SELECT sort_order FROM public.salary_report_options WHERE id = v_ids[1]) <> 10
+     OR (SELECT sort_order FROM public.salary_report_options WHERE id = v_ids[30]) <> 300 THEN
+    RAISE EXCEPTION 'reorder did not write 10..300';
+  END IF;
+  SELECT array_agg(id) INTO v_mixed FROM (
+    SELECT id FROM public.salary_report_options WHERE kind = 'partner_unit' AND period_id = v_semester LIMIT 1
+  ) a;
+  v_mixed := v_mixed || (SELECT id FROM public.salary_report_options WHERE kind = 'camp_batch' LIMIT 1);
+  denied := false;
+  BEGIN PERFORM public.reorder_salary_report_options(v_mixed);
+  EXCEPTION WHEN raise_exception THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'reorder accepted two different lists'; END IF;
+  denied := false;
+  BEGIN PERFORM public.reorder_salary_report_options(ARRAY[v_ids[1], v_ids[1]]);
+  EXCEPTION WHEN raise_exception THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'reorder accepted duplicate ids'; END IF;
+
+  SELECT array_agg(id ORDER BY sort_order DESC) INTO v_ids FROM public.salary_report_fields WHERE layout = 'b2c_camp';
+  n := public.reorder_salary_report_fields(v_ids);
+  IF n <> 4 OR (SELECT field_key FROM public.salary_report_fields WHERE layout = 'b2c_camp' AND sort_order = 10) <> 'incident' THEN
+    RAISE EXCEPTION 'field reorder wrong';
+  END IF;
+  -- 還原原本順序，後面的檢查以種子順序為準
+  SELECT array_agg(id ORDER BY sort_order DESC) INTO v_ids FROM public.salary_report_fields WHERE layout = 'b2c_camp';
+  PERFORM public.reorder_salary_report_fields(v_ids);
+  denied := false;
+  BEGIN PERFORM public.reorder_salary_report_fields(ARRAY(SELECT id FROM public.salary_report_fields WHERE field_key IN ('incident') AND layout IN ('b2b', 'other')));
+  EXCEPTION WHEN raise_exception THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'field reorder accepted two layouts'; END IF;
+END;
+$$;
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000001', false) AS jwt_sub \gset
+SET ROLE authenticated;
+DO $$
+DECLARE denied boolean; n integer; v_ids uuid[];
+BEGIN
+  SELECT array_agg(id) INTO v_ids FROM public.salary_report_options WHERE kind = 'term_period';
+  denied := false;
+  BEGIN PERFORM public.reorder_salary_report_options(v_ids);
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'teacher reordered options'; END IF;
+  denied := false;
+  BEGIN PERFORM public.reorder_salary_report_fields(ARRAY(SELECT id FROM public.salary_report_fields WHERE layout = 'b2b'));
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'teacher reordered fields'; END IF;
+  -- 講師只讀得到顯示中的欄位，不能寫
+  SELECT count(*) INTO n FROM public.salary_report_fields;
+  IF n <> 26 THEN RAISE EXCEPTION 'teacher should see 26 visible fields, saw %', n; END IF;
+  IF EXISTS (SELECT 1 FROM public.salary_report_fields WHERE NOT is_visible) THEN RAISE EXCEPTION 'teacher saw hidden field'; END IF;
+  denied := false;
+  BEGIN INSERT INTO public.salary_report_fields (layout, field_key, source, label) VALUES ('b2b', 'custom_teacher', 'custom', '講師偷加');
+  EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+  IF NOT denied THEN RAISE EXCEPTION 'teacher inserted field'; END IF;
+  UPDATE public.salary_report_fields SET is_required = true WHERE field_key = 'custom_satisfaction';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'teacher updated % fields', n; END IF;
+  DELETE FROM public.salary_report_fields WHERE field_key = 'custom_helpers';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN RAISE EXCEPTION 'teacher deleted % fields', n; END IF;
+END;
+$$;
+RESET ROLE;
+DO $$
+BEGIN
+  IF has_function_privilege('anon', 'public.reorder_salary_report_options(uuid[])', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.reorder_salary_report_fields(uuid[])', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.submit_my_class_session(text, date, text, text, text, numeric, integer, text, text, text, text, text, text, boolean, numeric, jsonb)', 'EXECUTE')
+     OR has_table_privilege('anon', 'public.salary_report_fields', 'SELECT') THEN
+    RAISE EXCEPTION 'anon has access to new objects';
+  END IF;
+END;
+$$;
+\echo PASS (i) reorder RPCs: admin writes 10..N in one call, rejects mixed lists/duplicates; teacher and anon blocked; teacher reads only visible fields and cannot write
+
+-- 講師送出：新期間代碼可用、停用／不存在的期間擋；自訂欄位存「資料庫名稱快照＋內容」，未知／隱藏欄位擋
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000001', false) AS jwt_sub \gset
+SET ROLE authenticated;
+SELECT public.submit_my_class_session(
+  p_course_type => 'collab_lead', p_session_date => '2026-08-09', p_duration_hours => 2, p_student_count => 12,
+  p_term_period => 'term_test2027w', p_unit_name => '新期間的單位', p_materials_issued => '0',
+  p_extra_fields => '{"custom_satisfaction": " 滿意 ", "custom_helpers": 2, "custom_photo_ok": true, "custom_unused": null}'::jsonb
+) AS new_period_id \gset
+SELECT public.submit_my_class_session(
+  p_course_type => 'collab_lead', p_session_date => '2026-08-08', p_duration_hours => 2, p_student_count => 12,
+  p_term_period => 'semester', p_unit_name => '舊期間', p_materials_issued => '0',
+  p_extra_fields => '{"custom_satisfaction": "   "}'::jsonb
+) AS empty_extra_id \gset
+-- 空窗期（migration 已套、新前端未部署）：舊前端（c8842e7）實際送出的 15 個具名參數 JSON，
+-- 照 PostgREST 的呼叫方式（json_to_record 拆欄位、具名參數只帶 payload 有的鍵）打新版 16 參數函式
+CREATE TEMP TABLE old_frontend_payloads (label text, body json);
+INSERT INTO old_frontend_payloads VALUES
+  ('collab', '{"p_course_type":"collab_lead","p_session_date":"2026-08-05","p_role_in_session":"lead","p_course_name":null,"p_location":null,"p_duration_hours":2,"p_student_count":18,"p_self_review":null,"p_progress_note":null,"p_incident_report":null,"p_term_period":"semester","p_unit_name":"空窗期舊前端單位","p_materials_issued":"楓葉10","p_transport_subsidy_requested":false,"p_transport_distance_km":null}'),
+  ('camp', '{"p_course_type":"camp","p_session_date":"2026-08-05","p_role_in_session":"lead","p_course_name":null,"p_location":null,"p_duration_hours":null,"p_student_count":18,"p_self_review":null,"p_progress_note":null,"p_incident_report":null,"p_term_period":null,"p_unit_name":"空窗期舊前端梯次","p_materials_issued":null,"p_transport_subsidy_requested":false,"p_transport_distance_km":null}'),
+  ('direct', '{"p_course_type":"onsite_1_5hr","p_session_date":"2026-08-05","p_role_in_session":"lead","p_course_name":"空窗期舊前端直營","p_location":null,"p_duration_hours":1.5,"p_student_count":2,"p_self_review":null,"p_progress_note":null,"p_incident_report":null,"p_term_period":null,"p_unit_name":null,"p_materials_issued":null,"p_transport_subsidy_requested":true,"p_transport_distance_km":12.4}');
+GRANT SELECT ON old_frontend_payloads TO authenticated;
+SET ROLE authenticated;
+SELECT count(public.submit_my_class_session(
+         "p_course_type" := a."p_course_type", "p_session_date" := a."p_session_date",
+         "p_role_in_session" := a."p_role_in_session", "p_course_name" := a."p_course_name",
+         "p_location" := a."p_location", "p_duration_hours" := a."p_duration_hours",
+         "p_student_count" := a."p_student_count", "p_self_review" := a."p_self_review",
+         "p_progress_note" := a."p_progress_note", "p_incident_report" := a."p_incident_report",
+         "p_term_period" := a."p_term_period", "p_unit_name" := a."p_unit_name",
+         "p_materials_issued" := a."p_materials_issued",
+         "p_transport_subsidy_requested" := a."p_transport_subsidy_requested",
+         "p_transport_distance_km" := a."p_transport_distance_km")) AS old_frontend_calls
+  FROM old_frontend_payloads p,
+  LATERAL json_to_record(p.body) AS a(
+    "p_course_type" text, "p_session_date" date, "p_role_in_session" text, "p_course_name" text,
+    "p_location" text, "p_duration_hours" numeric, "p_student_count" integer, "p_self_review" text,
+    "p_progress_note" text, "p_incident_report" text, "p_term_period" text, "p_unit_name" text,
+    "p_materials_issued" text, "p_transport_subsidy_requested" boolean, "p_transport_distance_km" numeric) \gset
+RESET ROLE;
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM public.class_sessions
+       WHERE unit_name IN ('空窗期舊前端單位', '空窗期舊前端梯次') OR course_name = '空窗期舊前端直營') <> 3
+     OR (SELECT term_period FROM public.class_sessions WHERE unit_name = '空窗期舊前端單位') <> 'semester'
+     OR (SELECT materials_issued FROM public.class_sessions WHERE unit_name = '空窗期舊前端單位') <> '楓葉10'
+     OR (SELECT transport_distance_km FROM public.class_sessions WHERE course_name = '空窗期舊前端直營') <> 12.4
+     OR EXISTS (SELECT 1 FROM public.class_sessions
+                 WHERE (unit_name IN ('空窗期舊前端單位', '空窗期舊前端梯次') OR course_name = '空窗期舊前端直營')
+                   AND (extra_fields IS NOT NULL OR status <> 'pending' OR source <> 'self_report')) THEN
+    RAISE EXCEPTION 'old frontend payloads (PostgREST-style named call) did not store correctly';
+  END IF;
+END;
+$$;
+\echo PASS (i) gap window: the old frontend exact 15-key payloads (collab / camp / direct+transport), called the way PostgREST does (json_to_record + named args), all succeed against the 16-arg RPC and store the same values
+
+-- 舊前端（不帶 p_extra_fields、期間用舊代碼）仍可送出
+SELECT public.submit_my_class_session(
+  p_course_type => 'collab_lead', p_session_date => '2026-08-07', p_duration_hours => 2,
+  p_term_period => 'winter_break', p_unit_name => '舊前端單位', p_materials_issued => '0'
+) AS old_frontend_id \gset
+DO $$
+DECLARE test_case text[]; denied boolean; err text;
+BEGIN
+  FOREACH test_case SLICE 1 IN ARRAY ARRAY[
+    ARRAY['停用的期間', 'term_test_closed', '{}', '已停用'],
+    ARRAY['不存在的期間', 'no_such_period', '{}', '不正確'],
+    ARRAY['未知欄位', 'semester', '{"custom_nope": "x"}', '欄位已更新'],
+    ARRAY['隱藏欄位', 'semester', '{"custom_hidden": "x"}', '欄位已更新'],
+    ARRAY['內建欄位代碼', 'semester', '{"materials": "x"}', '欄位已更新'],
+    ARRAY['巢狀內容', 'semester', '{"custom_satisfaction": {"a": 1}}', '格式不正確'],
+    ARRAY['不是物件', 'semester', '["x"]', '格式不正確'],
+    ARRAY['太長', 'semester', '{"custom_satisfaction": "' || repeat('長', 2001) || '"}', '2000']
+  ] LOOP
+    denied := false;
+    BEGIN
+      PERFORM public.submit_my_class_session(
+        p_course_type => 'collab_lead', p_session_date => '2026-08-06', p_duration_hours => 1,
+        p_term_period => test_case[2], p_unit_name => '測試', p_extra_fields => test_case[3]::jsonb);
+    EXCEPTION WHEN raise_exception THEN
+      denied := true;
+      GET STACKED DIAGNOSTICS err = MESSAGE_TEXT;
+      IF position(test_case[4] IN err) = 0 THEN
+        RAISE EXCEPTION '% rejected with unexpected message: %', test_case[1], err;
+      END IF;
+    END;
+    IF NOT denied THEN RAISE EXCEPTION '% was accepted', test_case[1]; END IF;
+  END LOOP;
+END;
+$$;
+RESET ROLE;
+DO $$
+DECLARE s record; e record; o record;
+BEGIN
+  SELECT * INTO s FROM public.class_sessions WHERE unit_name = '新期間的單位';
+  IF s.term_period <> 'term_test2027w'
+     OR s.extra_fields <> '{"custom_satisfaction": {"label": "家長滿意度", "value": "滿意"}, "custom_helpers": {"label": "協助人員數", "value": 2}, "custom_photo_ok": {"label": "可拍照", "value": true}}'::jsonb THEN
+    RAISE EXCEPTION 'new period / extra fields stored wrong: %', row_to_json(s);
+  END IF;
+  SELECT * INTO e FROM public.class_sessions WHERE unit_name = '舊期間';
+  IF e.extra_fields IS NOT NULL THEN RAISE EXCEPTION 'blank custom answers should store NULL, got %', e.extra_fields; END IF;
+  SELECT * INTO o FROM public.class_sessions WHERE unit_name = '舊前端單位';
+  IF o.term_period <> 'winter_break' OR o.extra_fields IS NOT NULL THEN RAISE EXCEPTION 'old frontend call stored wrong: %', row_to_json(o); END IF;
+  -- 欄位改名或刪除後，舊紀錄仍保留當時的名稱
+  UPDATE public.salary_report_fields SET label = '滿意度（新名）' WHERE field_key = 'custom_satisfaction';
+  DELETE FROM public.salary_report_fields WHERE field_key = 'custom_photo_ok';
+  IF (SELECT extra_fields #>> '{custom_satisfaction,label}' FROM public.class_sessions WHERE unit_name = '新期間的單位') <> '家長滿意度'
+     OR (SELECT extra_fields #>> '{custom_photo_ok,label}' FROM public.class_sessions WHERE unit_name = '新期間的單位') <> '可拍照' THEN
+    RAISE EXCEPTION 'extra_fields snapshot changed after field rename/delete';
+  END IF;
+  -- 直接寫入（例如管理員後台）也擋得住非物件的 extra_fields
+  BEGIN
+    UPDATE public.class_sessions SET extra_fields = '["x"]'::jsonb WHERE unit_name = '新期間的單位';
+    RAISE EXCEPTION 'non-object extra_fields accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+END;
+$$;
+\echo PASS (i) RPC: new period code accepted, closed/unknown period rejected; custom answers stored with DB label snapshot (string trimmed, number/boolean kept, blanks dropped); unknown/hidden/builtin keys, nested, non-object and over-long rejected; old frontend call still works; snapshot survives rename/delete
+
 -- ═══════════════════════════════════════════════════════════════════
 -- 第二段：新建庫路徑（2025_salary_system.sql 已同步新欄位與選項表）
 -- ═══════════════════════════════════════════════════════════════════
@@ -588,5 +973,26 @@ BEGIN
 END;
 $$;
 \echo PASS fresh base path: 2025_salary_system.sql -> 20260826 -> 20261018 (x2) -> 20261019 (x2) works, 4 constraints, 1 RPC, 112 options (48 vacation / 30 semester)
+
+SELECT set_config('request.jwt.claim.sub', '', false) AS jwt_sub \gset
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000001', false) AS jwt_sub \gset
+SELECT public.submit_my_class_session(
+  p_course_type => 'collab_lead', p_session_date => '2026-08-13', p_duration_hours => 2,
+  p_term_period => 'semester', p_unit_name => '新建庫單位', p_materials_issued => '0'
+) AS fresh_v4_id \gset
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM public.salary_report_options) <> 160
+     OR (SELECT count(*) FROM public.salary_report_options WHERE kind <> 'term_period' AND period_id IS NULL) <> 0
+     OR (SELECT count(*) FROM public.salary_report_fields) <> 24
+     OR (SELECT count(*) FROM pg_proc WHERE proname = 'submit_my_class_session') <> 1
+     OR (SELECT term_period FROM public.class_sessions WHERE unit_name = '新建庫單位') <> 'semester' THEN
+    RAISE EXCEPTION 'fresh path with 20261020 wrong';
+  END IF;
+END;
+$$;
+\echo PASS fresh base path + 20261020 (x2): 160 options all attached to a period, 24 fields, 1 RPC, submit works
 
 \echo salary report form SQL verification passed

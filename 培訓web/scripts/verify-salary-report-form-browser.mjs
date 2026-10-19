@@ -12,8 +12,9 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
 const { chromium } = require(path.join(appDir, 'node_modules/playwright-core'));
 const { categoriesInChannel, courseCategoryConfig, courseCategoryFor, reportChannelFor, teacherCourseItems } = await import(path.join(appDir, 'src/lib/constants.js'));
+const { DEFAULT_REPORT_FIELDS } = await import(path.join(appDir, 'src/lib/salaryReportFields.js'));
 const chromeExecutable = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const shotDir = path.join(appDir, 'docs/verification/2026-10-19-salary-report-form-channel');
+const shotDir = path.join(appDir, 'docs/verification/2026-10-20-report-form-fields');
 mkdirSync(shotDir, { recursive: true });
 
 const env = Object.fromEntries(readFileSync(path.join(appDir, '.env'), 'utf8')
@@ -26,16 +27,42 @@ const userId = '00000000-0000-4000-8000-000000000051';
 const instructorId = '10000000-0000-4000-8000-000000000051';
 const now = new Date().toISOString();
 
+// 2026-10-20 起每個期間各自一份單位與梯次清單（period_id）；講師端只讀得到啟用中的期間
+const P_WINTER = 'a0000000-0000-4000-8000-000000000001';
+const P_SEMESTER = 'a0000000-0000-4000-8000-000000000002';
+const P_SUMMER = 'a0000000-0000-4000-8000-000000000003';
+const P_NEW = 'a0000000-0000-4000-8000-000000000004';
+const P_CLOSED = 'a0000000-0000-4000-8000-000000000009'; // 已停用：期間列不會回給講師，底下的單位與梯次也不該出現
+let optionSeq = 0;
+const optionRow = (kind, periodId, value, sortOrder) => ({
+    id: `b0000000-0000-4000-8000-${String(optionSeq += 1).padStart(12, '0')}`,
+    kind, value, label: value, sort_order: sortOrder, is_active: true, period_id: periodId,
+});
+const vacationUnits = ['【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', '【基隆】三之三立敏分校'];
 const reportOptions = [
-    { kind: 'term_period', value: 'winter_break', label: '2026年寒假', sort_order: 10, is_active: true },
-    { kind: 'term_period', value: 'semester', label: '115學年度上學期', sort_order: 20, is_active: true },
-    { kind: 'term_period', value: 'summer_break', label: '2026年暑假', sort_order: 30, is_active: true },
-    { kind: 'partner_unit', term_scope: 'vacation', value: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', label: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', sort_order: 10, is_active: true },
-    { kind: 'partner_unit', term_scope: 'vacation', value: '【基隆】三之三立敏分校', label: '【基隆】三之三立敏分校', sort_order: 20, is_active: true },
-    { kind: 'partner_unit', term_scope: 'semester', value: '【週二】再興魔方高手 入門班115上', label: '【週二】再興魔方高手 入門班115上', sort_order: 490, is_active: true },
-    { kind: 'partner_unit', term_scope: 'semester', value: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', label: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', sort_order: 500, is_active: true },
-    { kind: 'camp_batch', value: '【臺北A】中山 | 7/1~7/3 三日營', label: '【臺北A】中山 | 7/1~7/3 三日營', sort_order: 10, is_active: true },
-    { kind: 'camp_batch', value: '【高雄H】苓雅 | 8/15~8/16 速解營', label: '【高雄H】苓雅 | 8/15~8/16 速解營', sort_order: 20, is_active: true },
+    { id: P_WINTER, kind: 'term_period', value: 'winter_break', label: '2026年寒假', sort_order: 10, is_active: true, period_id: null },
+    { id: P_SEMESTER, kind: 'term_period', value: 'semester', label: '115學年度上學期', sort_order: 20, is_active: true, period_id: null },
+    { id: P_SUMMER, kind: 'term_period', value: 'summer_break', label: '2026年暑假', sort_order: 30, is_active: true, period_id: null },
+    { id: P_NEW, kind: 'term_period', value: 'term_test2027w', label: '2027年寒假', sort_order: 40, is_active: true, period_id: null },
+    ...vacationUnits.map((name, index) => optionRow('partner_unit', P_WINTER, name, (index + 1) * 10)),
+    ...vacationUnits.map((name, index) => optionRow('partner_unit', P_SUMMER, name, (index + 1) * 10)),
+    optionRow('partner_unit', P_SEMESTER, '【週二】再興魔方高手 入門班115上', 10),
+    optionRow('partner_unit', P_SEMESTER, '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', 20),
+    optionRow('partner_unit', P_NEW, '【新竹】2027寒假新單位', 10),
+    optionRow('partner_unit', P_CLOSED, '【停用期間】不該出現的單位', 10),
+    optionRow('camp_batch', P_SUMMER, '【臺北A】中山 | 7/1~7/3 三日營', 10),
+    optionRow('camp_batch', P_SUMMER, '【高雄H】苓雅 | 8/15~8/16 速解營', 20),
+    optionRow('camp_batch', P_NEW, '【臺北W】2027 寒假營', 10),
+    optionRow('camp_batch', P_CLOSED, '【停用期間】不該出現的梯次', 10),
+];
+
+// 回報表單欄位設定：預設種子＋B2B 加兩個自訂欄位（放在人數與教材之間）；其他課程隱藏交通補助
+const fieldRows = [
+    ...DEFAULT_REPORT_FIELDS
+        .filter(row => !(row.layout === 'other' && row.field_key === 'transport'))
+        .map(row => ({ ...row, id: undefined })),
+    { layout: 'b2b', field_key: 'custom_sat', source: 'custom', label: '家長滿意度', field_type: 'select', options: ['滿意', '普通', '不滿意'], help_text: '請問帶班老師或家長', is_required: true, is_visible: true, sort_order: 44 },
+    { layout: 'b2b', field_key: 'custom_photo', source: 'custom', label: '可以拍照上傳社群', field_type: 'boolean', options: [], help_text: null, is_required: false, is_visible: true, sort_order: 46 },
 ];
 
 const baseSession = {
@@ -60,7 +87,7 @@ const baseSession = {
 };
 const adminSessions = [
     { ...baseSession, id: '30000000-0000-4000-8000-000000000051', course_type: 'onsite_1_5hr', course_name: '王小明', session_date: '2026-10-14', month_label: '2026/10', duration_hours: 1.5, student_count: 2, base_salary: 600, total_salary: 600, transport_subsidy_requested: true, transport_distance_km: 12.4 },
-    { ...baseSession, id: '30000000-0000-4000-8000-000000000052', course_type: 'collab_lead', course_name: null, session_date: '2026-10-13', month_label: '2026/10', duration_hours: 2, student_count: 18, base_salary: 1000, total_salary: 1000, term_period: 'semester', unit_name: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', materials_issued: '楓葉10' },
+    { ...baseSession, id: '30000000-0000-4000-8000-000000000052', course_type: 'collab_lead', course_name: null, session_date: '2026-10-13', month_label: '2026/10', duration_hours: 2, student_count: 18, base_salary: 1000, total_salary: 1000, term_period: 'semester', unit_name: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', materials_issued: '楓葉10', extra_fields: { custom_sat: { label: '家長滿意度', value: '滿意' }, custom_photo: { label: '可以拍照上傳社群', value: true } } },
     { ...baseSession, id: '30000000-0000-4000-8000-000000000053', course_type: 'camp', course_name: null, session_date: '2026-10-12', month_label: '2026/10', duration_hours: null, student_count: 8, base_salary: 3000, total_salary: 3000, unit_name: '【臺北A】中山 | 7/1~7/3 三日營' },
 ];
 
@@ -86,6 +113,9 @@ const session = {
 
 let appRole = 'teacher';
 let optionsFail = false;
+let fieldsFail = false;
+let staleFieldsOnce = false;
+let fieldFetches = 0;
 let submitBodies = [];
 let directSessionWrites = 0;
 
@@ -115,6 +145,10 @@ async function handleRoute(route) {
         }]);
     }
     if (url.pathname === '/rest/v1/rpc/submit_my_class_session') {
+        if (staleFieldsOnce) {
+            staleFieldsOnce = false;
+            return json(route, { code: 'P0001', message: '回報表單的欄位已更新，請重新整理頁面後再送出', details: null, hint: null }, 400);
+        }
         submitBodies.push(request.postDataJSON());
         return json(route, '30000000-0000-4000-8000-000000000099');
     }
@@ -130,6 +164,11 @@ async function handleRoute(route) {
         if (table === 'salary_report_options') {
             if (optionsFail) return json(route, { code: '42P01', message: 'relation does not exist' }, 404);
             return json(route, reportOptions);
+        }
+        if (table === 'salary_report_fields') {
+            fieldFetches += 1;
+            if (fieldsFail) return json(route, { code: '42P01', message: 'relation does not exist' }, 404);
+            return json(route, fieldRows);
         }
         if (table === 'users') {
             const row = { id: userId, name: '回報測試老師', email: authUser.email, role: appRole, created_at: now };
@@ -275,21 +314,36 @@ async function run() {
         check('B2B：上課日期仍在第二格；未選期間前單位下拉提示先選期間',
             (await fieldOrder(page))[1]?.trim().startsWith('上課日期')
             && (await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts()).join('') === '請先選擇教學課程期間，再選單位');
-        check('教學課程期間選項文字照 B2B 表單', JSON.stringify(await optionLabels('教學課程期間')) === JSON.stringify(['請選擇寒假、學期間或暑假', '2026年寒假', '115學年度上學期', '2026年暑假']));
+        check('教學課程期間列出後台設定的期間（含新增的 2027年寒假）', JSON.stringify(await optionLabels('教學課程期間')) === JSON.stringify(['請選擇教學課程期間', '2026年寒假', '115學年度上學期', '2026年暑假', '2027年寒假']));
         await page.getByLabel('教學課程期間').selectOption('winter_break');
-        check('選寒假 → 只列寒暑假清單', JSON.stringify(await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts())
+        check('選 2026年寒假 → 只列寒假那份清單', JSON.stringify(await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts())
             === JSON.stringify(['請選擇合作單位', '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', '【基隆】三之三立敏分校', '其它（清單沒有，自行填寫）']));
         await page.getByLabel('本次上課單位', { exact: true }).selectOption('【基隆】三之三立敏分校');
         await page.getByLabel('教學課程期間').selectOption('semester');
-        check('改選學期間 → 只列學期間清單，且先前選的寒暑假單位被清掉', JSON.stringify(await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts())
+        check('改選 115學年度上學期 → 只列該期清單，且先前選的寒假單位被清掉', JSON.stringify(await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts())
             === JSON.stringify(['請選擇合作單位', '【週二】再興魔方高手 入門班115上', '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', '其它（清單沒有，自行填寫）'])
             && await page.getByLabel('本次上課單位', { exact: true }).inputValue() === '');
+        await page.getByLabel('教學課程期間').selectOption('term_test2027w');
+        check('選新增的期間（2027年寒假）→ 列出它自己的單位；停用期間的單位不會出現',
+            JSON.stringify(await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts())
+            === JSON.stringify(['請選擇合作單位', '【新竹】2027寒假新單位', '其它（清單沒有，自行填寫）'])
+            && await page.getByText('列出「2027年寒假」的合作單位。').isVisible());
+        check('B2B 欄位依後台設定順序：期間、單位、時數、人數、自訂「家長滿意度」、自訂勾選、教材、特殊狀況',
+            JSON.stringify((await page.locator('form [aria-label]').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label'))))
+                .filter(label => ['教學課程期間', '本次上課單位', '上課時數', '上課人數', '家長滿意度', '可以拍照上傳社群', '本次發出教材數量', '特殊狀況回報'].includes(label)))
+            === JSON.stringify(['教學課程期間', '本次上課單位', '上課時數', '上課人數', '家長滿意度', '可以拍照上傳社群', '本次發出教材數量', '特殊狀況回報']));
+        check('自訂下拉欄位顯示選項與說明文字、標示必填',
+            JSON.stringify(await optionLabels('家長滿意度')) === JSON.stringify(['請選擇', '滿意', '普通', '不滿意'])
+            && await page.getByText('請問帶班老師或家長').isVisible()
+            && await page.getByText('家長滿意度 *').isVisible());
         await page.screenshot({ path: path.join(shotDir, 'desktop-channel-b2b.png'), fullPage: true });
         await page.getByLabel('回報類別').selectOption('other');
         check('其他課程維持完整欄位（常態課、角色、地點、自評、進度）',
             JSON.stringify(await optionLabels('課程種類')) === JSON.stringify(['常態課', '幼兒啟蒙', '速解培訓', '站櫃／擺攤', '其他'])
             && await page.getByLabel('角色').isVisible() && await page.getByLabel('地點').isVisible()
-            && await page.getByLabel('課程自評').isVisible() && await page.getByLabel('學習進度').isVisible());
+            && await page.getByLabel('課程自評').isVisible() && await page.getByLabel('學習進度').isVisible()
+            && await page.getByLabel('申請交通補助').count() === 0);
+        check('其他課程：後台隱藏的交通補助不顯示；B2B 的自訂欄位也不會出現在這裡', await page.getByLabel('家長滿意度').count() === 0);
         await page.getByLabel('回報類別').selectOption('b2c');
         check('切回 B2C 回到到府家教課（無報酬項目）', await page.getByLabel('課程種類').inputValue() === 'onsite'
             && await page.getByLabel('報酬項目').count() === 0);
@@ -339,7 +393,13 @@ async function run() {
         await page.getByLabel('本次上課單位').selectOption('__other__');
         check('選「其它」出現自填欄位', await page.getByLabel('本次上課單位（自行填寫）').isVisible());
         await page.getByLabel('本次上課單位（自行填寫）').fill('【臺北】新開合作單位 週五班');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('B2B 教材數量必填（標示 * 的欄位現在會擋）', (await alertText(page)) === '請填寫本次發出教材數量（沒有發教材請填 0）。' && submitBodies.length === 0);
         await page.getByLabel('本次發出教材數量').fill('楓葉10');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('自訂必填欄位沒填被擋', (await alertText(page)) === '請填寫「家長滿意度」。' && submitBodies.length === 0);
+        await page.getByLabel('家長滿意度').selectOption('滿意');
+        await page.getByLabel('可以拍照上傳社群').check();
         await page.screenshot({ path: path.join(shotDir, 'desktop-collab.png'), fullPage: true });
         await page.getByRole('button', { name: '送出回報' }).click();
         await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
@@ -351,6 +411,8 @@ async function run() {
             && body.p_transport_distance_km === null
             && body.p_course_name === null && body.p_location === null && body.p_role_in_session === 'lead'
             && body.p_duration_hours === 2 && body.p_student_count === 18);
+        check('自訂欄位答案以 p_extra_fields 送出（下拉文字＋勾選 true）',
+            JSON.stringify(body.p_extra_fields) === JSON.stringify({ custom_sat: '滿意', custom_photo: true }));
 
         // 營隊 → 只顯示營隊梯次
         await openReport(page, base);
@@ -363,15 +425,19 @@ async function run() {
         await fillBasics(page, { students: '8' });
         await page.getByRole('button', { name: '送出回報' }).click();
         check('營隊缺梯次被擋', (await alertText(page)) === '營隊課程請選擇營隊梯次。' && submitBodies.length === 1);
+        check('營隊梯次依期間分組（2026年暑假／2027年寒假），停用期間的梯次不出現',
+            JSON.stringify(await page.getByLabel('營隊梯次').locator('optgroup').evaluateAll(groups => groups.map(group => group.label))) === JSON.stringify(['2026年暑假', '2027年寒假'])
+            && !(await page.getByLabel('營隊梯次').locator('option').allInnerTexts()).some(text => text.includes('不該出現')));
         await page.getByLabel('營隊梯次').selectOption('【臺北A】中山 | 7/1~7/3 三日營');
         await page.locator('input[inputmode="numeric"]').fill('8');
         await page.screenshot({ path: path.join(shotDir, 'desktop-camp.png'), fullPage: true });
         await page.getByRole('button', { name: '送出回報' }).click();
         await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
-        check('營隊送出帶梯次，其餘新欄位為空',
+        check('營隊送出帶梯次與梯次所屬期間（2026年暑假），不帶自訂欄位',
             submitBodies.length === 2 && body.p_course_type === 'camp'
-            && body.p_unit_name === '【臺北A】中山 | 7/1~7/3 三日營' && body.p_term_period === null
+            && body.p_unit_name === '【臺北A】中山 | 7/1~7/3 三日營' && body.p_term_period === 'summer_break'
+            && !('p_extra_fields' in body)
             && body.p_materials_issued === null && body.p_transport_subsidy_requested === false);
 
         // 直營到府＋交通補助
@@ -397,11 +463,36 @@ async function run() {
         await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
         check('到府 1.5 小時自動送出 onsite_1_5hr', submitBodies.length === 4 && body.p_course_type === 'onsite_1_5hr' && body.p_duration_hours === 1.5);
-        check('四次回報都只走受控 RPC', directSessionWrites === 0);
+
+        // 填寫途中管理員改了欄位 → 送出被擋：自動重新載入欄位設定、已填內容保留，再按一次即可送出
+        await openReport(page, base);
+        await pickCourse(page, 'collab_lead');
+        await page.getByLabel('教學課程期間').selectOption('semester');
+        await page.getByLabel('本次上課單位', { exact: true }).selectOption({ label: '【週二】再興魔方高手 入門班115上' });
+        await fillBasics(page, { hours: '2', students: '15' });
+        await page.getByLabel('本次發出教材數量').fill('0');
+        await page.getByLabel('家長滿意度').selectOption('普通');
+        staleFieldsOnce = true;
+        const fetchesBefore = fieldFetches;
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('管理員剛更新了回報表單的欄位，已重新載入').waitFor();
+        check('欄位被管理員更新時：提示已重新載入、重新抓欄位設定、已填內容都還在、沒有送出',
+            fieldFetches === fetchesBefore + 1 && submitBodies.length === 4
+            && await page.getByLabel('上課人數', { exact: true }).inputValue() === '15'
+            && await page.getByLabel('家長滿意度').inputValue() === '普通'
+            && (await page.getByLabel('本次上課單位', { exact: true }).locator('option:checked').innerText()) === '【週二】再興魔方高手 入門班115上');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
+        body = submitBodies.at(-1);
+        check('重新送出成功，內容與第一次填的相同',
+            submitBodies.length === 5 && body.p_unit_name === '【週二】再興魔方高手 入門班115上' && body.p_student_count === 15
+            && JSON.stringify(body.p_extra_fields) === JSON.stringify({ custom_sat: '普通', custom_photo: false }));
+        check('五次回報都只走受控 RPC', directSessionWrites === 0);
         await context.close();
 
         // 選項讀取失敗 → 自由輸入，不擋回報
         optionsFail = true;
+        fieldsFail = true;
         context = await contextFor(browser, { width: 1280, height: 900 });
         page = await context.newPage();
         await openReport(page, base);
@@ -411,11 +502,14 @@ async function run() {
         check('選項讀取失敗時上課單位改為文字輸入', await page.locator('input[aria-label="本次上課單位"]').isVisible());
         await page.locator('input[aria-label="本次上課單位"]').fill('【新竹】愛丁堡');
         await fillBasics(page, { hours: '1.5', students: '12' });
+        await page.getByLabel('本次發出教材數量').fill('0');
         await page.getByRole('button', { name: '送出回報' }).click();
         await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
-        check('自由輸入的單位照樣送出', body.p_unit_name === '【新竹】愛丁堡' && body.p_term_period === 'summer_break');
+        check('選項與欄位設定都讀取失敗時，用預設欄位照樣送出自由輸入的單位（不帶自訂欄位）',
+            body.p_unit_name === '【新竹】愛丁堡' && body.p_term_period === 'summer_break' && !('p_extra_fields' in body));
         optionsFail = false;
+        fieldsFail = false;
         await context.close();
 
         // ── 390px 手機：三種課型無水平溢出
@@ -427,8 +521,8 @@ async function run() {
         await page.screenshot({ path: path.join(shotDir, 'mobile-390-direct.png'), fullPage: true });
         await pickCourse(page, 'collab_lead');
         await page.getByLabel('教學課程期間').selectOption('semester');
-        await page.getByLabel('本次上課單位', { exact: true }).selectOption('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動');
-        check('390px 合作課（選最長單位名）無水平溢出', (await overflowOf(page)) === 0);
+        await page.getByLabel('本次上課單位', { exact: true }).selectOption({ label: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動' });
+        check('390px 合作課（選最長單位名＋自訂欄位）無水平溢出', (await overflowOf(page)) === 0);
         await page.screenshot({ path: path.join(shotDir, 'mobile-390-collab.png'), fullPage: true });
         await pickCourse(page, 'camp');
         await page.getByLabel('營隊梯次').selectOption('__other__');
@@ -445,11 +539,21 @@ async function run() {
         const table = page.locator('table');
         check('後台表格顯示交通補助「申請 ・ 單趟 12.4 km」', await table.getByText('申請 ・ 單趟 12.4 km').isVisible());
         check('後台表格顯示合作課期間／單位／教材',
-            await table.getByText('學期間').isVisible()
+            await table.getByText('115學年度上學期').isVisible()
             && await table.getByText('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動').isVisible()
             && await table.getByText('楓葉10').isVisible());
         check('後台表格營隊顯示為「梯次」', await table.getByText('梯次：').isVisible() && await table.getByText('【臺北A】中山 | 7/1~7/3 三日營').isVisible());
+        check('後台表格提示有自訂欄位', await table.getByText('2 項（點開查看）').isVisible());
         await page.screenshot({ path: path.join(shotDir, 'admin-desktop.png'), fullPage: true });
+        await table.getByText('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動').click();
+        const dialog = page.getByRole('dialog');
+        await dialog.waitFor();
+        check('審核視窗顯示期間、單位、教材與自訂欄位答案（名稱用回報當時的快照，勾選顯示「是」）',
+            await dialog.getByText('115學年度上學期').isVisible()
+            && await dialog.getByText('楓葉10').isVisible()
+            && await dialog.getByText('家長滿意度：').isVisible() && await dialog.getByText('滿意', { exact: true }).isVisible()
+            && await dialog.getByText('可以拍照上傳社群：').isVisible() && await dialog.getByText('是', { exact: true }).isVisible());
+        await page.screenshot({ path: path.join(shotDir, 'admin-modal-extra-fields.png'), fullPage: false });
         await context.close();
 
         context = await contextFor(browser, { width: 390, height: 844 });
