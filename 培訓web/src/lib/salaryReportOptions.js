@@ -1,7 +1,7 @@
 // 後台「回報選項管理」的純函式：期間與各期間清單、排序、驗證、拖曳後的新順序、複製清單。
 // 不碰網路與畫面，方便 node --test 直接驗證。
 //
-// 資料結構（migration 20261020120000）：
+// 資料結構（migration 20261020130000）：
 //   期間 kind='term_period'（period_id 為 NULL，value 是講師回報存下的代碼）
 //   上課單位 kind='partner_unit'、營隊梯次 kind='camp_batch'，各自以 period_id 掛在某個期間底下
 

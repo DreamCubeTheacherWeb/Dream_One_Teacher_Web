@@ -1,4 +1,4 @@
-// 講師「登記課程回報」表單欄位設定（salary_report_fields，migration 20261020120000）的純函式。
+// 講師「登記課程回報」表單欄位設定（salary_report_fields，migration 20261020130000）的純函式。
 // 後台設定頁與講師回報頁共用。
 //   system：算報酬會用到的欄位，鎖住（只能排序）
 //   builtin：內建欄位，可隱藏、部分可改必填

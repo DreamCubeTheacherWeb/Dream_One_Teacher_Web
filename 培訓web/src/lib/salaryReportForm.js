@@ -1,5 +1,5 @@
 // 站內課程回報對齊 Google 課後回報表單的條件欄位（合作課／營隊／直營交通補助）。
-// 驗證訊息與 submit_my_class_session（migration 20261020120000）一致；後端仍是最終防線。
+// 驗證訊息與 submit_my_class_session（migration 20261020130000）一致；後端仍是最終防線。
 // 2026-10-20 起：欄位顯示與順序依後台「回報表單欄位」設定（salary_report_fields）；
 // 合作單位與營隊梯次掛在教學期間底下（salary_report_options.period_id）。
 import { TERM_PERIOD_LABELS, courseCategoryFor, reportChannelFor } from './constants.js';

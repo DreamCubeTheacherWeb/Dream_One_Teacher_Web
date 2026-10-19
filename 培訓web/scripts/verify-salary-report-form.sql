@@ -526,11 +526,11 @@ END;
 $$;
 \echo PASS (h) term_scope CHECK blocks missing/invalid scope and scope on other kinds; valid insert works
 
--- (i) 2026-10-20：每個期間各一份清單、營隊梯次掛期間、自訂回報欄位、拖曳排序 RPC（migration 20261020120000）
+-- (i) 2026-10-20：每個期間各一份清單、營隊梯次掛期間、自訂回報欄位、拖曳排序 RPC（migration 20261020130000）
 --     migration 在 SQL Editor 以無登入身分執行：先清掉測試設定的登入身分，再連跑兩次
 SELECT set_config('request.jwt.claim.sub', '', false) AS jwt_sub \gset
-\ir ../supabase/migrations/20261020120000_report_periods_and_custom_fields.sql
-\ir ../supabase/migrations/20261020120000_report_periods_and_custom_fields.sql
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
 DO $$
 DECLARE
   v_winter uuid; v_semester uuid; v_summer uuid;
@@ -805,6 +805,48 @@ SELECT public.submit_my_class_session(
   p_term_period => 'semester', p_unit_name => '舊期間', p_materials_issued => '0',
   p_extra_fields => '{"custom_satisfaction": "   "}'::jsonb
 ) AS empty_extra_id \gset
+-- 空窗期（migration 已套、新前端未部署）：舊前端（c8842e7）實際送出的 15 個具名參數 JSON，
+-- 照 PostgREST 的呼叫方式（json_to_record 拆欄位、具名參數只帶 payload 有的鍵）打新版 16 參數函式
+CREATE TEMP TABLE old_frontend_payloads (label text, body json);
+INSERT INTO old_frontend_payloads VALUES
+  ('collab', '{"p_course_type":"collab_lead","p_session_date":"2026-08-05","p_role_in_session":"lead","p_course_name":null,"p_location":null,"p_duration_hours":2,"p_student_count":18,"p_self_review":null,"p_progress_note":null,"p_incident_report":null,"p_term_period":"semester","p_unit_name":"空窗期舊前端單位","p_materials_issued":"楓葉10","p_transport_subsidy_requested":false,"p_transport_distance_km":null}'),
+  ('camp', '{"p_course_type":"camp","p_session_date":"2026-08-05","p_role_in_session":"lead","p_course_name":null,"p_location":null,"p_duration_hours":null,"p_student_count":18,"p_self_review":null,"p_progress_note":null,"p_incident_report":null,"p_term_period":null,"p_unit_name":"空窗期舊前端梯次","p_materials_issued":null,"p_transport_subsidy_requested":false,"p_transport_distance_km":null}'),
+  ('direct', '{"p_course_type":"onsite_1_5hr","p_session_date":"2026-08-05","p_role_in_session":"lead","p_course_name":"空窗期舊前端直營","p_location":null,"p_duration_hours":1.5,"p_student_count":2,"p_self_review":null,"p_progress_note":null,"p_incident_report":null,"p_term_period":null,"p_unit_name":null,"p_materials_issued":null,"p_transport_subsidy_requested":true,"p_transport_distance_km":12.4}');
+GRANT SELECT ON old_frontend_payloads TO authenticated;
+SET ROLE authenticated;
+SELECT count(public.submit_my_class_session(
+         "p_course_type" := a."p_course_type", "p_session_date" := a."p_session_date",
+         "p_role_in_session" := a."p_role_in_session", "p_course_name" := a."p_course_name",
+         "p_location" := a."p_location", "p_duration_hours" := a."p_duration_hours",
+         "p_student_count" := a."p_student_count", "p_self_review" := a."p_self_review",
+         "p_progress_note" := a."p_progress_note", "p_incident_report" := a."p_incident_report",
+         "p_term_period" := a."p_term_period", "p_unit_name" := a."p_unit_name",
+         "p_materials_issued" := a."p_materials_issued",
+         "p_transport_subsidy_requested" := a."p_transport_subsidy_requested",
+         "p_transport_distance_km" := a."p_transport_distance_km")) AS old_frontend_calls
+  FROM old_frontend_payloads p,
+  LATERAL json_to_record(p.body) AS a(
+    "p_course_type" text, "p_session_date" date, "p_role_in_session" text, "p_course_name" text,
+    "p_location" text, "p_duration_hours" numeric, "p_student_count" integer, "p_self_review" text,
+    "p_progress_note" text, "p_incident_report" text, "p_term_period" text, "p_unit_name" text,
+    "p_materials_issued" text, "p_transport_subsidy_requested" boolean, "p_transport_distance_km" numeric) \gset
+RESET ROLE;
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM public.class_sessions
+       WHERE unit_name IN ('空窗期舊前端單位', '空窗期舊前端梯次') OR course_name = '空窗期舊前端直營') <> 3
+     OR (SELECT term_period FROM public.class_sessions WHERE unit_name = '空窗期舊前端單位') <> 'semester'
+     OR (SELECT materials_issued FROM public.class_sessions WHERE unit_name = '空窗期舊前端單位') <> '楓葉10'
+     OR (SELECT transport_distance_km FROM public.class_sessions WHERE course_name = '空窗期舊前端直營') <> 12.4
+     OR EXISTS (SELECT 1 FROM public.class_sessions
+                 WHERE (unit_name IN ('空窗期舊前端單位', '空窗期舊前端梯次') OR course_name = '空窗期舊前端直營')
+                   AND (extra_fields IS NOT NULL OR status <> 'pending' OR source <> 'self_report')) THEN
+    RAISE EXCEPTION 'old frontend payloads (PostgREST-style named call) did not store correctly';
+  END IF;
+END;
+$$;
+\echo PASS (i) gap window: the old frontend exact 15-key payloads (collab / camp / direct+transport), called the way PostgREST does (json_to_record + named args), all succeed against the 16-arg RPC and store the same values
+
 -- 舊前端（不帶 p_extra_fields、期間用舊代碼）仍可送出
 SELECT public.submit_my_class_session(
   p_course_type => 'collab_lead', p_session_date => '2026-08-07', p_duration_hours => 2,
@@ -933,8 +975,8 @@ $$;
 \echo PASS fresh base path: 2025_salary_system.sql -> 20260826 -> 20261018 (x2) -> 20261019 (x2) works, 4 constraints, 1 RPC, 112 options (48 vacation / 30 semester)
 
 SELECT set_config('request.jwt.claim.sub', '', false) AS jwt_sub \gset
-\ir ../supabase/migrations/20261020120000_report_periods_and_custom_fields.sql
-\ir ../supabase/migrations/20261020120000_report_periods_and_custom_fields.sql
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
+\ir ../supabase/migrations/20261020130000_report_periods_and_custom_fields.sql
 SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000001', false) AS jwt_sub \gset
 SELECT public.submit_my_class_session(
   p_course_type => 'collab_lead', p_session_date => '2026-08-13', p_duration_hours => 2,
