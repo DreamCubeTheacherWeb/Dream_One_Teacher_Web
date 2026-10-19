@@ -56,6 +56,8 @@ GitHub deployment `7175179572` success（13:33:05 UTC），13:34:52 被另一條
 `select enum_range(null::session_status_enum);`，應為 `{pending,approved,paid}`）。
 **地雷**：`npm run verify:speed-salary:browser` 在講師回報頁那段找不到 `input[inputmode="decimal"]`（回報頁第二版把 B2C 時數改成下拉），
 乾淨的 `origin/main` `0019174` 同樣失敗，屬第二版未同步更新的舊腳本，非本次引入；後台那段的 HEAD 計數 mock 已由本次補上。
+→ 已修（分支 `fix/speed-salary-verify-v2-form`，只改測試腳本）：講師段改照第二版三層選課（B2C → 速解研究所｜實體課程）、
+填課程名稱／時數下拉／人數；未取得資格那段改為時數人數都填好、只剩「沒有速解資格」才待核薪，並驗送出的課程類型；`npm run build` 後 13/13 PASS、ESLint 0。
 
 ## 🧭 2026-10-19（第二版）：回報頁欄位與選項對齊兩份 Google 表單（✅ 正式環境已上線）
 
