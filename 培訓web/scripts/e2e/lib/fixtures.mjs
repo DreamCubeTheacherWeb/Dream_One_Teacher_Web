@@ -230,7 +230,7 @@ export function skipOtpCooldown(api, userId, purpose) {
             WHERE user_id = :'uid' AND purpose = :'purpose'`, { uid: userId, purpose });
 }
 
-const completeProfileFields = (fullName, email, n) => ({
+export const completeProfileFields = (fullName, email, n) => ({
   full_name: fullName, nickname: `${fullName.slice(-2)}老師`, gender: '女', birth_date: '1992-02-02',
   id_number: `A2${String(n).padStart(8, '0').slice(-8)}`, phone_mobile: `09${String(10000000 + n).slice(-8)}`,
   line_id: `line-${n}`, address: '臺北市大安區測試路 3 號', household_address: '臺北市大安區測試路 3 號',
@@ -258,6 +258,19 @@ export async function makeActiveTeacherViaRest(stack, api, admin, { fullName, em
   const otp = latestOtp(api, user.id, 'account_activation');
   const verified = await api.rpc(user.token, 'verify_email_otp', { p_challenge_id: otp.challenge_id, p_code: otp.code });
   if (!verified.data?.activated) throw new Error(`activation failed ${JSON.stringify(verified.data)}`);
+  return { ...user, instructorId: row.id, fullName: name };
+}
+
+// 「待啟用、資料完整、Email 已確認」的老師：只差本人按「驗證信箱啟用帳號」（給 OTP 情境用）
+export async function makeReadyPendingTeacher(stack, api, admin, { emailPrefix = 'ready', fullName } = {}) {
+  restTeacherSeq += 1;
+  const email = `${emailPrefix}-${Date.now().toString(36)}-${restTeacherSeq}@e2e.test`;
+  const name = fullName || `待啟用講師${restTeacherSeq}`;
+  const row = await adminCreateInstructor(api, admin, completeProfileFields(name, email, Date.now() % 100000000 + restTeacherSeq));
+  const user = await createGoogleUser(stack, { email, fullName: name });
+  if (!user.id) throw new Error(`hook rejected ${email}: ${JSON.stringify(user.hookRejected)}`);
+  const confirm = await api.rpc(admin.token, 'admin_confirm_instructor_email', { p_instructor_id: row.id, p_email: email, p_note: 'E2E：REST 建立時一併確認' });
+  if (confirm.data?.status !== 'confirmed') throw new Error(`confirm email failed ${JSON.stringify(confirm.data)}`);
   return { ...user, instructorId: row.id, fullName: name };
 }
 
