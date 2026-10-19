@@ -60,7 +60,7 @@ const SalaryRegister = () => {
     const { profile } = useAuth();
     const [sessions, setSessions] = useState([]);
     const [instructors, setInstructors] = useState([]);
-    const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核薪、異常、月份選項
+    const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核准、異常、月份選項
     const [listTotal, setListTotal] = useState(0);   // 目前篩選條件下的總筆數（伺服器端計算）
     const [fetchedCount, setFetchedCount] = useState(0);  // 已向伺服器抓到的原始筆數＝下一頁的起點
     const [stats, setStats] = useState(EMPTY_STATS);
@@ -276,7 +276,7 @@ const SalaryRegister = () => {
                             aria-pressed={statusFilter === 'pending'}
                             className={`bh-btn px-4 py-2.5 ${statusFilter === 'pending' ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bh-btn-outline'}`}>
                             <Clock className="w-4 h-4" />待處理 {pendingCount}
-                            {needsPricingCount > 0 && <span className="text-xs">（待核薪 {needsPricingCount}）</span>}
+                            {needsPricingCount > 0 && <span className="text-xs">（{needsPricingCount} 筆尚無金額）</span>}
                         </button>
                     )}
                     {anomalyCount > 0 && (
@@ -418,13 +418,13 @@ const recordState = (session) => {
         return { label: '已退回', color: 'bg-bauhaus-red text-white', icon: AlertTriangle, unpriced: true };
     }
     if (session.pricing_status === 'needs_review') {
-        return { label: '待核薪', color: 'bg-bauhaus-yellow text-bauhaus-black', icon: Clock, unpriced: true };
+        return { label: '待核准', color: 'bg-bauhaus-yellow text-bauhaus-black', icon: Clock, unpriced: true };
     }
     const status = STATUS_STYLES[session.status] || STATUS_STYLES.approved;
     return { ...status, unpriced: false };
 };
 
-// 對齊 Google 課後回報表單的欄位：期間、單位／梯次、教材、交通補助（只顯示，不影響核薪）
+// 對齊 Google 課後回報表單的欄位：期間、單位／梯次、教材、交通補助（只顯示，不影響核准）
 const ReportExtras = ({ session }) => {
     const items = [];
     if (session.term_period) items.push(['期間', TERM_PERIOD_LABELS[session.term_period] || session.term_period]);
@@ -806,7 +806,7 @@ const Field = ({ label, children, full = false }) => (
 
 
 // ───────────────────────────────────────────────────────────────
-// 編輯/審核 Modal:可改報酬、狀態、付款金額,並做核薪動作
+// 編輯/審核 Modal:可改報酬、狀態、付款金額,並做核准動作
 // ───────────────────────────────────────────────────────────────
 const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) => {
     useDialogDismiss(onClose);

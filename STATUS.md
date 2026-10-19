@@ -150,6 +150,11 @@ pending 排最前無法在正式資料上看到）；2025/08 內搜尋第一位�
 改學期間清掉已選單位、未選期間提示）；`verify:salary-report-options:browser` 56/56；`npm run build` 通過；ESLint 0；`git diff --check` 乾淨；src 內「薪資」0 處。
 截圖：`docs/verification/2026-10-19-salary-report-form-channel/`（10 張）與 `docs/verification/2026-10-18-salary-report-options/`（6 張，本次覆寫）。
 
+**追加（2026-10-19 深夜，業主：「核薪／待核薪改成核准和待核准，有薪這個字全名不就是薪資嗎」）**：介面文字「待核薪」→「待核准」、「核薪」→「核准」、
+「時薪」→「每小時」；後台報酬登記中心原本「（待核薪 N）」改為「（N 筆尚無金額）」，保留「還沒有金額」這個資訊（否則與既有的「待核准」狀態分不出來）。
+`pricing_status=needs_review` 的意義不變（仍是管理員要填金額），只是講師與管理員看到的字一樣叫「待核准」。驗證：`npm test` 106/106、變更檔 ESLint 0、
+`verify-speed-salary-ui` 9/9、`verify:salary-report-form:browser` 51/51、build 通過；src／scripts 內「薪」字 0 處（另一條工作線的 `salaryRegisterQuery.js` 註解除外）。
+
 **正式環境證據（2026-10-19 23:15–23:32 台北）**：業主指示「可以，幫我把 migration 貼進 Supabase SQL Editor，我按 Run，然後推上 main 部署」，
 隨後明確要求「你按 Run」。Claude 透過 Chrome 擴充功能在 DreamCube_teacher（PRODUCTION，ref `mnovjlicwzwkefkhstte`）SQL Editor 先跑唯讀核對：
 term_scope 欄位 0、合作單位 78、sort_order ≥ 490 者 30、含「115上」28、期間文字仍為預設、種子後無新增單位——與 migration 假設一致；

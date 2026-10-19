@@ -42,11 +42,11 @@ export const getSalaryQuote = async ({
 };
 
 export const money = (value) => value === null || value === undefined
-    ? '待核薪'
+    ? '待核准'
     : `$${Math.round(Number(value)).toLocaleString()}`;
 
 export const pricingModeLabel = (mode) => ({
-    hourly: '時薪',
+    hourly: '每小時',
     per_session: '單堂固定',
     fixed: '固定金額',
     negotiable: '議價',

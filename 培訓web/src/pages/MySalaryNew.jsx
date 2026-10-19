@@ -128,7 +128,7 @@ const MySalaryNew = () => {
             } catch (err) {
                 if (active) {
                     setQuote(null);
-                    setQuoteError(salaryErrorMessage(err, '試算失敗，仍可送出交由管理員核薪。'));
+                    setQuoteError(salaryErrorMessage(err, '試算失敗，仍可送出交由管理員核准。'));
                 }
             } finally {
                 if (active) setQuoteLoading(false);
@@ -254,7 +254,7 @@ const MySalaryNew = () => {
                     <div className="font-bold">報酬金額、姓名與級別不需要您填寫</div>
                     <div className="text-bauhaus-black/70 mt-0.5 text-xs">
                         系統會依課程類型選用一般等級或速解資格試算。若資格或報酬規則尚未齊全，
-                        仍可送出，金額會顯示「待核薪」交由管理員處理，不會記成 0 元。同一堂課請只在站內或舊表單擇一回報。
+                        仍可送出，金額會顯示「待核准」交由管理員處理，不會記成 0 元。同一堂課請只在站內或舊表單擇一回報。
                     </div>
                 </div>
             </div>

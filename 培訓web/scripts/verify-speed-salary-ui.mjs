@@ -30,9 +30,9 @@ const checks = [
         assert.doesNotMatch(mySalaryNew, /from\('class_sessions'\)\.insert/);
     }],
     ['講師送出前會向後端試算', () => assert.match(mySalaryNew, /getSalaryQuote/)],
-    ['缺資格顯示待核薪而非零元', () => {
-        assert.match(quotePanel, /待管理員核薪/);
-        assert.match(salaryHelpers, /待核薪/);
+    ['缺資格顯示待核准而非零元', () => {
+        assert.match(quotePanel, /待管理員核准/);
+        assert.match(salaryHelpers, /待核准/);
         assert.match(mySalary, /pricing_status === 'needs_review'/);
     }],
     ['管理端報酬登記已解除遮罩並提供手機待處理清單', () => {

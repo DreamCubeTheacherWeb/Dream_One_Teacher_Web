@@ -235,7 +235,7 @@ const MySalary = () => {
                 <div className="mb-6 bg-bauhaus-yellow/30 border-2 border-bauhaus-black rounded-xl p-4 flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                     <div className="text-sm text-bauhaus-black">
-                        <div className="font-black">有 {needsReviewCount} 筆回報正在等待管理員核薪</div>
+                        <div className="font-black">有 {needsReviewCount} 筆回報正在等待管理員核准</div>
                         <div className="text-xs mt-1 text-bauhaus-black/70">這些紀錄不會顯示成 0 元；確認資格或規則後才會納入報酬金額。</div>
                     </div>
                 </div>
@@ -336,7 +336,7 @@ const MySalary = () => {
                                         {s.student_count ? ` / ${s.student_count}人` : ''}
                                     </span>
                                     <span className="text-base font-bold text-bauhaus-black tabular-nums">
-                                        {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核薪' : fmt(s.total_salary))}
+                                        {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : fmt(s.total_salary))}
                                     </span>
                                 </div>
                             </div>
@@ -374,13 +374,13 @@ const MySalary = () => {
                                             {s.student_count ? ` / ${s.student_count}人` : ''}
                                         </td>
                                         <td className="px-4 py-3 text-right text-bauhaus-black/80">
-                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核薪' : (s.base_salary !== null ? fmt(s.base_salary) : '–'))}
+                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : (s.base_salary !== null ? fmt(s.base_salary) : '–'))}
                                         </td>
                                         <td className="px-4 py-3 text-right text-bauhaus-black/80">
                                             {s.bonus > 0 ? fmt(s.bonus) : '–'}
                                         </td>
                                         <td className="px-4 py-3 text-right font-bold text-bauhaus-black tabular-nums">
-                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核薪' : fmt(s.total_salary))}
+                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : fmt(s.total_salary))}
                                         </td>
                                         <td className="px-4 py-3">
                                             <span className={`bh-chip ${s.pricing_status === 'rejected' ? 'bg-bauhaus-red text-white' : (STATUS_COLORS[s.status] || 'bg-bauhaus-muted text-bauhaus-black')}`}>
@@ -406,7 +406,7 @@ const MySalary = () => {
 const SubmitSuccess = ({ onClose }) => (
     <div role="status" className="mb-6 bg-bauhaus-blue text-white border-2 lg:border-4 border-bauhaus-black rounded-xl px-4 py-3 flex items-center gap-3">
         <CheckCircle2 className="w-5 h-5 shrink-0" aria-hidden="true" />
-        <div className="font-bold flex-1">課程回報已送出，管理員核薪後會更新狀態。</div>
+        <div className="font-bold flex-1">課程回報已送出，管理員核准後會更新狀態。</div>
         <button type="button" onClick={onClose} className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl hover:bg-white/15" aria-label="關閉成功提示">
             <X className="w-4 h-4" aria-hidden="true" />
         </button>

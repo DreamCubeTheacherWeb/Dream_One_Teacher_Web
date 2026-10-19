@@ -342,7 +342,7 @@ async function run() {
         await page.getByLabel('本次發出教材數量').fill('楓葉10');
         await page.screenshot({ path: path.join(shotDir, 'desktop-collab.png'), fullPage: true });
         await page.getByRole('button', { name: '送出回報' }).click();
-        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         let body = submitBodies.at(-1);
         check('合作課送出帶期間／自填單位／教材，交通補助為否',
             submitBodies.length === 1 && body.p_course_type === 'collab_lead'
@@ -367,7 +367,7 @@ async function run() {
         await page.locator('input[inputmode="numeric"]').fill('8');
         await page.screenshot({ path: path.join(shotDir, 'desktop-camp.png'), fullPage: true });
         await page.getByRole('button', { name: '送出回報' }).click();
-        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
         check('營隊送出帶梯次，其餘新欄位為空',
             submitBodies.length === 2 && body.p_course_type === 'camp'
@@ -381,7 +381,7 @@ async function run() {
         await page.getByLabel('申請交通補助').check();
         await page.getByLabel('單趟公里數').fill('12.35');
         await page.getByRole('button', { name: '送出回報' }).click();
-        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
         check('直營送出交通補助＝是、單趟 12.4 km，合作／營隊欄位為空',
             submitBodies.length === 3 && body.p_transport_subsidy_requested === true
@@ -394,7 +394,7 @@ async function run() {
         await pickCourse(page, 'onsite_1_5hr');
         await fillBasics(page, { name: '李小華', hours: '1.5', students: '1' });
         await page.getByRole('button', { name: '送出回報' }).click();
-        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
         check('到府 1.5 小時自動送出 onsite_1_5hr', submitBodies.length === 4 && body.p_course_type === 'onsite_1_5hr' && body.p_duration_hours === 1.5);
         check('四次回報都只走受控 RPC', directSessionWrites === 0);
@@ -412,7 +412,7 @@ async function run() {
         await page.locator('input[aria-label="本次上課單位"]').fill('【新竹】愛丁堡');
         await fillBasics(page, { hours: '1.5', students: '12' });
         await page.getByRole('button', { name: '送出回報' }).click();
-        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
         check('自由輸入的單位照樣送出', body.p_unit_name === '【新竹】愛丁堡' && body.p_term_period === 'summer_break');
         optionsFail = false;

@@ -31,7 +31,7 @@ const SalaryQuotePanel = ({ quote, loading = false, error = '' }) => {
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="font-black text-bauhaus-black">
-                            {needsReview ? '待管理員核薪' : '報酬表試算完成'}
+                            {needsReview ? '待管理員核准' : '報酬表試算完成'}
                         </div>
                         <div className={`text-xl font-black ${needsReview ? 'text-bauhaus-black' : 'text-bauhaus-blue'}`}>
                             {money(quote.base_salary)}
