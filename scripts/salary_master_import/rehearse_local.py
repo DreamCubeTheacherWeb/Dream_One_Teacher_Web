@@ -330,6 +330,30 @@ def rehearse(pg, label, null_empty):
     check("權限：講師看到自己 2026 起的紀錄（含新總表＋網站回報）", tv.returncode == 0 and tv.stdout.strip() == exp,
           (tv.stdout.strip(), exp))
 
+    # 第二批：25 筆推估更正（05）與其還原（95）
+    spec_f = importlib.util.spec_from_file_location("build_inferred_fixes", HERE / "build_inferred_fixes.py")
+    F = importlib.util.module_from_spec(spec_f)
+    spec_f.loader.exec_module(F)
+    fixes = F.build()
+    snap_pre05 = pg.psql(db, SNAPSHOT_SQL)
+    sums_pre05 = pg.psql(db, "SELECT sum(base_salary) || '/' || sum(bonus) FROM public.class_sessions")
+    pg.psql(db, file=HERE / "05_apply_inferred_fixes.sql")
+    def fix_state(n, field):
+        return pg.psql(db, f"SELECT coalesce(cs.{field}::text, 'NULL') || '|' || coalesce(cs.notes, '') FROM public.class_sessions cs "
+                           f"JOIN public.salary_master_rows m ON m.class_session_id = cs.id AND m.batch = '2026-10-19' "
+                           f"WHERE m.row_no = '{n}'")
+    ok_new = all(fix_state(n, field).split("|", 1)[0] in (new, new + ".00") and tag in fix_state(n, field)
+                 for n, field, _, _, _, new, tag in fixes)
+    check("05 推估更正：25 列都變成推估值、備註留有原值說明", ok_new)
+    check("05 推估更正：薪資與獎金合計不變",
+          pg.psql(db, "SELECT sum(base_salary) || '/' || sum(bonus) FROM public.class_sessions") == sums_pre05, sums_pre05)
+    again05 = pg.psql(db, file=HERE / "05_apply_inferred_fixes.sql", expect_fail=True)
+    check("05 重跑會被擋（已更正過）", again05.returncode != 0 and "不符" in again05.stderr)
+    pg.psql(db, file=HERE / "95_rollback_inferred_fixes.sql")
+    check("95 還原：class_sessions 逐欄回到更正前", pg.psql(db, SNAPSHOT_SQL) == snap_pre05)
+    pg.psql(db, file=HERE / "05_apply_inferred_fixes.sql")
+    check("95 還原後可再次執行 05", all(tag in fix_state(n, field) for n, field, _, _, _, _, tag in fixes))
+
     pg.psql(db, file=HERE / "99_rollback.sql")
     snap_after = pg.psql(db, SNAPSHOT_SQL)
     src2 = pg.psql(db, "SELECT string_agg(source || '=' || c, ',' ORDER BY source) FROM (SELECT source, count(*) c FROM public.class_sessions GROUP BY 1) x")
