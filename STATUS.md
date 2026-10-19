@@ -1,7 +1,51 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-20（總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+
+---
+
+## 🔒 2026-10-19：合約範本讀取只給已核准角色＋簽署 PDF 可信度評估（🟡 已完成、待業主套正式庫）
+
+**來源**：10-18 簽約重開的資安審查提到兩筆既有設計債（非該次引入）：① `contract_documents` 的 SELECT 政策是 `USING (true)`、
+storage 對 `contract-documents` bucket 非 `signed/` 路徑全體登入者可讀——任何 Google 帳號首次登入即為 `pending`，等於任何人登入後
+直打 PostgREST／Storage API 就能列出並下載「講師委任報酬表」等範本；② 簽署 PDF 由瀏覽器產生再上傳，RPC 只驗存在不驗內容。
+
+**第一部分（已實作，分支 `security/restrict-contract-document-reads`，未推 main、未碰正式 Supabase）**：
+- 新 migration `supabase/migrations/20261019103000_restrict_contract_document_reads.sql`（可重複執行、只改政策）：
+  `contract_documents` 讀取改為單一政策「Approved roles can read contract documents」＝`users.role IN ('teacher','mentor','admin')`，
+  同時移除舊的 `USING (true)` 政策與後台若手動加過的其他 SELECT 專用政策（迴圈清掉，permissive 政策是 OR 關係，留著等於沒收緊），
+  並 `REVOKE ALL … FROM anon`；管理員 FOR ALL 政策不動。storage 的「read contract documents scoped」重建：本人 `signed/<uid>/`、
+  admin／mentor 整個 bucket 兩條規則原樣保留，**非 `signed/` 路徑（範本）改為只給已核准角色**。`contracts_setup.sql` 同步同一組政策。
+- 前端：`featureFlags.canAccessInstructorContracts` 原本開關打開時對 pending 也回 true，待審帳號的個人頁會顯示「尚未簽約」區塊並查
+  `contract_documents`（點進 `/contract` 又被導回待審頁）；改為只有 teacher／mentor（admin 永遠可）才為 true，與後端 RLS 一致。
+  pending 可到達的路由只有 `/profile`（allowPending），其餘 `/contract`、`/contract/view`、所有 `/admin/*` 都會把 pending 導走，
+  所以前端沒有任何 pending 需要讀 `contract_documents` 的路徑（驗證腳本有靜態檢查）。
+- 新驗證腳本 `scripts/verify-contract-document-reads.{mjs,sql}`、npm `verify:contract-document-reads`。
+
+**證據（2026-10-19 本機實跑，沙盒外）**：`npm run verify:contract-document-reads` SQL 11 項 PASS＋靜態 4 項：引導區先重現漏洞
+（pending 讀到 6 列文件、5 個範本檔）→ migration 連跑兩次 → `contract_documents` 只剩 1 條 SELECT 政策＋管理員 FOR ALL、storage 讀取政策
+1 條且含 teacher 條件、anon 無表級權限（直查回 42501、storage 0 列）；pending 文件 0 列、範本 0 檔、只看得到自己 `signed/` 底下那個檔、不能寫；
+teacher 看到的列與收緊前相同（全部 6 列；簽約頁 3 份且順序 rules→compensation→contract；個人頁版本比對 3；合約檢視頁 4；匯款表單模板取到 v2），
+範本 5 檔可讀、自己的簽署檔可讀、別人的 `signed/` 讀不到、不能寫；mentor 讀全部 6 列與 bucket 全部 9 檔（行為未變）；admin 讀全部、講師名單 1、
+下載中心 2、增改刪照常；新建庫路徑（`contracts_setup.sql` 兩次＋再疊 migration）政策集合相同。另 `npm run verify:contract-signing`
+16＋3 項 PASS、`npm run verify:contract-signing:browser` 40/40（截圖重生後已還原，不入本 commit）、`npm test` 74/74（新增 featureFlags 2 項）、
+`npm run build` 通過、變更檔 ESLint 0 問題（全專案 5 個既有問題在 FieldPositionEditor／ContractView／AssignmentReview／ProgressOverview，非本次）、
+`git diff --check` 乾淨。
+
+**待業主**：① 在 Supabase SQL Editor 以單一交易套用 `20261019103000_restrict_contract_document_reads.sql`（只改政策、不動資料；
+套用後 pending 帳號個人頁不再顯示簽約區塊、講師與管理員不受影響）；② 套完合併本分支到 main 推前端（順序無硬性要求：先套 migration 時，
+pending 的個人頁查詢只是回 0 列不報錯；先推前端時 pending 單純看不到區塊）；③ 套用後用一個 pending 帳號對 `/rest/v1/contract_documents`
+與 `/storage/v1/object/contract-documents/<範本路徑>` 各打一次確認拿不到，再用講師帳號開簽約頁確認三份文件仍載入。
+
+**第二部分（評估，未實作）**：`培訓web/docs/decisions/2026-10-19-signed-pdf-trust-options.md`。結論：**建議先做輕量方案 B**
+（範本上傳時記 SHA-256、已被引用的版本凍結不可改、RPC 寫入時由伺服器端把範本雜湊抄進 `instructor_contracts`、管理員可隨時重製 PDF，
+估 0.5–1 天、零新基礎設施）；伺服器端套印（Edge Function）估 3–5 天，要新增 Deno 部署管線與嵌入繁中字型，留待法務要求「PDF 檔本身必須是正本」
+或簽約量成長時再做。文件第 5 節另列「mentor 是否該讀 `signed/` 檔」：現況 mentor 可用 Storage API 列出並下載所有講師含個資的簽署 PDF，
+但畫面上沒有合約入口（「畫面沒有、API 有」）；建議選②從 storage 政策拿掉 mentor 的整個 bucket 讀取，業主決定。
+
+**地雷**：`contract_field_positions` 的 SELECT 仍是 `USING (true)`（只有座標、無個資，先不動）。驗證腳本在沙盒內會因 PostgreSQL 共享記憶體
+（`shmget: Operation not permitted`）起不來，要在沙盒外跑並帶 `LC_ALL=C`。
 
 ---
 
