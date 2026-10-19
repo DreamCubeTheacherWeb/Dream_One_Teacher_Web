@@ -23,6 +23,7 @@ import {
     OTHER_OPTION,
     REPORT_TEXT_MAX,
     TRANSPORT_DISTANCE_MAX,
+    TRANSPORT_SUBSIDY_NOTE,
     buildReportBasicParams,
     buildReportExtrasParams,
     groupReportOptions,
@@ -399,6 +400,7 @@ const MySalaryNew = () => {
                             <span className="min-w-0">
                                 <span className="flex items-center gap-1 text-sm font-bold text-bauhaus-black"><Car className="w-4 h-4" /> 是否需要申請交通補助？</span>
                                 <span className="block text-xs text-bauhaus-black/60 mt-0.5">需要時勾選並填寫【單趟】公里數；不需要就不用勾。</span>
+                                <span className="block text-xs font-bold text-bauhaus-red mt-1">{TRANSPORT_SUBSIDY_NOTE}</span>
                             </span>
                         </label>
                         {extras.transport_requested && (
