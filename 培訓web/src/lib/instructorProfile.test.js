@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  describeInstructorSaveError,
   omitUnchangedDocumentFields,
   pickInstructorDocumentFields,
   stripAdminManagedInstructorFields,
+  toInstructorUpdatePayload,
 } from './instructorProfile.js';
 
 const savedRow = {
@@ -91,4 +93,53 @@ test('admin-managed fields are still stripped before document comparison', () =>
   assert.equal('id' in stripped, false);
   assert.equal('note_internal' in stripped, false);
   assert.equal(stripped.photo_path, 'form-import/inst-1--photo.jpg');
+});
+
+test('update payload never re-sends user_id and drops an unchanged primary email', () => {
+  const payload = toInstructorUpdatePayload(
+    { user_id: 'user-1', email_primary: 'old@mail.example', nickname: '新暱稱' },
+    'old@mail.example',
+  );
+  assert.equal('user_id' in payload, false);
+  assert.equal('email_primary' in payload, false);
+  assert.equal(payload.nickname, '新暱稱');
+});
+
+test('update payload keeps a changed primary email so the database guard still checks it', () => {
+  const payload = toInstructorUpdatePayload(
+    { user_id: 'user-1', email_primary: 'new@other.example', nickname: '暱稱' },
+    'old@mail.example',
+  );
+  assert.equal('user_id' in payload, false);
+  assert.equal(payload.email_primary, 'new@other.example');
+});
+
+test('update payload treats a blank email that was blank on load as unchanged', () => {
+  assert.equal('email_primary' in toInstructorUpdatePayload({ email_primary: '' }, ''), false);
+  assert.equal('email_primary' in toInstructorUpdatePayload({ email_primary: null }, null), false);
+});
+
+test('update payload does not mutate the insert payload', () => {
+  const insertPayload = { user_id: 'user-1', email_primary: 'g@gmail.com', full_name: '王小明' };
+  toInstructorUpdatePayload(insertPayload, 'g@gmail.com');
+  assert.equal(insertPayload.user_id, 'user-1');
+  assert.equal(insertPayload.email_primary, 'g@gmail.com');
+});
+
+test('email guard errors are explained in Chinese; other errors keep their message', () => {
+  for (const message of [
+    'changed instructor email must match the signed-in Google account',
+    'new instructor email must match the signed-in Google account',
+  ]) {
+    const text = describeInstructorSaveError({ code: '42501', message }, { googleEmail: 'g@gmail.com' });
+    assert.match(text, /主要 Email 必須是你登入用的 Google 信箱（g@gmail\.com）/);
+    assert.match(text, /請聯繫管理員/);
+    assert.doesNotMatch(text, /must match/);
+  }
+  assert.equal(describeInstructorSaveError({ message: 'network down' }), 'network down');
+  assert.equal(
+    describeInstructorSaveError({ message: 'instructor identity is not owned by the signed-in account' }),
+    'instructor identity is not owned by the signed-in account',
+  );
+  assert.doesNotMatch(describeInstructorSaveError({ message: 'new instructor email must match the signed-in Google account' }), /（/);
 });
