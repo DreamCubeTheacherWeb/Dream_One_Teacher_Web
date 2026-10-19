@@ -18,6 +18,7 @@ import { ConfirmInstructorEmailModal, InstructorEmailConfirmation } from '../../
 import { fetchAllPages, loadProgressSupport } from '../../lib/instructorProgressLoader';
 import {
     MAX_NAME_SLOT_BATCH,
+    NAME_SLOT_RESET_FIELDS,
     describeBatchDuplicate,
     describeRosterConflict,
     findNameConflicts,
@@ -266,6 +267,23 @@ const InstructorList = () => {
         if (error) {
             alert('解綁失敗:' + error.message);
             return;
+        }
+        if (inst.name_slot && confirm(
+            `要同時清除認領者填寫的個人資料，讓「${inst.full_name}」恢復成只有姓名的空位嗎?\n`
+            + '・認領錯人：按「確定」，真正的老師之後就能用姓名認領。\n'
+            + '・同一位老師只是換 Google 帳號：按「取消」，資料會保留。',
+        )) {
+            const cleared = Object.fromEntries(NAME_SLOT_RESET_FIELDS.map((field) => [field, null]));
+            const { error: clearError } = await supabase
+                .from('instructors')
+                .update(cleared)
+                .eq('id', inst.id)
+                .is('user_id', null);
+            if (clearError) {
+                alert('已解除綁定，但清除資料失敗:' + clearError.message);
+            } else {
+                setNotice(`已解除綁定並清除資料，「${inst.full_name}」恢復成只有姓名的空位。`);
+            }
         }
         await loadInstructors();
     };
@@ -1155,7 +1173,8 @@ const InfoRow = ({ label, value }) => {
 // ═══════════════════════════════════════════════════════════════
 // 新增講師 Modal
 //   模式一（預設）「只填姓名」：一行一個姓名，建立 name_slot 空位；老師用 Google 登入後，
-//   在待審核頁選「認領帳號」輸入同一個姓名就直接綁定並開通（資料庫函式 claim_instructor_name_slot）。
+//   在待審核頁選「認領帳號」輸入同一個姓名就綁定（資料庫函式 claim_instructor_name_slot），
+//   再用寄到「已確認 Email」的驗證碼啟用；空位要先由管理員按「確認 Email」登錄。
 //   模式二「填完整資料」：原本的做法，用 Email 登入自動對應。
 // ═══════════════════════════════════════════════════════════════
 const AddInstructorModal = ({ instructors, onClose, onCreated }) => {
@@ -1237,7 +1256,7 @@ const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
             setErr('新增失敗:' + error.message);
             return;
         }
-        onCreated(`已新增 ${rows.length} 位空位：${parsed.names.join('、')}。請通知老師用 Google 登入，選「認領帳號」並輸入相同姓名，就會直接綁定。`);
+        onCreated(`已新增 ${rows.length} 位空位：${parsed.names.join('、')}。下一步：在列表上按「確認 Email」登錄老師的 Email，再請老師用 Google 登入、選「認領帳號」輸入相同姓名，並用寄到該 Email 的驗證碼啟用。`);
     };
 
     return (
@@ -1245,7 +1264,7 @@ const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
             <Field
                 label="姓名（一行一個）"
                 required
-                hint="建好後，老師用 Google 登入、選「認領帳號」輸入同一個姓名就會直接綁定並開通。同名同姓可建立多個空位，各自被認領。"
+                hint="建好後，在列表上按「確認 Email」登錄老師的 Email。老師用 Google 登入、選「認領帳號」輸入同一個姓名就會綁定，再用寄到該 Email 的驗證碼啟用。同名同姓可建立多個空位，各自被認領。"
             >
                 <textarea
                     value={text}
@@ -1344,6 +1363,8 @@ const FullInstructorForm = ({ onClose, onCreated }) => {
         instructor_role: '',
         speed_qualification: '',
     });
+    // 管理員手上的 Email 通常已和老師確認過；勾選時同時登錄成「已確認 Email」，驗證碼才寄得出去。
+    const [emailConfirmed, setEmailConfirmed] = useState(true);
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
 
@@ -1362,13 +1383,27 @@ const FullInstructorForm = ({ onClose, onCreated }) => {
             instructor_role: form.instructor_role || null,
             speed_qualification: form.speed_qualification || null,
         };
-        const { error } = await supabase.from('instructors').insert(payload);
-        setSaving(false);
+        const { data: created, error } = await supabase.from('instructors').insert(payload).select('id').single();
         if (error) {
+            setSaving(false);
             setErr('新增失敗:' + error.message);
             return;
         }
-        onCreated(`已新增 ${payload.full_name}。對方用 ${payload.email_primary} 的 Google 帳號登入時會自動綁定。`);
+        let confirmNote = '';
+        if (emailConfirmed) {
+            const { error: confirmError } = await supabase.rpc('admin_confirm_instructor_email', {
+                p_instructor_id: created.id,
+                p_email: payload.email_primary,
+                p_note: '管理員新增講師資料時確認',
+            });
+            confirmNote = confirmError
+                ? `（Email 未能登錄為已確認：${confirmError.message}，請在列表上按「確認 Email」補登。）`
+                : '';
+        } else {
+            confirmNote = '（Email 尚未登錄為已確認，老師啟用前請在列表上按「確認 Email」。）';
+        }
+        setSaving(false);
+        onCreated(`已新增 ${payload.full_name}。對方用 ${payload.email_primary} 的 Google 帳號登入時會自動綁定，再用寄到這個 Email 的驗證碼啟用。${confirmNote}`);
     };
 
     const inputCls = 'bh-input text-sm';
@@ -1388,6 +1423,15 @@ const FullInstructorForm = ({ onClose, onCreated }) => {
                     onChange={e => setForm(p => ({ ...p, email_primary: e.target.value }))}
                     className={inputCls} placeholder="example@gmail.com"
                 />
+                <label className="mt-2 flex items-start gap-2 text-sm font-bold text-bauhaus-black cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={emailConfirmed}
+                        onChange={e => setEmailConfirmed(e.target.checked)}
+                        className="mt-1 w-4 h-4 accent-bauhaus-blue"
+                    />
+                    <span>這個 Email 已和老師確認是本人的（啟用與簽約的驗證碼會寄到這裡）</span>
+                </label>
             </Field>
             <Field label="手機(選填)" hint="供日後人工認領核對使用">
                 <input

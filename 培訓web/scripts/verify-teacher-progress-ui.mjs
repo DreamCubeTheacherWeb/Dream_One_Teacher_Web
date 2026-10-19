@@ -152,9 +152,13 @@ const routeHandler = (baseUrl, { user, session, profile }) => async (route) => {
   if (table === 'instructors' && method === 'POST') {
     const payload = request.postDataJSON();
     inserts.push(payload);
-    (Array.isArray(payload) ? payload : [payload]).forEach((item, index) => {
-      instructors.push({ id: `20000000-0000-4000-8000-0000000000${String(inserts.length * 10 + index).padStart(2, '0')}`, created_at: now, user_id: null, ...item });
+    const created = (Array.isArray(payload) ? payload : [payload]).map((item, index) => {
+      const row = { id: `20000000-0000-4000-8000-0000000000${String(inserts.length * 10 + index).padStart(2, '0')}`, created_at: now, user_id: null, ...item };
+      instructors.push(row);
+      return row;
     });
+    // 完整資料模式用 .insert().select('id').single() 取回新列 id，再登錄已確認 Email。
+    if (wantsObject) return respond(route, { id: created[0].id }, 201);
     return route.fulfill({ status: 201, body: '' });
   }
   if (table === 'instructors' && method === 'DELETE') {
@@ -419,6 +423,7 @@ async function main() {
         assert.equal(inserts[0].full_name, '完整乙');
         assert.equal(inserts[0].email_primary, 'full.b@example.com');
         assert.equal(Object.hasOwn(inserts[0], 'name_slot'), false);
+        assert.ok(rpcCalls.includes('admin_confirm_instructor_email'), '預設勾選「已和老師確認」時要登錄已確認 Email');
       });
 
       await step('只有乾淨的空位有「刪除空位」，已認領／有資料的沒有', async () => {

@@ -6,6 +6,18 @@ import { getInstructorProfileCompletion } from './profileCompletion.js';
  * 的比對方式一致（BTRIM 後再去掉所有空白），另外不分英文大小寫（只會多提醒，不會漏提醒）。
  */
 
+// 認領錯人時，管理員解除綁定後要清掉對方填的個資，空位才能恢復成「只有姓名」、讓真正的老師用姓名認領。
+// 涵蓋資料庫 claim_instructor_name_slot 判斷「有個資」的全部欄位，外加聯絡方式與檔案中繼資料。
+export const NAME_SLOT_RESET_FIELDS = [
+  'gender', 'birth_date', 'id_number', 'phone_mobile', 'phone_home', 'line_id', 'line_name',
+  'address', 'household_address', 'email_primary', 'email_secondary', 'nickname',
+  'bank_account_name', 'bank_name', 'bank_branch', 'bank_account_number', 'bank_code', 'bank_info_raw',
+  'id_front_path', 'id_front_mime', 'id_front_size', 'id_front_uploaded_at', 'id_front_external_url',
+  'id_back_path', 'id_back_mime', 'id_back_size', 'id_back_uploaded_at', 'id_back_external_url',
+  'bankbook_path', 'bankbook_mime', 'bankbook_size', 'bankbook_uploaded_at', 'bankbook_external_url',
+  'photo_path', 'photo_mime', 'photo_size', 'photo_uploaded_at', 'photo_external_url',
+];
+
 export const MAX_NAME_SLOT_LENGTH = 50;
 export const MAX_NAME_SLOT_BATCH = 100;
 
