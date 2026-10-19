@@ -9,8 +9,13 @@ import {
     nextSortOrder,
     optionErrorMessage,
     optionsOfKind,
+    optionsOfScope,
+    otherScope,
     planMove,
+    planScopeChange,
+    scopeLabel,
     sortOptions,
+    termPeriodInfo,
     validateOptionLabel,
 } from './salaryReportOptions.js';
 
@@ -22,6 +27,14 @@ test('三個分頁固定，且只有期間不可新增', () => {
     assert.equal(kindConfig('partner_unit').canAdd, true);
     assert.equal(kindConfig('camp_batch').canAdd, true);
     assert.equal(kindConfig('nope'), null);
+});
+
+test('期間分頁說明講清楚文字會原樣出現在講師下拉，並指向兩組清單', () => {
+    const hint = kindConfig('term_period').hint;
+    assert.match(hint, /原樣出現在講師回報頁的下拉/);
+    assert.match(hint, /115學年度下學期/);
+    assert.match(hint, /寒暑假清單/);
+    assert.match(kindConfig('partner_unit').hint, /學期間清單/);
 });
 
 test('sortOptions 依排序值，相同時依文字，且不改動原陣列', () => {
@@ -93,4 +106,65 @@ test('錯誤訊息：唯一鍵衝突、權限、其他', () => {
     assert.match(optionErrorMessage({ message: 'new row violates row-level security policy' }), /沒有權限/);
     assert.equal(optionErrorMessage({ message: 'boom' }, '儲存失敗'), '儲存失敗（boom）');
     assert.equal(optionErrorMessage(null), '操作失敗，請稍後再試。');
+});
+
+const unit = (id, label, sort_order, term_scope, extra = {}) => opt(id, 'partner_unit', label, sort_order, { term_scope, ...extra });
+const units = () => [
+    unit('v1', '寒暑假A', 10, 'vacation'),
+    unit('s1', '學期間A', 10, 'semester'),
+    unit('v2', '寒暑假B', 20, 'vacation', { is_active: false }),
+    unit('s2', '學期間B', 30, 'semester'),
+    opt('c1', 'camp_batch', '營隊', 10),
+];
+
+test('optionsOfScope 依 term_scope 分組、含停用項、依排序，且不混入其他分頁', () => {
+    assert.deepEqual(optionsOfScope(units(), 'partner_unit', 'vacation').map((o) => o.id), ['v1', 'v2']);
+    assert.deepEqual(optionsOfScope(units(), 'partner_unit', 'semester').map((o) => o.id), ['s1', 's2']);
+    assert.deepEqual(optionsOfScope(units(), 'camp_batch', 'vacation'), []);
+    assert.deepEqual(optionsOfScope(null, 'partner_unit', 'vacation'), []);
+});
+
+test('新增單位的排序：只看該組最大值＋10；新增 payload 帶 term_scope', () => {
+    const list = units();
+    assert.equal(nextSortOrder(optionsOfScope(list, 'partner_unit', 'vacation')), 30);
+    assert.equal(nextSortOrder(optionsOfScope(list, 'partner_unit', 'semester')), 40);
+    const payload = { kind: 'partner_unit', value: 'X', label: 'X', sort_order: nextSortOrder(optionsOfScope(list, 'partner_unit', 'semester')), term_scope: 'semester' };
+    assert.deepEqual(Object.keys(payload).sort(), ['kind', 'label', 'sort_order', 'term_scope', 'value']);
+});
+
+test('同一個單位名稱不能同時出現在兩組（驗證吃整個分頁）', () => {
+    const all = optionsOfKind(units(), 'partner_unit');
+    assert.equal(validateOptionLabel('學期間A', all).ok, false);
+    assert.equal(validateOptionLabel('寒暑假A', all).ok, false);
+    assert.equal(validateOptionLabel('全新單位', all).ok, true);
+});
+
+test('planMove／canMove 只在同組內移動', () => {
+    const vacation = optionsOfScope(units(), 'partner_unit', 'vacation');
+    assert.deepEqual(planMove(vacation, 'v2', 'up'), [{ id: 'v2', sort_order: 10 }, { id: 'v1', sort_order: 20 }]);
+    assert.deepEqual(planMove(vacation, 'v2', 'down'), []);
+    assert.equal(canMove(vacation, 'v1', 'up'), false);
+    assert.equal(canMove(vacation, 'v2', 'down'), false);
+    assert.deepEqual(planMove(vacation, 's1', 'up'), []);
+});
+
+test('planScopeChange：移到另一組，排序接在目標組最後', () => {
+    const list = optionsOfKind(units(), 'partner_unit');
+    assert.deepEqual(planScopeChange(list, 'v1', 'semester'), { term_scope: 'semester', sort_order: 40 });
+    assert.deepEqual(planScopeChange(list, 's1', 'vacation'), { term_scope: 'vacation', sort_order: 30 });
+    assert.equal(planScopeChange(list, 'v1', 'vacation'), null);
+    assert.equal(planScopeChange(list, 'zzz', 'semester'), null);
+    assert.equal(planScopeChange(list, 'v1', 'nope'), null);
+    const onlyVacation = [unit('v1', 'A', 10, 'vacation')];
+    assert.deepEqual(planScopeChange(onlyVacation, 'v1', 'semester'), { term_scope: 'semester', sort_order: 10 });
+});
+
+test('scopeLabel／otherScope／termPeriodInfo', () => {
+    assert.equal(scopeLabel('vacation'), '寒暑假清單');
+    assert.equal(scopeLabel('semester'), '學期間清單');
+    assert.equal(otherScope('vacation'), 'semester');
+    assert.equal(otherScope('semester'), 'vacation');
+    assert.deepEqual(termPeriodInfo('winter_break'), { usage: '寒假', scopeLabel: '寒暑假清單' });
+    assert.deepEqual(termPeriodInfo('semester'), { usage: '學期間', scopeLabel: '學期間清單' });
+    assert.deepEqual(termPeriodInfo('summer_break'), { usage: '暑假', scopeLabel: '寒暑假清單' });
 });

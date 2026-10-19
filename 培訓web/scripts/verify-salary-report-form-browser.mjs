@@ -27,12 +27,13 @@ const instructorId = '10000000-0000-4000-8000-000000000051';
 const now = new Date().toISOString();
 
 const reportOptions = [
-    { kind: 'term_period', value: 'winter_break', label: '寒假', sort_order: 10, is_active: true },
-    { kind: 'term_period', value: 'semester', label: '學期間', sort_order: 20, is_active: true },
-    { kind: 'term_period', value: 'summer_break', label: '暑假', sort_order: 30, is_active: true },
-    { kind: 'partner_unit', value: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', label: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', sort_order: 10, is_active: true },
-    { kind: 'partner_unit', value: '【週二】再興魔方高手 入門班115上', label: '【週二】再興魔方高手 入門班115上', sort_order: 20, is_active: true },
-    { kind: 'partner_unit', value: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', label: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', sort_order: 30, is_active: true },
+    { kind: 'term_period', value: 'winter_break', label: '2026年寒假', sort_order: 10, is_active: true },
+    { kind: 'term_period', value: 'semester', label: '115學年度上學期', sort_order: 20, is_active: true },
+    { kind: 'term_period', value: 'summer_break', label: '2026年暑假', sort_order: 30, is_active: true },
+    { kind: 'partner_unit', term_scope: 'vacation', value: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', label: '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', sort_order: 10, is_active: true },
+    { kind: 'partner_unit', term_scope: 'vacation', value: '【基隆】三之三立敏分校', label: '【基隆】三之三立敏分校', sort_order: 20, is_active: true },
+    { kind: 'partner_unit', term_scope: 'semester', value: '【週二】再興魔方高手 入門班115上', label: '【週二】再興魔方高手 入門班115上', sort_order: 490, is_active: true },
+    { kind: 'partner_unit', term_scope: 'semester', value: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', label: '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', sort_order: 500, is_active: true },
     { kind: 'camp_batch', value: '【臺北A】中山 | 7/1~7/3 三日營', label: '【臺北A】中山 | 7/1~7/3 三日營', sort_order: 10, is_active: true },
     { kind: 'camp_batch', value: '【高雄H】苓雅 | 8/15~8/16 速解營', label: '【高雄H】苓雅 | 8/15~8/16 速解營', sort_order: 20, is_active: true },
 ];
@@ -192,10 +193,12 @@ async function pickCourse(page, courseType) {
     const channel = reportChannelFor(courseType);
     await page.getByLabel('回報類別').selectOption(channel);
     if (categoriesInChannel(channel).length > 1) await page.getByLabel('課程種類').selectOption(categoryKey);
-    if (teacherCourseItems(categoryKey).length > 1) {
+    if (categoryKey !== 'onsite' && teacherCourseItems(categoryKey).length > 1) {
         await page.getByLabel(courseCategoryConfig(categoryKey)?.itemLabel || '報酬項目', { exact: true }).selectOption(courseType);
     }
 }
+// 表單第一個格線區的欄位標籤順序（確認上課日期固定在回報類別之後）
+const fieldOrder = (page) => page.locator('form > div.grid').first().locator(':scope > label > span.bh-label').allInnerTexts();
 const fillBasics = async (page, { name, hours, students }) => {
     if (name !== undefined) await page.getByLabel('課程名稱', { exact: true }).fill(name);
     if (hours !== undefined) {
@@ -248,7 +251,8 @@ async function run() {
             && await page.getByLabel('申請交通補助').isVisible()
             && await page.getByLabel('角色').count() === 0 && await page.getByLabel('地點').count() === 0
             && await page.getByLabel('課程自評').count() === 0 && await page.getByLabel('學習進度').count() === 0);
-        check('到府課有兩個報酬項目時顯示第三層', JSON.stringify(await optionLabels('報酬項目')) === JSON.stringify(['到府 2hr/節', '到府 1.5hr/節']));
+        check('到府課不顯示報酬項目（由時數自動判斷 1.5hr／2hr）', await page.getByLabel('報酬項目').count() === 0);
+        check('B2C 到府：上課日期固定在回報類別之後第二格', (await fieldOrder(page))[1]?.trim().startsWith('上課日期'));
         await page.getByLabel('課程種類').selectOption('trial');
         check('體驗課只有一個報酬項目時第三層自動帶入並隱藏', await page.getByLabel('報酬項目').count() === 0);
         await page.getByLabel('上課時數', { exact: true }).selectOption('__other__');
@@ -258,6 +262,7 @@ async function run() {
             JSON.stringify(await optionLabels('是否為營隊負責人')) === JSON.stringify(['否（一般講師）', '否（一般講師，速解營）', '是（5 日營負責人）', '是（4 日營負責人）', '是（2 日營負責人）'])
             && await page.getByLabel('營隊梯次').isVisible() && await page.getByLabel('上課人數', { exact: true }).isVisible()
             && await page.getByLabel('上課時數', { exact: true }).count() === 0 && await page.getByLabel('課程名稱', { exact: true }).count() === 0);
+        check('B2C 營隊：上課日期仍在第二格', (await fieldOrder(page))[1]?.trim().startsWith('上課日期'));
         await page.screenshot({ path: path.join(shotDir, 'desktop-channel-b2c-camp.png'), fullPage: true });
         await page.getByLabel('回報類別').selectOption('b2b');
         check('B2B 照表單：沒有課程種類與課程名稱，有身分別（主講／助教）、期間、單位、時數、人數、教材，沒有交通補助',
@@ -267,6 +272,18 @@ async function run() {
             && await page.getByLabel('上課時數', { exact: true }).isVisible() && await page.getByLabel('上課人數', { exact: true }).isVisible()
             && await page.getByLabel('本次發出教材數量').isVisible() && await page.getByLabel('申請交通補助').count() === 0
             && await page.getByLabel('地點').count() === 0 && await page.getByLabel('課程自評').count() === 0);
+        check('B2B：上課日期仍在第二格；未選期間前單位下拉提示先選期間',
+            (await fieldOrder(page))[1]?.trim().startsWith('上課日期')
+            && (await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts()).join('') === '請先選擇教學課程期間，再選單位');
+        check('教學課程期間選項文字照 B2B 表單', JSON.stringify(await optionLabels('教學課程期間')) === JSON.stringify(['請選擇寒假、學期間或暑假', '2026年寒假', '115學年度上學期', '2026年暑假']));
+        await page.getByLabel('教學課程期間').selectOption('winter_break');
+        check('選寒假 → 只列寒暑假清單', JSON.stringify(await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts())
+            === JSON.stringify(['請選擇合作單位', '【新竹】康乃薾中小學 G3-6 / G1-2 / 幼兒園A、B、C', '【基隆】三之三立敏分校', '其它（清單沒有，自行填寫）']));
+        await page.getByLabel('本次上課單位', { exact: true }).selectOption('【基隆】三之三立敏分校');
+        await page.getByLabel('教學課程期間').selectOption('semester');
+        check('改選學期間 → 只列學期間清單，且先前選的寒暑假單位被清掉', JSON.stringify(await page.getByLabel('本次上課單位', { exact: true }).locator('option').allInnerTexts())
+            === JSON.stringify(['請選擇合作單位', '【週二】再興魔方高手 入門班115上', '【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動', '其它（清單沒有，自行填寫）'])
+            && await page.getByLabel('本次上課單位', { exact: true }).inputValue() === '');
         await page.screenshot({ path: path.join(shotDir, 'desktop-channel-b2b.png'), fullPage: true });
         await page.getByLabel('回報類別').selectOption('other');
         check('其他課程維持完整欄位（常態課、角色、地點、自評、進度）',
@@ -274,8 +291,8 @@ async function run() {
             && await page.getByLabel('角色').isVisible() && await page.getByLabel('地點').isVisible()
             && await page.getByLabel('課程自評').isVisible() && await page.getByLabel('學習進度').isVisible());
         await page.getByLabel('回報類別').selectOption('b2c');
-        check('切回 B2C 回到到府家教課', await page.getByLabel('課程種類').inputValue() === 'onsite'
-            && await page.getByLabel('報酬項目').inputValue() === 'onsite_2hr');
+        check('切回 B2C 回到到府家教課（無報酬項目）', await page.getByLabel('課程種類').inputValue() === 'onsite'
+            && await page.getByLabel('報酬項目').count() === 0);
 
         // B2C 直營（預設到府）→ 表單必填與交通補助
         await page.getByRole('button', { name: '送出回報' }).click();
@@ -299,6 +316,7 @@ async function run() {
 
         // 合作課 → 期間＋單位＋教材，交通補助隱藏
         await pickCourse(page, 'collab_lead');
+        await page.getByLabel('教學課程期間').selectOption(''); // 前面的分層檢查已選過期間，這裡回到未選
         check('合作課顯示教學課程期間／上課單位／教材數量',
             await page.getByLabel('教學課程期間').isVisible()
             && await page.getByLabel('本次上課單位').isVisible()
@@ -315,7 +333,7 @@ async function run() {
         await page.getByRole('button', { name: '送出回報' }).click();
         check('合作課缺上課單位被擋', (await alertText(page)) === '合作課程請選擇本次上課單位。' && submitBodies.length === 0);
         const unitOptions = await page.getByLabel('本次上課單位').locator('option').allInnerTexts();
-        check('上課單位下拉含清單與「其它」', unitOptions.length === 5 && unitOptions.at(-1).startsWith('其它'));
+        check('上課單位下拉含該期間清單與「其它」', unitOptions.length === 4 && unitOptions.at(-1).startsWith('其它'));
         await page.getByLabel('本次上課單位').selectOption('__other__');
         check('選「其它」出現自填欄位', await page.getByLabel('本次上課單位（自行填寫）').isVisible());
         await page.getByLabel('本次上課單位（自行填寫）').fill('【臺北】新開合作單位 週五班');
@@ -357,7 +375,7 @@ async function run() {
         // 直營到府＋交通補助
         await openReport(page, base);
         await pickCourse(page, 'onsite_1_5hr');
-        await fillBasics(page, { name: '王小明', hours: '1.5', students: '2' });
+        await fillBasics(page, { name: '王小明', hours: '2', students: '2' });
         await page.getByLabel('申請交通補助').check();
         await page.getByLabel('單趟公里數').fill('12.35');
         await page.getByRole('button', { name: '送出回報' }).click();
@@ -366,9 +384,18 @@ async function run() {
         check('直營送出交通補助＝是、單趟 12.4 km，合作／營隊欄位為空',
             submitBodies.length === 3 && body.p_transport_subsidy_requested === true
             && body.p_transport_distance_km === 12.4 && body.p_unit_name === null && body.p_term_period === null
-            && body.p_course_type === 'onsite_1_5hr' && body.p_course_name === '王小明' && body.p_duration_hours === 1.5
+            && body.p_course_type === 'onsite_2hr' && body.p_course_name === '王小明' && body.p_duration_hours === 2
             && body.p_student_count === 2 && body.p_location === null && body.p_self_review === null);
-        check('三次回報都只走受控 RPC', directSessionWrites === 0);
+
+        // 到府 1.5 小時 → 自動落到 onsite_1_5hr
+        await openReport(page, base);
+        await pickCourse(page, 'onsite_1_5hr');
+        await fillBasics(page, { name: '李小華', hours: '1.5', students: '1' });
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
+        body = submitBodies.at(-1);
+        check('到府 1.5 小時自動送出 onsite_1_5hr', submitBodies.length === 4 && body.p_course_type === 'onsite_1_5hr' && body.p_duration_hours === 1.5);
+        check('四次回報都只走受控 RPC', directSessionWrites === 0);
         await context.close();
 
         // 選項讀取失敗 → 自由輸入，不擋回報
@@ -377,9 +404,9 @@ async function run() {
         page = await context.newPage();
         await openReport(page, base);
         await pickCourse(page, 'collab_lead');
-        check('選項讀取失敗時上課單位改為文字輸入', await page.locator('input[aria-label="本次上課單位"]').isVisible());
         check('選項讀取失敗時教學期間仍有內建三個選項', (await page.getByLabel('教學課程期間').locator('option').count()) === 4);
         await page.getByLabel('教學課程期間').selectOption('summer_break');
+        check('選項讀取失敗時上課單位改為文字輸入', await page.locator('input[aria-label="本次上課單位"]').isVisible());
         await page.locator('input[aria-label="本次上課單位"]').fill('【新竹】愛丁堡');
         await fillBasics(page, { hours: '1.5', students: '12' });
         await page.getByRole('button', { name: '送出回報' }).click();
@@ -397,7 +424,8 @@ async function run() {
         check('390px 直營＋交通補助無水平溢出', (await overflowOf(page)) === 0);
         await page.screenshot({ path: path.join(shotDir, 'mobile-390-direct.png'), fullPage: true });
         await pickCourse(page, 'collab_lead');
-        await page.getByLabel('本次上課單位').selectOption('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動');
+        await page.getByLabel('教學課程期間').selectOption('semester');
+        await page.getByLabel('本次上課單位', { exact: true }).selectOption('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動');
         check('390px 合作課（選最長單位名）無水平溢出', (await overflowOf(page)) === 0);
         await page.screenshot({ path: path.join(shotDir, 'mobile-390-collab.png'), fullPage: true });
         await pickCourse(page, 'camp');
@@ -411,7 +439,7 @@ async function run() {
         context = await contextFor(browser, { width: 1280, height: 900 });
         page = await context.newPage();
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+        await page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
         const table = page.locator('table');
         check('後台表格顯示交通補助「申請 ・ 單趟 12.4 km」', await table.getByText('申請 ・ 單趟 12.4 km').isVisible());
         check('後台表格顯示合作課期間／單位／教材',
@@ -425,12 +453,12 @@ async function run() {
         context = await contextFor(browser, { width: 390, height: 844 });
         page = await context.newPage();
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+        await page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
         const cards = page.locator('.md\\:hidden');
         check('後台手機卡片顯示交通補助與合作單位',
             await cards.getByText('申請 ・ 單趟 12.4 km').isVisible()
             && await cards.getByText('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動').isVisible());
-        check('390px 後台薪資登記無水平溢出', (await overflowOf(page)) === 0);
+        check('390px 後台報酬登記無水平溢出', (await overflowOf(page)) === 0);
         await page.screenshot({ path: path.join(shotDir, 'admin-mobile-390.png'), fullPage: true });
         await context.close();
     } finally {

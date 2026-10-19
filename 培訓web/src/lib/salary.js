@@ -55,10 +55,10 @@ export const pricingModeLabel = (mode) => ({
 export const salaryErrorMessage = (error, fallback = '處理失敗，請稍後再試') => {
     const message = error?.message || '';
     if (/submit_my_class_session|quote_salary|schema cache|could not find the function/i.test(message)) {
-        return '薪資回報功能尚未完成資料庫更新，請聯絡管理員。';
+        return '報酬回報功能尚未完成資料庫更新，請聯絡管理員。';
     }
     if (/row-level security|permission denied|42501/i.test(message)) {
-        return '您目前無法使用這個薪資功能，請聯絡管理員確認資格。';
+        return '您目前無法使用這個報酬功能，請聯絡管理員確認資格。';
     }
     return message || fallback;
 };

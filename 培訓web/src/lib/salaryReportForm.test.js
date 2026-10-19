@@ -11,6 +11,8 @@ import {
     roleForCourseType,
     validateReportBasics,
     buildReportBasicParams,
+    partnerUnitsFor,
+    deriveCourseType,
     termPeriodChoices,
     validateReportExtras,
 } from './salaryReportForm.js';
@@ -154,4 +156,30 @@ test('只送出目前版面看得到的基本欄位', () => {
     assert.equal(other.p_location, '台北');
     assert.equal(other.p_role_in_session, 'assistant');
     assert.equal(other.p_progress_note, '進度');
+});
+
+test('合作單位依教學期間分組；未選期間為空；沒有 term_scope 時退回整份', () => {
+    const options = groupReportOptions([
+        { kind: 'partner_unit', term_scope: 'vacation', value: 'A校', label: 'A校', sort_order: 10, is_active: true },
+        { kind: 'partner_unit', term_scope: 'semester', value: 'B校115上', label: 'B校115上', sort_order: 490, is_active: true },
+    ]);
+    assert.deepEqual(partnerUnitsFor(options, '').map(u => u.value), []);
+    assert.deepEqual(partnerUnitsFor(options, 'winter_break').map(u => u.value), ['A校']);
+    assert.deepEqual(partnerUnitsFor(options, 'summer_break').map(u => u.value), ['A校']);
+    assert.deepEqual(partnerUnitsFor(options, 'semester').map(u => u.value), ['B校115上']);
+    const legacy = groupReportOptions([
+        { kind: 'partner_unit', value: 'A校', label: 'A校', sort_order: 10, is_active: true },
+        { kind: 'partner_unit', value: 'B校', label: 'B校', sort_order: 20, is_active: true },
+    ]);
+    assert.deepEqual(partnerUnitsFor(legacy, 'semester').map(u => u.value), ['A校', 'B校']);
+});
+
+test('到府課依時數自動落到 1.5hr／2hr；其他課型不變', () => {
+    assert.equal(deriveCourseType('onsite_2hr', '1.5'), 'onsite_1_5hr');
+    assert.equal(deriveCourseType('onsite_2hr', '1'), 'onsite_1_5hr');
+    assert.equal(deriveCourseType('onsite_1_5hr', '2'), 'onsite_2hr');
+    assert.equal(deriveCourseType('onsite_1_5hr', '3'), 'onsite_2hr');
+    assert.equal(deriveCourseType('onsite_1_5hr', ''), 'onsite_2hr');
+    assert.equal(deriveCourseType('online', '1.5'), 'online');
+    assert.equal(deriveCourseType('collab_lead', '1'), 'collab_lead');
 });

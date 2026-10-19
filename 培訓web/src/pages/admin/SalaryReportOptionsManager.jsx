@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Pencil, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRightLeft, ArrowUp, Check, Pencil, Plus, RefreshCw, X } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import {
     OPTION_KINDS,
@@ -10,17 +10,24 @@ import {
     nextSortOrder,
     optionErrorMessage,
     optionsOfKind,
+    optionsOfScope,
+    otherScope,
     planMove,
+    planScopeChange,
+    scopeLabel,
+    termPeriodInfo,
     validateOptionLabel,
 } from '../../lib/salaryReportOptions';
 
-const COLUMNS = 'id,kind,value,label,sort_order,is_active';
+const COLUMNS = 'id,kind,value,label,sort_order,is_active,term_scope';
+const SCOPES = ['vacation', 'semester'];
 
 const SalaryReportOptionsManager = () => {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [activeKind, setActiveKind] = useState(OPTION_KINDS[0].kind);
+    const [activeScope, setActiveScope] = useState('vacation');
     const [newLabel, setNewLabel] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [editLabel, setEditLabel] = useState('');
@@ -53,8 +60,27 @@ const SalaryReportOptionsManager = () => {
     useEffect(() => { load(); }, [load]);
 
     const config = kindConfig(activeKind);
+    // kindRows＝這個分頁的全部列（檢查重複用：同一個單位名稱不能同時出現在兩組）
     const kindRows = useMemo(() => optionsOfKind(rows, activeKind), [rows, activeKind]);
-    const activeCount = kindRows.filter((row) => row.is_active).length;
+    const isPartner = activeKind === 'partner_unit';
+    const isTerm = activeKind === 'term_period';
+    // visibleRows＝畫面上列出的列：合作單位只列目前選的那一組
+    const visibleRows = useMemo(
+        () => (isPartner ? optionsOfScope(rows, 'partner_unit', activeScope) : kindRows),
+        [rows, kindRows, isPartner, activeScope],
+    );
+    const scopeCounts = useMemo(
+        () => Object.fromEntries(SCOPES.map((scope) => [scope, optionsOfScope(rows, 'partner_unit', scope).length])),
+        [rows],
+    );
+    const activeCount = visibleRows.filter((row) => row.is_active).length;
+
+    const switchScope = (scope) => {
+        setActiveScope(scope);
+        setNewLabel('');
+        setEditingId(null);
+        setNotice(null);
+    };
 
     const switchKind = (kind) => {
         setActiveKind(kind);
@@ -110,7 +136,8 @@ const SalaryReportOptionsManager = () => {
                 kind: activeKind,
                 value: checked.label,
                 label: checked.label,
-                sort_order: nextSortOrder(kindRows),
+                sort_order: nextSortOrder(visibleRows),
+                ...(isPartner ? { term_scope: activeScope } : {}),
             };
             const { data, error } = await supabase
                 .from('salary_report_options')
@@ -172,7 +199,7 @@ const SalaryReportOptionsManager = () => {
     };
 
     const handleMove = (row, direction) => {
-        const updates = planMove(kindRows, row.id, direction);
+        const updates = planMove(visibleRows, row.id, direction);
         if (updates.length === 0) return;
         runAction(async () => {
             const results = await Promise.all(updates.map((update) => updateRow(update.id, { sort_order: update.sort_order })));
@@ -186,12 +213,27 @@ const SalaryReportOptionsManager = () => {
         });
     };
 
+    const handleChangeScope = (row) => {
+        const target = otherScope(row.term_scope);
+        const patch = planScopeChange(kindRows, row.id, target);
+        if (!patch) return;
+        runAction(async () => {
+            const { row: saved, error } = await updateRow(row.id, patch);
+            if (error) {
+                setNotice({ type: 'error', text: optionErrorMessage(error, '移動失敗') });
+                return;
+            }
+            applyRows([saved]);
+            setNotice({ type: 'success', text: `已把「${row.label}」移到${scopeLabel(target)}。` });
+        });
+    };
+
     return (
         <main className="p-4 sm:p-8 max-w-4xl mx-auto">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
                 <div className="min-w-0">
                     <Link to="/admin/salary" className="inline-flex items-center gap-1 min-h-[44px] text-sm font-black text-bauhaus-black/60 hover:text-bauhaus-blue mb-1">
-                        <ArrowLeft className="w-4 h-4" /> 回薪資登記中心
+                        <ArrowLeft className="w-4 h-4" /> 回報酬登記中心
                     </Link>
                     <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">回報選項管理</h1>
                     <p className="mt-2 text-sm sm:text-base font-medium text-bauhaus-black/65 leading-relaxed">
@@ -240,11 +282,34 @@ const SalaryReportOptionsManager = () => {
                 <div className="bg-bauhaus-black text-white px-4 sm:px-6 py-4">
                     <h2 className="text-lg sm:text-xl font-black">{config.title}</h2>
                     <p className="mt-1 text-xs sm:text-sm font-medium text-white/75 leading-relaxed">
-                        {config.hint}共 {kindRows.length} 項，啟用中 {activeCount} 項。
+                        {config.hint}
+                    </p>
+                    <p className="mt-1 text-xs sm:text-sm font-black text-bauhaus-yellow">
+                        {isPartner ? `${scopeLabel(activeScope)}：` : ''}共 {visibleRows.length} 項，啟用中 {activeCount} 項。
                     </p>
                 </div>
+                {isPartner && (
+                    <div className="px-4 sm:px-6 py-3 flex flex-wrap gap-2 border-b-2 border-bauhaus-black/20" aria-label="合作單位清單分組">
+                        {SCOPES.map((scope) => {
+                            const selected = scope === activeScope;
+                            return (
+                                <button
+                                    key={scope}
+                                    type="button"
+                                    data-scope-switch={scope}
+                                    aria-pressed={selected}
+                                    onClick={() => switchScope(scope)}
+                                    className={`bh-btn px-4 py-2.5 min-h-[44px] whitespace-nowrap ${selected ? 'bh-btn-yellow' : 'bh-btn-outline'}`}
+                                >
+                                    {scopeLabel(scope)}（{scopeCounts[scope]}）
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
                 <p className="px-4 sm:px-6 py-3 text-xs sm:text-sm font-bold text-bauhaus-black/70 bg-bauhaus-cream border-b-2 border-bauhaus-black/20 leading-relaxed">
                     停用後講師看不到，舊紀錄不受影響。因此這裡不提供刪除。
+                    {isPartner && `目前在「${scopeLabel(activeScope)}」，新增的單位會加到這一組。`}
                 </p>
 
                 {config.canAdd && (
@@ -268,20 +333,27 @@ const SalaryReportOptionsManager = () => {
 
                 {loading ? (
                     <div className="p-10 text-center font-bold text-bauhaus-black/50">正在讀取選項…</div>
-                ) : kindRows.length === 0 ? (
+                ) : visibleRows.length === 0 ? (
                     <div className="p-10 text-center font-bold text-bauhaus-black/50">
-                        {loadError ? '無法顯示選項。' : '這個分頁還沒有任何選項。'}
+                        {loadError ? '無法顯示選項。' : isPartner ? `${scopeLabel(activeScope)}還沒有任何單位。` : '這個分頁還沒有任何選項。'}
                     </div>
                 ) : (
                     <ul className="divide-y-2 divide-bauhaus-black/15">
-                        {kindRows.map((row) => {
+                        {visibleRows.map((row) => {
                             const editing = editingId === row.id;
+                            const termInfo = isTerm ? termPeriodInfo(row.value) : null;
                             return (
                                 <li key={row.id} data-option-row className={`p-4 sm:px-6 flex flex-col gap-3 ${row.is_active ? 'bg-white' : 'bg-bauhaus-muted/60'}`}>
                                     <div className="flex items-start gap-3 min-w-0">
-                                        <span className="shrink-0 mt-0.5 min-w-[2.5rem] text-center text-xs font-black bg-bauhaus-muted text-bauhaus-black/70 rounded-lg px-2 py-1" title="排序值">
-                                            {row.sort_order}
-                                        </span>
+                                        {isTerm ? (
+                                            <span data-term-usage className="shrink-0 mt-0.5 text-xs font-black bg-bauhaus-black text-white rounded-lg px-2 py-1">
+                                                用途：{termInfo.usage}
+                                            </span>
+                                        ) : (
+                                            <span className="shrink-0 mt-0.5 min-w-[2.5rem] text-center text-xs font-black bg-bauhaus-muted text-bauhaus-black/70 rounded-lg px-2 py-1" title="排序值">
+                                                {row.sort_order}
+                                            </span>
+                                        )}
                                         {editing ? (
                                             <input
                                                 type="text"
@@ -298,6 +370,11 @@ const SalaryReportOptionsManager = () => {
                                             />
                                         ) : (
                                             <div className="min-w-0 flex-1">
+                                                {isTerm && (
+                                                    <p className="text-xs font-bold text-bauhaus-black/60 mb-0.5">
+                                                        講師會看到的文字（選「{termInfo.usage}」時帶出{termInfo.scopeLabel}）
+                                                    </p>
+                                                )}
                                                 <p className={`font-black break-words leading-snug ${row.is_active ? 'text-bauhaus-black' : 'text-bauhaus-black/45 line-through'}`}>
                                                     {row.label}
                                                 </p>
@@ -318,10 +395,11 @@ const SalaryReportOptionsManager = () => {
                                             </>
                                         ) : (
                                             <>
+                                                {!isTerm && (<>
                                                 <button
                                                     type="button"
                                                     onClick={() => handleMove(row, 'up')}
-                                                    disabled={busy || !canMove(kindRows, row.id, 'up')}
+                                                    disabled={busy || !canMove(visibleRows, row.id, 'up')}
                                                     aria-label={`上移「${row.label}」`}
                                                     className="bh-btn bh-btn-outline min-h-[44px] min-w-[44px] px-3 disabled:opacity-40"
                                                 >
@@ -330,12 +408,13 @@ const SalaryReportOptionsManager = () => {
                                                 <button
                                                     type="button"
                                                     onClick={() => handleMove(row, 'down')}
-                                                    disabled={busy || !canMove(kindRows, row.id, 'down')}
+                                                    disabled={busy || !canMove(visibleRows, row.id, 'down')}
                                                     aria-label={`下移「${row.label}」`}
                                                     className="bh-btn bh-btn-outline min-h-[44px] min-w-[44px] px-3 disabled:opacity-40"
                                                 >
                                                     <ArrowDown className="w-4 h-4" />
                                                 </button>
+                                                </>)}
                                                 <button
                                                     type="button"
                                                     onClick={() => startEdit(row)}
@@ -345,6 +424,17 @@ const SalaryReportOptionsManager = () => {
                                                 >
                                                     <Pencil className="w-4 h-4" /> 改名
                                                 </button>
+                                                {isPartner && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleChangeScope(row)}
+                                                        disabled={busy}
+                                                        aria-label={`移到${scopeLabel(otherScope(row.term_scope))}「${row.label}」`}
+                                                        className="bh-btn bh-btn-outline px-3 min-h-[44px] disabled:opacity-40"
+                                                    >
+                                                        <ArrowRightLeft className="w-4 h-4" /> 移到{scopeLabel(otherScope(row.term_scope))}
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
                                                     role="switch"

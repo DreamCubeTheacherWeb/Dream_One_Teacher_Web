@@ -48,6 +48,34 @@ PostgREST／PostgreSQL 文件行為，正式庫未實測（正式庫的 enum 若
 
 **上線方式**：分支 `fix/salary-register-paging`（從 `origin/main` `b361e3b` 開），push main 即 Zeabur 自動部署；**尚未 push，需使用者同意**。
 
+## 🧭 2026-10-19（第三版）：全站「薪資」改「報酬」、合作單位分寒暑假／學期間、期間文字照表單、到府課免選報酬項目（🛠 已改完＋本機實測，⚠️ 需先套 migration 再上線）
+
+**需求（業主 2026-10-19 晚間）**：① 全部提到「薪資」的部分改成「報酬」；② B2B 寒暑假和學期間兩題分開，後台可各自改，選到某個期間時下面的單位選項對應好；
+③ 寒假／學期間／暑假文字要和表單一樣（2026年寒假、115學年度上學期、2026年暑假），後台可設定、好設定且直覺；④ B2C 上課日期欄位位置固定，不要跳來跳去；
+⑤ 到府課不要「報酬項目」（同時有到府 1.5 又可選時數很怪）。
+
+**做法**：
+- **migration `supabase/migrations/20261019220000_partner_units_by_term_and_period_labels.sql`**（可重複執行，只加欄位與回填，不刪資料、不動 RLS／RPC）：
+  `salary_report_options` 加 `term_scope`（vacation＝寒暑假、semester＝學期間；只有 partner_unit 有值）；回填 10/18 種子的 78 個單位（名稱含「115上」或 sort_order ≥ 490 → 學期間，
+  其餘寒暑假 → 48／30）；加 CHECK（合作單位必有組別且只能是這兩值，其他種類必為 NULL；**明寫 IS NOT NULL**，否則 NULL 會讓 CHECK 放行——隔離庫測出來才補的）；
+  期間三列 label 只在仍是預設「寒假／學期間／暑假」時改成表單文字，管理員改過的不覆寫。`2025_salary_system.sql` 同步欄位與索引。UNIQUE (kind, value) 不變 → 同一單位名稱不能同時在兩組。
+- **講師回報頁 `MySalaryNew.jsx`**：上課日期固定在「回報類別」之後第二格，三個類別都一樣；選期間才出現對應那組單位（未選期間時下拉停用並提示「請先選擇教學課程期間」；
+  換期間會清掉已選單位；選項還沒有 term_scope 時退回整份清單不擋回報）；到府課不顯示報酬項目，時數 ≤ 1.5 自動送 `onsite_1_5hr`、其餘 `onsite_2hr`（`deriveCourseType`）。
+- **後台回報選項管理頁**（sonnet agent 實作，主對話覆核）：合作單位分頁改兩顆切換鈕「寒暑假清單／學期間清單」各自新增、組內排序、每列可「移到另一組」；
+  期間分頁改三列固定卡片（用途／講師會看到的文字／帶出哪組清單）＋說明「每學期開始前改成當期名稱，例如 115學年度下學期、2027年寒假」。
+- **「薪資」→「報酬」**：`MySalary.jsx`、`MySalaryNew.jsx`、`SalaryRegister.jsx`（頁名改「報酬登記中心」）、`Dashboard.jsx`、`NotificationManager.jsx`、`PrivacyPolicy.jsx`、`salary.js`、
+  `SalaryReportOptionsManager.jsx`、`salaryReportOptions.js` 與相關驗證腳本；程式識別字（salary）與網址（/admin/salary）不變。「核薪」「待核薪」沒有「薪資」二字，維持原樣。
+
+**驗證（主對話 2026-10-19 親跑）**：`npm test` 106/106；`npm run verify:salary-report-form`（隔離 PostgreSQL）全 PASS，含新增 (g) 回填 48／30、含 115上 的列全在學期間、
+預設期間文字已改、管理員改過的保留、migration 連跑兩次；(h) CHECK 擋無組別／怪組別／非合作單位帶組別；新建庫路徑 2025 → 20260826 → 20261018 → 20261019 可用；
+`verify:salary-report-form:browser` 50/50（新增：日期固定第二格 ×3 類別、到府無報酬項目、時數 2→onsite_2hr／1.5→onsite_1_5hr、期間文字照表單、選寒假只列寒暑假清單、
+改學期間清掉已選單位、未選期間提示）；`verify:salary-report-options:browser` 56/56；`npm run build` 通過；ESLint 0；`git diff --check` 乾淨；src 內「薪資」0 處。
+截圖：`docs/verification/2026-10-19-salary-report-form-channel/`（10 張）與 `docs/verification/2026-10-18-salary-report-options/`（6 張，本次覆寫）。
+
+**上線順序（⚠️ 必守）**：① 業主在 Supabase SQL Editor 套 `20261019220000_partner_units_by_term_and_period_labels.sql`（只加欄位、回填、改三個 label）；
+② 再推 main。順序反了，新前端 select 的 `term_scope` 欄位不存在 → 選項讀取失敗 → 退回自由輸入（可回報但沒有下拉）。先套 migration 時舊前端照常運作。
+套完可在後台「回報選項管理 → 合作單位」確認兩組筆數 48／30，分錯的用「移到另一組」調整。
+
 ## 🧭 2026-10-19（第二版）：回報頁欄位與選項對齊兩份 Google 表單（✅ 正式環境已上線）
 
 **需求**：業主看過第一版後：「選項和欄位要和表單裡面一樣呀，像是 b2b 的怎麼會變成是還要填寫課程名稱呢？應該本來表單裡面沒有對吧」。

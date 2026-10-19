@@ -1,6 +1,6 @@
 // 站內課程回報對齊 Google 課後回報表單的條件欄位（合作課／營隊／直營交通補助）。
 // 驗證訊息與 submit_my_class_session（migration 20261018120000）一致；後端仍是最終防線。
-import { TERM_PERIOD_LABELS, courseCategoryFor, reportChannelFor } from './constants.js';
+import { TERM_PERIOD_LABELS, courseCategoryFor, reportChannelFor, termScopeFor } from './constants.js';
 
 export const OTHER_OPTION = '__other__';
 export const REPORT_TEXT_MAX = 200;
@@ -26,10 +26,28 @@ export const groupReportOptions = (rows) => {
     const grouped = { term_period: [], partner_unit: [], camp_batch: [] };
     for (const row of Array.isArray(rows) ? rows : []) {
         if (!row || !grouped[row.kind] || row.is_active === false) continue;
-        grouped[row.kind].push({ value: row.value, label: row.label || row.value, sort_order: row.sort_order ?? 0 });
+        grouped[row.kind].push({ value: row.value, label: row.label || row.value, sort_order: row.sort_order ?? 0, term_scope: row.term_scope ?? null });
     }
     for (const list of Object.values(grouped)) list.sort((a, b) => a.sort_order - b.sort_order);
     return grouped;
+};
+
+// 依選到的教學期間給對應那組合作單位；還沒選期間 → 空清單（畫面會提示先選期間）。
+// 選項還沒有 term_scope（migration 尚未套用）時退回整份清單，不擋回報。
+export const partnerUnitsFor = (options, termPeriod) => {
+    const units = options?.partner_unit || [];
+    const scope = termScopeFor(termPeriod);
+    if (!scope) return [];
+    if (!units.some(unit => unit.term_scope)) return units;
+    return units.filter(unit => unit.term_scope === scope);
+};
+
+// 到府課不問報酬項目：時數 ≤ 1.5 走「到府 1.5hr/節」，其餘走「到府 2hr/節」（業主 2026-10-19）
+export const deriveCourseType = (courseType, durationHours) => {
+    if (courseType !== 'onsite_2hr' && courseType !== 'onsite_1_5hr') return courseType;
+    const hours = Number(durationHours);
+    if (String(durationHours ?? '') === '' || !Number.isFinite(hours)) return 'onsite_2hr';
+    return hours <= 1.5 ? 'onsite_1_5hr' : 'onsite_2hr';
 };
 
 export const termPeriodChoices = (options) => (options?.term_period?.length

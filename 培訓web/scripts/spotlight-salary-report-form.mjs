@@ -242,7 +242,7 @@ async function run() {
         await context.route('**/*', handleRoute);
         page = await context.newPage();
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+        await page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
         await spot(page, ['table thead th:nth-child(3)', 'table tbody tr:nth-child(-n+2) td:nth-child(3)'], 'step5-admin.png', { pad: 6, clip: { x: 40, y: 100, width: 1320, height: 300 }, center: 'table tbody tr:nth-child(2)' });
         await context.close();
     } finally {

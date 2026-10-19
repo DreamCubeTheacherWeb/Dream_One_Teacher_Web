@@ -11,6 +11,8 @@ import {
     courseCategoryFor,
     reportChannelFor,
     reportItemLabel,
+    TERM_SCOPE_LABELS,
+    termScopeFor,
     speedQualificationLabel,
     teacherCourseItems,
 } from '../lib/constants';
@@ -25,7 +27,9 @@ import {
     TRANSPORT_DISTANCE_MAX,
     buildReportBasicParams,
     buildReportExtrasParams,
+    deriveCourseType,
     groupReportOptions,
+    partnerUnitsFor,
     reportFieldsFor,
     reportGroupFor,
     reportLayoutFor,
@@ -93,7 +97,7 @@ const MySalaryNew = () => {
             try {
                 const { data, error: optionsError } = await supabase
                     .from('salary_report_options')
-                    .select('kind, value, label, sort_order, is_active')
+                    .select('kind, value, label, sort_order, is_active, term_scope')
                     .eq('is_active', true)
                     .order('sort_order', { ascending: true });
                 if (active) setReportOptions(groupReportOptions(optionsError ? [] : data));
@@ -138,6 +142,17 @@ const MySalaryNew = () => {
         form.duration_hours,
         form.student_count,
     ]);
+
+    // 講師改任何欄位就清掉上一次送出的錯誤訊息（避免修正後紅字還掛著）
+    useEffect(() => { setError(''); }, [form, extras]);
+
+    // 到府課不問報酬項目：依時數自動落到 1.5hr／2hr 規則
+    useEffect(() => {
+        const derived = deriveCourseType(form.course_type, form.duration_hours);
+        if (derived !== form.course_type) {
+            setForm(current => ({ ...current, course_type: derived, role_in_session: roleForCourseType(derived) }));
+        }
+    }, [form.course_type, form.duration_hours]);
 
     // 換報酬項目時角色跟著推定（表單沒有角色欄位；「其他課程」版仍可手動改）
     const setCourseType = (courseType) => {
@@ -189,7 +204,9 @@ const MySalaryNew = () => {
     const categoryConfig = courseCategoryConfig(courseCategory);
     const reportChannel = reportChannelFor(form.course_type);
     const channelCategories = categoriesInChannel(reportChannel);
-    const courseItems = teacherCourseItems(courseCategory);
+    const courseItems = courseCategory === 'onsite' ? [] : teacherCourseItems(courseCategory);
+    const partnerUnits = partnerUnitsFor(reportOptions, extras.term_period);
+    const termScope = termScopeFor(extras.term_period);
     const layout = reportLayoutFor(form.course_type);
     const fields = reportFieldsFor(form.course_type);
     const itemLabel = categoryConfig?.itemLabel || '報酬項目';
@@ -198,6 +215,7 @@ const MySalaryNew = () => {
         : (HOURS_PRESETS.includes(String(form.duration_hours)) ? String(form.duration_hours) : (form.duration_hours === '' ? '' : OTHER_OPTION));
     const studentLabel = { b2b: '本次上課人數 *', b2c_direct: '實際上課人數 *', b2c_camp: '上課人數 *', other: '人數' }[layout];
     const updateExtras = (patch) => setExtras(current => ({ ...current, ...patch }));
+    const pickTermPeriod = (termPeriod) => setExtras(current => ({ ...current, term_period: termPeriod, unit_choice: '', unit_other: '' }));
 
     const pickHours = (value) => {
         if (value === OTHER_OPTION) {
@@ -218,7 +236,7 @@ const MySalaryNew = () => {
             <div className="mb-6">
                 <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">登記課程回報</h1>
                 <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">
-                    上完課後填寫這份回報，送出後管理員會審核並登記薪資。
+                    上完課後填寫這份回報，送出後管理員會審核並登記報酬。
                 </p>
                 {instructor && (
                     <div className="flex flex-wrap gap-2 mt-3 text-xs font-bold">
@@ -232,7 +250,7 @@ const MySalaryNew = () => {
             <div className="bg-bauhaus-yellow border-2 border-bauhaus-black rounded-2xl p-4 mb-6 flex gap-3">
                 <AlertCircle className="w-5 h-5 text-bauhaus-black shrink-0 mt-0.5" />
                 <div className="text-sm text-bauhaus-black">
-                    <div className="font-bold">薪資金額、姓名與級別不需要您填寫</div>
+                    <div className="font-bold">報酬金額、姓名與級別不需要您填寫</div>
                     <div className="text-bauhaus-black/70 mt-0.5 text-xs">
                         系統會依課程類型選用一般等級或速解資格試算。若資格或報酬規則尚未齊全，
                         仍可送出，金額會顯示「待核薪」交由管理員處理，不會記成 0 元。同一堂課請只在站內或舊表單擇一回報。
@@ -255,6 +273,12 @@ const MySalaryNew = () => {
                         </ul>
                     </Field>
 
+                    <Field label="上課日期 *" icon={Calendar}>
+                        <input type="date" min={SALARY_VISIBLE_FROM} max={TAIPEI_TODAY} required value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
+                            className="bh-input" aria-label="上課日期" />
+                        {layout === 'b2b' && <span className="block text-xs text-bauhaus-black/50 mt-1">當日課程日期，不是填寫日期。</span>}
+                    </Field>
+
                     {channelCategories.length > 1 && (
                         <Field label={layout === 'other' ? '課程類型 *' : '課程種類 *'}>
                             <select value={courseCategory} aria-label="課程種類"
@@ -275,31 +299,33 @@ const MySalaryNew = () => {
                         </Field>
                     )}
 
-                    <Field label="上課日期 *" icon={Calendar}>
-                        <input type="date" min={SALARY_VISIBLE_FROM} max={TAIPEI_TODAY} required value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}
-                            className="bh-input" aria-label="上課日期" />
-                        {layout === 'b2b' && <span className="block text-xs text-bauhaus-black/50 mt-1">當日課程日期，不是填寫日期。</span>}
-                    </Field>
-
                     {reportGroup === 'collab' && (
                         <>
                             <Field label="請點選目前教學課程期間 *" icon={Calendar}>
-                                <select value={extras.term_period} onChange={e => updateExtras({ term_period: e.target.value })}
+                                <select value={extras.term_period} onChange={e => pickTermPeriod(e.target.value)}
                                     className="bh-input" aria-label="教學課程期間">
                                     <option value="">請選擇寒假、學期間或暑假</option>
                                     {termPeriodChoices(reportOptions).map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                                 </select>
                             </Field>
-                            <OptionPicker
-                                label="本次上課單位名稱 *"
-                                ariaLabel="本次上課單位"
-                                icon={Building2}
-                                options={reportOptions.partner_unit}
-                                placeholder="請選擇合作單位"
-                                otherPlaceholder="清單沒有時，請填寫單位全名與班別"
-                                extras={extras}
-                                onChange={updateExtras}
-                            />
+                            {termScope ? (
+                                <OptionPicker
+                                    label={`本次上課單位名稱 *（${TERM_SCOPE_LABELS[termScope]}）`}
+                                    ariaLabel="本次上課單位"
+                                    icon={Building2}
+                                    options={partnerUnits}
+                                    placeholder="請選擇合作單位"
+                                    otherPlaceholder="清單沒有時，請填寫單位全名與班別"
+                                    extras={extras}
+                                    onChange={updateExtras}
+                                />
+                            ) : (
+                                <Field label="本次上課單位名稱 *" icon={Building2} full>
+                                    <select value="" disabled className="bh-input opacity-60" aria-label="本次上課單位">
+                                        <option value="">請先選擇教學課程期間，再選單位</option>
+                                    </select>
+                                </Field>
+                            )}
                         </>
                     )}
 

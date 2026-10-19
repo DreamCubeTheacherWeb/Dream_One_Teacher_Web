@@ -125,7 +125,7 @@ async function handleRoute(route) {
     if (url.pathname.startsWith('/rest/v1/')) {
         const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
         const acceptsObject = ((await request.allHeaders()).accept || '').includes('vnd.pgrst.object+json');
-        // 後台薪資登記頁 2026-10-19 起用 HEAD＋count=exact 向伺服器要全庫待辦數（只讀，不算寫入）
+        // 後台報酬登記頁 2026-10-19 起用 HEAD＋count=exact 向伺服器要全庫待辦數（只讀，不算寫入）
         if (request.method() === 'HEAD' && table === 'class_sessions') {
             const rows = (appRole === 'admin' ? [salarySession] : []).filter(row => ['status', 'pricing_status', 'is_anomaly']
                 .every(column => !url.searchParams.get(column) || url.searchParams.get(column) === `eq.${row[column]}`));
@@ -256,13 +256,13 @@ async function run() {
         context = await contextFor(browser);
         page = await context.newPage();
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        check('管理端薪資登記頁已啟用', await page.getByRole('heading', { name: '薪資登記中心' }).isVisible());
+        check('管理端報酬登記頁已啟用', await page.getByRole('heading', { name: '報酬登記中心' }).isVisible());
         check('管理端沒有未啟用遮罩', await page.getByText('尚未啟用，敬請期待').count() === 0);
         check('管理端優先顯示待核薪紀錄', await page.getByText('待核薪').first().isVisible());
-        await page.locator('tr[aria-label="開啟 速解測試老師 2026-08-14 薪資紀錄"]').click();
-        await page.getByRole('heading', { name: '審核 / 編輯薪資紀錄' }).waitFor();
-        check('管理端可開啟審核與重新試算', await page.getByRole('heading', { name: '審核 / 編輯薪資紀錄' }).isVisible());
-        await page.getByRole('button', { name: '關閉薪資紀錄' }).click();
+        await page.locator('tr[aria-label="開啟 速解測試老師 2026-08-14 報酬紀錄"]').click();
+        await page.getByRole('heading', { name: '審核 / 編輯報酬紀錄' }).waitFor();
+        check('管理端可開啟審核與重新試算', await page.getByRole('heading', { name: '審核 / 編輯報酬紀錄' }).isVisible());
+        await page.getByRole('button', { name: '關閉報酬紀錄' }).click();
         await page.screenshot({ path: '/tmp/dream-one-salary-admin-desktop.png', fullPage: true });
         await context.close();
 
@@ -279,9 +279,9 @@ async function run() {
         await page.screenshot({ path: '/tmp/dream-one-salary-report-mobile.png', fullPage: true });
         appRole = 'admin';
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        await page.getByRole('heading', { name: '薪資登記中心' }).waitFor();
+        await page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
         const adminOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-        check('390px 薪資登記中心無水平溢出', adminOverflow === 0);
+        check('390px 報酬登記中心無水平溢出', adminOverflow === 0);
         await page.screenshot({ path: '/tmp/dream-one-salary-admin-mobile.png', fullPage: true });
         await context.close();
     } finally {
