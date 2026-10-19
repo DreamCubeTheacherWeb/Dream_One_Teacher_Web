@@ -47,12 +47,19 @@ export class Results {
     console.log(`BLOCKED  ${this.prefix}${name}${detail ? ` — ${detail}` : ''}`);
   }
 
+  // 已知問題：app／SQL 的 bug 或產品缺口，測試用替代路徑繼續；不算 FAIL，但每次都會印出來
+  known(name, detail = '') {
+    if (this.items.some((item) => item.status === 'KNOWN' && item.name === name)) return;
+    this.items.push({ name, status: 'KNOWN', detail });
+    console.log(`KNOWN-ISSUE  ${this.prefix}${name}${detail ? ` — ${detail}` : ''}`);
+  }
+
   note(text) {
     console.log(`NOTE  ${this.prefix}${text}`);
   }
 
   counts() {
-    const out = { PASS: 0, FAIL: 0, BLOCKED: 0 };
+    const out = { PASS: 0, FAIL: 0, BLOCKED: 0, KNOWN: 0 };
     for (const item of this.items) out[item.status] += 1;
     return out;
   }

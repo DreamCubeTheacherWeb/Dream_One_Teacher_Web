@@ -252,6 +252,7 @@ export async function scenarioA(ctx) {
     await s.page.waitForURL(/\/profile$/);
     await waitProfileLoaded(s.page);
     r.check('A 選「新建帳號」進 /profile，看到首次註冊提示', await visible(s.page.getByText('填寫完下方資料後才算完成註冊')));
+    r.check('A /profile 顯示擋門橫幅「還缺 N 項講師資料」', await visible(s.page.getByText(/還缺 \d+ 項講師資料/)));
     r.check('A /profile 預填 Google 姓名與登入 Email',
       await fieldControl(s.page, '姓名').inputValue() === fullName && await fieldControl(s.page, '主要 Email').inputValue() === user.email);
 
@@ -304,7 +305,7 @@ export async function scenarioA(ctx) {
     await sleep(2500);
     const landed = new URL(s.page.url()).pathname;
     if (landed !== '/courses') {
-      ctx.findings.add(`A（小 UX）：已核准的老師在 /pending 按瀏覽器重新整理，會落在首頁「${landed}」而不是 /courses——src/pages/PendingApproval.jsx:37 在 AuthContext 還在載入（user 尚未就緒）時就 <Navigate to="/" />，第 38 行的「已核准→/courses」沒機會執行。老師仍可從選單進課程。`);
+      ctx.known('A 已核准老師整頁重新整理 /pending 落在首頁', `A［UX 小 bug］已核准的老師在 /pending 按瀏覽器重新整理，會落在首頁「${landed}」而不是 /courses——src/pages/PendingApproval.jsx:37 在 AuthContext 還在載入（user 尚未就緒）時就 <Navigate to="/" />，第 38 行的「已核准→/courses」沒機會執行。老師仍可從選單進課程。重現：老師在「帳號審核中」頁被核准後按 F5。`);
     }
     const seenA2 = await seeSeededCourse(ctx, s);
     r.check('A 老師整頁重新整理後直接開 /courses 也看得到課程', seenA2.ok, seenA2.detail);
@@ -345,7 +346,7 @@ export async function scenarioB(ctx) {
 
     await waitProfileLoaded(s.page);
     if (!(await visible(s.page.getByText('已找到並認領您的講師主檔'), 3000))) {
-      ctx.findings.add('B（小 UX）：姓名認領成功後的 /profile 沒有「已找到並認領您的講師主檔」橫幅——refreshProfile 再呼叫 claim_my_precreated_instructor 時回 claimed_now=false（src/pages/ProfilePage.jsx:536 只在 claimed_now 為真時顯示），老師只看到「還缺 N 項」。');
+      ctx.known('B 姓名認領後沒有「已認領」橫幅', 'B［UX 小缺口］姓名認領成功後的 /profile 沒有「已找到並認領您的講師主檔」橫幅——refreshProfile 再呼叫 claim_my_precreated_instructor 時回 claimed_now=false（src/pages/ProfilePage.jsx:536 只在 claimed_now 為真時顯示），老師只看到「還缺 N 項」。');
     }
     r.check('B ProfileCompleteGate 顯示缺項橫幅', await visible(s.page.getByText(/還缺 \d+ 項講師資料/)));
     await shot(s.page, ctx.shotsDir, 'B-02-profile-gate');
@@ -369,7 +370,7 @@ export async function scenarioB(ctx) {
     let sign = await signContractUI(ctx, s, user, 'B');
     if (sign.roleMissing) {
       await shot(s.page, ctx.shotsDir, 'B-04-contract-role-missing');
-      ctx.findings.add('B：管理員只填姓名建立的空位沒有講師等級（instructor_role 為 NULL）；老師認領並填完資料後，合約頁顯示「尚無法簽署：您的講師等級尚未設定」，要管理員另外設定等級才能簽約。');
+      ctx.known('B 空位沒有講師等級→不能簽約', 'B［產品缺口］管理員只填姓名建立的空位沒有講師等級（instructor_role 為 NULL）；老師認領並填完資料後，合約頁顯示「尚無法簽署：您的講師等級尚未設定」，要管理員另外設定等級才能簽約（src/pages/ContractSigningFlow.jsx:169 roleMissing；trigger guard_instructor_role 只在老師自己 INSERT 時預設「實習」，管理員建立的空位不會）。');
       r.note('B 合約頁顯示「講師等級尚未設定」→ 管理員以 REST 設定等級「實習」後重試');
       const patch = await ctx.api.rest(ctx.base.admin.token, 'PATCH', `instructors?id=eq.${slot.id}`, { body: { instructor_role: '實習' } });
       r.check('B 管理員補設講師等級', patch.status === 204, `HTTP ${patch.status}`);
@@ -482,7 +483,8 @@ export async function scenarioD(ctx) {
     const outcome = await pollUntil(() => s.dialogs.slice(before).find((d) => /個人資料已儲存|儲存失敗/.test(d.message)), { timeoutMs: 15000 });
     const savedWithLegacyEmail = outcome?.message.includes('個人資料已儲存');
     if (!savedWithLegacyEmail) {
-      ctx.findings.add(`D：用「姓名＋手機＋末四碼」認領舊講師後，主要 Email 保持舊資料上的信箱就無法儲存個人資料（${outcome?.message || '無回應'}）。要把主要 Email 改成目前登入的 Google 信箱才能存。`);
+      ctx.known('D 舊講師保留舊 Email 存不了個人資料', `D［bug］用「姓名＋手機＋末四碼」認領舊講師後，主要 Email 保持舊資料上的信箱就無法儲存個人資料（${outcome?.message || '無回應'}）。要把主要 Email 改成目前登入的 Google 信箱才能存。`);
+      ctx.dEmailBug = true;
       r.note(`D 保留舊 Email 儲存失敗：${outcome?.message}；改用登入信箱再存一次`);
       await fieldControl(s.page, '主要 Email').fill(user.email);
       const again = s.dialogs.length;
@@ -493,6 +495,28 @@ export async function scenarioD(ctx) {
     r.check('D 舊講師補完資料後主檔完整（同一列）', after?.id === legacy.id && after.bankbook_path && after.bank_account_number === data.bank_account_number);
     const seenD = await seeSeededCourse(ctx, s);
     r.check('D 補完資料後能進課程', seenD.ok, seenD.detail);
+
+    // 根因探針（REST）：另一位舊講師用同樣方式認領後，PATCH（純更新）可以；
+    // 但 ProfilePage 用的 upsert（POST …?on_conflict=user_id）會先觸發 BEFORE INSERT trigger 而被擋。
+    const legacy2Email = `legacy-probe-${ctx.base.runTag}@old-mail.example`;
+    await adminCreateInstructor(ctx.api, ctx.base.admin, {
+      full_name: '舊資料探針老師', phone_mobile: '0922-000-111', id_number: 'E212345678',
+      email_primary: legacy2Email, employment_status: 'active',
+    });
+    const probeUser = await newUser(ctx, 'd-probe', 'Probe');
+    const probeClaim = await ctx.api.rpc(probeUser.token, 'claim_existing_instructor_by_identity', {
+      provided_full_name: '舊資料探針老師', provided_phone_mobile: '0922000111', provided_id_last_four: '5678',
+    });
+    const probePatch = await ctx.api.rest(probeUser.token, 'PATCH', `instructors?user_id=eq.${probeUser.id}`, { body: { line_id: 'probe-patch' } });
+    const probeUpsert = await ctx.api.rest(probeUser.token, 'POST', 'instructors?on_conflict=user_id', {
+      body: { user_id: probeUser.id, full_name: '舊資料探針老師', email_primary: legacy2Email, line_id: 'probe-upsert' },
+      prefer: 'resolution=merge-duplicates,return=minimal',
+    });
+    r.check('D 探針：舊講師認領後 PATCH 自己的列（保留舊 Email）可以成功', probeClaim.data?.status === 'claimed' && probePatch.status === 204,
+      `claim=${JSON.stringify(probeClaim.data)} PATCH=${probePatch.status}`);
+    if (probeUpsert.status !== 201) {
+      ctx.known('D 舊講師 upsert 被 BEFORE INSERT trigger 擋', `D［bug 根因］同一列用 PATCH 更新成功，但用 ProfilePage 的 upsert（src/pages/ProfilePage.jsx:461 .upsert(payload, { onConflict: 'user_id' })）就回 HTTP ${probeUpsert.status}「${probeUpsert.data?.message}」：PostgreSQL 的 INSERT … ON CONFLICT 會先跑 BEFORE INSERT trigger，guard_instructor_identity_email 的 INSERT 分支（supabase/migrations/20260826140000_recover_existing_instructor_identity_claim.sql:354-358）要求 email_primary＝登入信箱，所以舊講師主檔上的舊信箱整筆被拒。`);
+    }
   } finally {
     ctx.consoleErrors.push(...s.consoleErrors.map((e) => `D: ${e}`));
     await s.context.close();
@@ -625,6 +649,36 @@ export async function scenarioF(ctx) {
   r.check('F 講師 SELECT instructors 只看得到自己那一列', asTeacher.status === 200 && asTeacher.data.length === 1 && asTeacher.data[0].user_id === teacherUser.id, `看到 ${asTeacher.data?.length} 列`);
   r.check('F pending 讀不到任何未認領空位', asPending.status === 200 && asPending.data.length === 0 && unclaimed > 0, `未認領空位共 ${unclaimed}`);
   r.check('F 未登入讀不到任何空位', (asAnon.status === 200 && asAnon.data.length === 0) || [401, 403].includes(asAnon.status), `HTTP ${asAnon.status}`);
+
+  // F10 Storage RLS（假 Storage 以呼叫者身分寫 storage.objects，政策真的生效）
+  const owner = await newUser(ctx, 'f-file-owner', 'F10 檔案主人');
+  const other = await newUser(ctx, 'f-file-other', 'F10 旁人');
+  const ownPath = `instructors/${owner.id}/id_front/${Date.now()}.png`;
+  const upload = (u, bucket, objectPath, body, type = 'image/png') => api.request(u?.token || null, 'POST', `/storage/v1/object/${bucket}/${objectPath}`, {
+    raw: body, headers: { 'content-type': type },
+  });
+  const ownUp = await upload(owner, 'instructor_uploads', ownPath, samplePng('owner'));
+  r.check('F 本人可上傳到自己的 instructors/<uid>/ 資料夾', ownUp.status === 200, `HTTP ${ownUp.status} ${JSON.stringify(ownUp.data)}`);
+  const intrude = await upload(other, 'instructor_uploads', `instructors/${owner.id}/id_front/evil.png`, samplePng('evil'));
+  r.check('F 別人不能上傳到他人的證件資料夾（403）', intrude.status === 403, `HTTP ${intrude.status}`);
+  const readOther = await api.request(other.token, 'GET', `/storage/v1/object/authenticated/instructor_uploads/${ownPath}`);
+  const signOther = await api.request(other.token, 'POST', `/storage/v1/object/sign/instructor_uploads/${ownPath}`, { body: { expiresIn: 60 } });
+  r.check('F 別人讀不到、也簽不出他人的證件檔', readOther.status === 400 && signOther.status === 400, `GET=${readOther.status} sign=${signOther.status}`);
+  const adminRead = await api.request(ctx.base.admin.token, 'GET', `/storage/v1/object/authenticated/instructor_uploads/${ownPath}`);
+  r.check('F 對照組：管理員讀得到同一個檔（證明上面是 RLS 擋下，不是路徑錯）', adminRead.status === 200, `HTTP ${adminRead.status}`);
+  const delOther = await api.request(other.token, 'DELETE', '/storage/v1/object/instructor_uploads', { body: { prefixes: [ownPath] } });
+  const stillThere = api.sql(`SELECT count(*) FROM storage.objects WHERE bucket_id = 'instructor_uploads' AND name = :'n'`, { n: ownPath });
+  r.check('F 別人刪不掉他人的證件檔', delOther.status === 200 && Array.isArray(delOther.data) && delOther.data.length === 0 && stillThere === '1', `HTTP ${delOther.status} 刪除 ${delOther.data?.length} 筆`);
+  const template = await upload(other, 'contract-documents', `templates/evil-${Date.now()}.pdf`, Buffer.from('%PDF-1.4 evil'), 'application/pdf');
+  r.check('F 老師不能上傳合約範本（只有管理員）', template.status === 403, `HTTP ${template.status}`);
+  const otherSigned = await upload(other, 'contract-documents', `signed/${owner.id}/fake.png`, samplePng('fake-sign'));
+  r.check('F 老師不能把簽名檔放進別人的 signed/<uid>/ 資料夾', otherSigned.status === 403, `HTTP ${otherSigned.status}`);
+  const anonUp = await api.request(null, 'POST', `/storage/v1/object/instructor_uploads/instructors/${owner.id}/id_back/anon.png`, {
+    raw: samplePng('anon'), headers: { 'content-type': 'image/png' },
+  });
+  r.check('F 未登入不能上傳', anonUp.status === 403, `HTTP ${anonUp.status}`);
+  const wrongType = await upload(owner, 'instructor_uploads', `instructors/${owner.id}/id_back/x.pdf`, Buffer.from('%PDF-1.4'), 'application/pdf');
+  r.check('F 證件 bucket 拒收非圖片檔（bucket allowed_mime_types）', wrongType.status === 415, `HTTP ${wrongType.status}`);
 
   // 額外：太長的姓名、空白姓名
   const longName = await claim(fresh, '名'.repeat(51));

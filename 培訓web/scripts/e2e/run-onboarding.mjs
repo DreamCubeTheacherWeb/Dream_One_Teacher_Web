@@ -60,6 +60,8 @@ async function runOnce(runIndex) {
     const base = await seedBaseline(activeStack, api);
     activeBrowser = await launchBrowser(appDir);
     const ctx = { stack: activeStack, api, base, browser: activeBrowser, r, shotsDir, findings, consoleErrors, run: runIndex };
+    // 已知問題：同時進「發現」清單與 KNOWN-ISSUE 計數
+    ctx.known = (title, text) => { findings.add(text); r.known(title); };
     for (const key of only) {
       const fn = SCENARIOS[key];
       if (!fn) {
@@ -78,7 +80,7 @@ async function runOnce(runIndex) {
     const rpcErrors = activeStack.gateway.requests.filter((req) => req.status >= 500);
     r.check('閘道沒有任何 5xx 回應', rpcErrors.length === 0, rpcErrors.slice(0, 5).map((x) => `${x.method} ${x.path} ${x.status}`).join('; '));
     if (findings.size) {
-      console.log('\n發現（行為紀錄，非斷言）：');
+      console.log('\n發現（已知問題與設計行為紀錄，非斷言）：');
       for (const finding of findings) console.log(`  - ${finding}`);
     }
     const noisy = consoleErrors.filter((line) => !/Failed to load resource|favicon/i.test(line));
@@ -93,7 +95,7 @@ async function runOnce(runIndex) {
     activeStack = null;
   }
   const counts = r.counts();
-  console.log(`\nRUN ${runIndex} 結果：PASS ${counts.PASS}／FAIL ${counts.FAIL}／BLOCKED ${counts.BLOCKED}（共 ${r.items.length} 項）`);
+  console.log(`\nRUN ${runIndex} 結果：PASS ${counts.PASS}／FAIL ${counts.FAIL}／BLOCKED ${counts.BLOCKED}／已知問題 ${counts.KNOWN}（共 ${r.items.length} 項）`);
   return counts;
 }
 
@@ -105,12 +107,12 @@ for (let i = 1; i <= runs; i += 1) {
   } catch (error) {
     fatal = true;
     console.error(`RUN ${i} 無法完成：${error.stack || error.message}`);
-    totals.push({ PASS: 0, FAIL: 1, BLOCKED: 0 });
+    totals.push({ PASS: 0, FAIL: 1, BLOCKED: 0, KNOWN: 0 });
   }
 }
 console.log('\n════════ 總結 ════════');
-totals.forEach((c, i) => console.log(`RUN ${i + 1}: PASS ${c.PASS} / FAIL ${c.FAIL} / BLOCKED ${c.BLOCKED}`));
-const sum = totals.reduce((acc, c) => ({ PASS: acc.PASS + c.PASS, FAIL: acc.FAIL + c.FAIL, BLOCKED: acc.BLOCKED + c.BLOCKED }), { PASS: 0, FAIL: 0, BLOCKED: 0 });
-console.log(`TOTAL: PASS ${sum.PASS} / FAIL ${sum.FAIL} / BLOCKED ${sum.BLOCKED}（${runs} 次）`);
+totals.forEach((c, i) => console.log(`RUN ${i + 1}: PASS ${c.PASS} / FAIL ${c.FAIL} / BLOCKED ${c.BLOCKED} / KNOWN-ISSUE ${c.KNOWN}`));
+const sum = totals.reduce((acc, c) => ({ PASS: acc.PASS + c.PASS, FAIL: acc.FAIL + c.FAIL, BLOCKED: acc.BLOCKED + c.BLOCKED, KNOWN: acc.KNOWN + c.KNOWN }), { PASS: 0, FAIL: 0, BLOCKED: 0, KNOWN: 0 });
+console.log(`TOTAL: PASS ${sum.PASS} / FAIL ${sum.FAIL} / BLOCKED ${sum.BLOCKED} / KNOWN-ISSUE ${sum.KNOWN}（${runs} 次；KNOWN-ISSUE 不影響結束碼）`);
 console.log(`截圖：${shotsDir}`);
 process.exit(fatal || sum.FAIL > 0 || sum.BLOCKED > 0 ? 1 : 0);
