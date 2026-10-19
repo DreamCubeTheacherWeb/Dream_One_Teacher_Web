@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, BookOpen, Users, Clock, MessageSquare, AlertCircle, Send, ArrowLeft, Building2, Package, Car, Tent } from 'lucide-react';
-import { COURSE_LABELS, ROLE_LABELS, speedQualificationLabel } from '../lib/constants';
+import { COURSE_LABELS, REPORT_CHANNELS, ROLE_LABELS, categoriesInChannel, courseCategoryFor, courseTypesInCategory, reportChannelFor, speedQualificationLabel } from '../lib/constants';
 import { getSalaryQuote, salaryErrorMessage, taipeiToday } from '../lib/salary';
 import SalaryQuotePanel from '../components/SalaryQuotePanel';
 import {
@@ -164,6 +164,9 @@ const MySalaryNew = () => {
 
     const progressRequired = PROGRESS_REQUIRED_COURSES.has(form.course_type);
     const reportGroup = reportGroupFor(form.course_type);
+    const courseCategory = courseCategoryFor(form.course_type);
+    const reportChannel = reportChannelFor(form.course_type);
+    const courseItems = courseTypesInCategory(courseCategory);
     const updateExtras = (patch) => setExtras(current => ({ ...current, ...patch }));
 
     return (
@@ -199,12 +202,36 @@ const MySalaryNew = () => {
             <form className="bh-card p-4 sm:p-6 space-y-5" onSubmit={submit} noValidate>
                 {/* 課程基本資訊 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Field label="課程類型 *" icon={BookOpen}>
-                        <select value={form.course_type} onChange={e => setForm({ ...form, course_type: e.target.value })}
+                    <Field label="回報類別 *" icon={BookOpen} full>
+                        <select value={reportChannel} aria-label="回報類別"
+                            onChange={e => setForm({ ...form, course_type: categoriesInChannel(e.target.value)[0]?.types[0] || form.course_type })}
                             className="bh-input">
-                            {Object.entries(COURSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                            {REPORT_CHANNELS.map(channel => <option key={channel.key} value={channel.key}>{channel.label}</option>)}
+                        </select>
+                        <ul className="mt-2 space-y-0.5 text-xs text-bauhaus-black/60 font-medium">
+                            {REPORT_CHANNELS.map(channel => (
+                                <li key={channel.key}><span className="font-bold text-bauhaus-black/80">{channel.label}</span>：{channel.hint}</li>
+                            ))}
+                        </ul>
+                    </Field>
+
+                    <Field label="課程類型 *">
+                        <select value={courseCategory} aria-label="課程類型"
+                            onChange={e => setForm({ ...form, course_type: courseTypesInCategory(e.target.value)[0] || form.course_type })}
+                            className="bh-input">
+                            {categoriesInChannel(reportChannel).map(category => <option key={category.key} value={category.key}>{category.label}</option>)}
                         </select>
                     </Field>
+
+                    {courseItems.length > 1 ? (
+                        <Field label="報酬項目 *">
+                            <select value={form.course_type} aria-label="報酬項目"
+                                onChange={e => setForm({ ...form, course_type: e.target.value })}
+                                className="bh-input">
+                                {courseItems.map(k => <option key={k} value={k}>{COURSE_LABELS[k] || k}</option>)}
+                            </select>
+                        </Field>
+                    ) : <div className="hidden sm:block" aria-hidden="true" />}
 
                     <Field label="日期 *" icon={Calendar}>
                         <input type="date" min={SALARY_VISIBLE_FROM} max={TAIPEI_TODAY} required value={form.session_date} onChange={e => setForm({ ...form, session_date: e.target.value })}

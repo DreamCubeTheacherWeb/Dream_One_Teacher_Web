@@ -1,9 +1,37 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-19（回報頁改三層選單 B2B／B2C→課程類型→報酬項目，已改完並本機實測、**尚未 commit／上線**；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
+
+## 🧭 2026-10-19：回報頁課程類型改三層選單（B2B／B2C → 課程類型 → 報酬項目）（🛠 已改完＋本機實測，尚未 commit／上線）
+
+**需求**：業主 2026-10-19 看回報頁截圖：課程類型應是常態課、營隊、到府課、合作單位、線上課程、速解課、站櫃；合作單位要像 Google 表單那樣
+選了才跑出單位下拉、選項後台可管。隨後改口：「照我本來給你的 Sheet，讓大家填寫格式和本來一樣，上面多一個選項是 b2b b2c，然後後面備注
+什麼樣的課程類型應該要選哪一個」，並給了 B2C 表單連結（`forms/d/e/1FAIpQLScKSEUXDctk1cqB7UqDc7CwY9I0g8e6T1XBaX-52c6C5GdTjg`）。
+
+**現況釐清**：合作單位下拉與 78 筆選項 10/18 已照 sheet 做好、後台 `/admin/salary/options` 可管；截圖裡沒出現是因為當時選的是
+「實體常態-初階」，只有合作課型才會顯示。問題出在第一格「課程類型」直接列 27 個報酬規則代碼，講師看不出合作課在哪。
+
+**做法（純前端，無 migration，`class_sessions.course_type` 照舊存報酬規則代碼）**：`src/lib/constants.js` 新增 `REPORT_CHANNELS`
+（B2C 直營課程／B2B 合作單位，各附備註）、`COURSE_CATEGORIES`（課程類型用表單用語：常態課、到府家教課／到府揪團課、線上課程、體驗課、
+速解研究所｜實體課程、速解研究所｜線上課程、寒暑假營隊、站櫃／擺攤、其他；B2B 只有合作單位課程）與查詢函式。`MySalaryNew.jsx` 第一格改
+「回報類別」並在下方列兩行備註，第二格「課程類型」依類別過濾，第三格「報酬項目」只在該類型有多個報酬規則時出現（體驗課、速解線上只有一個
+就自動帶入不顯示）；切換類別或類型時自動落到該組第一個項目，期間／單位／梯次／交通補助等條件欄位照舊依 course_type 判斷。
+後台登記頁與列表未動（管理員仍用完整 27 項）。**分組是我先排的，待業主確認**：速解營隊放「寒暑假營隊」、幼兒啟蒙放「常態課」、
+擺攤與站櫃同組、認證助裁／特殊講座／其他放「其他」。
+
+**驗證（主對話 2026-10-19 親跑）**：`npm test` 74/74（新增 `constants.test.js`：每個 course_type 恰屬一類、合作課全在 B2B）；
+`npm run verify:salary-report-form:browser`（mock Supabase＋本機 dev，沙盒外）37/37，含新增 7 項（預設 B2C、備註兩行、B2C 類型清單
+照表單用語、常態課顯示第三層、體驗課隱藏第三層、切 B2B 立即出現上課單位與期間、切回 B2C 回到初階）＋原 30 項全過；
+`npm run build` 通過；變更檔 ESLint 0 問題；`git diff --check` 乾淨。截圖 9 張在 `培訓web/docs/verification/2026-10-19-salary-report-form-channel/`，
+由 sonnet agent 判讀：桌機 B2B／B2C 與 390px 皆無破版、備註可讀（截圖 2 底部的紅色錯誤條是腳本先填 501 觸發、再改 12.35 未重送的殘留訊息，10/18 版亦同，非本次引入）。
+
+**待辦／注意**：① 業主確認分組；② 使用者點頭後 commit、推 main 自動部署（純前端，無上線順序問題）；③ 本 worktree 另有一批
+「合約文件讀取權限收緊」的未提交檔（`20261019103000_restrict_contract_document_reads.sql`、featureFlags、contracts_setup.sql、
+verify-contract-document-reads.*、package.json），屬另一條工作線，commit 時只挑本次檔案：`constants.js`、`constants.test.js`、
+`MySalaryNew.jsx`、`verify-salary-report-form-browser.mjs`、新截圖目錄、STATUS.md。
 
 ## ✍️ 2026-10-18：講師簽約正式重開——受控寫入 RPC＋恢復 Email 身分驗證（✅ 正式環境已上線 2026-10-19）
 

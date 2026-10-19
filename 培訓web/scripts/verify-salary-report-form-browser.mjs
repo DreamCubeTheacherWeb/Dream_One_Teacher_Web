@@ -11,8 +11,9 @@ const require = createRequire(import.meta.url);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
 const { chromium } = require(path.join(appDir, 'node_modules/playwright-core'));
+const { courseCategoryFor, courseTypesInCategory, reportChannelFor } = await import(path.join(appDir, 'src/lib/constants.js'));
 const chromeExecutable = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const shotDir = path.join(appDir, 'docs/verification/2026-10-18-salary-report-form');
+const shotDir = path.join(appDir, 'docs/verification/2026-10-19-salary-report-form-channel');
 mkdirSync(shotDir, { recursive: true });
 
 const env = Object.fromEntries(readFileSync(path.join(appDir, '.env'), 'utf8')
@@ -184,7 +185,13 @@ async function openReport(page, base) {
     await page.getByRole('heading', { name: '登記課程回報' }).waitFor();
 }
 
-const courseSelect = (page) => page.locator('select:has(option[value="collab_lead"])');
+// 2026-10-19 起回報頁改三層：回報類別（B2B／B2C）→ 課程類型（表單用語）→ 報酬項目（course_type，單一項目時不顯示）
+async function pickCourse(page, courseType) {
+    const categoryKey = courseCategoryFor(courseType);
+    await page.getByLabel('回報類別').selectOption(reportChannelFor(courseType));
+    await page.getByLabel('課程類型').selectOption(categoryKey);
+    if (courseTypesInCategory(categoryKey).length > 1) await page.getByLabel('報酬項目').selectOption(courseType);
+}
 
 async function run() {
     const port = await reservePort();
@@ -211,6 +218,28 @@ async function run() {
         let page = await context.newPage();
         await openReport(page, base);
 
+        // 三層選單：回報類別 → 課程類型 → 報酬項目
+        const optionLabels = async (label) => page.getByLabel(label).locator('option').allInnerTexts();
+        check('回報類別預設 B2C 直營，選項為 B2C／B2B', await page.getByLabel('回報類別').inputValue() === 'b2c'
+            && JSON.stringify(await optionLabels('回報類別')) === JSON.stringify(['B2C 直營課程', 'B2B 合作單位']));
+        check('回報類別下方有兩行備註說明哪種課選哪個',
+            await page.getByText('公司自己開的課：到府家教課／揪團課').isVisible() && await page.getByText('學校、社團、機構等合作單位委託的課').isVisible());
+        check('B2C 的課程類型照表單用語', JSON.stringify(await optionLabels('課程類型')) === JSON.stringify([
+            '常態課', '到府家教課／到府揪團課', '線上課程', '體驗課', '速解研究所｜實體課程', '速解研究所｜線上課程', '寒暑假營隊', '站櫃／擺攤', '其他']));
+        check('常態課有多個報酬項目時顯示第三層', await page.getByLabel('報酬項目').isVisible()
+            && JSON.stringify(await optionLabels('報酬項目')) === JSON.stringify(['實體常態-初階', '實體常態-進階', '幼兒啟蒙 主講', '幼兒啟蒙 助教']));
+        await page.getByLabel('課程類型').selectOption('trial');
+        check('體驗課只有一個報酬項目時第三層自動帶入並隱藏', await page.getByLabel('報酬項目').count() === 0);
+        await page.getByLabel('回報類別').selectOption('b2b');
+        check('切到 B2B 後課程類型只剩合作單位課程、報酬項目為主講／助教／專案且立即出現上課單位下拉',
+            JSON.stringify(await optionLabels('課程類型')) === JSON.stringify(['合作單位課程'])
+            && JSON.stringify(await optionLabels('報酬項目')) === JSON.stringify(['合作 主講', '合作 助教', '合作 專案'])
+            && await page.getByLabel('本次上課單位').isVisible() && await page.getByLabel('教學課程期間').isVisible());
+        await page.screenshot({ path: path.join(shotDir, 'desktop-channel-b2b.png'), fullPage: true });
+        await page.getByLabel('回報類別').selectOption('b2c');
+        check('切回 B2C 回到常態課初階', await page.getByLabel('課程類型').inputValue() === 'regular'
+            && await page.getByLabel('報酬項目').inputValue() === 'regular_basic');
+
         // 直營（預設常態課）→ 只顯示交通補助
         await page.getByPlaceholder('今天教到哪個段落、下一場預計教什麼…').fill('教到第一層十字');
         check('直營課顯示交通補助開關', await page.getByLabel('申請交通補助').isVisible());
@@ -230,7 +259,7 @@ async function run() {
         await page.screenshot({ path: path.join(shotDir, 'desktop-direct-transport.png'), fullPage: true });
 
         // 合作課 → 期間＋單位＋教材，交通補助隱藏
-        await courseSelect(page).selectOption('collab_lead');
+        await pickCourse(page, 'collab_lead');
         check('合作課顯示教學課程期間／上課單位／教材數量',
             await page.getByLabel('教學課程期間').isVisible()
             && await page.getByLabel('本次上課單位').isVisible()
@@ -260,7 +289,7 @@ async function run() {
 
         // 營隊 → 只顯示營隊梯次
         await openReport(page, base);
-        await courseSelect(page).selectOption('camp');
+        await pickCourse(page, 'camp');
         check('營隊顯示營隊梯次與交通補助、不顯示期間／教材',
             await page.getByLabel('營隊梯次').isVisible()
             && await page.getByLabel('教學課程期間').count() === 0
@@ -281,7 +310,7 @@ async function run() {
 
         // 直營到府＋交通補助
         await openReport(page, base);
-        await courseSelect(page).selectOption('onsite_1_5hr');
+        await pickCourse(page, 'onsite_1_5hr');
         await page.getByLabel('申請交通補助').check();
         await page.getByLabel('單趟公里數').fill('12.35');
         await page.getByRole('button', { name: '送出回報' }).click();
@@ -298,7 +327,7 @@ async function run() {
         context = await contextFor(browser, { width: 1280, height: 900 });
         page = await context.newPage();
         await openReport(page, base);
-        await courseSelect(page).selectOption('collab_lead');
+        await pickCourse(page, 'collab_lead');
         check('選項讀取失敗時上課單位改為文字輸入', await page.locator('input[aria-label="本次上課單位"]').isVisible());
         check('選項讀取失敗時教學期間仍有內建三個選項', (await page.getByLabel('教學課程期間').locator('option').count()) === 4);
         await page.getByLabel('教學課程期間').selectOption('summer_break');
@@ -317,11 +346,11 @@ async function run() {
         await page.getByLabel('申請交通補助').check();
         check('390px 直營＋交通補助無水平溢出', (await overflowOf(page)) === 0);
         await page.screenshot({ path: path.join(shotDir, 'mobile-390-direct.png'), fullPage: true });
-        await courseSelect(page).selectOption('collab_lead');
+        await pickCourse(page, 'collab_lead');
         await page.getByLabel('本次上課單位').selectOption('【屏東 週日】115上0906永齡希望小學屏東分校講師培訓活動');
         check('390px 合作課（選最長單位名）無水平溢出', (await overflowOf(page)) === 0);
         await page.screenshot({ path: path.join(shotDir, 'mobile-390-collab.png'), fullPage: true });
-        await courseSelect(page).selectOption('camp');
+        await pickCourse(page, 'camp');
         await page.getByLabel('營隊梯次').selectOption('__other__');
         check('390px 營隊（其它自填）無水平溢出', (await overflowOf(page)) === 0);
         await page.screenshot({ path: path.join(shotDir, 'mobile-390-camp.png'), fullPage: true });

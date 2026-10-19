@@ -16,6 +16,39 @@ export const COURSE_LABELS = {
     other: '其他',
 };
 
+// 講師回報頁的分層選單（業主 2026-10-19：照原 Google 課後回報表單，最上面先選 B2B／B2C 並備註哪種課選哪個）。
+// 第一層「回報類別」、第二層「課程類型」用表單原本的用語；第三層「報酬項目」才是報酬規則使用的 course_type（資料庫欄位不變），
+// 同一種課只有一個報酬項目時第三層自動帶入、不顯示。
+export const REPORT_CHANNELS = [
+    { key: 'b2c', label: 'B2C 直營課程', hint: '公司自己開的課：到府家教課／揪團課、線上課程、體驗課、速解研究所、寒暑假營隊、常態課、站櫃。' },
+    { key: 'b2b', label: 'B2B 合作單位', hint: '學校、社團、機構等合作單位委託的課，要填教學課程期間與上課單位。' },
+];
+
+export const COURSE_CATEGORIES = [
+    { key: 'regular', channel: 'b2c', label: '常態課', types: ['regular_basic', 'regular_advanced', 'kids_lead', 'kids_assistant'] },
+    { key: 'onsite', channel: 'b2c', label: '到府家教課／到府揪團課', types: ['onsite_2hr', 'onsite_1_5hr'] },
+    { key: 'online', channel: 'b2c', label: '線上課程', types: ['online', 'overseas_online'] },
+    { key: 'trial', channel: 'b2c', label: '體驗課', types: ['trial'] },
+    { key: 'speed_onsite', channel: 'b2c', label: '速解研究所｜實體課程', types: ['speed_onsite', 'speed_training_lead', 'speed_training_assistant'] },
+    { key: 'speed_online', channel: 'b2c', label: '速解研究所｜線上課程', types: ['speed_online'] },
+    { key: 'camp', channel: 'b2c', label: '寒暑假營隊', types: ['camp', 'camp_director_5d', 'camp_director_4d', 'camp_director_2d', 'speed_camp'] },
+    { key: 'counter', channel: 'b2c', label: '站櫃／擺攤', types: ['counter', 'event_booth'] },
+    { key: 'other', channel: 'b2c', label: '其他', types: ['cert_sub_judge', 'special_lecture_recorded', 'special_lecture_unrecorded', 'other'] },
+    { key: 'collab', channel: 'b2b', label: '合作單位課程', types: ['collab_lead', 'collab_assistant', 'collab_project'] },
+];
+
+export const courseCategoryFor = (courseType = '') =>
+    COURSE_CATEGORIES.find(category => category.types.includes(courseType))?.key || 'other';
+
+export const courseTypesInCategory = (categoryKey) =>
+    COURSE_CATEGORIES.find(category => category.key === categoryKey)?.types || [];
+
+export const reportChannelFor = (courseType = '') =>
+    COURSE_CATEGORIES.find(category => category.key === courseCategoryFor(courseType))?.channel || 'b2c';
+
+export const categoriesInChannel = (channelKey) =>
+    COURSE_CATEGORIES.filter(category => category.channel === channelKey);
+
 // instructor role 中文 label
 export const ROLE_LABELS = { lead: '主講', assistant: '助教', head_judge: '主裁', sub_judge: '助裁', counter: '櫃台', project_lead: '負責人', other: '其他' };
 
