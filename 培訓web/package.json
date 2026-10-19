@@ -29,6 +29,7 @@
     "verify:contract-document-reads": "node scripts/verify-contract-document-reads.mjs",
     "verify:legacy-claim-cleanup": "node scripts/verify-legacy-claim-cleanup.mjs",
     "e2e:profile-save": "node scripts/e2e/profile-save-scenarios.mjs",
+    "verify:code-split": "node scripts/verify-code-split.mjs",
     "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs",
     "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs"
   },
