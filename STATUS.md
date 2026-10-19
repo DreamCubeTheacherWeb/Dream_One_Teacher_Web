@@ -1,9 +1,41 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（回報頁改三層選單 B2B／B2C→課程類型→報酬項目已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-19（後台薪資登記中心改伺服器端篩選＋分頁，分支 `fix/salary-register-paging` 已驗證、**未上線**；回報頁改三層選單 B2B／B2C→課程類型→報酬項目已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
+
+## 📄 2026-10-19：後台薪資登記中心改伺服器端篩選＋分頁（🟡 已驗證，未上線，push main 前要問使用者）
+
+**問題**：10/19 換新薪資總表後 `class_sessions` 有 5,535 筆（2024/02～2026/10），`/admin/salary`（`SalaryRegister.jsx`）只抓
+`session_date` 最新 500 筆再在瀏覽器裡篩月份／狀態／異常，管理員看不到較早月份；待處理與異常數字也只算那 500 筆。是既有程式限制，不是資料問題。
+
+**做法（純前端，無 migration、不改 RLS、不改資料；admin／mentor 權限照舊）**：新檔 `培訓web/src/lib/salaryRegisterQuery.js`
+（純函式＋單元測試）。月份改送 `session_date >= 該月1日 AND < 下月1日`，狀態 `status=eq.`、異常 `is_anomaly=eq.true`、搜尋
+`or=(instructor_name|course_name|course_type ilike "%字%")`（停止輸入 300ms 才送；搜尋字裡的 `, ( ) " \ % *` 換成單字元萬用字 `_`，
+不會弄壞查詢）都在 Supabase 端過濾。列表每次 100 筆，底部「已顯示 X／Y 筆」＋「載入更多（再 N 筆）」。排序改由伺服器做：
+`status` 升冪（enum 宣告順序 pending→approved→paid，等於舊版「待處理優先」）→ 日期新到舊 → id，分頁不漏不重。
+統計卡（篩選筆數、總薪資、已付、未付）另外以 1,000 筆一段抓 `total_salary, paid_amount` 算整個篩選範圍，不是只算已載入那頁。
+**行為變化**：① 預設月份＝最新一筆紀錄的月份（不會跑到未來月份），月份選單列出最早到本月每個月；② 「待處理 N」「異常 N」改為全庫數字
+（HEAD＋count=exact），點下去會同時切到「全部月份」，早期月份的待辦也看得到；③ 標題「共 N 筆紀錄」是全庫筆數；④ 核准／修改儲存後
+重載會保留已載入的筆數，不會跳回第 1 頁；查詢失敗顯示錯誤＋「重新載入」，從第 1 頁重來。
+
+**驗證（2026-10-19 本 session 親跑，worktree `.claude/worktrees/salary-register-paging`）**：`npm test` 88/88（新增
+`salaryRegisterQuery.test.js` 16 項：月份區間跨年、月份選單、預設月份、搜尋字清理、篩選與排序都送到查詢端、分段抓資料在伺服器每次上限
+比 chunk 小時也不漏）；`npm run verify:salary-register-paging:browser`（新腳本，mock Supabase 照網址條件真的過濾／排序／分頁／計數，
+放 5,535 筆、2025/08 有 607 筆，本機 vite dev，沙盒外）**34/34**：選 2025/08 先顯示 100／607、統計卡為整月 607 筆、載入更多後 607 筆
+全部看得到且順序與期望完全一致、狀態＋異常＋講師搜尋＋含逗號括號的搜尋、全部月份 100／5,535 且統計分 6 段抓完、點待處理切到全部月份
+看得到 2025/03 的待處理、第 2 頁修改儲存後仍 200 筆、查詢失敗可重新載入、mentor 可進入、桌機與 390px 無水平溢出、390px 載入更多按鈕
+滿版高度 ≥44px。截圖 10 張在 `培訓web/docs/verification/2026-10-19-salary-register-paging/`，由 sonnet agent 判讀：皆無跑版、錯誤框或截斷。
+回歸：`verify:salary-report-form:browser` 37/37、`verify:salary-report-options:browser` 37/37（第一次跑 36/37 是「改名後畫面顯示新文字」
+偶發時序，連跑兩次皆全過，與本改動無關）、`verify:speed-salary:browser` 13/13（該腳本 mock 補上 HEAD 計數，原本把 HEAD 當寫入回空值）。
+`npm run build` 通過（2.38MB 單一 bundle 警告為既有）；變更檔 ESLint 0 問題；`git diff --check` 乾淨。
+
+**沒驗到的（上線後要補）**：mock 不是真的 PostgREST——`or()` 內雙引號包值的 ilike、`order=status.asc` 依 enum 宣告順序，都是依
+PostgREST／PostgreSQL 文件行為，正式庫未實測（正式庫的 enum 若非由 `2025_salary_system.sql` 建立、順序不同，只會影響排序不影響筆數）。
+上線後用管理員帳號開 `/admin/salary`：選 2025/08 應看到約 607 筆（載入更多到底）、搜尋一位講師、點「待處理」各試一次。
+
+**上線方式**：分支 `fix/salary-register-paging`（從 `origin/main` `b361e3b` 開），push main 即 Zeabur 自動部署；**尚未 push，需使用者同意**。
 
 ## 🧭 2026-10-19：回報頁課程類型改三層選單（B2B／B2C → 課程類型 → 報酬項目）（✅ 正式環境已上線）
 
