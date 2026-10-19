@@ -3,8 +3,9 @@
  * 個人資料頁「存檔」端到端驗證：真 PostgreSQL（repo 全部 SQL：trigger＋RLS）＋真 PostgREST
  * ＋假 GoTrue／Storage 閘道（storage RLS 以呼叫者身分在 PostgreSQL 內執行）＋Vite build＋Playwright。
  *
- *   node scripts/e2e/profile-save-scenarios.mjs              # P1–P5（目前程式）＋P6（暫換回 1f5c350 upsert 版跑 P2、P3）
- *   node scripts/e2e/profile-save-scenarios.mjs --skip-p6    # 只跑 P1–P5
+ *   node scripts/e2e/profile-save-scenarios.mjs              # P1–P9（目前程式）＋P6、P10 反向對照
+ *   node scripts/e2e/profile-save-scenarios.mjs --skip-p6    # 不跑 P6
+ *   node scripts/e2e/profile-save-scenarios.mjs --skip-p10   # 不跑 P10
  *
  * P1 新講師第一次填表（沒有主檔、Email＝Google）
  * P2 姓名＋手機＋末四碼認領的舊講師，主要 Email ≠ Google；只改暱稱
@@ -13,6 +14,16 @@
  * P5 已有主檔的講師連續存兩次（電話、地址）
  * P6 反向對照：ProfilePage.jsx 暫時換成 1f5c350（upsert 版）重新 build，P2、P3 應被 42501／403 擋下；
  *    build 完立刻寫回原檔，並以 git diff --quiet -- src 確認乾淨。
+ * P7 mentor（有自己的主檔）只改暱稱：存檔成功、角色仍是 mentor
+ * P8 任職狀態 frozen、但管理員已把角色手動改回 teacher 的講師只改暱稱：存檔成功、存後角色仍是 teacher
+ *    （頁面在凍結前就開著；重新載入時登入檢查本來就會把凍結講師降為 pending 並登出，只記 NOTE 不計分）
+ * P7 需要 mentor 帳號：repo SQL 的 users_role_check 沒有 mentor，測試庫只放寬這一條 constraint（印 NOTE）
+ * P9 身分核對認領的舊講師把主要 Email 改成非 Google 信箱：被資料庫擋下、畫面顯示中文說明、資料庫不變
+ * P10 反向對照：ProfilePage.jsx 暫時換成 3168949（UPDATE 每次都帶 user_id、email_primary）重新 build，
+ *    用同一套 P7／P8／P9 斷言跑，P7、P8（及 P9 的中文說明）必須 FAIL，並確認舊版確實重現兩個問題；
+ *    同 P6 的手法 build 完立刻寫回原檔、git diff --quiet -- src 確認乾淨。
+ *
+ * 執行前 src 必須已 commit（P6／P10 靠 git diff --quiet -- src 證明還原乾淨）。
  *
  * 每個斷言都對資料庫查回比對（instructors 整列前後 diff、storage.objects），不是只看畫面。
  * 絕不連正式 Supabase；不改 培訓web/.env。initdb 需要 shared memory，請在沙盒外執行。
@@ -38,6 +49,8 @@ const FILE_SUFFIXES = ['_path', '_mime', '_size', '_uploaded_at'];
 const DOC_FIELDS = DOC_KEYS.flatMap((key) => FILE_SUFFIXES.map((suffix) => `${key}${suffix}`));
 const IMPORTED_AT = '2026-08-20T03:00:00+00:00';
 const UPSERT_COMMIT = '1f5c350';
+const ALWAYS_SEND_IDENTITY_COMMIT = '3168949'; // UPDATE payload 每次都帶 user_id 與 email_primary 的版本
+const GOOGLE_EMAIL_HINT = '主要 Email 必須是你登入用的 Google 信箱';
 
 const r = new Results();
 let activeStack = null;
@@ -248,6 +261,39 @@ function checkBlocked(label, outcome, before, after) {
     `${writeSummary(outcome.writes)}；message=${write?.response?.message || ''}`);
   const d = diffRows(before, after);
   r.check(`${label} 被擋後資料庫主檔完全沒變`, Object.keys(d.changed).length === 0, describeChanges(d.changed, Object.keys(d.changed)));
+}
+
+// 單一寫入請求送出的欄位名
+const sentKeys = (write) => (write?.body && typeof write.body === 'object' && !Array.isArray(write.body) ? Object.keys(write.body) : []);
+
+// 管理員在「帳號管理」改角色（TeacherManager.changeRole：users.update({ role })），走 admin JWT＋RLS
+async function adminSetRole(ctx, uid, role) {
+  const res = await ctx.api.rest(ctx.admin.token, 'PATCH', `users?id=eq.${uid}`, { body: { role }, prefer: 'return=minimal' });
+  if (res.status !== 204) throw new Error(`admin PATCH users role failed ${res.status} ${JSON.stringify(res.data)}`);
+}
+
+// repo 的 SQL 鏈裡 users.role 的 CHECK（supabase/setup.sql:8）只有 pending／teacher／admin，沒有 mentor，
+// 但前端路由、RLS、claim RPC、guard trigger 都把 mentor 當有效角色。測試庫只放寬這一條 constraint 才建得出 mentor 帳號。
+function ensureMentorRoleAllowed(ctx, label, results) {
+  const def = ctx.api.sql(`SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'public.users'::regclass AND conname = 'users_role_check'`);
+  if (def && !def.includes("'mentor'")) {
+    ctx.api.sql(`ALTER TABLE public.users DROP CONSTRAINT users_role_check, ADD CONSTRAINT users_role_check CHECK (role IN ('pending', 'teacher', 'mentor', 'admin'))`);
+    results.note(`${label} 測試庫補丁：repo SQL 的 users_role_check 不含 mentor（${def}），已放寬為含 mentor 才能建立 mentor 帳號`);
+  }
+}
+
+// 已有自己的主檔（Email＝Google 自動對應認領）、四份證件在本人資料夾（同 P5 的種法）
+async function seedOwnedInstructor(ctx, { tag, fullName }) {
+  seq += 1;
+  const email = `${tag}-${seq}-${Date.now().toString(36)}@e2e.test`;
+  const seeded = await adminCreateInstructor(ctx.api, ctx.admin, legacyRow({
+    fullName: `${fullName}${seq}`, email, idNumber: `F12345${digits(4)}`, phone: `0966${digits(6)}`,
+  }));
+  const user = await newUser(ctx, tag, `${tag} Google`, email);
+  const files = {};
+  for (const key of DOC_KEYS) files[key] = await uploadAs(ctx, user.token, `instructors/${user.id}/${key}/${randomUUID()}.png`, { label: `${tag}-${key}-${seq}` });
+  await adminPatchInstructor(ctx, seeded.id, docColumns(files));
+  return { seeded, user, email };
 }
 
 // ═══ P1 第一次填表的新講師 ════════════════════════════════════════════
@@ -539,6 +585,169 @@ async function scenarioP5(ctx) {
   }
 }
 
+// ═══ P7 mentor（有自己的主檔）只改暱稱 ═══════════════════════════════════
+// results：正式執行用 r；P10 反向對照時傳入另一個收集器，舊版的 FAIL 不算進總結，只拿來證明「舊版會 FAIL」。
+async function scenarioP7(ctx, { label = 'P7', results = r } = {}) {
+  const { seeded, user, email } = await seedOwnedInstructor(ctx, { tag: 'p7-mentor', fullName: '輔導員周' });
+  ensureMentorRoleAllowed(ctx, label, results);
+  await adminSetRole(ctx, user.id, 'mentor');
+  const s = await openSession(ctx, user);
+  const summary = { user };
+  try {
+    await goto(ctx, s, '/profile');
+    await waitProfileLoaded(s.page);
+    const before = ctx.rowById(seeded.id);
+    results.check(`${label} 起始：mentor 帳號、已有自己的主檔（主要 Email＝Google）`,
+      before?.user_id === user.id && ctx.roleOf(user.id) === 'mentor' && before?.email_primary === email,
+      `role=${ctx.roleOf(user.id)} email_primary=${before?.email_primary}`);
+    const newNickname = `周暱稱${seq}`;
+    await fieldControl(s.page, '講師暱稱').fill(newNickname);
+    const outcome = await saveAndWait(s);
+    await shot(s.page, shotsDir, `${ctx.shotPrefix}-${label}-after-save`);
+    const after = ctx.rowById(seeded.id);
+    const roleAfter = ctx.roleOf(user.id);
+    Object.assign(summary, { outcome, before, after, roleAfter });
+    results.check(`${label} mentor 存檔成功`, outcome.ok, outcome.message);
+    results.check(`${label} 寫入只有一次 PATCH（UPDATE 1 列）`,
+      outcome.writes.length === 1 && outcome.writes[0].method === 'PATCH' && outcome.writes[0].status === 200
+      && outcome.writes[0].response?.length === 1, writeSummary(outcome.writes));
+    const keys = sentKeys(outcome.writes[0]);
+    results.check(`${label} PATCH 沒送 user_id，也沒送沒改的主要 Email`, keys.length > 0 && !keys.includes('user_id') && !keys.includes('email_primary'),
+      `user_id=${keys.includes('user_id')} email_primary=${keys.includes('email_primary')}`);
+    results.check(`${label} 資料庫：暱稱已更新、主要 Email 不變、角色仍是 mentor`,
+      after?.nickname === newNickname && after?.email_primary === email && roleAfter === 'mentor',
+      `nickname=${after?.nickname} email_primary=${after?.email_primary} role=${roleAfter}`);
+    const d = diffRows(before, after, ['nickname']);
+    results.check(`${label} 其他欄位（含 4 份證件、管理員欄位）都沒被改掉`, d.lost.length === 0,
+      d.lost.length ? describeChanges(d.changed, d.lost) : `變動欄位：${Object.keys(d.changed).join(', ')}`);
+    if (d.normalized.length) results.note(`${label} 原本空值被存成空字串（無資料遺失）：${describeChanges(d.changed, d.normalized)}`);
+  } finally {
+    ctx.consoleErrors.push(...s.consoleErrors.map((e) => `${label}: ${e}`));
+    await s.context.close();
+  }
+  return summary;
+}
+
+// ═══ P8 任職狀態 frozen、角色已被管理員手動改回 teacher 的講師只改暱稱 ═══════════
+// 頁面要在凍結前就開著：凍結講師重新載入頁面時，登入檢查 claim_my_precreated_instructor 會依規則把 teacher
+// 降回 pending 並登出（20260826140000…sql:134-147），到不了存檔；存檔造成的降級只在「頁面已開著」時才會發生。
+async function scenarioP8(ctx, { label = 'P8', results = r } = {}) {
+  const { seeded, user, email } = await seedOwnedInstructor(ctx, { tag: 'p8-frozen', fullName: '凍結講師吳' });
+  const s = await openSession(ctx, user);
+  const summary = { user };
+  try {
+    await goto(ctx, s, '/profile');
+    await waitProfileLoaded(s.page);
+    // 頁面開著時：管理員把任職狀態改成凍結 → trg_sync_instructor_portal_access 依正式規則把 teacher 降成 pending；
+    // 管理員再到帳號管理手動把角色改回 teacher。
+    await adminPatchInstructor(ctx, seeded.id, { employment_status: 'frozen' });
+    const roleAfterFreeze = ctx.roleOf(user.id);
+    await adminSetRole(ctx, user.id, 'teacher');
+    const before = ctx.rowById(seeded.id);
+    results.check(`${label} 起始：凍結時 trigger 已把角色降為 pending，管理員手動改回 teacher；主檔 employment_status=frozen`,
+      roleAfterFreeze === 'pending' && ctx.roleOf(user.id) === 'teacher' && before?.user_id === user.id
+      && before?.employment_status === 'frozen' && before?.email_primary === email,
+      `凍結後 role=${roleAfterFreeze}；現在 role=${ctx.roleOf(user.id)} employment_status=${before?.employment_status}`);
+    const newNickname = `吳暱稱${seq}`;
+    await fieldControl(s.page, '講師暱稱').fill(newNickname);
+    const outcome = await saveAndWait(s);
+    await shot(s.page, shotsDir, `${ctx.shotPrefix}-${label}-after-save`);
+    const after = ctx.rowById(seeded.id);
+    const roleAfter = ctx.roleOf(user.id);
+    Object.assign(summary, { outcome, before, after, roleAfter });
+    results.check(`${label} 存檔成功`, outcome.ok, outcome.message);
+    results.check(`${label} 寫入只有一次 PATCH（UPDATE 1 列）`,
+      outcome.writes.length === 1 && outcome.writes[0].method === 'PATCH' && outcome.writes[0].status === 200
+      && outcome.writes[0].response?.length === 1, writeSummary(outcome.writes));
+    const keys = sentKeys(outcome.writes[0]);
+    results.check(`${label} PATCH 沒送 user_id、主要 Email、employment_status`,
+      keys.length > 0 && !['user_id', 'email_primary', 'employment_status'].some((key) => keys.includes(key)),
+      `user_id=${keys.includes('user_id')} email_primary=${keys.includes('email_primary')} employment_status=${keys.includes('employment_status')}`);
+    results.check(`${label} 存檔後角色仍是 teacher（沒被自動降回 pending）`, roleAfter === 'teacher', `role=${roleAfter}`);
+    results.check(`${label} 資料庫：暱稱已更新、任職狀態仍是 frozen、主要 Email 不變`,
+      after?.nickname === newNickname && after?.employment_status === 'frozen' && after?.email_primary === email,
+      `nickname=${after?.nickname} employment_status=${after?.employment_status} email_primary=${after?.email_primary}`);
+    const d = diffRows(before, after, ['nickname']);
+    results.check(`${label} 其他欄位（含 4 份證件、管理員欄位）都沒被改掉`, d.lost.length === 0,
+      d.lost.length ? describeChanges(d.changed, d.lost) : `變動欄位：${Object.keys(d.changed).join(', ')}`);
+    if (d.normalized.length) results.note(`${label} 原本空值被存成空字串（無資料遺失）：${describeChanges(d.changed, d.normalized)}`);
+    // 參考（不計分）：重新載入頁面時登入檢查的既有行為
+    await goto(ctx, s, '/profile');
+    const roleAfterReload = await pollUntil(() => (ctx.roleOf(user.id) === 'pending' ? 'pending' : null), { timeoutMs: 8000 }) || ctx.roleOf(user.id);
+    results.note(`${label} 參考：存檔後重新載入頁面，登入檢查（claim_my_precreated_instructor）把凍結講師的角色改成 ${roleAfterReload}，網址=${s.page.url()}`);
+  } finally {
+    ctx.consoleErrors.push(...s.consoleErrors.map((e) => `${label}: ${e}`));
+    await s.context.close();
+  }
+  return summary;
+}
+
+// ═══ P9 已認領舊講師把主要 Email 改成非 Google 信箱 → 被擋、中文說明、資料庫不變 ═════
+async function scenarioP9(ctx, { label = 'P9', results = r } = {}) {
+  seq += 1;
+  const fullName = `舊講師鄭${seq}`;
+  const legacyEmail = `legacy-cheng-${seq}-${Date.now().toString(36)}@old-mail.example`;
+  const phoneDigits = `0922${digits(6)}`;
+  const idNumber = `G22345${digits(4)}`;
+  const legacy = await adminCreateInstructor(ctx.api, ctx.admin, legacyRow({
+    fullName, email: legacyEmail, idNumber, phone: phoneDigits,
+  }));
+  const user = await newUser(ctx, 'p9-google', 'Cheng Google');
+  const files = {};
+  for (const key of DOC_KEYS) files[key] = await uploadAs(ctx, user.token, `instructors/${user.id}/${key}/${randomUUID()}.png`, { label: `p9-${key}-${seq}` });
+  await adminPatchInstructor(ctx, legacy.id, docColumns(files));
+  const s = await openSession(ctx, user);
+  const summary = { user };
+  try {
+    const claimed = await claimByIdentityUI(ctx, s, { fullName, phoneDigits, last4: idNumber.slice(-4) });
+    const before = ctx.rowById(legacy.id);
+    results.check(`${label} 起始：姓名＋手機＋末四碼認領成功（角色 teacher）、主要 Email＝舊信箱（≠ Google）`,
+      claimed && before?.user_id === user.id && ctx.roleOf(user.id) === 'teacher' && before?.email_primary === legacyEmail,
+      `url=${s.page.url()} email_primary=${before?.email_primary}`);
+    await waitProfileLoaded(s.page);
+    const otherEmail = `p9-other-${seq}-${Date.now().toString(36)}@other-mail.example`;
+    await fieldControl(s.page, '主要 Email').fill(otherEmail);
+    const outcome = await saveAndWait(s);
+    await shot(s.page, shotsDir, `${ctx.shotPrefix}-${label}-after-save`);
+    const after = ctx.rowById(legacy.id);
+    const roleAfter = ctx.roleOf(user.id);
+    Object.assign(summary, { outcome, before, after, roleAfter });
+    results.check(`${label} 存檔被擋，畫面顯示中文說明（含登入的 Google 信箱），不再是英文錯誤`,
+      !outcome.ok && /儲存失敗/.test(outcome.message) && outcome.message.includes(GOOGLE_EMAIL_HINT)
+      && outcome.message.includes(user.email) && outcome.message.includes('請聯繫管理員') && !/must match|instructor email/i.test(outcome.message),
+      outcome.message);
+    const write = outcome.writes[0];
+    results.check(`${label} 寫入是一次 PATCH（送出新的主要 Email、沒送 user_id），被資料庫 Email 守門以 403／42501 擋下`,
+      outcome.writes.length === 1 && write?.method === 'PATCH' && write?.status === 403 && write?.response?.code === '42501'
+      && write?.body?.email_primary === otherEmail && !sentKeys(write).includes('user_id'),
+      `${writeSummary(outcome.writes)}；message=${write?.response?.message || ''}`);
+    const d = diffRows(before, after);
+    results.check(`${label} 被擋後資料庫主檔完全沒變（主要 Email 仍是舊信箱）、角色仍是 teacher`,
+      Object.keys(d.changed).length === 0 && after?.email_primary === legacyEmail && roleAfter === 'teacher',
+      `${describeChanges(d.changed, Object.keys(d.changed))}；email_primary=${after?.email_primary} role=${roleAfter}`);
+  } finally {
+    ctx.consoleErrors.push(...s.consoleErrors.map((e) => `${label}: ${e}`));
+    await s.context.close();
+  }
+  return summary;
+}
+
+// P10 用：收集舊版跑同一套斷言的結果（不算進總結），印成縮排行避免和正式 PASS／FAIL 混淆
+function shadowResults(tag) {
+  const items = [];
+  return {
+    items,
+    check(name, condition, detail = '') {
+      const ok = Boolean(condition);
+      items.push({ name, ok, detail });
+      console.log(`   ↳ [${tag}] ${ok ? '通過' : '未過'}：${name}${detail ? ` — ${detail}` : ''}`);
+      return ok;
+    },
+    note(text) { console.log(`   ↳ [${tag}] NOTE ${text}`); },
+    failed() { return items.filter((item) => !item.ok).map((item) => item.name); },
+  };
+}
+
 // ── 底座：一位管理員（teacher_invites → Google 註冊 → handle_new_user 給 admin） ──
 async function seedAdmin(stack, api) {
   const email = `admin-${Date.now().toString(36)}@e2e.test`;
@@ -592,45 +801,95 @@ async function runPhase(phase, scenarios, { afterStart, shotPrefix = 'A' } = {})
 }
 
 let fatal = false;
+const git = (gitArgs, opts = {}) => spawnSync('git', gitArgs, { cwd: appDir, ...opts });
+const headShort = git(['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
 try {
-  await runPhase('A 目前程式（c8842e7）', [['P1', scenarioP1], ['P2', scenarioP2], ['P3', scenarioP3], ['P4', scenarioP4], ['P5', scenarioP5]]);
+  await runPhase(`A 目前程式（${headShort}）`, [
+    ['P1', scenarioP1], ['P2', scenarioP2], ['P3', scenarioP3], ['P4', scenarioP4], ['P5', scenarioP5],
+    ['P7', scenarioP7], ['P8', scenarioP8], ['P9', scenarioP9],
+  ]);
 } catch (error) {
   fatal = true;
   console.error(`A 階段無法完成：${error.stack || error.message}`);
 }
 
-if (!args.has('--skip-p6')) {
-  // P6：ProfilePage.jsx 暫換成 1f5c350（upsert 版）→ vite build（startStack 內完成）→ 立刻寫回原檔
+// 反向對照：ProfilePage.jsx 暫換成 commit 版 → vite build（startStack 內完成）→ 立刻寫回原檔 → 確認 src 乾淨
+async function runWithOldProfilePage({ tag, commit, versionLabel, marker, phase, scenarios, shotPrefix }) {
   profileFile = path.join(appDir, 'src/pages/ProfilePage.jsx');
-  const git = (gitArgs, opts = {}) => spawnSync('git', gitArgs, { cwd: appDir, ...opts });
   const cleanBefore = git(['diff', '--quiet', '--', 'src']).status === 0;
-  const upsertSource = git(['show', `${UPSERT_COMMIT}:培訓web/src/pages/ProfilePage.jsx`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).stdout;
-  if (!cleanBefore || !upsertSource || !upsertSource.includes(".upsert(payload, { onConflict: 'user_id' })")) {
-    r.check('P6 前置：src 乾淨且取得 1f5c350 upsert 版 ProfilePage.jsx', false, `cleanBefore=${cleanBefore} gotSource=${Boolean(upsertSource)}`);
-  } else {
-    profileOriginal = readFileSync(profileFile);
-    try {
-      writeFileSync(profileFile, upsertSource);
-      console.log(`\n[P6] 已暫時把 src/pages/ProfilePage.jsx 換成 ${UPSERT_COMMIT} 版（upsert），build 完立刻還原`);
-      await runPhase(`P6 反向對照（${UPSERT_COMMIT} upsert 版）`, [
-        ['P6-P2', (ctx) => scenarioP2(ctx, { label: 'P6-P2', expectBlocked: true })],
-        ['P6-P3', (ctx) => scenarioP3(ctx, { label: 'P6-P3', expectBlocked: true })],
-      ], {
-        shotPrefix: 'P6',
-        afterStart: () => {
-          restoreProfilePage();
-          console.log('[P6] build 完成，src/pages/ProfilePage.jsx 已寫回原檔');
-        },
-      });
-    } catch (error) {
-      fatal = true;
-      console.error(`P6 階段無法完成：${error.stack || error.message}`);
-    } finally {
-      restoreProfilePage();
-    }
-    const cleanAfter = git(['diff', '--quiet', '--', 'src']).status === 0;
-    r.check('P6 還原後 git diff --quiet -- 培訓web/src 乾淨（ProfilePage.jsx 回到 c8842e7）', cleanAfter);
+  const oldSource = git(['show', `${commit}:培訓web/src/pages/ProfilePage.jsx`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).stdout;
+  if (!cleanBefore || !oldSource || !marker(oldSource)) {
+    r.check(`${tag} 前置：src 乾淨且取得 ${commit} ${versionLabel} ProfilePage.jsx`, false, `cleanBefore=${cleanBefore} gotSource=${Boolean(oldSource)}`);
+    return;
   }
+  profileOriginal = readFileSync(profileFile);
+  try {
+    writeFileSync(profileFile, oldSource);
+    console.log(`\n[${tag}] 已暫時把 src/pages/ProfilePage.jsx 換成 ${commit} 版（${versionLabel}），build 完立刻還原`);
+    await runPhase(phase, scenarios, {
+      shotPrefix,
+      afterStart: () => {
+        restoreProfilePage();
+        console.log(`[${tag}] build 完成，src/pages/ProfilePage.jsx 已寫回原檔`);
+      },
+    });
+  } catch (error) {
+    fatal = true;
+    console.error(`${tag} 階段無法完成：${error.stack || error.message}`);
+  } finally {
+    restoreProfilePage();
+  }
+  const cleanAfter = git(['diff', '--quiet', '--', 'src']).status === 0;
+  r.check(`${tag} 還原後 git diff --quiet -- 培訓web/src 乾淨（ProfilePage.jsx 回到 ${headShort}）`, cleanAfter);
+}
+
+if (!args.has('--skip-p6')) {
+  await runWithOldProfilePage({
+    tag: 'P6', commit: UPSERT_COMMIT, versionLabel: 'upsert 版', shotPrefix: 'P6',
+    marker: (src) => src.includes(".upsert(payload, { onConflict: 'user_id' })"),
+    phase: `P6 反向對照（${UPSERT_COMMIT} upsert 版）`,
+    scenarios: [
+      ['P6-P2', (ctx) => scenarioP2(ctx, { label: 'P6-P2', expectBlocked: true })],
+      ['P6-P3', (ctx) => scenarioP3(ctx, { label: 'P6-P3', expectBlocked: true })],
+    ],
+  });
+}
+
+if (!args.has('--skip-p10')) {
+  const c = ALWAYS_SEND_IDENTITY_COMMIT;
+  const failedList = (shadow) => shadow.failed().join('；') || '（全部通過）';
+  await runWithOldProfilePage({
+    tag: 'P10', commit: c, versionLabel: 'UPDATE 每次帶 user_id／email_primary', shotPrefix: 'P10',
+    marker: (src) => src.includes('.update(payload)') && /payload = omitUnchangedDocumentFields\(\{\s*user_id: user\.id,/.test(src),
+    phase: `P10 反向對照（${c} 版）`,
+    scenarios: [
+      ['P10-P7', async (ctx) => {
+        const shadow = shadowResults(`${c} 跑 P7 斷言`);
+        const { outcome } = await scenarioP7(ctx, { label: 'P10-P7', results: shadow });
+        const write = outcome?.writes?.[0];
+        r.check(`P10-P7 舊版（${c}）跑同一套 P7 斷言會 FAIL`, shadow.failed().length > 0, `未過：${failedList(shadow)}`);
+        r.check('P10-P7 舊版重現問題：PATCH 夾帶 user_id、email_primary，mentor 被 Email 守門以 403／42501 擋下',
+          !outcome?.ok && write?.status === 403 && write?.response?.code === '42501'
+          && /not owned by the signed-in account/.test(write?.response?.message || '')
+          && sentKeys(write).includes('user_id') && sentKeys(write).includes('email_primary'),
+          `${outcome?.message}；${writeSummary(outcome?.writes || [])}`);
+      }],
+      ['P10-P8', async (ctx) => {
+        const shadow = shadowResults(`${c} 跑 P8 斷言`);
+        const { outcome, roleAfter } = await scenarioP8(ctx, { label: 'P10-P8', results: shadow });
+        r.check(`P10-P8 舊版（${c}）跑同一套 P8 斷言會 FAIL`, shadow.failed().length > 0, `未過：${failedList(shadow)}`);
+        r.check('P10-P8 舊版重現問題：PATCH 夾帶 user_id，存檔後角色被自動降回 pending',
+          sentKeys(outcome?.writes?.[0]).includes('user_id') && roleAfter === 'pending',
+          `${outcome?.message}；role=${roleAfter}；${writeSummary(outcome?.writes || [])}`);
+      }],
+      ['P10-P9', async (ctx) => {
+        const shadow = shadowResults(`${c} 跑 P9 斷言`);
+        const { outcome } = await scenarioP9(ctx, { label: 'P10-P9', results: shadow });
+        r.check(`P10-P9 舊版（${c}）跑同一套 P9 斷言會 FAIL（畫面是英文錯誤）`, shadow.failed().length > 0
+          && /changed instructor email must match/.test(outcome?.message || ''), `未過：${failedList(shadow)}；畫面：${outcome?.message}`);
+      }],
+    ],
+  });
 }
 
 const counts = r.counts();
