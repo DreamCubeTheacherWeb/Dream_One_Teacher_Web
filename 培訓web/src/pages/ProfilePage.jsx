@@ -7,10 +7,12 @@ import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
 import {
+    describeInstructorSaveError,
     omitUnchangedDocumentFields,
     pickInstructorDocumentFields,
     pickInstructorProfileDraftFields,
     stripAdminManagedInstructorFields,
+    toInstructorUpdatePayload,
 } from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
 import { INSTRUCTOR_CONTRACTS_ENABLED, canAccessInstructorContracts } from '../lib/featureFlags';
@@ -142,6 +144,8 @@ const ProfilePage = () => {
     const savedSnapshot = useRef('');
     const savedBaseUpdatedAt = useRef(null);
     const savedDocumentFields = useRef({});
+    // 已存進 DB 的主要 Email（null＝還沒有主檔）；沒改就不放進 UPDATE，避免觸發 Email 守門 trigger。
+    const savedEmailPrimary = useRef(null);
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
@@ -212,6 +216,7 @@ const ProfilePage = () => {
             savedSnapshot.current = profileSnapshot(formData);
             savedBaseUpdatedAt.current = data.updated_at || null;
             savedDocumentFields.current = pickInstructorDocumentFields(data);
+            savedEmailPrimary.current = formData.email_primary;
             const draft = await readDraft(user.id, savedBaseUpdatedAt.current);
             nextForm = draft ? { ...formData, ...draft } : formData;
             // 功能上線前若瀏覽器留有「已儲存存摺的替換草稿」，不可讓草稿蓋過 DB 正本，
@@ -242,6 +247,7 @@ const ProfilePage = () => {
             savedSnapshot.current = profileSnapshot(base);
             savedBaseUpdatedAt.current = null;
             savedDocumentFields.current = {};
+            savedEmailPrimary.current = null;
             const draft = await readDraft(user.id, null);
             nextForm = draft ? { ...base, ...draft } : base;
         }
@@ -532,9 +538,11 @@ const ProfilePage = () => {
 
             // 已有自己的主檔就 UPDATE；不能用 upsert：INSERT…ON CONFLICT 會先跑 INSERT 的 trigger，
             // 舊講師核對認領後主要 Email 不是登入信箱時，會被「新建主檔 Email 必須等於登入帳號」擋下。
+            // UPDATE 不送 user_id、主要 Email 沒改也不送（原因見 toInstructorUpdatePayload）；
+            // 沒更新到列（第一次建主檔）才 INSERT 完整 payload。
             const { data: updatedRows, error: updateError } = await supabase
                 .from('instructors')
-                .update(payload)
+                .update(toInstructorUpdatePayload(payload, savedEmailPrimary.current))
                 .eq('user_id', user.id)
                 .select('updated_at');
             if (updateError) throw updateError;
@@ -556,8 +564,8 @@ const ProfilePage = () => {
                     .remove(uploadedThisSave);
                 if (rollbackError) console.error('Failed to roll back profile uploads:', rollbackError);
             }
-            alert('儲存失敗：' + error.message);
-            // 被鎖定規則擋下時，可能是管理員剛收回開放；重讀一次讓畫面回到正確狀態。
+            alert('儲存失敗：' + describeInstructorSaveError(error, { googleEmail: user.email }));
+            // 被鎖定規則擋下時，可能是管理員剛收回開放或已過期；重讀一次讓畫面回到正確狀態。
             if (isLockedDocumentError(error) && instructorId) {
                 setOpenUnlocks(await fetchOpenEditUnlocks(supabase, instructorId));
             }
@@ -588,6 +596,7 @@ const ProfilePage = () => {
         savedSnapshot.current = profileSnapshot(nextForm);
         savedBaseUpdatedAt.current = savedRow?.updated_at || null;
         savedDocumentFields.current = pickInstructorDocumentFields(nextForm);
+        savedEmailPrimary.current = nextForm.email_primary;
         // 存檔即用掉開放權限：重讀一次，畫面會自動鎖回。（首次建檔的講師不會有開放權限）
         setSavedLockSource(pickLockSource(nextForm));
         savedPreviews.current = { previews: { ...filePreviews }, previewSources: { ...filePreviewSources } };

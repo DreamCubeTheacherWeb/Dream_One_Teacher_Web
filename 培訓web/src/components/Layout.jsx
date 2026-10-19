@@ -498,7 +498,9 @@ const NotificationBell = ({ userId }) => {
         <div className="relative" ref={panelRef}>
             <button
                 onClick={() => setOpen(!open)}
-                className="relative p-3 md:p-2 rounded-xl border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
+                aria-label="通知"
+                aria-expanded={open}
+                className="relative p-3 xl:p-2 rounded-xl border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
             >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (

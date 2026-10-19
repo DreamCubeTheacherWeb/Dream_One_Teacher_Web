@@ -119,7 +119,12 @@ const measure = (page) => page.evaluate(() => {
         : [];
     const roleChip = navVisible ? [...nav.querySelectorAll('a[href="/profile"] span')].pop() : null;
     const navRect = navVisible ? nav.getBoundingClientRect() : null;
+    const bell = [...header.querySelectorAll('button[aria-label="通知"]')].find(el => el.getClientRects().length > 0);
+    const bellRect = bell?.getBoundingClientRect();
+    const burgerRect = burgerVisible ? burger.getBoundingClientRect() : null;
     return {
+        bellSize: bellRect ? [Math.round(bellRect.width), Math.round(bellRect.height)] : null,
+        burgerSize: burgerRect ? [Math.round(burgerRect.width), Math.round(burgerRect.height)] : null,
         navVisible, burgerVisible, items,
         roleChipLines: roleChip ? lineCount(roleChip) : null,
         navOverflow: navRect ? Math.round(navRect.right - contentRight) : null,
@@ -165,6 +170,9 @@ async function run() {
                 if (width < 1280) {
                     check(`${tag} 改用漢堡選單、桌機選單隱藏`, m.burgerVisible && !m.navVisible);
                     check(`${tag} 整頁沒有橫向捲軸`, m.docOverflow <= 0, `超出 ${m.docOverflow}px`);
+                    check(`${tag} 通知鈴鐺可點範圍至少 44px（與手機版同大，不是桌機的縮小版）`,
+                        m.bellSize && m.bellSize[0] >= 44 && m.bellSize[1] >= 44,
+                        `鈴鐺 ${m.bellSize?.join('×')}／漢堡 ${m.burgerSize?.join('×')}`);
                     await page.getByRole('button', { name: '開啟選單' }).click();
                     const menuText = await page.locator('header').innerText();
                     const wanted = role === 'admin' ? ['我的課程', '個人資料', '我的報酬', '後台管理'] : ['我的課程', '個人資料', '我的報酬'];

@@ -90,8 +90,6 @@ export const SPEED_QUALIFICATION_LABELS = {
     speed_master: '速解大師',
 };
 
-export const isSpeedCourse = (courseType = '') => courseType.startsWith('speed_');
-
 export const speedQualificationLabel = (value) =>
     SPEED_QUALIFICATION_LABELS[value] || '未取得';
 

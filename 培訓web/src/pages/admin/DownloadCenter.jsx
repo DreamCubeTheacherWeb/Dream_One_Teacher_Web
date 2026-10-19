@@ -158,12 +158,6 @@ const DownloadCenter = () => {
         .upload(filePath, file, { contentType: 'application/pdf' });
       if (uploadErr) throw uploadErr;
 
-      if (currentDoc) {
-        await supabase.from('contract_documents')
-          .update({ is_active: false })
-          .eq('id', currentDoc.id);
-      }
-
       const dt = formTypes.find(d => d.doc_type === docType);
       const { error: insertErr } = await supabase.from('contract_documents').insert({
         doc_type: docType,
@@ -179,9 +173,20 @@ const DownloadCenter = () => {
       });
       if (insertErr) throw insertErr;
 
+      // 新版寫入成功後才停用舊版：寫入失敗時舊版仍可下載；停用失敗時下載一律取版本號最高的啟用版本（新版），只提醒管理員。
+      let deactivateWarning = '';
+      if (currentDoc) {
+        const { error: deactivateErr } = await supabase.from('contract_documents')
+          .update({ is_active: false })
+          .eq('id', currentDoc.id);
+        if (deactivateErr) {
+          deactivateWarning = `\n注意：舊版（第 ${currentDoc.version} 版）停用失敗：${deactivateErr.message}。下載會使用新版，但舊版仍標示為啟用，請重新整理確認並處理。`;
+        }
+      }
+
       if (fileRefs.current[docType]) fileRefs.current[docType].value = '';
       await loadData();
-      alert('上傳成功！');
+      alert('上傳成功！新版本需重新設定欄位位置（按「定位欄位」），設定前無法產生表單。' + deactivateWarning);
     } catch (err) {
       alert('上傳失敗：' + (err.message || '未知錯誤'));
     }
@@ -334,6 +339,14 @@ const DownloadCenter = () => {
       const zip = new JSZip();
       const logs = [];
       const errs = [];
+      // zip 內同名檔案會互相覆蓋（同名講師只剩最後一位），重名時加序號：王小明-匯款申請書-2.pdf
+      const usedNames = new Set();
+      const uniqueZipName = (base) => {
+        let name = `${base}.pdf`;
+        for (let n = 2; usedNames.has(name.toLowerCase()); n++) name = `${base}-${n}.pdf`;
+        usedNames.add(name.toLowerCase());
+        return name;
+      };
 
       for (let i = 0; i < targets.length; i++) {
         const inst = targets[i];
@@ -341,7 +354,7 @@ const DownloadCenter = () => {
         try {
           const bytes = await generateFilledForm({ docMeta, positions, instructor: inst });
           const safe = (inst.full_name || `unknown_${i}`).replace(/[/\\?%*:|"<>]/g, '_');
-          zip.file(`${safe}-${docMeta.display_name || selectedForm}.pdf`, bytes);
+          zip.file(uniqueZipName(`${safe}-${docMeta.display_name || selectedForm}`), bytes);
           logs.push({
             downloaded_by: user.id,
             target_user_id: inst.user_id || null,
