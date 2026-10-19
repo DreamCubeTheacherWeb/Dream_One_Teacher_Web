@@ -114,6 +114,8 @@ const session = {
 let appRole = 'teacher';
 let optionsFail = false;
 let fieldsFail = false;
+let staleFieldsOnce = false;
+let fieldFetches = 0;
 let submitBodies = [];
 let directSessionWrites = 0;
 
@@ -143,6 +145,10 @@ async function handleRoute(route) {
         }]);
     }
     if (url.pathname === '/rest/v1/rpc/submit_my_class_session') {
+        if (staleFieldsOnce) {
+            staleFieldsOnce = false;
+            return json(route, { code: 'P0001', message: '回報表單的欄位已更新，請重新整理頁面後再送出', details: null, hint: null }, 400);
+        }
         submitBodies.push(request.postDataJSON());
         return json(route, '30000000-0000-4000-8000-000000000099');
     }
@@ -160,6 +166,7 @@ async function handleRoute(route) {
             return json(route, reportOptions);
         }
         if (table === 'salary_report_fields') {
+            fieldFetches += 1;
             if (fieldsFail) return json(route, { code: '42P01', message: 'relation does not exist' }, 404);
             return json(route, fieldRows);
         }
@@ -456,7 +463,31 @@ async function run() {
         await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
         body = submitBodies.at(-1);
         check('到府 1.5 小時自動送出 onsite_1_5hr', submitBodies.length === 4 && body.p_course_type === 'onsite_1_5hr' && body.p_duration_hours === 1.5);
-        check('四次回報都只走受控 RPC', directSessionWrites === 0);
+
+        // 填寫途中管理員改了欄位 → 送出被擋：自動重新載入欄位設定、已填內容保留，再按一次即可送出
+        await openReport(page, base);
+        await pickCourse(page, 'collab_lead');
+        await page.getByLabel('教學課程期間').selectOption('semester');
+        await page.getByLabel('本次上課單位', { exact: true }).selectOption({ label: '【週二】再興魔方高手 入門班115上' });
+        await fillBasics(page, { hours: '2', students: '15' });
+        await page.getByLabel('本次發出教材數量').fill('0');
+        await page.getByLabel('家長滿意度').selectOption('普通');
+        staleFieldsOnce = true;
+        const fetchesBefore = fieldFetches;
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('管理員剛更新了回報表單的欄位，已重新載入').waitFor();
+        check('欄位被管理員更新時：提示已重新載入、重新抓欄位設定、已填內容都還在、沒有送出',
+            fieldFetches === fetchesBefore + 1 && submitBodies.length === 4
+            && await page.getByLabel('上課人數', { exact: true }).inputValue() === '15'
+            && await page.getByLabel('家長滿意度').inputValue() === '普通'
+            && (await page.getByLabel('本次上課單位', { exact: true }).locator('option:checked').innerText()) === '【週二】再興魔方高手 入門班115上');
+        await page.getByRole('button', { name: '送出回報' }).click();
+        await page.getByText('課程回報已送出，管理員核准後會更新狀態。').waitFor();
+        body = submitBodies.at(-1);
+        check('重新送出成功，內容與第一次填的相同',
+            submitBodies.length === 5 && body.p_unit_name === '【週二】再興魔方高手 入門班115上' && body.p_student_count === 15
+            && JSON.stringify(body.p_extra_fields) === JSON.stringify({ custom_sat: '普通', custom_photo: false }));
+        check('五次回報都只走受控 RPC', directSessionWrites === 0);
         await context.close();
 
         // 選項讀取失敗 → 自由輸入，不擋回報

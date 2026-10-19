@@ -551,7 +551,8 @@ async function run() {
         await newPanel.getByRole('button', { name: '建立期間' }).click();
         check('期間名稱與既有期間重複被擋且不送出', (await noticeOf(page)) === '這份清單已經有相同的期間。' && writes.length === 0);
         await newPanel.getByLabel('期間名稱').fill('115學年度下學期');
-        const copyBase = tableRows.filter(r => r.period_id === 't1').sort((a, b) => (a.kind === b.kind ? a.sort_order - b.sort_order : a.kind === 'partner_unit' ? -1 : 1));
+        // 只複製上課單位；營隊梯次每期日期不同，不複製（避免講師下拉出現兩組同名梯次）
+        const copyBase = tableRows.filter(r => r.period_id === 't1' && r.kind === 'partner_unit').sort((a, b) => a.sort_order - b.sort_order);
         await newPanel.getByRole('button', { name: '建立期間' }).click();
         await until(() => writes.length === 2);
         check('新增期間第一次 insert：kind=term_period、value＝term_ 開頭代碼、label、sort_order＝最大＋10、is_active',
@@ -559,16 +560,16 @@ async function run() {
             && /^term_[a-z0-9]{10}$/.test(writes[0].body.value)
             && sameBody({ ...writes[0].body, value: 'X' }, { kind: 'term_period', value: 'X', label: '115學年度下學期', sort_order: 40, is_active: true }));
         const newPeriodId = tableRows.find(r => r.kind === 'term_period' && r.label === '115學年度下學期')?.id;
-        check('複製清單第二次 insert：一次送整個陣列（單位＋梯次），每列 period_id＝新期間 id、名稱／順序／啟用照抄',
+        check('複製清單第二次 insert：一次送整個陣列（只有上課單位），每列 period_id＝新期間 id、名稱／順序／啟用照抄',
             Boolean(newPeriodId) && Array.isArray(writes[1]?.body) && writes[1].body.length === copyBase.length
             && writes[1].body.every(row => row.period_id === newPeriodId)
             && sameBody(writes[1].body, copyBase.map(r => ({ kind: r.kind, value: r.value, label: r.label, sort_order: r.sort_order, is_active: r.is_active, period_id: newPeriodId }))),
             { newPeriodId, body: writes[1]?.body });
         await until(async () => (await chipLabels(page)).includes('115學年度下學期'));
         await until(async () => (await countOf(page, 'partner_unit')) !== '');
-        check('新期間被選中，清單與寒假相同（複製成功），面板收起',
-            same(await labelsOf(page, 'partner_unit'), copyBase.filter(r => r.kind === 'partner_unit').map(r => r.label))
-            && same(await labelsOf(page, 'camp_batch'), copyBase.filter(r => r.kind === 'camp_batch').map(r => r.label))
+        check('新期間被選中，上課單位與寒假相同（複製成功）、營隊梯次是空的，面板收起',
+            same(await labelsOf(page, 'partner_unit'), copyBase.map(r => r.label))
+            && same(await labelsOf(page, 'camp_batch'), [])
             && await page.locator('h2', { hasText: '115學年度下學期' }).isVisible()
             && await newPanel.count() === 0);
 

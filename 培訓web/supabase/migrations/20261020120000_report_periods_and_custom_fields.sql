@@ -665,3 +665,6 @@ $$;
 REVOKE ALL ON FUNCTION public.submit_my_class_session(text, date, text, text, text, numeric, integer, text, text, text, text, text, text, boolean, numeric, jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.submit_my_class_session(text, date, text, text, text, numeric, integer, text, text, text, text, text, text, boolean, numeric, jsonb) FROM anon;
 GRANT EXECUTE ON FUNCTION public.submit_my_class_session(text, date, text, text, text, numeric, integer, text, text, text, text, text, text, boolean, numeric, jsonb) TO authenticated;
+
+-- PostgREST 重新讀取結構（新表、新函式與新參數立即可用）
+NOTIFY pgrst, 'reload schema';

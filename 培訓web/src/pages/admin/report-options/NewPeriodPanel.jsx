@@ -49,7 +49,7 @@ const NewPeriodPanel = ({ periods, options, defaultSourceId, busy, onCreate, onC
                 </select>
             </label>
             <p className="text-xs font-medium leading-relaxed text-bauhaus-black/60">
-                複製會把那一期的上課單位與營隊梯次（含啟用狀態與順序）原樣帶到新期間，之後各改各的，互不影響。
+                複製會把那一期的上課單位（含啟用狀態與順序）原樣帶到新期間，之後各改各的，互不影響。營隊梯次每期日期不同，不會複製，請在新期間另外新增。
             </p>
             <div className="flex flex-wrap gap-2">
                 <button type="submit" disabled={busy} className="bh-btn bh-btn-blue px-5 min-h-[44px]">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
@@ -116,22 +116,24 @@ const MySalaryNew = () => {
     }, [user]);
 
     // 回報表單欄位設定（顯示哪些欄位、順序、自訂欄位）；讀取失敗就用預設欄位，不擋回報
+    const fetchFieldRows = useCallback(async () => {
+        try {
+            const { data, error: fieldsError } = await supabase
+                .from('salary_report_fields')
+                .select('layout, field_key, source, label, field_type, options, help_text, is_required, is_visible, sort_order')
+                .order('sort_order', { ascending: true });
+            return fieldsError ? [] : (data || []);
+        } catch {
+            return [];
+        }
+    }, []);
+
     useEffect(() => {
         if (!user) return undefined;
         let active = true;
-        (async () => {
-            try {
-                const { data, error: fieldsError } = await supabase
-                    .from('salary_report_fields')
-                    .select('layout, field_key, source, label, field_type, options, help_text, is_required, is_visible, sort_order')
-                    .order('sort_order', { ascending: true });
-                if (active) setFieldRows(fieldsError ? [] : (data || []));
-            } catch {
-                if (active) setFieldRows([]);
-            }
-        })();
+        fetchFieldRows().then(rows => { if (active) setFieldRows(rows); });
         return () => { active = false; };
-    }, [user]);
+    }, [user, fetchFieldRows]);
 
     const layout = reportLayoutFor(form.course_type);
     const layoutFields = useMemo(() => visibleFieldsOfLayout(fieldRows, layout), [fieldRows, layout]);
@@ -231,6 +233,12 @@ const MySalaryNew = () => {
             if (submitError) throw submitError;
             navigate('/my/salary', { replace: true, state: { salaryReportSubmitted: true } });
         } catch (submitError) {
+            // 填寫途中管理員改了表單欄位：直接重新載入欄位設定，已填的內容保留，講師確認後再送一次
+            if (String(submitError?.message || '').includes('欄位已更新')) {
+                setFieldRows(await fetchFieldRows());
+                setError('管理員剛更新了回報表單的欄位，已重新載入；已填的內容都還在，請確認後再按一次送出。');
+                return;
+            }
             setError(salaryErrorMessage(submitError, '回報送出失敗，請稍後再試。'));
         } finally {
             setSubmitting(false);

@@ -108,7 +108,7 @@ const OptionSection = ({ section, items, busy, onAdd, onRename, onToggle, onReor
                                     {inactive && <span className="sr-only">（已停用）</span>}
                                 </p>
                                 {inactive && (
-                                    <span aria-hidden="true" className="hidden sm:inline-block shrink-0 rounded-lg bg-bauhaus-black px-2 py-0.5 text-[11px] font-black text-white">已停用</span>
+                                    <span aria-hidden="true" className="hidden sm:inline-block shrink-0 rounded-lg bg-bauhaus-black px-2 py-0.5 text-xs font-black text-white">已停用</span>
                                 )}
                                 <button
                                     type="button"

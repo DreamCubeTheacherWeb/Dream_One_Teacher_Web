@@ -79,10 +79,13 @@ export const newPeriodValue = (random = Math.random) => {
     return `term_${suffix}`;
 };
 
-// 新增期間時「從某期複製清單」：回傳要 insert 的列（名稱、順序、啟用狀態照抄，掛到新期間）
-export const planCopyItems = (options, sourcePeriodId, newPeriodId) => {
+// 新增期間時「從某期複製清單」：回傳要 insert 的列（名稱、順序、啟用狀態照抄，掛到新期間）。
+// 預設只複製上課單位：營隊梯次帶日期（7/1~7/3…），每期不同；複製過去又沒停用舊期間時，
+// 講師的梯次下拉會出現兩組同名梯次，容易選到錯的期間。
+export const COPY_KINDS = ['partner_unit'];
+export const planCopyItems = (options, sourcePeriodId, newPeriodId, kinds = COPY_KINDS) => {
     if (!sourcePeriodId || !newPeriodId) return [];
-    return PERIOD_SECTIONS.flatMap(({ kind }) => itemsOfPeriod(options, sourcePeriodId, kind).map((item) => ({
+    return PERIOD_SECTIONS.filter(({ kind }) => kinds.includes(kind)).flatMap(({ kind }) => itemsOfPeriod(options, sourcePeriodId, kind).map((item) => ({
         kind,
         value: item.value,
         label: item.label,

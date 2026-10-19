@@ -57,12 +57,12 @@ const countSessions = (apply = (query) => query) => apply(
     supabase.from('class_sessions').select('id', { count: 'exact', head: true }),
 );
 
-// 教學期間代碼 → 名稱（期間可在「回報選項管理」新增，名稱以資料庫為準）
-const PeriodLabelsContext = createContext({});
+// 教學期間代碼 → 名稱（期間可在「回報選項管理」新增，名稱以資料庫為準）；null＝還沒讀到或讀取失敗
+const PeriodLabelsContext = createContext(null);
 
 const SalaryRegister = () => {
     const { profile } = useAuth();
-    const [periodLabels, setPeriodLabels] = useState({});
+    const [periodLabels, setPeriodLabels] = useState(null);
     const [sessions, setSessions] = useState([]);
     const [instructors, setInstructors] = useState([]);
     const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核准、異常、月份選項
@@ -221,7 +221,12 @@ const SalaryRegister = () => {
                 .from('salary_report_options')
                 .select('value, label')
                 .eq('kind', 'term_period');
-            if (active && !error) setPeriodLabels(Object.fromEntries((data || []).map(row => [row.value, row.label])));
+            if (!active) return;
+            if (error) {
+                console.warn('教學期間名稱讀取失敗，先以期間代碼顯示', error);
+                return;
+            }
+            setPeriodLabels(Object.fromEntries((data || []).map(row => [row.value, row.label])));
         })();
         return () => { active = false; };
     }, []);
@@ -444,7 +449,12 @@ const recordState = (session) => {
 };
 
 // 對齊 Google 課後回報表單的欄位：期間、單位／梯次、教材、交通補助（只顯示，不影響核准）
-const periodLabelOf = (periodLabels, value) => periodLabels[value] || TERM_PERIOD_LABELS[value] || '已停用的期間';
+// 名稱還沒讀到（或讀取失敗）時先顯示內建名稱或代碼，讀到後才判斷「已停用」（講師端讀不到停用期間）
+const periodLabelOf = (periodLabels, value) => {
+    if (periodLabels?.[value]) return periodLabels[value];
+    if (!periodLabels) return TERM_PERIOD_LABELS[value] || value;
+    return TERM_PERIOD_LABELS[value] || `已停用的期間（${value}）`;
+};
 
 const reportExtraItems = (session, periodLabels) => {
     const items = [];

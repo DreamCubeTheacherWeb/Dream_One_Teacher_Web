@@ -111,14 +111,15 @@ test('newPeriodValue：term_ 開頭加 10 碼英數，可注入亂數', () => {
     assert.notEqual(newPeriodValue(), newPeriodValue());
 });
 
-test('planCopyItems：單位與梯次照抄名稱、順序、啟用狀態，掛到新期間，不帶 id', () => {
+test('planCopyItems：預設只複製上課單位（照抄名稱、順序、啟用狀態，掛到新期間，不帶 id）；營隊梯次不複製', () => {
     const plan = planCopyItems(seed(), 't1', 'NEW');
     assert.deepEqual(plan, [
         { kind: 'partner_unit', value: '【新竹】康乃薾', label: '【新竹】康乃薾', sort_order: 10, is_active: true, period_id: 'NEW' },
         { kind: 'partner_unit', value: '【週二】再興', label: '【週二】再興', sort_order: 20, is_active: false, period_id: 'NEW' },
-        { kind: 'camp_batch', value: '【臺北A】中山', label: '【臺北A】中山', sort_order: 10, is_active: true, period_id: 'NEW' },
     ]);
     assert.ok(plan.every((row) => !('id' in row)));
+    // 明確指定才連梯次一起複製
+    assert.equal(planCopyItems(seed(), 't1', 'NEW', ['partner_unit', 'camp_batch']).filter((row) => row.kind === 'camp_batch').length, 1);
 });
 
 test('planCopyItems：來源空清單、缺少來源或新期間都回傳空陣列', () => {

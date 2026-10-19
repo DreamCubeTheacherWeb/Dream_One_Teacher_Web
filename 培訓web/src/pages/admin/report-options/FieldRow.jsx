@@ -4,7 +4,7 @@ import { ToggleSwitch } from './ui';
 
 const Tag = ({ children, tone = 'plain' }) => (
     <span
-        className={`inline-flex items-center gap-1 rounded-lg border-2 border-bauhaus-black px-1.5 py-0.5 text-[11px] font-black leading-none ${
+        className={`inline-flex items-center gap-1 rounded-lg border-2 border-bauhaus-black px-1.5 py-0.5 text-xs font-black leading-none ${
             tone === 'dark' ? 'bg-bauhaus-black text-white' : tone === 'yellow' ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-white text-bauhaus-black'
         }`}
     >
