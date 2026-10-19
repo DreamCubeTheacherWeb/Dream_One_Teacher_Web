@@ -233,6 +233,7 @@ export async function scenarioD(ctx) {
       return /剩餘 \d+ 次/.test(t) ? t : null;
     });
     r.check('D 末四碼錯誤顯示失敗與剩餘次數', Boolean(failText), failText || '');
+    await dualShot(ctx, s, 'D-01-identity-wrong-last-four', { fullPage: false });
     await s.page.locator('#claim-id-last-four').fill('6789');
     await s.page.getByRole('button', { name: '核對並帶入資料' }).click();
     await s.page.waitForURL(/\/profile$/, { timeout: 15000 }).catch(() => {});
