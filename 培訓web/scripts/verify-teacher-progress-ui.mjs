@@ -383,7 +383,7 @@ async function main() {
         assert.match(await box.innerText(), /名冊已有同名：王小明/);
       });
 
-      await step('勾選確認後一次新增多位空位：payload 只有姓名＋業務狀態＋name_slot', async () => {
+      await step('勾選確認後一次新增多位空位：payload 只有姓名＋業務狀態＋預設等級實習＋name_slot', async () => {
         const dialog = page.getByRole('dialog', { name: '新增講師' });
         await dialog.getByLabel('老師姓名，一行一個').fill('王小明\n新人甲\n新人甲');
         await dialog.getByLabel('我確定要再新增同名空位（同名同姓不同人）').check();
@@ -392,9 +392,9 @@ async function main() {
         await page.getByRole('status').filter({ hasText: '已新增 3 位空位' }).waitFor({ timeout: 5000 });
         assert.equal(inserts.length, 1);
         assert.deepEqual(inserts[0], [
-          { full_name: '王小明', employment_status: 'active', name_slot: true },
-          { full_name: '新人甲', employment_status: 'active', name_slot: true },
-          { full_name: '新人甲', employment_status: 'active', name_slot: true },
+          { full_name: '王小明', employment_status: 'active', instructor_role: '實習', name_slot: true },
+          { full_name: '新人甲', employment_status: 'active', instructor_role: '實習', name_slot: true },
+          { full_name: '新人甲', employment_status: 'active', instructor_role: '實習', name_slot: true },
         ]);
         assert.equal(await page.getByRole('dialog', { name: '新增講師' }).count(), 0);
         await page.locator('[data-progress-filter="all"]').filter({ hasText: '全部 11' }).waitFor({ timeout: 5000 });

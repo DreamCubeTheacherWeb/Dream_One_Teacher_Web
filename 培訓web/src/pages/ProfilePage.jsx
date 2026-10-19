@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, AlertCircle, Trophy, Lock, ChevronDown, ChevronUp, ExternalLink, History } from 'lucide-react';
@@ -102,6 +102,7 @@ const readDraft = async (uid, baseUpdatedAt) => {
 const ProfilePage = () => {
     const { user, profile, claimState } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [isFirstTime, setIsFirstTime] = useState(false);
@@ -456,13 +457,25 @@ const ProfilePage = () => {
                 wca_id: nextForm.wca_id?.trim() || null,
             };
 
-            const { data, error } = await supabase
+            // 已有自己的主檔就 UPDATE；不能用 upsert：INSERT…ON CONFLICT 會先跑 INSERT 的 trigger，
+            // 舊講師核對認領後主要 Email 不是登入信箱時，會被「新建主檔 Email 必須等於登入帳號」擋下。
+            const { data: updatedRows, error: updateError } = await supabase
                 .from('instructors')
-                .upsert(payload, { onConflict: 'user_id' })
-                .select('updated_at')
-                .single();
-            if (error) throw error;
-            savedRow = data;
+                .update(payload)
+                .eq('user_id', user.id)
+                .select('updated_at');
+            if (updateError) throw updateError;
+            if (updatedRows?.length) {
+                savedRow = updatedRows[0];
+            } else {
+                const { data, error } = await supabase
+                    .from('instructors')
+                    .insert(payload)
+                    .select('updated_at')
+                    .single();
+                if (error) throw error;
+                savedRow = data;
+            }
         } catch (error) {
             if (uploadedThisSave.length) {
                 const { error: rollbackError } = await supabase.storage
@@ -533,7 +546,7 @@ const ProfilePage = () => {
                 </div>
             )}
 
-            {claimState?.status === 'claimed' && claimState.claimed_now && (
+            {((claimState?.status === 'claimed' && claimState.claimed_now) || location.state?.claimedNow) && (
                 <div className="bh-card bg-bauhaus-blue/10 p-5 mb-6 flex items-start gap-3">
                     <CheckCircle2 className="w-5 h-5 text-bauhaus-blue shrink-0 mt-0.5" />
                     <div>

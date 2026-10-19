@@ -1123,6 +1123,8 @@ const AddInstructorModal = ({ instructors, onClose, onCreated }) => {
 
 const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
     const [text, setText] = useState('');
+    // 合約要有講師等級才能簽；新建帳號一律是「實習」，空位預設同樣，管理員可改。
+    const [instructorRole, setInstructorRole] = useState('實習');
     const [confirmedDuplicate, setConfirmedDuplicate] = useState(false);
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState('');
@@ -1147,6 +1149,7 @@ const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
         const rows = parsed.names.map(name => ({
             full_name: name,
             employment_status: 'active',
+            instructor_role: instructorRole || null,
             name_slot: true,
         }));
         const { error } = await supabase.from('instructors').insert(rows);
@@ -1174,6 +1177,20 @@ const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
                     aria-label="老師姓名，一行一個"
                     autoFocus
                 />
+            </Field>
+
+            <Field label="講師等級（套用到這批）" hint="合約要有等級才能簽。之後可在列表上逐一調整。">
+                <select
+                    value={instructorRole}
+                    onChange={e => setInstructorRole(e.target.value)}
+                    className="bh-input text-sm"
+                    aria-label="講師等級"
+                >
+                    <option value="">未設定（簽約前要補）</option>
+                    {Object.entries(ROLE_LABELS).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                    ))}
+                </select>
             </Field>
 
             {parsed.names.length > 0 && (

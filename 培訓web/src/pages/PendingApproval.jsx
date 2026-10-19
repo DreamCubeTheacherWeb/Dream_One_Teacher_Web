@@ -5,7 +5,7 @@ import { ArrowLeft, Clock, LogOut, RefreshCw, ShieldCheck, UserCheck, UserPlus }
 import { Navigate, useNavigate } from 'react-router-dom';
 
 const PendingApproval = () => {
-    const { user, profile, signOut, refreshProfile, claimState } = useAuth();
+    const { user, profile, signOut, refreshProfile, claimState, loading: authLoading } = useAuth();
     const navigate = useNavigate();
     const [checking, setChecking] = useState(true);
     const [hasInstructorProfile, setHasInstructorProfile] = useState(false);
@@ -34,6 +34,8 @@ const PendingApproval = () => {
         checkProfile();
     }, [user, claimState?.status]);
 
+    // 重新整理時登入狀態還在載入，先等，不要誤判成未登入而導回首頁。
+    if (authLoading) return <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">載入中...</div>;
     if (!user) return <Navigate to="/" />;
     if (profile?.role && profile.role !== 'pending') return <Navigate to="/courses" />;
     if (checking) return <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">載入中...</div>;
@@ -45,7 +47,7 @@ const PendingApproval = () => {
     const finishClaim = async () => {
         setClaimMessage({ type: 'success', text: '認領完成，正在帶入你的講師資料…' });
         await refreshProfile();
-        navigate('/profile', { replace: true });
+        navigate('/profile', { replace: true, state: { claimedNow: true } });
     };
 
     const handleNameClaim = async (event) => {
