@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 // 講師簽約重開：在隔離 PostgreSQL 實跑 submit_my_contract 的各道關卡，並靜態檢查前端只走受控 RPC。
+// 注意：SQL 段驗的是 2026-10-18 migration 本身（JWT amr 版）能在正式庫現況上正確套用；
+// 2026-10-20 起現行的 submit_my_contract 是 v2（本系統 OTP＋同意紀錄＋雜湊＋證據鏈），由
+// scripts/verify-claim-activation-esign.mjs 在完整 SQL 鏈上驗證。
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -76,7 +79,19 @@ assert.doesNotMatch(flow, /api\.ipify\.org/);
 assert.doesNotMatch(flow, /p_verified|verified_at|verify_method/);
 assert.match(flow, /\.eq\(\s*'doc_category',\s*'contract'\s*\)/);
 process.stdout.write("PASS: ContractSigningFlow.jsx submits only through rpc('submit_my_contract') (no direct insert/update, no ipify, no client-side verified fields) and loads only doc_category='contract' documents\n");
-assert.match(flow, /const OTP_BYPASS_FOR_TESTING = false;/);
-process.stdout.write('PASS: OTP_BYPASS_FOR_TESTING = false (Email verification restored)\n');
+// 2026-10-20 起簽約 OTP 改用本系統 OTP（request_email_otp／verify_email_otp，寄到已確認 Email），
+// 不再用 Supabase Auth signInWithOtp＋JWT amr，原本的 OTP_BYPASS_FOR_TESTING 旗標已隨之移除。
+// 這裡改驗：送出時必帶 v2 的 OTP／同意／雜湊參數、沒有任何繞過旗標、不再走 signInWithOtp。
+// 資料庫端 v2 的實際行為（OTP_REQUIRED／CONSENT_REQUIRED／雜湊、證據鏈等）由 scripts/verify-claim-activation-esign.mjs 實跑。
+for (const param of ['p_otp_challenge_id', 'p_consent_id', 'p_document_sha256', 'p_signed_pdf_sha256']) {
+  assert.match(flow, new RegExp(`\\b${param}\\b`));
+}
+assert.doesNotMatch(flow, /OTP_BYPASS[A-Z_]*\s*=\s*true/);
+assert.doesNotMatch(flow, /signInWithOtp/);
+const otpDialog = read('src/components/EmailOtpDialog.jsx');
+assert.match(otpDialog, /rpc\(\s*'request_email_otp'/);
+assert.match(otpDialog, /rpc\(\s*'verify_email_otp'/);
+assert.doesNotMatch(otpDialog, /signInWithOtp/);
+process.stdout.write('PASS: submit_my_contract is called with p_otp_challenge_id / p_consent_id / p_document_sha256 / p_signed_pdf_sha256; no OTP bypass flag; Email OTP uses request_email_otp / verify_email_otp (no signInWithOtp)\n');
 assert.match(read('src/lib/featureFlags.js'), /export const INSTRUCTOR_CONTRACTS_ENABLED = true;/);
 process.stdout.write('PASS: INSTRUCTOR_CONTRACTS_ENABLED = true\n');

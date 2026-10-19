@@ -1,0 +1,820 @@
+#!/usr/bin/env node
+// 帳號認領啟用（Email OTP）＋電子契約簽署證據：資料庫層驗證（migration 20261020100000）
+//
+// 做法：用 scripts/e2e/lib/db.mjs 起一個全新的暫時 PostgreSQL，套 scripts/e2e/bootstrap.sql（Supabase 相容底座，
+// 含 pg_net／Vault 替身）＋ supabase/*.sql ＋ supabase/migrations/*.sql（含新 migration），再以不同假使用者身分
+// （SET ROLE authenticated＋request.jwt.claims＋request.headers，與 PostgREST 相同）跑情境。
+// pg_net 替身把寄出的請求存進 net._e2e_http_requests，測試從那裡讀出驗證碼明碼——只限測試，正式環境沒有這張表。
+// 每項印 PASS／FAIL；有 FAIL 就 exit 1。結束時只停自己起的 PostgreSQL（記錄 PID，不 pkill）。
+//
+// 用法：LC_ALL=en_US.UTF-8 node scripts/verify-claim-activation-esign.mjs
+import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { createHash, randomUUID } from 'node:crypto';
+import { TempPostgres } from './e2e/lib/db.mjs';
+
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MIGRATION = path.join(appDir, 'supabase/migrations/20261020100000_claim_activation_esign_evidence.sql');
+const LEGAL_COPY = path.join(appDir, 'docs/specs/2026-10-20-esign-legal-copy.md');
+const COMPANY = '夢想一號文化教育股份有限公司';
+const CONTACT = 'hi@dreamcube.tw';
+const RESEND_KEY = 're_test_key_DO_NOT_USE';
+const RESEND_FROM = '夢想一號 <no-reply@example.test>';
+
+// ── 結果收集 ────────────────────────────────────────────────────────
+const results = [];
+let currentGroup = 'setup';
+const group = (name) => { currentGroup = name; console.log(`\n── ${name} ──`); };
+function check(name, condition, detail = '') {
+  const pass = Boolean(condition);
+  results.push({ group: currentGroup, name, pass });
+  const extra = !pass && detail ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : '';
+  console.log(`${pass ? 'PASS' : 'FAIL'}: [${currentGroup}] ${name}${extra}`);
+  return pass;
+}
+
+const sha = (text) => createHash('sha256').update(text).digest('hex');
+const lit = (value) => `'${String(value).replace(/'/g, "''")}'`;
+const dq = (sql) => {
+  if (sql.includes('$tq$')) throw new Error('nested $tq$');
+  return `$tq$${sql}$tq$`;
+};
+const jlit = (value) => (value === null || value === undefined ? 'NULL' : `${lit(JSON.stringify(value))}::jsonb`);
+const ulit = (value) => (value ? `${lit(value)}::uuid` : 'NULL');
+const errOf = (r) => (r && r.ok === false ? r.message : null);
+
+const db = new TempPostgres({ label: 'claim-esign' });
+const emails = new Map();
+
+// ── 身分切換（與 PostgREST 相同：SET ROLE＋request.jwt.claims＋request.headers） ──
+function sqlAs(uid, sql, { headers = {}, role = 'authenticated' } = {}) {
+  const claims = uid ? JSON.stringify({ sub: uid, role: 'authenticated', aud: 'authenticated', email: emails.get(uid) }) : '';
+  const prefix = role === 'postgres' ? '' : `SET ROLE ${role};\n`;
+  return db.psqlSync(`${prefix}SET request.jwt.claims = :'claims';\nSET request.headers = :'hdrs';\n${sql}`, {
+    vars: { claims, hdrs: JSON.stringify(headers) },
+  }).stdout;
+}
+const jsonAs = (uid, sql, opts) => { const out = sqlAs(uid, sql, opts); return out ? JSON.parse(out) : null; };
+// call：執行一個回傳 jsonb 的運算式 → {ok:true,result} 或 {ok:false,sqlstate,message}（失敗時子交易回滾，等同 PostgREST 整筆回滾）
+const call = (uid, expr, opts) => jsonAs(uid, `SELECT t.try(${dq(`SELECT ${expr}`)});`, opts);
+// exec：執行任意指令 → {ok:true,rows} 或 {ok:false,...}
+const exec = (uid, stmt, opts) => jsonAs(uid, `SELECT t.exec(${dq(stmt)});`, opts);
+const su = (sql) => db.psqlSync(sql).stdout;
+const suJson = (sql) => { const out = su(sql); return out ? JSON.parse(out) : null; };
+const suExec = (stmt) => suJson(`SELECT t.exec(${dq(stmt)});`);
+const suVal = (sql) => su(sql);
+
+// ── 測試資料工具 ────────────────────────────────────────────────────
+function createAuthUser(email, fullName) {
+  const id = randomUUID();
+  emails.set(id, email);
+  su(`INSERT INTO auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+      VALUES ('00000000-0000-0000-0000-000000000000', ${lit(id)}, 'authenticated', 'authenticated', ${lit(email)}, now(),
+              '{"provider":"google","providers":["google"]}'::jsonb, jsonb_build_object('full_name', ${lit(fullName)}), now(), now());`);
+  return id;
+}
+const roleOf = (uid) => suVal(`SELECT role FROM public.users WHERE id = ${lit(uid)}`);
+const instructorOf = (uid) => suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE user_id = ${lit(uid)}`);
+const activationsOf = (uid) => suJson(`SELECT COALESCE(jsonb_agg(to_jsonb(a) ORDER BY a.claimed_at), '[]'::jsonb) FROM public.instructor_account_activations a WHERE a.user_id = ${lit(uid)}`);
+const openActivation = (uid) => (activationsOf(uid) || []).find((a) => a.status === 'pending' || a.status === 'active') || null;
+const makeInstructor = (name, email, { phone = '0912345678', idNumber = 'A123456789', userId = null } = {}) =>
+  suVal(`SELECT t.make_instructor(${lit(name)}, ${email ? lit(email) : 'NULL'}, ${lit(phone)}, ${lit(idNumber)}, ${ulit(userId)})`);
+
+function requestOtp(uid, purpose) {
+  const r = call(uid, `public.request_email_otp(${lit(purpose)})`);
+  return r?.ok ? r.result : r;
+}
+function codeOf(challengeId) {
+  return suVal(`SELECT (regexp_match(r.body->>'text', '驗證碼：([0-9]{6})'))[1]
+                  FROM private.email_otp_challenges c
+                  JOIN public.email_delivery_log l ON l.id = c.delivery_id
+                  JOIN net._e2e_http_requests r ON r.id = l.net_request_id
+                 WHERE c.id = ${lit(challengeId)}`);
+}
+function verifyOtp(uid, challengeId, code) {
+  const r = call(uid, `public.verify_email_otp(${ulit(challengeId)}, ${lit(code)})`);
+  return r?.ok ? r.result : r;
+}
+// 把這個人的舊 challenge 往前推 2 小時（跳過 60 秒冷卻與每小時上限），再寄一封新的並回傳 challenge
+function freshOtp(uid, purpose) {
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '2 hours' WHERE user_id = ${lit(uid)}`);
+  const sent = requestOtp(uid, purpose);
+  if (sent?.status !== 'sent') throw new Error(`freshOtp(${purpose}) failed: ${JSON.stringify(sent)}`);
+  return { id: sent.challenge_id, code: codeOf(sent.challenge_id), sent };
+}
+function verifiedContractOtp(uid) {
+  const otp = freshOtp(uid, 'contract_sign');
+  const v = verifyOtp(uid, otp.id, otp.code);
+  if (v?.status !== 'verified') throw new Error(`contract otp verify failed ${JSON.stringify(v)}`);
+  return otp.id;
+}
+function recordConsent(uid, decision, versions, code = 'esign-consent-v1', headers = {}) {
+  return call(uid, `public.record_contract_consent(${lit(decision)}, ${jlit(versions)}, ${lit(code)})`, { headers });
+}
+function submitExpr({ name = '王小明', sig, pdfs, versions, otp, consent, docHash, pdfHash, ua = 'client-UA' }) {
+  return `public.submit_my_contract(p_filled_name => ${lit(name)}, p_filled_instructor_role => 'A',
+    p_filled_id_number => 'A123456789', p_filled_address => '台北市信義區某路 1 號', p_filled_phone => '0912345678',
+    p_signature_path => ${lit(sig)}, p_signed_pdf_paths => ${jlit(pdfs)}, p_doc_versions => ${jlit(versions)},
+    p_user_agent => ${lit(ua)}, p_otp_challenge_id => ${ulit(otp)}, p_consent_id => ${ulit(consent)},
+    p_document_sha256 => ${jlit(docHash)}, p_signed_pdf_sha256 => ${jlit(pdfHash)})`;
+}
+
+// ── 法規文案原文（docs/specs/2026-10-20-esign-legal-copy.md §5）──
+const legal = readFileSync(LEGAL_COPY, 'utf8');
+function legalQuoteLines(code) {
+  const anchor = legal.indexOf('## 5.');
+  const at = legal.indexOf('`' + code + '`', anchor);
+  if (anchor < 0 || at < 0) return [];
+  const headingStart = legal.lastIndexOf('### ', at);
+  const nextHeading = legal.indexOf('\n### ', at);
+  const end = nextHeading === -1 ? legal.indexOf('\n---', at) : nextHeading;
+  return legal.slice(headingStart, end).split('\n')
+    .filter((line) => line.startsWith('> '))
+    .map((line) => line.slice(2)
+      .replace(/\*\*/g, '')
+      .replace(/【待業主確認[^】]*】/g, '')
+      .replaceAll('{{company_name}}', COMPANY)
+      .replaceAll('{{contact_email}}', CONTACT)
+      .trim())
+    .filter(Boolean);
+}
+
+let pgPid = null;
+try {
+  // ════════════════════════════════════════════════════════════════
+  group('setup');
+  await db.start();
+  pgPid = db.pid;
+  console.log(`temporary PostgreSQL pid=${pgPid} port=${db.port}`);
+  const chain = db.applyChain(appDir, { bootstrapFile: path.join(appDir, 'scripts/e2e/bootstrap.sql') });
+  check(`全部 SQL 套用成功（${chain.applied.length} 個檔，含新 migration）`,
+    chain.applied.includes('supabase/migrations/20261020100000_claim_activation_esign_evidence.sql'));
+
+  su(`
+    CREATE SCHEMA t;
+    GRANT USAGE ON SCHEMA t TO anon, authenticated, service_role;
+    CREATE FUNCTION t.try(p_sql text) RETURNS jsonb LANGUAGE plpgsql AS $f$
+    DECLARE v jsonb; v_state text; v_msg text;
+    BEGIN
+      BEGIN
+        EXECUTE p_sql INTO v;
+        RETURN jsonb_build_object('ok', true, 'result', v);
+      EXCEPTION WHEN OTHERS THEN
+        GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
+        RETURN jsonb_build_object('ok', false, 'sqlstate', v_state, 'message', v_msg);
+      END;
+    END $f$;
+    CREATE FUNCTION t.exec(p_sql text) RETURNS jsonb LANGUAGE plpgsql AS $f$
+    DECLARE n bigint; v_state text; v_msg text;
+    BEGIN
+      BEGIN
+        EXECUTE p_sql;
+        GET DIAGNOSTICS n = ROW_COUNT;
+        RETURN jsonb_build_object('ok', true, 'rows', n);
+      EXCEPTION WHEN OTHERS THEN
+        GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE, v_msg = MESSAGE_TEXT;
+        RETURN jsonb_build_object('ok', false, 'sqlstate', v_state, 'message', v_msg);
+      END;
+    END $f$;
+    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA t TO anon, authenticated, service_role;
+    -- 資料齊全的講師主檔（以超級使用者建立＝模擬匯入／後台既有資料）
+    CREATE FUNCTION t.make_instructor(p_name text, p_email text, p_phone text, p_id_number text, p_user uuid)
+    RETURNS uuid LANGUAGE sql AS $f$
+      INSERT INTO public.instructors (
+        user_id, full_name, nickname, gender, birth_date, id_number, phone_mobile, line_id, address, household_address,
+        email_primary, teaching_freq_semester, teaching_freq_vacation, teaching_regions, bio_notes,
+        bank_account_name, bank_name, bank_branch, bank_account_number, bank_code,
+        id_front_path, id_back_path, bankbook_path, instructor_role, employment_status)
+      VALUES (
+        p_user, p_name, p_name || '暱稱', '男', '1990-01-01', p_id_number, p_phone, 'line-' || p_phone,
+        '台北市信義區 1 號', '台北市信義區 1 號', p_email, '每週 2 次', '每週 3 次', ARRAY['臺北市']::public.tw_county[], '測試資料',
+        p_name, '測試銀行', '測試分行', '0000000000', '0000000',
+        'instructors/import/id-front.png', 'instructors/import/id-back.png', 'instructors/import/bankbook.png',
+        'A', 'active')
+      RETURNING id
+    $f$;
+  `);
+  su(`INSERT INTO vault.secrets (name, secret) VALUES ('resend_api_key', ${lit(RESEND_KEY)}), ('resend_from', ${lit(RESEND_FROM)});`);
+
+  const rpcs = [
+    'public.get_my_activation_status()',
+    'public.request_email_otp(text)',
+    'public.verify_email_otp(uuid,text)',
+    'public.record_contract_consent(text,jsonb,text)',
+    'public.submit_my_contract(text,text,text,text,text,text,jsonb,jsonb,text,uuid,uuid,jsonb,jsonb)',
+    'public.admin_confirm_instructor_email(uuid,text,text)',
+    'public.admin_set_document_hash(uuid,text)',
+    'public.admin_verify_contract_evidence_chain()',
+  ];
+  const fnInfo = suJson(`SELECT jsonb_agg(jsonb_build_object('fn', f, 'definer', p.prosecdef, 'path', p.proconfig,
+      'anon', has_function_privilege('anon', f::regprocedure, 'EXECUTE'),
+      'auth', has_function_privilege('authenticated', f::regprocedure, 'EXECUTE'),
+      'service', has_function_privilege('service_role', f::regprocedure, 'EXECUTE')))
+    FROM unnest(ARRAY[${rpcs.map(lit).join(',')}]) AS f JOIN pg_proc p ON p.oid = f::regprocedure`);
+  check('8 個新 RPC 都是 SECURITY DEFINER＋search_path=\'\'', fnInfo.length === 8 && fnInfo.every((f) => f.definer && JSON.stringify(f.path) === '["search_path=\\"\\""]'), fnInfo);
+  check('8 個新 RPC：anon／service_role 無 EXECUTE、authenticated 有', fnInfo.every((f) => !f.anon && !f.service && f.auth), fnInfo);
+  check('submit_my_contract 只剩一個多載（v2）', suVal(`SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'submit_my_contract'`) === '1');
+  const privAnon = suVal(`SELECT has_schema_privilege('anon', 'private', 'USAGE') OR has_table_privilege('authenticated', 'private.email_otp_challenges', 'SELECT')`);
+  check('private.email_otp_challenges：authenticated 沒有任何讀取權、anon 沒有 private schema', privAnon === 'f');
+  check('pg_cron 排程 dreamone-refresh-email-delivery-status 每分鐘', suVal(`SELECT schedule || '|' || command FROM cron.job WHERE jobname = 'dreamone-refresh-email-delivery-status'`) === '* * * * *|SELECT private.refresh_email_delivery_status();');
+
+  // ════════════════════════════════════════════════════════════════
+  group('backfill D2/D4');
+  // 模擬「migration 執行當下已存在」的資料：以超級使用者直接寫成舊流程的結果
+  const legacyTeacher = createAuthUser('legacy-teacher@t.test', '舊講師');
+  const legacyInstructor = makeInstructor('舊講師', 'Legacy-Teacher@T.test ', { userId: legacyTeacher });
+  su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(legacyTeacher)}`);
+  const unlinkedOld = makeInstructor('未綁定舊講師', ' Unlinked.Old@T.test');
+  const badEmailOld = makeInstructor('信箱格式壞掉', 'not-an-email');
+  const pendingNew = createAuthUser('pending-new@t.test', '待審新講師');
+  const pendingNewInstructor = makeInstructor('待審新講師', 'pending-new@t.test', { userId: pendingNew });
+  const updatedBefore = suVal(`SELECT updated_at FROM public.instructors WHERE id = ${lit(unlinkedOld)}`);
+  su(`DELETE FROM private.schema_backfill_markers WHERE name = '20261020100000_claim_activation_esign_evidence'`);
+  const rerun1 = db.psqlSync(null, { file: MIGRATION, tuplesOnly: false, expectFail: true });
+  check('migration 第二次套用成功（模擬上線時的回填）', rerun1.ok, rerun1.stderr);
+  const lt = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE id = ${lit(legacyInstructor)}`);
+  check('D2 既有講師：identity_verified_at 已登錄、依據為公司既有核驗結果（非第三方實名認證）',
+    lt.identity_verified_at && lt.identity_verification_basis === '公司既有核驗結果登錄（非第三方實名認證）', lt);
+  check('D2 既有 email_primary 小寫去空白登錄為 confirmed_email（company_existing_record，by NULL）',
+    lt.confirmed_email === 'legacy-teacher@t.test' && lt.confirmed_email_method === 'company_existing_record' && lt.confirmed_email_by === null && lt.confirmed_email_at, lt);
+  const uo = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE id = ${lit(unlinkedOld)}`);
+  check('D2 未綁定的既有主檔也登錄（unlinked.old@t.test）', uo.identity_verified_at && uo.confirmed_email === 'unlinked.old@t.test', uo);
+  check('D2 回填不改 instructors.updated_at', suVal(`SELECT updated_at FROM public.instructors WHERE id = ${lit(unlinkedOld)}`) === updatedBefore);
+  const bo = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE id = ${lit(badEmailOld)}`);
+  check('D2 格式錯誤的 Email 不登錄（confirmed_email 維持 NULL，身分仍登錄）', bo.identity_verified_at && bo.confirmed_email === null, bo);
+  const pn = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE id = ${lit(pendingNewInstructor)}`);
+  check('D2 排除「新建帳號待審核」（綁在 pending 帳號的列）', pn.identity_verified_at === null && pn.confirmed_email === null, pn);
+  const legacyAct = openActivation(legacyTeacher);
+  check('D4 既有 teacher 補一筆 legacy_pre_activation（active）', legacyAct?.claim_method === 'legacy_pre_activation' && legacyAct.status === 'active' && legacyAct.activated_at && legacyAct.instructor_id === legacyInstructor, legacyAct);
+  check('D4 既有 teacher 角色不受影響', roleOf(legacyTeacher) === 'teacher');
+  check('D4 待審新講師（pending）沒有被補啟用紀錄', (activationsOf(pendingNew) || []).length === 0);
+  const markerBefore = suVal(`SELECT applied_at || detail::text FROM private.schema_backfill_markers`);
+  const rerun2 = db.psqlSync(null, { file: MIGRATION, tuplesOnly: false, expectFail: true });
+  check('migration 第三次套用成功，回填不重做（標記不變、啟用紀錄不重複）',
+    rerun2.ok && suVal(`SELECT applied_at || detail::text FROM private.schema_backfill_markers`) === markerBefore && activationsOf(legacyTeacher).length === 1, rerun2.stderr);
+  const legacyStatus = call(legacyTeacher, 'public.get_my_activation_status()');
+  check('legacy teacher 的 get_my_activation_status = active / legacy_pre_activation / 有已確認 Email',
+    legacyStatus.result?.status === 'active' && legacyStatus.result?.claim_method === 'legacy_pre_activation' && legacyStatus.result?.has_confirmed_email === true && legacyStatus.result?.masked_email === 'le***@t.test', legacyStatus);
+
+  // ════════════════════════════════════════════════════════════════
+  group('activation: claim paths');
+  su(`INSERT INTO public.teacher_invites (name, email, role) VALUES ('管理員', 'admin@t.test', 'admin')`);
+  const admin = createAuthUser('admin@t.test', '管理員');
+  check('管理員帳號建立（staff 邀請）', roleOf(admin) === 'admin');
+
+  // 路徑 1：Email 對應（首次登入 trigger）
+  const emailInstructor = makeInstructor('信箱老師', 'em@t.test');
+  const uEmail = createAuthUser('em@t.test', 'Google 顯示名');
+  check('Email 對應：首次登入就綁定主檔', instructorOf(uEmail)?.id === emailInstructor);
+  check('Email 對應：綁定後 role 仍是 pending（不再直接開通）', roleOf(uEmail) === 'pending');
+  const actEmail = openActivation(uEmail);
+  check('Email 對應：寫一筆 pending 啟用紀錄（email_match、claimed_at 伺服器時間、instructor_id）',
+    actEmail?.status === 'pending' && actEmail.claim_method === 'email_match' && actEmail.claimed_at && actEmail.instructor_id === emailInstructor, actEmail);
+  const rClaimAgain = call(uEmail, 'public.claim_my_precreated_instructor()');
+  check('Email 對應：再呼叫 claim_my_precreated_instructor → claimed、activation_required=true',
+    rClaimAgain.result?.status === 'claimed' && rClaimAgain.result?.activation_required === true && rClaimAgain.result?.claimed_now === false, rClaimAgain);
+
+  // 路徑 1b：先註冊、後建檔，再由 claim_my_precreated_instructor 認領
+  const uPre = createAuthUser('pre@t.test', '後建檔老師');
+  const preInstructor = makeInstructor('後建檔老師', 'pre@t.test', { phone: '0933000111', idNumber: 'C123450001' });
+  const rPre = call(uPre, 'public.claim_my_precreated_instructor()');
+  check('claim_my_precreated_instructor：status claimed 不變、另加 activation_required:true',
+    rPre.result?.status === 'claimed' && rPre.result?.claimed_now === true && rPre.result?.activation_required === true && rPre.result?.instructor_id === preInstructor, rPre);
+  check('claim_my_precreated_instructor：role 仍是 pending、啟用紀錄 pending email_match',
+    roleOf(uPre) === 'pending' && openActivation(uPre)?.claim_method === 'email_match' && openActivation(uPre)?.status === 'pending');
+
+  // 路徑 2：姓名＋手機＋身分證末四碼
+  const idInstructor = makeInstructor('核對老師', 'old-idc@t.test', { phone: '0922333444', idNumber: 'B223456789' });
+  const uId = createAuthUser('idc@t.test', '核對老師 Google');
+  const rId = call(uId, `public.claim_existing_instructor_by_identity('核對 老師', '0922-333-444', '6789')`);
+  check('claim_existing_instructor_by_identity：claimed＋activation_required:true',
+    rId.result?.status === 'claimed' && rId.result?.activation_required === true && rId.result?.instructor_id === idInstructor, rId);
+  check('claim_existing_instructor_by_identity：role 仍是 pending、啟用紀錄 identity_check',
+    roleOf(uId) === 'pending' && openActivation(uId)?.claim_method === 'identity_check');
+
+  // 路徑 3：姓名空位（管理員只填姓名建立）
+  const slotInsert = exec(admin, `INSERT INTO public.instructors (full_name, name_slot) VALUES ('空位老師', true)`);
+  check('管理員可建立姓名空位', slotInsert?.ok && slotInsert.rows === 1, slotInsert);
+  const slot = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE full_name = '空位老師'`);
+  check('管理員新建講師列：identity_verified_at 登錄、依據「管理員建立講師資料」、Email 未確認',
+    slot.identity_verified_at && slot.identity_verification_basis === '管理員建立講師資料' && slot.confirmed_email === null, slot);
+  const uSlot = createAuthUser('slot@t.test', '空位老師 Google');
+  const rSlot = call(uSlot, `public.claim_instructor_name_slot('空位老師')`);
+  check('claim_instructor_name_slot：claimed＋activation_required:true（只綁不開通）',
+    rSlot.result?.status === 'claimed' && rSlot.result?.activation_required === true && rSlot.result?.instructor_id === slot.id, rSlot);
+  check('claim_instructor_name_slot：role 仍是 pending、啟用紀錄 name_slot',
+    roleOf(uSlot) === 'pending' && openActivation(uSlot)?.claim_method === 'name_slot');
+  const slotStatus = call(uSlot, 'public.get_my_activation_status()').result;
+  check('姓名空位：get_my_activation_status = pending、沒有已確認 Email、資料未完整',
+    slotStatus?.status === 'pending' && slotStatus.claim_method === 'name_slot' && slotStatus.has_confirmed_email === false && slotStatus.masked_email === null && slotStatus.profile_complete === false, slotStatus);
+  check('姓名空位：沒有已確認 Email → request_email_otp 回 no_confirmed_email', requestOtp(uSlot, 'account_activation')?.status === 'no_confirmed_email');
+
+  // admin_confirm_instructor_email 的權限與輸入檢查
+  check('teacher／pending 呼叫 admin_confirm_instructor_email → 42501',
+    call(uSlot, `public.admin_confirm_instructor_email(${ulit(slot.id)}, 'slot@t.test', 'x')`)?.sqlstate === '42501');
+  check('admin_confirm_instructor_email：格式錯 → INVALID_EMAIL',
+    errOf(call(admin, `public.admin_confirm_instructor_email(${ulit(slot.id)}, 'not an email', '電話確認')`)) === 'INVALID_EMAIL');
+  check('admin_confirm_instructor_email：沒有註記 → NOTE_REQUIRED',
+    errOf(call(admin, `public.admin_confirm_instructor_email(${ulit(slot.id)}, 'slot@t.test', '  ')`)) === 'NOTE_REQUIRED');
+  const conf = call(admin, `public.admin_confirm_instructor_email(${ulit(slot.id)}, ' Slot@T.test ', '10/20 透過 LINE 與老師確認')`);
+  check('admin_confirm_instructor_email → {status:confirmed}', conf.result?.status === 'confirmed', conf);
+  const slotAfter = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE id = ${lit(slot.id)}`);
+  check('確認 Email 寫入 confirmed_email（小寫去空白）／by 管理員／admin_trusted_channel／註記',
+    slotAfter.confirmed_email === 'slot@t.test' && slotAfter.confirmed_email_by === admin && slotAfter.confirmed_email_method === 'admin_trusted_channel' && slotAfter.confirmed_email_note === '10/20 透過 LINE 與老師確認', slotAfter);
+  check('姓名空位：Email 確認後但資料不完整 → profile_incomplete（不能要 OTP）', requestOtp(uSlot, 'account_activation')?.status === 'profile_incomplete');
+
+  // 講師不能自己設定／更改 admin 專屬欄位
+  const selfEdit = exec(uSlot, `UPDATE public.instructors SET confirmed_email = 'hacker@evil.test' WHERE user_id = auth.uid()`);
+  check('講師自己改 confirmed_email 被 guard 擋（42501）', selfEdit?.ok === false && selfEdit.sqlstate === '42501', selfEdit);
+  const selfVerify = exec(uSlot, `UPDATE public.instructors SET identity_verified_at = now() WHERE user_id = auth.uid()`);
+  check('講師自己改 identity_verified_at 被 guard 擋（42501）', selfVerify?.ok === false && selfVerify.sqlstate === '42501', selfVerify);
+
+  // 新建帳號：管理員審核
+  const uNew = createAuthUser('new@t.test', '新進老師');
+  const newIns = exec(uNew, `INSERT INTO public.instructors (
+      user_id, full_name, nickname, gender, birth_date, id_number, phone_mobile, line_id, address, household_address, email_primary,
+      teaching_freq_semester, teaching_freq_vacation, teaching_regions, bio_notes, bank_account_name, bank_name, bank_branch,
+      bank_account_number, bank_code, id_front_path, id_back_path, bankbook_path)
+    VALUES (auth.uid(), '新進老師', '新新', '女', '1995-05-05', 'D223456789', '0955000111', 'line-new', '台中市', '台中市', 'new@t.test',
+      '每週 1 次', '每週 2 次', ARRAY['臺中市']::public.tw_county[], '新進', '新進老師', '銀行', '分行', '1111111111', '0000001',
+      'instructors/' || auth.uid() || '/f.png', 'instructors/' || auth.uid() || '/b.png', 'instructors/' || auth.uid() || '/k.png')`);
+  check('新進講師自建主檔（不能帶 admin 欄位，照舊可建）', newIns?.ok && newIns.rows === 1, newIns);
+  const selfSetConfirmed = exec(uNew, `UPDATE public.instructors SET confirmed_email = 'new@t.test' WHERE user_id = auth.uid()`);
+  check('新進講師不能自己登錄 confirmed_email', selfSetConfirmed?.ok === false, selfSetConfirmed);
+  check('新進講師沒有啟用紀錄、request_email_otp(account_activation) → not_allowed',
+    (activationsOf(uNew) || []).length === 0 && requestOtp(uNew, 'account_activation')?.status === 'not_allowed');
+  const approve = exec(admin, `SELECT public.approve_new_instructor_account(${ulit(uNew)})`);
+  check('approve_new_instructor_account 成功', approve?.ok, approve);
+  check('核准後 role = teacher', roleOf(uNew) === 'teacher');
+  const newAct = openActivation(uNew);
+  check('核准寫 new_instructor_approved（active、activation_email＝Google 信箱）',
+    newAct?.claim_method === 'new_instructor_approved' && newAct.status === 'active' && newAct.activated_at && newAct.activation_email === 'new@t.test', newAct);
+  const newInstr = instructorOf(uNew);
+  check('核准＝公司核驗：confirmed_email＝Google 信箱（google_login_new_instructor、by 管理員）、identity_verified_at＝now、依據「管理員審核新進講師」',
+    newInstr.confirmed_email === 'new@t.test' && newInstr.confirmed_email_method === 'google_login_new_instructor' && newInstr.confirmed_email_by === admin
+    && newInstr.identity_verified_at && newInstr.identity_verification_basis === '管理員審核新進講師', newInstr);
+  const approveClaimed = exec(admin, `SELECT public.approve_new_instructor_account(${ulit(uId)})`);
+  check('認領既有主檔（pending 啟用）的帳號不能由管理員直接核准開通',
+    approveClaimed?.ok === false && approveClaimed.sqlstate === '23514' && roleOf(uId) === 'pending', approveClaimed);
+
+  // ════════════════════════════════════════════════════════════════
+  group('OTP rules');
+  check('Email 對應帳號沒有已確認 Email（新主檔未回填）→ no_confirmed_email', requestOtp(uEmail, 'account_activation')?.status === 'no_confirmed_email');
+  call(admin, `public.admin_confirm_instructor_email(${ulit(emailInstructor)}, 'em@t.test', '電話確認')`);
+  const emStatus = call(uEmail, 'public.get_my_activation_status()').result;
+  check('admin 確認後：has_confirmed_email=true、masked_email=e***@t.test（本機名只有 2 字只露 1 字）、profile_complete=true',
+    emStatus.has_confirmed_email === true && emStatus.masked_email === 'e***@t.test' && emStatus.profile_complete === true && emStatus.status === 'pending', emStatus);
+  check('遮罩格式：abcdef@gmail.com → ab***@gmail.com', suVal(`SELECT private.mask_email('abcdef@gmail.com')`) === 'ab***@gmail.com');
+  check('目的代碼錯 → not_allowed', requestOtp(uEmail, 'whatever')?.status === 'not_allowed');
+  check('已是 teacher（legacy、無 pending）要啟用碼 → not_allowed（already_active）',
+    (() => { const r = requestOtp(legacyTeacher, 'account_activation'); return r?.status === 'not_allowed' && r.reason === 'already_active'; })());
+
+  const reqCount0 = Number(suVal(`SELECT count(*) FROM net._e2e_http_requests`));
+  const c1 = requestOtp(uEmail, 'account_activation');
+  const c1Row = suJson(`SELECT to_jsonb(c) FROM private.email_otp_challenges c WHERE id = ${ulit(c1.challenge_id)}`);
+  const expiresDelta = Number(suVal(`SELECT extract(epoch FROM (${lit(c1.expires_at)}::timestamptz - now()))`));
+  check('request_email_otp → sent（challenge_id、expires_at≈5 分、masked_email、resend_after_seconds:60）',
+    c1.status === 'sent' && c1.challenge_id && c1.masked_email === 'e***@t.test' && c1.resend_after_seconds === 60 && expiresDelta > 280 && expiresDelta <= 300, { c1, expiresDelta });
+  const code1 = codeOf(c1.challenge_id);
+  check('驗證碼是 6 位數字', /^[0-9]{6}$/.test(code1), code1);
+  check('challenge 只存 salt＋SHA-256：code_hash = sha256(salt:code)、沒有明碼欄位',
+    c1Row.code_hash === sha(`${c1Row.salt}:${code1}`) && !Object.keys(c1Row).some((k) => /^code$|plain/.test(k)) && c1Row.max_attempts === 5, c1Row);
+  // 全庫掃描：public／private／auth／storage 所有文字欄位都不得出現明碼（net 是 pg_net 替身佇列，正式環境為 pg_net 暫存，見回報）
+  const scanFor = (needle) => suVal(`
+    DO $$
+    DECLARE r record; n bigint; total bigint := 0;
+    BEGIN
+      FOR r IN SELECT c.table_schema, c.table_name, c.column_name
+                 FROM information_schema.columns c
+                 JOIN information_schema.tables tb ON tb.table_schema = c.table_schema AND tb.table_name = c.table_name AND tb.table_type = 'BASE TABLE'
+                WHERE c.table_schema IN ('public', 'private', 'auth', 'storage')
+                  AND c.data_type IN ('text', 'character varying', 'jsonb', 'json')
+      LOOP
+        EXECUTE format('SELECT count(*) FROM %I.%I WHERE %I::text ~ %L', r.table_schema, r.table_name, r.column_name, '(^|[^0-9a-z.@])${needle}([^0-9a-z.@]|$)') INTO n;
+        total := total + n;
+        IF n > 0 THEN RAISE NOTICE 'leak in %.%.%', r.table_schema, r.table_name, r.column_name; END IF;
+      END LOOP;
+      PERFORM set_config('t.leaks', total::text, false);
+    END $$;
+    SELECT current_setting('t.leaks');`);
+  const leaks = scanFor(code1);
+  const control = scanFor('em@t\\.test');
+  check('資料庫（public／private／auth／storage 所有文字欄）查不到驗證碼明碼（對照組：同一掃描找得到 em@t.test）', leaks === '0' && Number(control) > 0, { leaks, control });
+  const req1 = suJson(`SELECT to_jsonb(r) FROM net._e2e_http_requests r ORDER BY id DESC LIMIT 1`);
+  check('寄信：有設定時呼叫 net.http_post（Resend API、Bearer vault 金鑰、from＝vault resend_from、to＝已確認 Email）',
+    Number(suVal(`SELECT count(*) FROM net._e2e_http_requests`)) === reqCount0 + 1
+    && req1.url === 'https://api.resend.com/emails' && req1.headers.Authorization === `Bearer ${RESEND_KEY}`
+    && req1.body.from === RESEND_FROM && JSON.stringify(req1.body.to) === '["em@t.test"]', req1);
+  check('OTP 信：主旨「夢想一號講師資源站驗證碼」、內文含 6 碼、5 分鐘有效、「若非本人操作請忽略並通知行政」',
+    req1.body.subject === '夢想一號講師資源站驗證碼' && req1.body.text.includes(code1) && req1.body.text.includes('5 分鐘')
+    && req1.body.text.includes('若非本人操作請忽略並通知行政') && req1.body.html.includes(code1), req1.body);
+  const log1 = suJson(`SELECT to_jsonb(l) FROM public.email_delivery_log l WHERE id = (SELECT delivery_id FROM private.email_otp_challenges WHERE id = ${ulit(c1.challenge_id)})`);
+  check('email_delivery_log：otp_activation／queued／net_request_id／subject，且紀錄裡沒有驗證碼',
+    log1.kind === 'otp_activation' && log1.status === 'queued' && log1.net_request_id === req1.id && log1.to_email === 'em@t.test'
+    && log1.subject === '夢想一號講師資源站驗證碼' && !JSON.stringify(log1).includes(code1), log1);
+
+  const cool = requestOtp(uEmail, 'account_activation');
+  check('60 秒內重寄 → cooldown（retry_after_seconds 1～60）', cool.status === 'cooldown' && cool.retry_after_seconds >= 1 && cool.retry_after_seconds <= 60, cool);
+
+  const wrong = code1 === '000000' ? '111111' : '000000';
+  const w1 = verifyOtp(uEmail, c1.challenge_id, wrong);
+  const w2 = verifyOtp(uEmail, c1.challenge_id, 'abc');
+  const w3 = verifyOtp(uEmail, c1.challenge_id, wrong);
+  const w4 = verifyOtp(uEmail, c1.challenge_id, wrong);
+  check('錯碼 → invalid，attempts_remaining 4／3／2／1（格式錯也算一次）',
+    [w1, w2, w3, w4].map((x) => `${x.status}:${x.attempts_remaining}`).join(',') === 'invalid:4,invalid:3,invalid:2,invalid:1', [w1, w2, w3, w4]);
+  const w5 = verifyOtp(uEmail, c1.challenge_id, wrong);
+  check('第 5 次錯 → locked', w5.status === 'locked', w5);
+  check('鎖住後輸入正確碼仍是 locked', verifyOtp(uEmail, c1.challenge_id, code1).status === 'locked');
+
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(uEmail)}`);
+  const c2 = requestOtp(uEmail, 'account_activation');
+  check('冷卻過後可再寄 → sent', c2.status === 'sent', c2);
+  const c1After = suJson(`SELECT to_jsonb(c) FROM private.email_otp_challenges c WHERE id = ${ulit(c1.challenge_id)}`);
+  check('新寄出後舊 challenge 標 superseded', c1After.superseded_at !== null, c1After);
+  check('用舊 challenge 驗證 → superseded', verifyOtp(uEmail, c1.challenge_id, code1).status === 'superseded');
+  const code2 = codeOf(c2.challenge_id);
+  const impostor = verifyOtp(uPre, c2.challenge_id, code2);
+  check('冒用：別人的 challenge_id＋正確碼 → invalid（attempts_remaining 0）', impostor.status === 'invalid' && impostor.attempts_remaining === 0, impostor);
+  check('冒用不會累計本人的錯誤次數、也不會驗證成功',
+    suVal(`SELECT attempts || '|' || (verified_at IS NULL) FROM private.email_otp_challenges WHERE id = ${ulit(c2.challenge_id)}`) === '0|true' && roleOf(uEmail) === 'pending');
+  su(`UPDATE private.email_otp_challenges SET expires_at = now() - interval '1 second' WHERE id = ${ulit(c2.challenge_id)}`);
+  check('過期（5 分鐘後）→ expired', verifyOtp(uEmail, c2.challenge_id, code2).status === 'expired');
+
+  const c3 = freshOtp(uEmail, 'account_activation');
+  const v3 = verifyOtp(uEmail, c3.id, c3.code);
+  check('正確碼 → verified、activated:true', v3.status === 'verified' && v3.activated === true && v3.verified_at, v3);
+  check('啟用：users.role pending → teacher', roleOf(uEmail) === 'teacher');
+  const actDone = openActivation(uEmail);
+  check('啟用紀錄 active，claimed_at／otp_verified_at／activated_at／activation_email／instructor_id／otp_challenge_id 齊全',
+    actDone.status === 'active' && actDone.claimed_at && actDone.otp_verified_at && actDone.activated_at
+    && actDone.activation_email === 'em@t.test' && actDone.instructor_id === emailInstructor && actDone.otp_challenge_id === c3.id, actDone);
+  check('get_my_activation_status → active', call(uEmail, 'public.get_my_activation_status()').result?.status === 'active');
+  check('同一碼再驗 → used（只能成功一次）', verifyOtp(uEmail, c3.id, c3.code).status === 'used');
+
+  // 每小時 5 封上限（兩種目的合計）
+  call(admin, `public.admin_confirm_instructor_email(${ulit(preInstructor)}, 'pre@t.test', 'Email 確認')`);
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '2 hours' WHERE user_id = ${lit(uPre)}`);
+  const sentStatuses = [];
+  for (let i = 0; i < 5; i += 1) {
+    sentStatuses.push(requestOtp(uPre, 'account_activation').status);
+    su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(uPre)}`);
+  }
+  const sixth = requestOtp(uPre, 'account_activation');
+  check('一小時內第 1～5 封 sent、第 6 封 rate_limited', sentStatuses.every((s) => s === 'sent') && sixth.status === 'rate_limited', { sentStatuses, sixth });
+  const preOtp = freshOtp(uPre, 'account_activation');
+  check('超過一小時後恢復可寄', preOtp.sent.status === 'sent');
+  check('第二位講師啟用成功（後續簽約用）', verifyOtp(uPre, preOtp.id, preOtp.code).activated === true && roleOf(uPre) === 'teacher');
+
+  // 寄信設定缺少 → not_configured
+  call(admin, `public.admin_confirm_instructor_email(${ulit(idInstructor)}, 'idc@t.test', 'Email 確認')`);
+  su(`DELETE FROM vault.secrets WHERE name = 'resend_api_key'`);
+  const challengesBefore = suVal(`SELECT count(*) FROM private.email_otp_challenges WHERE user_id = ${lit(uId)}`);
+  const reqsBefore = suVal(`SELECT count(*) FROM net._e2e_http_requests`);
+  const nc = requestOtp(uId, 'account_activation');
+  const ncLog = suJson(`SELECT to_jsonb(l) FROM public.email_delivery_log l WHERE related_user_id = ${lit(uId)} ORDER BY requested_at DESC LIMIT 1`);
+  check('缺 Vault resend_api_key → request_email_otp 回 email_not_configured（不丟錯）', nc?.status === 'email_not_configured', nc);
+  check('缺設定：email_delivery_log 記 not_configured、沒有呼叫 net.http_post、沒有產生驗證碼',
+    ncLog?.status === 'not_configured' && ncLog.kind === 'otp_activation' && ncLog.to_email === 'idc@t.test'
+    && suVal(`SELECT count(*) FROM net._e2e_http_requests`) === reqsBefore
+    && suVal(`SELECT count(*) FROM private.email_otp_challenges WHERE user_id = ${lit(uId)}`) === challengesBefore, ncLog);
+  su(`INSERT INTO vault.secrets (name, secret) VALUES ('resend_api_key', ${lit(RESEND_KEY)})`);
+
+  // 寄送狀態回寫（pg_cron 每分鐘跑的函式）
+  const logC3 = suJson(`SELECT to_jsonb(l) FROM public.email_delivery_log l WHERE id = (SELECT delivery_id FROM private.email_otp_challenges WHERE id = ${ulit(c3.id)})`);
+  su(`INSERT INTO net._http_response (id, status_code, content_type, content) VALUES
+      (${logC3.net_request_id}, 200, 'application/json', '{"id":"re_msg_123"}'),
+      (${log1.net_request_id}, 422, 'application/json', '{"message":"invalid from"}')`);
+  const refreshed = suVal(`SELECT private.refresh_email_delivery_status()`);
+  const logC3After = suJson(`SELECT to_jsonb(l) FROM public.email_delivery_log l WHERE id = ${lit(logC3.id)}`);
+  const log1After = suJson(`SELECT to_jsonb(l) FROM public.email_delivery_log l WHERE id = ${lit(log1.id)}`);
+  check('refresh_email_delivery_status：200 → sent＋provider_message_id；422 → failed＋http_status＋error_text',
+    Number(refreshed) >= 2 && logC3After.status === 'sent' && logC3After.provider_message_id === 're_msg_123' && logC3After.http_status === 200
+    && log1After.status === 'failed' && log1After.http_status === 422 && log1After.error_text.includes('invalid from'), { refreshed, logC3After, log1After });
+  su(`UPDATE public.email_delivery_log SET requested_at = now() - interval '2 hours' WHERE id = ${lit(ncLog.id)}`);
+  check('refresh 不動 not_configured 紀錄', suVal(`SELECT private.refresh_email_delivery_status()`) >= '0' && suVal(`SELECT status FROM public.email_delivery_log WHERE id = ${lit(ncLog.id)}`) === 'not_configured');
+
+  // ════════════════════════════════════════════════════════════════
+  group('signing');
+  su(`
+    INSERT INTO public.contract_documents (doc_type, version, file_path, file_name, display_name, doc_mode, sort_order, is_active, content_sha256) VALUES
+      ('rules', 1, 'templates/rules/v1.pdf', 'rules.pdf', '講師管理辦法', 'view_only', 1, true, upper(${lit(sha('rules-v1'))})),
+      ('contract', 1, 'templates/contract/v1.pdf', 'contract.pdf', '委任契約書', 'fill_sign', 3, true, NULL),
+      ('misc', 1, 'templates/misc/v1.pdf', 'misc.pdf', '未使用範本', 'view_only', 9, false, NULL);
+    INSERT INTO storage.objects (bucket_id, name) VALUES
+      ('contract-documents', 'templates/rules/v1.pdf'),
+      ('contract-documents', 'templates/contract/v1.pdf'),
+      ('contract-documents', 'templates/misc/v1.pdf'),
+      ('contract-documents', 'signed/${uEmail}/signature_1.png'),
+      ('contract-documents', 'signed/${uEmail}/contract_1.pdf'),
+      ('contract-documents', 'signed/${uEmail}/contract_2.pdf'),
+      ('contract-documents', 'signed/${uPre}/signature_1.png'),
+      ('contract-documents', 'signed/${uPre}/contract_1.pdf');
+  `);
+  check('範本雜湊寫入時正規化成小寫', suVal(`SELECT content_sha256 FROM public.contract_documents WHERE doc_type = 'rules'`) === sha('rules-v1'));
+  const V = { rules: 1, contract: 1 };
+  const SIG = `signed/${uEmail}/signature_1.png`;
+  const PDF1 = { contract: `signed/${uEmail}/contract_1.pdf` };
+  const DOCH = { rules: sha('rules-v1'), contract: sha('contract-v1') };
+  const PDFH1 = { contract: sha('signed-contract-1').toUpperCase() };
+  const base = { sig: SIG, pdfs: PDF1, versions: V, docHash: DOCH, pdfHash: PDFH1 };
+  const submit = (uid, args, opts) => call(uid, submitExpr({ ...base, ...args }), opts);
+
+  // 同意紀錄
+  const consentHeaders = { 'x-forwarded-for': '198.51.100.7, 10.0.0.1', 'user-agent': 'ConsentAgent/1.0' };
+  const consentOk = recordConsent(uEmail, 'agree_electronic', V, 'esign-consent-v1', consentHeaders);
+  check('record_contract_consent(agree) → recorded／consent_id／created_at', consentOk.result?.status === 'recorded' && consentOk.result.consent_id && consentOk.result.created_at, consentOk);
+  const consentRow = suJson(`SELECT to_jsonb(r) FROM public.contract_consent_records r WHERE id = ${ulit(consentOk.result.consent_id)}`);
+  check('同意紀錄存「實際顯示的全文」：代碼 esign-consent-v1、文件清單與遮罩信箱已代入、無殘留佔位符',
+    consentRow.consent_text_version === 'esign-consent-v1' && consentRow.consent_text.includes('講師管理辦法（第 1 版）、委任契約書（第 1 版）')
+    && consentRow.consent_text.includes('（e***@t.test）') && !consentRow.consent_text.includes('{{') && consentRow.consent_text.includes(COMPANY), consentRow.consent_text);
+  check('同意紀錄：IP 取 x-forwarded-for 第一段、UA 取 header、doc_versions、instructor_id',
+    consentRow.ip_address === '198.51.100.7' && consentRow.user_agent === 'ConsentAgent/1.0' && JSON.stringify(consentRow.doc_versions) === JSON.stringify(V)
+    && consentRow.instructor_id === emailInstructor, consentRow);
+  check('不存在的文案代碼 → CONSENT_TEXT_UNKNOWN', errOf(recordConsent(uEmail, 'agree_electronic', V, 'esign-consent-v9')) === 'CONSENT_TEXT_UNKNOWN');
+  check('決定值錯 → INVALID_INPUT', errOf(recordConsent(uEmail, 'maybe', V)) === 'INVALID_INPUT');
+  check('pending（未啟用）帳號記同意 → ACCOUNT_NOT_ACTIVE', errOf(recordConsent(uSlot, 'agree_electronic', V)) === 'ACCOUNT_NOT_ACTIVE');
+
+  // 簽約 OTP 信
+  const k1 = freshOtp(uEmail, 'contract_sign');
+  const k1Req = suJson(`SELECT to_jsonb(r) FROM net._e2e_http_requests r ORDER BY id DESC LIMIT 1`);
+  const otpLegal = legalQuoteLines('esign-otp-email-v1');
+  check('簽約驗證碼信：otp_contract、加上法規 §5-f 說明句', k1Req.body.text.includes(k1.code) && otpLegal.length === 1 && k1Req.body.text.includes(otpLegal[0])
+    && suVal(`SELECT kind FROM public.email_delivery_log WHERE id = (SELECT delivery_id FROM private.email_otp_challenges WHERE id = ${ulit(k1.id)})`) === 'otp_contract', { otpLegal, text: k1Req.body.text });
+  check('pending 帳號要簽約碼 → not_allowed', requestOtp(uSlot, 'contract_sign')?.status === 'not_allowed');
+
+  // CONSENT_REQUIRED
+  check('沒有同意 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: null })) === 'CONSENT_REQUIRED');
+  check('同意 id 不存在 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: randomUUID() })) === 'CONSENT_REQUIRED');
+  const declineForSubmit = recordConsent(uEmail, 'decline_electronic', V, 'esign-decline-paper-v1').result.consent_id;
+  check('用「不同意」紀錄送出 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: declineForSubmit })) === 'CONSENT_REQUIRED');
+  const consentOtherVersions = recordConsent(uEmail, 'agree_electronic', { rules: 1, contract: 1, extra: 1 }).result.consent_id;
+  check('同意的 doc_versions 與送出不一致 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentOtherVersions })) === 'CONSENT_REQUIRED');
+  const consentOld = recordConsent(uEmail, 'agree_electronic', V).result.consent_id;
+  su(`SET session_replication_role = replica; UPDATE public.contract_consent_records SET created_at = now() - interval '2 hours 1 minute' WHERE id = ${ulit(consentOld)}; RESET session_replication_role;`);
+  check('同意超過 2 小時 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentOld })) === 'CONSENT_REQUIRED');
+  const consentOfOther = recordConsent(uPre, 'agree_electronic', V).result.consent_id;
+  check('拿別人的同意紀錄 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentOfOther })) === 'CONSENT_REQUIRED');
+
+  // OTP
+  const consentId = consentOk.result.consent_id;
+  check('沒有 OTP → OTP_REQUIRED', errOf(submit(uEmail, { otp: null, consent: consentId })) === 'OTP_REQUIRED');
+  check('OTP 尚未驗證 → OTP_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentId })) === 'OTP_REQUIRED');
+  check('拿啟用用途的 challenge 簽約 → OTP_REQUIRED', errOf(submit(uEmail, { otp: c3.id, consent: consentId })) === 'OTP_REQUIRED');
+  const preK = verifiedContractOtp(uPre);
+  check('拿別人的（已驗證）簽約 challenge → OTP_REQUIRED', errOf(submit(uEmail, { otp: preK, consent: consentId })) === 'OTP_REQUIRED');
+  check('簽約碼驗證 → verified、activated:false', JSON.stringify(Object.keys(verifyOtp(uEmail, k1.id, k1.code)).sort()) === JSON.stringify(['activated', 'status', 'verified_at'])
+    && suVal(`SELECT verified_at IS NOT NULL AND consumed_at IS NULL FROM private.email_otp_challenges WHERE id = ${ulit(k1.id)}`) === 't');
+  su(`UPDATE private.email_otp_challenges SET verified_at = now() - interval '16 minutes' WHERE id = ${ulit(k1.id)}`);
+  check('OTP 驗證超過 15 分鐘 → OTP_EXPIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentId })) === 'OTP_EXPIRED');
+  su(`UPDATE private.email_otp_challenges SET verified_at = now() - interval '14 minutes' WHERE id = ${ulit(k1.id)}`);
+
+  // 雜湊
+  check('範本雜湊格式錯 → INVALID_HASH', errOf(submit(uEmail, { otp: k1.id, consent: consentId, docHash: { rules: 'xyz', contract: DOCH.contract } })) === 'INVALID_HASH');
+  check('範本雜湊少一份文件 → INVALID_HASH', errOf(submit(uEmail, { otp: k1.id, consent: consentId, docHash: { rules: DOCH.rules } })) === 'INVALID_HASH');
+  check('範本雜湊多一個鍵 → INVALID_HASH', errOf(submit(uEmail, { otp: k1.id, consent: consentId, docHash: { ...DOCH, other: DOCH.rules } })) === 'INVALID_HASH');
+  check('成品雜湊沒給 → INVALID_HASH', errOf(submit(uEmail, { otp: k1.id, consent: consentId, pdfHash: null })) === 'INVALID_HASH');
+  check('範本雜湊與登錄值不符 → DOC_HASH_MISMATCH', errOf(submit(uEmail, { otp: k1.id, consent: consentId, docHash: { rules: sha('tampered'), contract: DOCH.contract } })) === 'DOC_HASH_MISMATCH');
+  const consentWrongVersion = recordConsent(uEmail, 'agree_electronic', { rules: 1, contract: 2 }).result.consent_id;
+  check('文件版本不是目前啟用版本 → DOC_VERSION_MISMATCH', errOf(submit(uEmail, { otp: k1.id, consent: consentWrongVersion, versions: { rules: 1, contract: 2 } })) === 'DOC_VERSION_MISMATCH');
+  check('檔案路徑不在自己 signed/<uid>/ → FILE_NOT_UPLOADED', errOf(submit(uEmail, { otp: k1.id, consent: consentId, sig: `signed/${uPre}/signature_1.png` })) === 'FILE_NOT_UPLOADED');
+  check('所有拒絕案都沒有消耗 OTP、沒有留下契約或證據',
+    suVal(`SELECT consumed_at IS NULL FROM private.email_otp_challenges WHERE id = ${ulit(k1.id)}`) === 't'
+    && suVal(`SELECT count(*) FROM public.instructor_contracts`) === '0' && suVal(`SELECT count(*) FROM public.contract_signing_evidence`) === '0');
+
+  // 成功
+  const before = suVal(`SELECT now()`);
+  const signHeaders = { 'cf-connecting-ip': '203.0.113.9', 'x-forwarded-for': '1.1.1.1', 'user-agent': 'Mozilla/5.0 TestSigner' };
+  const ok1 = submit(uEmail, { otp: k1.id, consent: consentId }, { headers: signHeaders });
+  const after = suVal(`SELECT now()`);
+  check('成功 → {status:signed, contract_id, signed_at, evidence_id, copy_email_masked}',
+    ok1.ok && ok1.result.status === 'signed' && ok1.result.contract_id && ok1.result.evidence_id && ok1.result.signed_at && ok1.result.copy_email_masked === 'e***@t.test', ok1);
+  const contract1 = suJson(`SELECT to_jsonb(c) FROM public.instructor_contracts c WHERE id = ${ulit(ok1.result.contract_id)}`);
+  const k1Row = suJson(`SELECT to_jsonb(c) FROM private.email_otp_challenges c WHERE id = ${ulit(k1.id)}`);
+  check('instructor_contracts 欄位齊全（instructor_id、bound_email、consent_id、otp_challenge_id、otp_verified_at、雜湊 map 小寫、evidence_id）',
+    contract1.status === 'signed' && contract1.instructor_id === emailInstructor && contract1.bound_email === 'em@t.test'
+    && contract1.consent_id === consentId && contract1.otp_challenge_id === k1.id && contract1.otp_verified_at === k1Row.verified_at
+    && JSON.stringify(contract1.document_sha256) === JSON.stringify(DOCH) && contract1.signed_pdf_sha256.contract === PDFH1.contract.toLowerCase()
+    && contract1.evidence_id === ok1.result.evidence_id && contract1.verify_method === 'email_otp', contract1);
+  check('IP 取 cf-connecting-ip、UA 取 header（前端參數只當後備）', contract1.ip_address === '203.0.113.9' && contract1.user_agent === 'Mozilla/5.0 TestSigner', contract1);
+  check('簽署時間是伺服器時間（在呼叫前後兩個 now() 之間）',
+    suVal(`SELECT ${lit(contract1.signed_at)}::timestamptz BETWEEN ${lit(before)}::timestamptz AND ${lit(after)}::timestamptz`) === 't', { before, signed: contract1.signed_at, after });
+  check('OTP 已消耗（consumed_at）', k1Row.consumed_at !== null);
+  const ev1 = suJson(`SELECT to_jsonb(e) FROM public.contract_signing_evidence e WHERE id = ${ulit(ok1.result.evidence_id)}`);
+  check('contract_signing_evidence 欄位齊全（第一筆 chain_seq=1、previous NULL）',
+    ev1.contract_id === contract1.id && ev1.user_id === uEmail && ev1.instructor_id === emailInstructor && ev1.bound_email === 'em@t.test'
+    && JSON.stringify(ev1.doc_versions) === JSON.stringify(V) && JSON.stringify(ev1.document_sha256) === JSON.stringify(DOCH)
+    && JSON.stringify(ev1.signed_pdf_paths) === JSON.stringify(PDF1) && ev1.signed_pdf_sha256.contract === PDFH1.contract.toLowerCase()
+    && ev1.consent_id === consentId && ev1.consent_at === consentRow.created_at && ev1.otp_challenge_id === k1.id && ev1.otp_verified_at === k1Row.verified_at
+    && ev1.signed_at === contract1.signed_at && ev1.ip_address === '203.0.113.9' && ev1.user_agent === 'Mozilla/5.0 TestSigner'
+    && ev1.chain_seq === 1 && ev1.previous_evidence_sha256 === null && /^[0-9a-f]{64}$/.test(ev1.evidence_sha256) && ev1.signature_path === SIG, ev1);
+  const copyLog = suJson(`SELECT to_jsonb(l) FROM public.email_delivery_log l WHERE related_contract_id = ${ulit(contract1.id)}`);
+  const copyReq = suJson(`SELECT to_jsonb(r) FROM net._e2e_http_requests r WHERE id = ${copyLog?.net_request_id ?? 0}`);
+  check('簽署完成信排入寄送（contract_signed_copy／queued／寄到綁定信箱）',
+    copyLog?.kind === 'contract_signed_copy' && copyLog.status === 'queued' && copyLog.to_email === 'em@t.test' && copyReq?.body?.to?.[0] === 'em@t.test', copyLog);
+  const signedAtTaipei = suVal(`SELECT to_char(${lit(contract1.signed_at)}::timestamptz AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD HH24:MI') || '（台北時間）'`);
+  const downloadUrl = `https://dream-one-teacher.zeabur.app/contract/view/${contract1.id}`;
+  const signedLegal = legalQuoteLines('esign-signed-email-v1').map((line) => line
+    .replaceAll('{{instructor_name}}', '王小明').replaceAll('{{signed_at_taipei}}', signedAtTaipei)
+    .replaceAll('{{doc_list}}', '講師管理辦法（第 1 版）、委任契約書（第 1 版）').replaceAll('{{contract_ref}}', contract1.id.slice(0, 8))
+    .replaceAll('{{download_url}}', downloadUrl));
+  const missingSigned = signedLegal.filter((line) => !copyReq.body.text.includes(line));
+  check(`簽署完成信內文逐句照抄法規 §5-e（${signedLegal.length} 句，含台北時間、文件版本、下載網址）`, signedLegal.length >= 10 && missingSigned.length === 0, missingSigned);
+  check('簽署完成信主旨照 §5-e、HTML 有下載連結、紀錄不存內文',
+    copyReq.body.subject === '【夢想一號】講師合作契約簽署完成通知' && copyReq.body.html.includes(`href="${downloadUrl}"`)
+    && copyLog.subject === '【夢想一號】講師合作契約簽署完成通知' && !JSON.stringify(copyLog).includes('保存期間'), copyReq.body.subject);
+
+  check('同一 challenge 第二次送出 → OTP_ALREADY_USED', errOf(submit(uEmail, { otp: k1.id, consent: consentId })) === 'OTP_ALREADY_USED');
+
+  // 重簽：舊約 voided＋superseded_by、證據鏈相接
+  const k2 = verifiedContractOtp(uEmail);
+  const consent2 = recordConsent(uEmail, 'agree_electronic', V).result.consent_id;
+  const ok2 = submit(uEmail, { otp: k2, consent: consent2, pdfs: { contract: `signed/${uEmail}/contract_2.pdf` }, pdfHash: { contract: sha('signed-contract-2') } },
+    { headers: { 'x-forwarded-for': '192.0.2.44, 10.1.1.1' } });
+  check('重簽成功', ok2.ok && ok2.result.status === 'signed', ok2);
+  const old1 = suJson(`SELECT to_jsonb(c) FROM public.instructor_contracts c WHERE id = ${ulit(contract1.id)}`);
+  check('重簽後舊約 voided，voided_at／voided_reason／superseded_by＝新約',
+    old1.status === 'voided' && old1.voided_at && old1.voided_reason === 'superseded_by_new_signature' && old1.superseded_by === ok2.result.contract_id, old1);
+  check('舊約其他欄位沒有被改（ip／簽署時間／雜湊）', old1.ip_address === contract1.ip_address && old1.signed_at === contract1.signed_at && JSON.stringify(old1.document_sha256) === JSON.stringify(contract1.document_sha256));
+  const ev2 = suJson(`SELECT to_jsonb(e) FROM public.contract_signing_evidence e WHERE id = ${ulit(ok2.result.evidence_id)}`);
+  check('證據兩筆、雜湊鏈相接（第二筆 previous＝第一筆 evidence_sha256、chain_seq=2）',
+    suVal(`SELECT count(*) FROM public.contract_signing_evidence`) === '2' && ev2.previous_evidence_sha256 === ev1.evidence_sha256 && ev2.chain_seq === 2, ev2);
+  check('沒有 cf-connecting-ip 時 IP 取 x-forwarded-for 第一段', suVal(`SELECT ip_address FROM public.instructor_contracts WHERE id = ${ulit(ok2.result.contract_id)}`) === '192.0.2.44');
+  check('只剩一份 signed', suVal(`SELECT count(*) FROM public.instructor_contracts WHERE user_id = ${lit(uEmail)} AND status = 'signed'`) === '1');
+  check('x-real-ip 是第三順位後備', suVal(`SET request.headers = '{"x-real-ip":"192.0.2.99"}'; SELECT ip_address FROM private.request_client_meta();`) === '192.0.2.99');
+  const chainOk = call(admin, 'public.admin_verify_contract_evidence_chain()').result;
+  check('admin_verify_contract_evidence_chain → {ok:true, checked:2, first_broken_id:null}', chainOk?.ok === true && chainOk.checked === 2 && chainOk.first_broken_id === null, chainOk);
+  check('teacher 呼叫 admin_verify_contract_evidence_chain → 42501', call(uEmail, 'public.admin_verify_contract_evidence_chain()')?.sqlstate === '42501');
+
+  // 不同意電子簽約 → 通知所有 admin
+  const notifBefore = Number(suVal(`SELECT count(*) FROM public.notifications WHERE user_id = ${lit(admin)} AND type = 'contract'`));
+  const decline = recordConsent(uPre, 'decline_electronic', V, 'esign-decline-paper-v1');
+  const notif = suJson(`SELECT to_jsonb(n) FROM public.notifications n WHERE user_id = ${lit(admin)} AND type = 'contract' ORDER BY created_at DESC LIMIT 1`);
+  check('decline 紀錄 → recorded，並通知 admin（type contract）',
+    decline.result?.status === 'recorded' && Number(suVal(`SELECT count(*) FROM public.notifications WHERE user_id = ${lit(admin)} AND type = 'contract'`)) === notifBefore + 1
+    && notif.title === '講師選擇改以紙本簽約' && notif.body.includes('後建檔老師'), notif);
+  const declineRow = suJson(`SELECT to_jsonb(r) FROM public.contract_consent_records r WHERE id = ${ulit(decline.result.consent_id)}`);
+  check('decline 紀錄存 esign-decline-paper-v1 全文', declineRow.decision === 'decline_electronic' && declineRow.consent_text.startsWith('改以紙本簽約') && declineRow.consent_text.includes('講師管理辦法（第 1 版）'), declineRow.consent_text);
+
+  // 簽署途中契約改版
+  const preConsent = recordConsent(uPre, 'agree_electronic', V).result.consent_id;
+  const preOtpSign = verifiedContractOtp(uPre);
+  const bump1 = exec(admin, `UPDATE public.contract_documents SET is_active = false WHERE doc_type = 'contract' AND version = 1`);
+  const bump2 = exec(admin, `INSERT INTO public.contract_documents (doc_type, version, file_path, display_name, doc_mode, sort_order, is_active) VALUES ('contract', 2, 'templates/contract/v2.pdf', '委任契約書', 'fill_sign', 3, true)`);
+  check('管理員可停用已被引用的版本並上傳新版（只鎖檔案／版本／雜湊）', bump1?.ok && bump2?.ok, { bump1, bump2 });
+  const midway = submit(uPre, { sig: `signed/${uPre}/signature_1.png`, pdfs: { contract: `signed/${uPre}/contract_1.pdf` }, otp: preOtpSign, consent: preConsent, pdfHash: { contract: sha('pre-1') } });
+  check('簽署途中契約改版 → DOC_VERSION_MISMATCH（不會簽到舊版）', errOf(midway) === 'DOC_VERSION_MISMATCH', midway);
+  check('改版被擋的那次沒有消耗 OTP', suVal(`SELECT consumed_at IS NULL FROM private.email_otp_challenges WHERE id = ${ulit(preOtpSign)}`) === 't');
+
+  // ════════════════════════════════════════════════════════════════
+  group('tamper resistance');
+  const c2Id = ok2.result.contract_id;
+  const ev2Id = ok2.result.evidence_id;
+  // 講師
+  check('講師 UPDATE 自己的已簽契約 → 0 列', exec(uEmail, `UPDATE public.instructor_contracts SET filled_name = 'x' WHERE user_id = auth.uid()`)?.rows === 0);
+  check('講師 DELETE 自己的契約 → 0 列', exec(uEmail, `DELETE FROM public.instructor_contracts WHERE user_id = auth.uid()`)?.rows === 0);
+  const tIns = exec(uEmail, `INSERT INTO public.instructor_contracts (user_id, filled_name, filled_instructor_role, filled_id_number, filled_address, filled_phone, signature_path) VALUES (auth.uid(), 'x', 'A', 'A123456789', 'x', 'x', 's.png')`);
+  check('講師直接 INSERT 契約 → 被拒（42501）', tIns?.ok === false && tIns.sqlstate === '42501', tIns);
+  for (const table of ['contract_signing_evidence', 'contract_consent_records', 'instructor_account_activations']) {
+    const u = exec(uEmail, `UPDATE public.${table} SET user_id = user_id WHERE user_id = auth.uid()`);
+    const d = exec(uEmail, `DELETE FROM public.${table} WHERE user_id = auth.uid()`);
+    check(`講師 UPDATE／DELETE ${table} → 被拒`, u?.ok === false && d?.ok === false, { u, d });
+  }
+  // admin（PostgREST 身分）
+  const aUpd = exec(admin, `UPDATE public.instructor_contracts SET filled_name = '竄改' WHERE id = ${ulit(c2Id)}`);
+  check('admin UPDATE 已簽契約內容 → CONTRACT_IMMUTABLE', aUpd?.ok === false && aUpd.message === 'CONTRACT_IMMUTABLE', aUpd);
+  const aVoid = exec(admin, `UPDATE public.instructor_contracts SET status = 'voided', voided_at = now(), voided_reason = 'admin' WHERE id = ${ulit(c2Id)}`);
+  check('admin 自行 signed→voided（非內部流程）→ CONTRACT_IMMUTABLE', aVoid?.ok === false && aVoid.message === 'CONTRACT_IMMUTABLE', aVoid);
+  const aDel = exec(admin, `DELETE FROM public.instructor_contracts WHERE id = ${ulit(contract1.id)}`);
+  check('admin DELETE 契約（含已作廢）→ CONTRACT_IMMUTABLE', aDel?.ok === false && aDel.message === 'CONTRACT_IMMUTABLE', aDel);
+  const aIns = exec(admin, `INSERT INTO public.instructor_contracts (user_id, filled_name, filled_instructor_role, filled_id_number, filled_address, filled_phone, signature_path) VALUES (${ulit(uPre)}, '偽造', 'A', 'A123456789', 'x', 'x', 's.png')`);
+  check('admin 直接 INSERT 偽造契約 → CONTRACT_WRITE_DENIED', aIns?.ok === false && aIns.message === 'CONTRACT_WRITE_DENIED', aIns);
+  for (const table of ['contract_signing_evidence', 'contract_consent_records', 'instructor_account_activations']) {
+    const u = exec(admin, `UPDATE public.${table} SET user_id = user_id`);
+    const d = exec(admin, `DELETE FROM public.${table}`);
+    check(`admin UPDATE／DELETE ${table} → 被拒`, u?.ok === false && d?.ok === false, { u, d });
+  }
+  // service_role（BYPASSRLS）：trigger 仍擋
+  const sUpd = exec(null, `UPDATE public.contract_signing_evidence SET ip_address = '6.6.6.6'`, { role: 'service_role' });
+  check('service_role UPDATE 證據 → EVIDENCE_IMMUTABLE（RLS 繞過也擋）', sUpd?.ok === false && sUpd.message === 'EVIDENCE_IMMUTABLE', sUpd);
+  const sDel = exec(null, `DELETE FROM public.instructor_contracts`, { role: 'service_role' });
+  check('service_role DELETE 契約 → CONTRACT_IMMUTABLE', sDel?.ok === false && sDel.message === 'CONTRACT_IMMUTABLE', sDel);
+  const sIns = exec(null, `INSERT INTO public.contract_consent_records (user_id, decision, consent_text_version, consent_text, doc_versions) VALUES (${ulit(uPre)}, 'agree_electronic', 'esign-consent-v1', 'x', '{}')`, { role: 'service_role' });
+  check('service_role 直接 INSERT 同意紀錄 → EVIDENCE_WRITE_DENIED', sIns?.ok === false && sIns.message === 'EVIDENCE_WRITE_DENIED', sIns);
+  const sTrunc = exec(null, `TRUNCATE public.contract_signing_evidence CASCADE`, { role: 'service_role' });
+  check('service_role TRUNCATE 證據 → EVIDENCE_IMMUTABLE（trigger 擋，不只是權限）', sTrunc?.ok === false && sTrunc.message === 'EVIDENCE_IMMUTABLE', sTrunc);
+  const sAct = exec(null, `UPDATE public.instructor_account_activations SET status = 'revoked', revoked_at = now() WHERE user_id = ${ulit(uEmail)}`, { role: 'service_role' });
+  check('service_role 改啟用紀錄 → ACTIVATION_RECORD_IMMUTABLE', sAct?.ok === false && sAct.message === 'ACTIVATION_RECORD_IMMUTABLE', sAct);
+  // 超級使用者（不刻意繞過時）也被 trigger 擋
+  const pUpd = suExec(`UPDATE public.contract_signing_evidence SET ip_address = '6.6.6.6' WHERE id = ${ulit(ev2Id)}`);
+  check('postgres 不繞過 trigger 時 UPDATE 證據 → EVIDENCE_IMMUTABLE', pUpd?.ok === false && pUpd.message === 'EVIDENCE_IMMUTABLE', pUpd);
+  const pText = suExec(`UPDATE public.esign_text_versions SET content = 'x' WHERE version_code = 'esign-consent-v1'`);
+  const pTextDel = suExec(`DELETE FROM public.esign_text_versions WHERE version_code = 'esign-consent-v1'`);
+  check('法規文案 append-only：同一代碼不能改內容／刪除（ESIGN_TEXT_IMMUTABLE）', pText?.message === 'ESIGN_TEXT_IMMUTABLE' && pTextDel?.message === 'ESIGN_TEXT_IMMUTABLE', { pText, pTextDel });
+  check('法規文案：可以新增 -v2', suExec(`INSERT INTO public.esign_text_versions (version_code, content) VALUES ('esign-consent-v2', '新版')`)?.rows === 1);
+  check('法規文案：authenticated 不能新增', exec(admin, `INSERT INTO public.esign_text_versions (version_code, content) VALUES ('esign-x-v1', 'x')`)?.ok === false);
+
+  // Storage
+  check('admin DELETE signed/ 物件 → 0 列', exec(admin, `DELETE FROM storage.objects WHERE bucket_id = 'contract-documents' AND name = ${lit(SIG)}`)?.rows === 0);
+  check('admin UPDATE（覆寫／改名）signed/ 物件 → 0 列', exec(admin, `UPDATE storage.objects SET name = name || '.bak' WHERE bucket_id = 'contract-documents' AND name LIKE 'signed/%'`)?.rows === 0);
+  check('admin DELETE 被已簽契約引用的範本 → 0 列', exec(admin, `DELETE FROM storage.objects WHERE bucket_id = 'contract-documents' AND name = 'templates/rules/v1.pdf'`)?.rows === 0);
+  check('admin UPDATE 被引用的範本 → 0 列', exec(admin, `UPDATE storage.objects SET metadata = '{"x":1}' WHERE bucket_id = 'contract-documents' AND name = 'templates/contract/v1.pdf'`)?.rows === 0);
+  check('admin 仍可刪除沒被引用的範本（1 列）', exec(admin, `DELETE FROM storage.objects WHERE bucket_id = 'contract-documents' AND name = 'templates/misc/v1.pdf'`)?.rows === 1);
+  check('講師 DELETE 自己的 signed/ 檔 → 0 列', exec(uEmail, `DELETE FROM storage.objects WHERE name = ${lit(SIG)}`)?.rows === 0);
+  check('storage 物件都還在', suVal(`SELECT count(*) FROM storage.objects WHERE name IN (${lit(SIG)}, 'templates/rules/v1.pdf', 'templates/contract/v1.pdf')`) === '3');
+
+  // contract_documents
+  const dDel = exec(admin, `DELETE FROM public.contract_documents WHERE doc_type = 'rules' AND version = 1`);
+  check('admin 刪除被引用的文件版本 → DOCUMENT_REFERENCED', dDel?.ok === false && dDel.message === 'DOCUMENT_REFERENCED', dDel);
+  const dPath = exec(admin, `UPDATE public.contract_documents SET file_path = 'templates/rules/other.pdf' WHERE doc_type = 'rules' AND version = 1`);
+  check('admin 改被引用版本的 file_path → DOCUMENT_REFERENCED', dPath?.ok === false && dPath.message === 'DOCUMENT_REFERENCED', dPath);
+  const dVer = exec(admin, `UPDATE public.contract_documents SET version = 9 WHERE doc_type = 'rules' AND version = 1`);
+  const dHash = exec(admin, `UPDATE public.contract_documents SET content_sha256 = ${lit(sha('x'))} WHERE doc_type = 'rules' AND version = 1`);
+  check('admin 改被引用版本的 version／content_sha256 → DOCUMENT_REFERENCED', dVer?.message === 'DOCUMENT_REFERENCED' && dHash?.message === 'DOCUMENT_REFERENCED', { dVer, dHash });
+  check('admin 可刪除未被引用的文件版本', exec(admin, `DELETE FROM public.contract_documents WHERE doc_type = 'misc'`)?.rows === 1);
+  const contractV1Id = suVal(`SELECT id FROM public.contract_documents WHERE doc_type = 'contract' AND version = 1`);
+  check('admin_set_document_hash：teacher → 42501', call(uEmail, `public.admin_set_document_hash(${ulit(contractV1Id)}, ${lit(sha('contract-v1'))})`)?.sqlstate === '42501');
+  check('admin_set_document_hash：格式錯 → INVALID_HASH', errOf(call(admin, `public.admin_set_document_hash(${ulit(contractV1Id)}, 'zz')`)) === 'INVALID_HASH');
+  check('admin_set_document_hash：補登 NULL（即使已被引用）→ saved',
+    call(admin, `public.admin_set_document_hash(${ulit(contractV1Id)}, ${lit(sha('contract-v1').toUpperCase())})`)?.result?.status === 'saved'
+    && suVal(`SELECT content_sha256 FROM public.contract_documents WHERE id = ${lit(contractV1Id)}`) === sha('contract-v1'));
+  check('admin_set_document_hash：已有值不能再改 → HASH_ALREADY_SET', errOf(call(admin, `public.admin_set_document_hash(${ulit(contractV1Id)}, ${lit(sha('y'))})`)) === 'HASH_ALREADY_SET');
+
+  // 刪帳號／解除綁定
+  const delSigned = exec(admin, `SELECT public.delete_user_completely(${ulit(uEmail)})`);
+  check('delete_user_completely：有已簽契約 → 拒絕（依簽署證據保存規定不可刪除，請改用停用）',
+    delSigned?.ok === false && delSigned.message === '依簽署證據保存規定不可刪除，請改用停用' && roleOf(uEmail) === 'teacher', delSigned);
+  const delDeclined = exec(admin, `SELECT public.delete_user_completely(${ulit(uPre)})`);
+  check('delete_user_completely：只有同意／不同意紀錄也拒絕', delDeclined?.ok === false && delDeclined.message === '依簽署證據保存規定不可刪除，請改用停用', delDeclined);
+  const idActId = openActivation(uId).id;
+  const delPending = exec(admin, `SELECT public.delete_user_completely(${ulit(uId)})`);
+  const idActAfter = suJson(`SELECT to_jsonb(a) FROM public.instructor_account_activations a WHERE id = ${lit(idActId)}`);
+  check('delete_user_completely：沒有簽署紀錄的 pending 帳號可刪；啟用紀錄保留並改 revoked（account_deleted）',
+    delPending?.ok && suVal(`SELECT count(*) FROM auth.users WHERE id = ${lit(uId)}`) === '0' && idActAfter.status === 'revoked' && idActAfter.revoked_reason === 'account_deleted', { delPending, idActAfter });
+  check('刪帳號後講師主檔回到未認領', suVal(`SELECT user_id IS NULL FROM public.instructors WHERE id = ${lit(idInstructor)}`) === 't');
+  const unlink = exec(admin, `SELECT public.admin_unlink_instructor(${ulit(slot.id)})`);
+  const slotActs = activationsOf(uSlot);
+  check('admin_unlink_instructor：啟用紀錄改 revoked（admin_unlink）', unlink?.ok && slotActs.length === 1 && slotActs[0].status === 'revoked' && slotActs[0].revoked_reason === 'admin_unlink', slotActs);
+  check('解除綁定後 get_my_activation_status → none', call(uSlot, 'public.get_my_activation_status()').result?.status === 'none');
+
+  // 超級使用者繞過 trigger 偷改 → 雜湊鏈抓得到
+  const ipOrig = ev1.ip_address;
+  su(`SET session_replication_role = replica; UPDATE public.contract_signing_evidence SET ip_address = '6.6.6.6' WHERE id = ${ulit(ev1.id)}; RESET session_replication_role;`);
+  const broken1 = call(admin, 'public.admin_verify_contract_evidence_chain()').result;
+  check('超級使用者偷改證據 IP → ok=false、first_broken_id＝該筆', broken1.ok === false && broken1.first_broken_id === ev1.id && broken1.broken_reason === 'evidence_hash_mismatch', broken1);
+  su(`SET session_replication_role = replica; UPDATE public.contract_signing_evidence SET ip_address = ${lit(ipOrig)} WHERE id = ${ulit(ev1.id)}; RESET session_replication_role;`);
+  check('改回原值後 ok=true', call(admin, 'public.admin_verify_contract_evidence_chain()').result?.ok === true);
+  su(`SET session_replication_role = replica; UPDATE public.contract_signing_evidence SET evidence_sha256 = ${lit(sha('forged'))} WHERE id = ${ulit(ev1.id)}; RESET session_replication_role;`);
+  const broken2 = call(admin, 'public.admin_verify_contract_evidence_chain()').result;
+  check('偷改證據雜湊本身 → 抓到第一筆', broken2.ok === false && broken2.first_broken_id === ev1.id, broken2);
+  su(`SET session_replication_role = replica; UPDATE public.contract_signing_evidence SET evidence_sha256 = ${lit(ev1.evidence_sha256)} WHERE id = ${ulit(ev1.id)}; RESET session_replication_role;`);
+  su(`SET session_replication_role = replica; UPDATE public.instructor_contracts SET filled_id_number = 'Z999999999' WHERE id = ${ulit(c2Id)}; RESET session_replication_role;`);
+  const broken3 = call(admin, 'public.admin_verify_contract_evidence_chain()').result;
+  check('超級使用者偷改契約的身分證欄 → 交叉比對抓到第二筆證據（contract_mismatch）', broken3.ok === false && broken3.first_broken_id === ev2Id && broken3.broken_reason === 'contract_mismatch', broken3);
+  su(`SET session_replication_role = replica; UPDATE public.instructor_contracts SET filled_id_number = 'A123456789' WHERE id = ${ulit(c2Id)}; RESET session_replication_role;`);
+  su(`CREATE TABLE t.saved_ev AS SELECT * FROM public.contract_signing_evidence WHERE id = ${ulit(ev2Id)};
+      SET session_replication_role = replica; DELETE FROM public.contract_signing_evidence WHERE id = ${ulit(ev2Id)}; RESET session_replication_role;`);
+  const broken4 = call(admin, 'public.admin_verify_contract_evidence_chain()').result;
+  check('超級使用者刪掉鏈尾證據 → 抓到缺證據的契約（evidence_missing_for_contract）', broken4.ok === false && broken4.first_broken_id === c2Id && broken4.broken_reason === 'evidence_missing_for_contract', broken4);
+  su(`SET session_replication_role = replica; INSERT INTO public.contract_signing_evidence SELECT * FROM t.saved_ev; RESET session_replication_role;`);
+  const finalChain = call(admin, 'public.admin_verify_contract_evidence_chain()').result;
+  check('還原後證據鏈 ok=true、checked=2', finalChain.ok === true && finalChain.checked === 2, finalChain);
+
+  // ════════════════════════════════════════════════════════════════
+  group('RLS reads');
+  const own = (uid, table) => jsonAs(uid, `SELECT count(*) FROM public.${table}`);
+  check('講師讀得到自己的證據、同意、啟用、寄送紀錄', own(uEmail, 'contract_signing_evidence') === 2 && own(uEmail, 'contract_consent_records') >= 5
+    && own(uEmail, 'instructor_account_activations') === 1 && own(uEmail, 'email_delivery_log') >= 1);
+  check('講師讀不到別人的證據／同意／啟用紀錄', jsonAs(uPre, `SELECT count(*) FROM public.contract_signing_evidence WHERE user_id = ${lit(uEmail)}`) === 0
+    && jsonAs(uPre, `SELECT count(*) FROM public.contract_consent_records WHERE user_id = ${lit(uEmail)}`) === 0
+    && jsonAs(uPre, `SELECT count(*) FROM public.instructor_account_activations WHERE user_id = ${lit(uEmail)}`) === 0
+    && jsonAs(uPre, `SELECT count(*) FROM public.email_delivery_log WHERE related_user_id = ${lit(uEmail)}`) === 0);
+  check('admin 讀得到全部證據與啟用紀錄', own(admin, 'contract_signing_evidence') === 2 && own(admin, 'instructor_account_activations') === Number(suVal(`SELECT count(*) FROM public.instructor_account_activations`)));
+  const anonRead = exec(null, `SELECT * FROM public.contract_signing_evidence`, { role: 'anon' });
+  check('anon 讀證據 → 權限不足', anonRead?.ok === false && anonRead.sqlstate === '42501', anonRead);
+  check('講師讀不到 private.email_otp_challenges', exec(uEmail, `SELECT * FROM private.email_otp_challenges`)?.ok === false);
+
+  // ════════════════════════════════════════════════════════════════
+  group('legal copy fidelity');
+  for (const code of ['esign-read-ack-v1', 'esign-consent-v1', 'esign-decline-paper-v1', 'esign-final-confirm-v1', 'esign-privacy-notice-v1', 'esign-signed-email-v1', 'esign-otp-email-v1']) {
+    const content = suVal(`SELECT content FROM public.esign_text_versions WHERE version_code = ${lit(code)}`);
+    const lines = legalQuoteLines(code);
+    const missing = lines.filter((line) => !content.includes(line));
+    check(`${code}：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（${lines.length} 句）`, content && lines.length > 0 && missing.length === 0, missing);
+  }
+} catch (error) {
+  check(`unexpected error: ${error.message.split('\n')[0]}`, false, error.stack);
+} finally {
+  await db.stop();
+}
+
+const failed = results.filter((r) => !r.pass);
+const groups = [...new Set(results.map((r) => r.group))];
+console.log('\n=== summary ===');
+for (const g of groups) {
+  const rows = results.filter((r) => r.group === g);
+  console.log(`${g}: ${rows.filter((r) => r.pass).length}/${rows.length}`);
+}
+console.log(`TOTAL: ${results.length - failed.length}/${results.length} PASS`);
+process.exit(failed.length ? 1 : 0);

@@ -249,3 +249,58 @@ BEGIN
 END
 $$;
 REVOKE ALL ON SCHEMA cron FROM PUBLIC;
+
+-- ── pg_net 替身（2026-10-20：OTP／簽署通知信）──────────────────────────
+-- 正式環境的 net.http_post 只把請求排進佇列、交易 commit 後由背景程序送出；這裡改成存進
+-- net._e2e_http_requests（測試從這裡讀出驗證碼明碼與信件內容——只限測試），回傳值同樣是 request id。
+-- net._http_response 與正式 pg_net 同欄位，測試自行插入回應來驗 private.refresh_email_delivery_status()。
+CREATE SCHEMA IF NOT EXISTS net;
+CREATE TABLE net._e2e_http_requests (
+  id bigserial PRIMARY KEY,
+  method text NOT NULL DEFAULT 'POST',
+  url text NOT NULL,
+  body jsonb,
+  params jsonb,
+  headers jsonb,
+  timeout_milliseconds integer,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE net._http_response (
+  id bigint,
+  status_code integer,
+  content_type text,
+  headers jsonb,
+  content text,
+  timed_out boolean,
+  error_msg text,
+  created timestamptz NOT NULL DEFAULT now()
+);
+CREATE OR REPLACE FUNCTION net.http_post(
+  url text,
+  body jsonb DEFAULT '{}'::jsonb,
+  params jsonb DEFAULT '{}'::jsonb,
+  headers jsonb DEFAULT '{"Content-Type": "application/json"}'::jsonb,
+  timeout_milliseconds integer DEFAULT 5000
+) RETURNS bigint LANGUAGE sql AS $$
+  INSERT INTO net._e2e_http_requests (url, body, params, headers, timeout_milliseconds)
+  VALUES (url, body, params, headers, timeout_milliseconds)
+  RETURNING id
+$$;
+REVOKE ALL ON SCHEMA net FROM PUBLIC;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA net FROM PUBLIC;
+
+-- ── Supabase Vault 替身：vault.decrypted_secrets(name, decrypted_secret) ──────────
+-- 預設沒有任何 secret（＝寄信未設定）；測試需要時自行 INSERT INTO vault.secrets。
+CREATE SCHEMA IF NOT EXISTS vault;
+CREATE TABLE vault.secrets (
+  id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  name text UNIQUE,
+  description text NOT NULL DEFAULT '',
+  secret text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE VIEW vault.decrypted_secrets AS
+  SELECT id, name, description, secret, secret AS decrypted_secret, created_at, updated_at
+    FROM vault.secrets;
+REVOKE ALL ON SCHEMA vault FROM PUBLIC;

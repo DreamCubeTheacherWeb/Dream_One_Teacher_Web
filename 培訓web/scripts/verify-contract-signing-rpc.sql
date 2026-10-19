@@ -8,6 +8,8 @@
 --           套 migration 兩次，再逐案驗證 submit_my_contract
 --   第二段：新建庫路徑（contracts_setup.sql 跑兩次）也得到同一個函式與相同權限
 -- 模擬 Supabase：auth.uid()／auth.jwt() 讀 request.jwt.claims；PostgREST 把 header 放進 request.headers。
+-- 2026-10-20 註：本檔驗的是 10-18 版（JWT amr）在隔離環境的行為；現行 v2（本系統 OTP、同意紀錄、雜湊、證據鏈、
+--   不可竄改 trigger）由 scripts/verify-claim-activation-esign.mjs 在完整 SQL 鏈上驗證。
 -- ═══════════════════════════════════════════════════════════════════
 
 DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

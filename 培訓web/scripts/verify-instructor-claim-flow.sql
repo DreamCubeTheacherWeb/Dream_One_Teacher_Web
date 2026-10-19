@@ -1,3 +1,6 @@
+-- 本檔在隔離環境驗 2026-08-24／08-26 兩支認領 migration（當時認領後直接 teacher）。
+-- 2026-10-20 起所有認領路徑改為「綁定後待啟用」（role 維持 pending，Email OTP 啟用後才 teacher），
+-- 現行行為由 scripts/verify-claim-activation-esign.mjs 在完整 SQL 鏈上驗證；本檔斷言不變。
 \set ON_ERROR_STOP on
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
