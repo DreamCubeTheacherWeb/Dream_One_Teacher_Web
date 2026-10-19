@@ -1,0 +1,71 @@
+
+══ 情境 A：空白欄 為空字串 ══
+PASS  模擬正式庫：歷史匯入筆數 = 9,532  9532
+PASS  migration 連跑兩次無誤
+PASS  01 預檢：historical 9,532、網站端 3 筆  {'manual': 1, 'self_report': 2, 'historical_import': 9532}
+PASS  01 預檢：沒有其他表以外鍵指向 class_sessions
+      預檢 anomaly: {'total': 9535, 'flagged': 785} {'日期早於 2020 年': 8, '有時數但薪資為 0': 158, '日期超過 2 個月後': 19, '同講師同日同課程名可能重複': 616}
+PASS  02 上傳核對：5,535 筆、列號不重複
+PASS  02 上傳核對：原文 checksum 與本機相同  9f352eadbbd4e1947b9b78f624483b58
+PASS  02 上傳核對：薪資／獎金／已領合計
+PASS  02 上傳核對：22 筆年份更正、無壞日期／狀態／角色
+PASS  02 上傳核對：同名講師被列為 ambiguous
+      名字對應：122/192 位唯一對應、69 位找不到、1 位同名
+PASS  02 上傳核對：網站端紀錄與新總表重疊會被列出  []
+PASS  03 搬移＋匯入成功
+PASS  03 重跑會被擋（已匯入過）   99_rollback.sql）
+CONTEXT:  PL/pgSQL function inline_code_block line 36 at RAISE
+PASS  04 核對：class_sessions = 新總表 5,535 ＋ 網站端 3  {'manual': 1, 'self_report': 2, 'historical_import': 5535}
+PASS  04 核對：新總表每列都在 class_sessions、金額合計一致
+PASS  04 核對：隔離區 9,532 筆  {'rows': 9532, 'date_max': '2026-12-31', 'date_min': '2000-01-18', 'bonus_sum': 1747477.0, 'not_in_master': 5962, 'base_salary_sum': 17170952.0, 'matched_in_master': 3570}
+      隔離區：新總表有相同列 3570、新總表沒有 5962；沒有的依年份 {'2001': 2, '2005': 3, '2020': 1, '2023': 1901, '2024': 2258, '2025': 1710, '2026': 87}
+      講師對應：{'matched': 5296, 'ambiguous': 19, 'unmatched': 220}；講師可見（2026 起且有對應）3133 筆
+      匯入後 anomaly：{'total': 5538, 'flagged': 475} {'有時數但薪資為 0': 58, '同講師同日同課程名可能重複': 423}
+PASS  04 核對：22 筆年份已更正（無 2026-12、無 2020 年前）
+PASS  04 核對：同名講師的紀錄沒有被亂配 instructor_id  0
+PASS  04 核對：網站端 3 筆原封不動  後台手動 C,網站回報 A,網站回報 B
+PASS  權限：講師讀隔離區與暫存表都是 0 筆  ('0', '0')
+PASS  權限：admin 讀得到隔離區 9,532、暫存表 5,535  ('9532', '5535')
+PASS  權限：匿名讀隔離區被拒
+PASS  權限：網站端（含 admin）不能刪改隔離區與暫存表
+PASS  權限：講師看到自己 2026 起的紀錄（含新總表＋網站回報）  ('203', '203')
+PASS  99 還原：class_sessions 逐欄回到原狀（含 id、建立時間、衍生欄位）  historical_import=9532,manual=1,self_report=2
+PASS  99 還原：隔離區清空、暫存表保留
+PASS  還原後可再次執行 03，結果與第一次相同
+
+══ 情境 B：空白欄 變 NULL ══
+PASS  模擬正式庫：歷史匯入筆數 = 9,532  9532
+PASS  migration 連跑兩次無誤
+PASS  01 預檢：historical 9,532、網站端 3 筆  {'manual': 1, 'self_report': 2, 'historical_import': 9532}
+PASS  01 預檢：沒有其他表以外鍵指向 class_sessions
+      預檢 anomaly: {'total': 9535, 'flagged': 785} {'日期早於 2020 年': 8, '有時數但薪資為 0': 158, '日期超過 2 個月後': 19, '同講師同日同課程名可能重複': 616}
+PASS  02 上傳核對：5,535 筆、列號不重複
+PASS  02 上傳核對：原文 checksum 與本機相同  9f352eadbbd4e1947b9b78f624483b58
+PASS  02 上傳核對：薪資／獎金／已領合計
+PASS  02 上傳核對：22 筆年份更正、無壞日期／狀態／角色
+PASS  02 上傳核對：同名講師被列為 ambiguous
+      名字對應：122/192 位唯一對應、69 位找不到、1 位同名
+PASS  02 上傳核對：網站端紀錄與新總表重疊會被列出  []
+PASS  03 搬移＋匯入成功
+PASS  03 重跑會被擋（已匯入過）   99_rollback.sql）
+CONTEXT:  PL/pgSQL function inline_code_block line 36 at RAISE
+PASS  04 核對：class_sessions = 新總表 5,535 ＋ 網站端 3  {'manual': 1, 'self_report': 2, 'historical_import': 5535}
+PASS  04 核對：新總表每列都在 class_sessions、金額合計一致
+PASS  04 核對：隔離區 9,532 筆  {'rows': 9532, 'date_max': '2026-12-31', 'date_min': '2000-01-18', 'bonus_sum': 1747477.0, 'not_in_master': 5962, 'base_salary_sum': 17170952.0, 'matched_in_master': 3570}
+      隔離區：新總表有相同列 3570、新總表沒有 5962；沒有的依年份 {'2001': 2, '2005': 3, '2020': 1, '2023': 1901, '2024': 2258, '2025': 1710, '2026': 87}
+      講師對應：{'matched': 5296, 'ambiguous': 19, 'unmatched': 220}；講師可見（2026 起且有對應）3133 筆
+      匯入後 anomaly：{'total': 5538, 'flagged': 475} {'有時數但薪資為 0': 58, '同講師同日同課程名可能重複': 423}
+PASS  04 核對：22 筆年份已更正（無 2026-12、無 2020 年前）
+PASS  04 核對：同名講師的紀錄沒有被亂配 instructor_id  0
+PASS  04 核對：網站端 3 筆原封不動  後台手動 C,網站回報 A,網站回報 B
+PASS  權限：講師讀隔離區與暫存表都是 0 筆  ('0', '0')
+PASS  權限：admin 讀得到隔離區 9,532、暫存表 5,535  ('9532', '5535')
+PASS  權限：匿名讀隔離區被拒
+PASS  權限：網站端（含 admin）不能刪改隔離區與暫存表
+PASS  權限：講師看到自己 2026 起的紀錄（含新總表＋網站回報）  ('203', '203')
+PASS  99 還原：class_sessions 逐欄回到原狀（含 id、建立時間、衍生欄位）  historical_import=9532,manual=1,self_report=2
+PASS  99 還原：隔離區清空、暫存表保留
+PASS  還原後可再次執行 03，結果與第一次相同
+PASS  兩種上傳情境結果一致
+
+53/53 PASS
