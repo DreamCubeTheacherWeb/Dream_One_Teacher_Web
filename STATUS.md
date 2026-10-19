@@ -120,7 +120,10 @@
    ② `20261020010000_drop_legacy_claim_rpcs.sql`（刪 07 月舊認領 RPC＋客戶端寫入政策；**高風險漏洞**：任何剛登入的 Google 帳號可列出未認領講師並以手機末四碼綁主檔）
    ③ `20261020120000_instructor_document_edit_unlocks.sql`（分支 feat/instructor-doc-edit-unlock，證件鎖定＋後台開放修改一次；套完再上前端）
    ④ `20261020130000_report_periods_and_custom_fields.sql`（分支 feat/report-options-v4，回報選項拖曳排序＋期間清單＋自訂欄位；套完再上前端；套用到前端上線之間不要操作後台回報選項頁）
-   套完各自的核對查詢寫在該分支 STATUS 段。③④ 套完告訴 Claude「已套用」即可上前端（兩支分支目前 merge 到 c8842e7、各自測試全過；上線前要再 merge 一次最新 main 並重跑它們的驗證）。
+   套完各自的核對查詢寫在該分支 STATUS 段。③④ 套完告訴 Claude「已套用」即可上前端。**明早發版分支已備妥**：`release/20261021-db-features`（＝main 5a89fda＋證件鎖定＋回報選項，
+   只有 STATUS.md 衝突、兩邊保留；已推 GitHub 備份），2026-10-20 02:25 依序單獨跑 43 項驗證全過（含 doc-edit-unlock 三支、
+   e2e:profile-save 81/81、report-options 99/99——偶發的提示訊息時間差已修，重跑 3 次皆 99/99）。上線步驟：①②③④ 套完 → 確認
+   origin/main 仍是 5a89fda（若前進就先 merge 再重跑）→ 推此分支到 main → 兩網域換版確認＋訪客煙霧測試。
 2. 認領＋電子簽約（分支 feat/teacher-name-placeholder）：業主新規格（OTP 啟用、Resend 寄信、簽署證據）仍在做，需要 Resend API key、已驗證寄件網域、正式庫 pg_net＋Vault。
 3. 業務決定：到府課時數 1／2.5／3 小時對不到報酬表規則（全部進「待核准」）；排行榜／徽章是否計入待審與被退回時數；mentor 是否該讀整個 instructor_uploads 與所有已簽合約。
 4. 上線後找一位 form-import 講師實測個人頁存檔（真資料庫 e2e 已過，但正式庫可能有版控外的 trigger 改動）。
