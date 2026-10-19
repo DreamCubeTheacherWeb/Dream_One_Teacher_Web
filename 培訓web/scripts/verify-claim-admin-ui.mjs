@@ -40,6 +40,8 @@ let importedImageRequestCount = 0;
 const adminId = '00000000-0000-4000-8000-0000000000a1';
 const teacherId = '00000000-0000-4000-8000-0000000000a2';
 const pendingId = '00000000-0000-4000-8000-0000000000a3';
+// 認領既有主檔、等老師用 Email 驗證碼啟用的帳號（users.role 仍是 pending，另有 pending 的啟用紀錄）
+const activationPendingId = '00000000-0000-4000-8000-0000000000a4';
 const authUser = {
   id: adminId,
   aud: 'authenticated',
@@ -62,7 +64,9 @@ const users = [
   { id: adminId, name: '測試管理員', email: authUser.email, role: 'admin', created_at: now },
   { id: teacherId, name: '已認領老師', email: 'claimed@example.com', role: 'teacher', created_at: now },
   { id: pendingId, name: '新註冊老師', email: 'new@example.com', role: 'pending', created_at: now },
+  { id: activationPendingId, name: '認領待啟用老師', email: 'activation.pending@example.com', role: 'pending', created_at: now },
 ];
+const activationRows = [{ id: 'act-1', user_id: activationPendingId, status: 'pending', claim_method: 'name_slot' }];
 const completeFields = {
   nickname: '老師', gender: '女', birth_date: '1990-01-01', id_number: 'A123456789',
   phone_mobile: '0912345678', line_id: 'line', address: '通訊地址', household_address: '戶籍地址',
@@ -91,6 +95,13 @@ const instructors = [
     full_name: '新註冊老師', email_primary: 'new@example.com', created_at: now,
     id_number: 'A123456789', line_name: '舊 Line 名稱',
     bank_info_raw: '0087007/123456789/新註冊老師',
+  },
+  {
+    // 資料已完整、但公司還沒確認 Email：管理員不能直接核准，要先確認 Email 讓老師自己啟用
+    id: '00000000-0000-4000-8000-0000000000b4', user_id: activationPendingId,
+    full_name: '認領待啟用老師', email_primary: 'activation.pending@example.com',
+    ...completeFields,
+    id_front_path: 'front.jpg', id_back_path: 'back.jpg', bankbook_path: 'bank.jpg', created_at: now,
   },
 ];
 const formDocuments = [{
@@ -148,6 +159,8 @@ async function handleRoute(route) {
   } else if (table === 'instructors') {
     const userFilter = url.searchParams.get('user_id');
     rows = userFilter ? instructors.filter((item) => userFilter === `eq.${item.user_id}`) : instructors;
+  } else if (table === 'instructor_account_activations') {
+    rows = activationRows;
   } else if (table === 'contract_documents') {
     rows = formDocuments;
   } else if (table === 'contract_field_positions') {
@@ -184,7 +197,7 @@ try {
   const page = await context.newPage();
 
   await page.goto(`${baseUrl}/admin/instructors`, { waitUntil: 'networkidle' });
-  assert.match(await page.locator('body').innerText(), /3 位.*2.*已認領.*1.*未認領/s);
+  assert.match(await page.locator('body').innerText(), /4 位.*3.*已認領.*1.*未認領/s);
   assert.ok(await page.getByText('未認領匯入老師', { exact: true }).count() > 0);
   const importedRow = page.locator('tr').filter({ hasText: '未認領匯入老師' }).first();
   assert.match(await importedRow.innerText(), /3\/3/);
@@ -225,9 +238,22 @@ try {
   await page.goto(`${baseUrl}/admin/teachers`, { waitUntil: 'networkidle' });
   const accountText = await page.locator('body').innerText();
   assert.match(accountText, /帳號審核與權限/);
-  assert.match(accountText, /主檔已認領\s*2|2\s*主檔已認領/);
+  assert.match(accountText, /主檔已認領\s*3|3\s*主檔已認領/);
   assert.doesNotMatch(accountText, /邀請名單|新增邀請/);
   console.log('PASS  帳號後台只處理新註冊審核，不再出現邀請名單');
+
+  // 認領待啟用的帳號：不算「新註冊待審核」，也不能被管理員直接核准（資料庫也會拒絕）
+  const newRegistrationStat = page.getByText('新註冊待審核', { exact: true }).locator('..');
+  assert.match((await newRegistrationStat.innerText()).replace(/\s+/g, ' '), /1 新註冊待審核/);
+  const awaitingCard = page.locator('.bh-card').filter({ hasText: 'activation.pending@example.com' }).first();
+  assert.equal((await awaitingCard.getByTestId('awaiting-activation-chip').textContent()).trim(), '待確認 Email'); // 標籤有 CSS uppercase，innerText 會變 EMAIL
+  assert.match(await awaitingCard.getByTestId('awaiting-activation-note').innerText(), /請到講師主檔按「確認 Email」/);
+  assert.equal(await awaitingCard.getByRole('button', { name: '核准新講師' }).count(), 0);
+  assert.equal(await awaitingCard.getByRole('link', { name: '到講師主檔確認 Email' }).getAttribute('href'), '/admin/instructors?progress=awaiting_email_confirm');
+  const newAccountCard = page.locator('.bh-card').filter({ hasText: 'new@example.com' }).first();
+  assert.equal(await newAccountCard.getByRole('button', { name: '核准新講師' }).count(), 1);
+  assert.equal(await newAccountCard.getByTestId('awaiting-activation-chip').count(), 0);
+  console.log('PASS  認領待啟用的帳號不算新註冊待審核、沒有核准按鈕、導去講師主檔確認 Email；新註冊帳號仍可核准');
 
   await context.close();
 } finally {

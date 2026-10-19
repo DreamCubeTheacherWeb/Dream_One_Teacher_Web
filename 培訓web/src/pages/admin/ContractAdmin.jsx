@@ -1,19 +1,30 @@
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import { Link } from 'react-router-dom';
 import FieldPositionEditor from '../../components/FieldPositionEditor';
+import ContractEvidencePanel from '../../components/ContractEvidencePanel';
 import { INSTRUCTOR_CONTRACTS_ENABLED } from '../../lib/featureFlags';
+import { fetchContractFileBytes } from '../../lib/contractFiles';
+import { useMediaQuery } from '../../lib/useMediaQuery';
+import { contractStatusLabel, formatTaipeiTime, isSha256Hex, sha256Hex, shortHash } from '../../lib/esign';
 import {
   Upload, FileText, CheckCircle2, XCircle, Eye, Plus,
   AlertTriangle, Clock, Users, Search, ChevronUp, ChevronDown,
-  Trash2, Settings, GripVertical, PenTool, BookOpen
+  Trash2, Settings, GripVertical, PenTool, BookOpen, ShieldCheck, Hash
 } from 'lucide-react';
 
 const ContractAdmin = () => {
   const { user } = useAuth();
+  // 桌機表格與手機卡片同時存在於 DOM（用 CSS 切換），簽署證據只在目前顯示的那一個版面展開，避免重複查詢。
+  const isDesktopLayout = useMediaQuery('(min-width: 768px)');
   const [docTypes, setDocTypes] = useState([]);
   const [documents, setDocuments] = useState({});
+  const [versionsByType, setVersionsByType] = useState({});
+  const [hashing, setHashing] = useState({});
+  const [hashError, setHashError] = useState('');
+  const [evidenceUserId, setEvidenceUserId] = useState(null);
+  const [evidenceContractId, setEvidenceContractId] = useState(null);
   const [contracts, setContracts] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +56,9 @@ const ContractAdmin = () => {
 
       const typeMap = {};
       const activeMap = {};
+      const allVersions = {};
       (docsData || []).forEach(d => {
+        if (d.version > 0) (allVersions[d.doc_type] = allVersions[d.doc_type] || []).push(d);
         if (!typeMap[d.doc_type]) {
           typeMap[d.doc_type] = {
             doc_type: d.doc_type,
@@ -60,6 +73,7 @@ const ContractAdmin = () => {
       const types = Object.values(typeMap).sort((a, b) => a.sort_order - b.sort_order);
       setDocTypes(types);
       setDocuments(activeMap);
+      setVersionsByType(allVersions);
 
       const { data: contractsData } = await supabase
         .from('instructor_contracts')
@@ -156,6 +170,8 @@ const ContractAdmin = () => {
       const currentDoc = documents[docType];
       const newVersion = currentDoc ? currentDoc.version + 1 : 1;
       const filePath = `templates/${docType}/v${newVersion}_${Date.now()}.pdf`;
+      // 範本檔指紋：簽約時伺服器拿它核對講師讀到的是不是這份檔案；事後驗證也靠它。
+      const contentSha256 = await sha256Hex(await file.arrayBuffer());
 
       const { error: uploadErr } = await supabase.storage
         .from('contract-documents')
@@ -169,7 +185,7 @@ const ContractAdmin = () => {
       }
 
       const dt = docTypes.find(d => d.doc_type === docType);
-      const { error: insertErr } = await supabase.from('contract_documents').insert({
+      const newRecord = {
         doc_type: docType,
         version: newVersion,
         file_path: filePath,
@@ -179,7 +195,27 @@ const ContractAdmin = () => {
         display_name: dt?.display_name || displayName,
         doc_mode: dt?.doc_mode || 'view_only',
         sort_order: dt?.sort_order ?? 0,
-      });
+      };
+      let { data: insertedDoc, error: insertErr } = await supabase
+        .from('contract_documents')
+        .insert({ ...newRecord, content_sha256: contentSha256 })
+        .select('id')
+        .single();
+      if (insertErr && /content_sha256|permission|row-level security|42501/i.test(`${insertErr.code || ''} ${insertErr.message || ''}`)) {
+        // 欄位不能直接寫入（被政策或 trigger 擋）：先建紀錄，再用專用函式補登雜湊
+        ({ data: insertedDoc, error: insertErr } = await supabase
+          .from('contract_documents')
+          .insert(newRecord)
+          .select('id')
+          .single());
+        if (!insertErr) {
+          const { error: hashErr } = await supabase.rpc('admin_set_document_hash', {
+            p_document_id: insertedDoc.id,
+            p_sha256: contentSha256,
+          });
+          if (hashErr) throw new Error(`新版已上傳，但雜湊登錄失敗（請到該文件按「補登雜湊」）：${hashErr.message}`);
+        }
+      }
       if (insertErr) throw insertErr;
 
       if (INSTRUCTOR_CONTRACTS_ENABLED) {
@@ -215,6 +251,26 @@ const ContractAdmin = () => {
     setUploading(p => ({ ...p, [docType]: false }));
   };
 
+  // 舊版範本沒有雜湊：下載當初的檔案重算後補登（admin_set_document_hash 只能補 NULL 的，不能改已登錄的）。
+  const handleBackfillHash = async (doc) => {
+    setHashError('');
+    setHashing(p => ({ ...p, [doc.id]: true }));
+    try {
+      const sha = await sha256Hex(await fetchContractFileBytes(doc.file_path));
+      const { data, error } = await supabase.rpc('admin_set_document_hash', { p_document_id: doc.id, p_sha256: sha });
+      if (error) throw error;
+      if (data?.status !== 'saved') throw new Error('伺服器沒有回覆「已儲存」');
+      await loadData();
+    } catch (err) {
+      const raw = String(err.message || '');
+      const reason = /HASH_ALREADY_SET/.test(raw) ? '這份範本已經登錄過雜湊，不能再更改。'
+        : /DOCUMENT_NOT_FOUND/.test(raw) ? '找不到這份範本紀錄，請重新整理頁面。'
+          : /INVALID_HASH/.test(raw) ? '雜湊格式不正確。' : (raw || '未知錯誤');
+      setHashError(`補登雜湊失敗（${doc.display_name || doc.doc_type} 第 ${doc.version} 版）：${reason}`);
+    }
+    setHashing(p => ({ ...p, [doc.id]: false }));
+  };
+
   const openFieldEditor = async (docType) => {
     const doc = documents[docType];
     if (!doc) { alert('請先上傳此文件的 PDF'); return; }
@@ -230,6 +286,45 @@ const ContractAdmin = () => {
 
   const getContractForUser = (userId) => {
     return contracts.find(c => c.user_id === userId && c.status === 'signed');
+  };
+  const getContractsOfUser = (userId) => contracts.filter(c => c.user_id === userId);
+  const docNames = Object.fromEntries(docTypes.map(d => [d.doc_type, d.display_name]));
+
+  const toggleEvidence = (userId, defaultContractId) => {
+    if (evidenceUserId === userId) {
+      setEvidenceUserId(null);
+      setEvidenceContractId(null);
+    } else {
+      setEvidenceUserId(userId);
+      setEvidenceContractId(defaultContractId);
+    }
+  };
+
+  // 簽署證據區：同一位講師有多份（含已作廢）時可切換
+  const renderEvidenceArea = (userId) => {
+    const userContracts = getContractsOfUser(userId);
+    const selected = userContracts.find(c => c.id === evidenceContractId) || userContracts[0];
+    if (!selected) return null;
+    return (
+      <div className="space-y-4">
+        {userContracts.length > 1 && (
+          <div className="flex flex-wrap gap-2" role="group" aria-label="選擇契約版本">
+            {userContracts.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setEvidenceContractId(c.id)}
+                aria-pressed={selected.id === c.id}
+                className={`bh-chip min-h-[44px] ${selected.id === c.id ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
+              >
+                {contractStatusLabel(c.status)}・{formatTaipeiTime(c.signed_at)}
+              </button>
+            ))}
+          </div>
+        )}
+        <ContractEvidencePanel key={selected.id} contract={selected} docNames={docNames} />
+      </div>
+    );
   };
 
   const filteredUsers = allUsers.filter(u => {
@@ -362,9 +457,30 @@ const ContractAdmin = () => {
                         </span>
                       </div>
                       {doc ? (
-                        <p className="text-xs text-bauhaus-black/50 truncate">
-                          v{doc.version} · {new Date(doc.uploaded_at).toLocaleDateString('zh-TW')} · {doc.file_name}
-                        </p>
+                        <>
+                          <p className="text-xs text-bauhaus-black/50 truncate">
+                            v{doc.version} · {new Date(doc.uploaded_at).toLocaleDateString('zh-TW')} · {doc.file_name}
+                          </p>
+                          <p className="text-xs mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1" data-testid={`doc-hash-${dt.doc_type}`}>
+                            <Hash className="w-3 h-3 shrink-0 text-bauhaus-black/40" />
+                            {isSha256Hex(doc.content_sha256) ? (
+                              <code title={doc.content_sha256} className="font-mono text-[11px] text-bauhaus-black/60">SHA-256 {shortHash(doc.content_sha256)}</code>
+                            ) : (
+                              <>
+                                <span className="font-bold text-bauhaus-red">尚未登錄雜湊</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleBackfillHash(doc)}
+                                  disabled={hashing[doc.id]}
+                                  data-testid={`backfill-hash-${dt.doc_type}`}
+                                  className="font-bold text-bauhaus-blue hover:underline min-h-[44px] sm:min-h-0 py-2 sm:py-0"
+                                >
+                                  {hashing[doc.id] ? '計算中…' : '補登雜湊'}
+                                </button>
+                              </>
+                            )}
+                          </p>
+                        </>
                       ) : (
                         <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black mt-0.5">尚未上傳 PDF</span>
                       )}
@@ -407,9 +523,36 @@ const ContractAdmin = () => {
                     </button>
                   </div>
                 </div>
+
+                {(versionsByType[dt.doc_type] || []).length > 1 && (
+                  <details className="mt-3 border-t-2 border-bauhaus-black/10 pt-2">
+                    <summary className="cursor-pointer text-xs font-bold text-bauhaus-black/60 min-h-[44px] sm:min-h-0 flex items-center">所有版本與雜湊（{(versionsByType[dt.doc_type] || []).length}）</summary>
+                    <ul className="mt-1 space-y-1.5">
+                      {(versionsByType[dt.doc_type] || []).map(v => (
+                        <li key={v.id} className="text-xs flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="font-bold text-bauhaus-black">第 {v.version} 版{v.is_active ? '（使用中）' : ''}</span>
+                          {isSha256Hex(v.content_sha256) ? (
+                            <code title={v.content_sha256} className="font-mono text-[11px] text-bauhaus-black/60">{shortHash(v.content_sha256)}</code>
+                          ) : (
+                            <>
+                              <span className="font-bold text-bauhaus-red">尚未登錄雜湊</span>
+                              <button type="button" onClick={() => handleBackfillHash(v)} disabled={hashing[v.id]} className="font-bold text-bauhaus-blue hover:underline min-h-[44px] sm:min-h-0">
+                                {hashing[v.id] ? '計算中…' : '補登雜湊'}
+                              </button>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
             );
           })}
+
+          {hashError && (
+            <div role="alert" data-testid="hash-error" className="bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl px-4 py-3 text-sm font-bold text-bauhaus-black">{hashError}</div>
+          )}
 
           {docTypes.length === 0 && (
             <div className="text-center py-12 text-bauhaus-black/50">
@@ -456,7 +599,8 @@ const ContractAdmin = () => {
                   ? Object.entries(c.doc_versions).map(([k, v]) => `${k}:v${v}`).join(', ')
                   : c ? `v${c.contract_doc_version || '?'}` : '-';
                 return (
-                  <tr key={u.id} className="hover:bg-bauhaus-cream transition-colors">
+                  <Fragment key={u.id}>
+                  <tr className="hover:bg-bauhaus-cream transition-colors">
                     <td className="px-5 py-3">
                       <div className="font-bold text-sm text-bauhaus-black">{u.fullName}</div>
                       <div className="text-xs text-bauhaus-black/50">{u.email}</div>
@@ -478,12 +622,31 @@ const ContractAdmin = () => {
                     <td className="px-5 py-3 text-xs text-bauhaus-black/70 font-mono">{versions}</td>
                     <td className="px-5 py-3">
                       {c && (
-                        <Link to={`/contract/view/${c.id}`} className="text-sm font-bold text-bauhaus-blue hover:underline flex items-center gap-1">
-                          <Eye className="w-4 h-4" /> 查看
-                        </Link>
+                        <div className="flex items-center gap-4">
+                          <Link to={`/contract/view/${c.id}`} className="text-sm font-bold text-bauhaus-blue hover:underline flex items-center gap-1">
+                            <Eye className="w-4 h-4" /> 查看
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => toggleEvidence(u.id, c.id)}
+                            aria-expanded={evidenceUserId === u.id}
+                            data-testid={`toggle-evidence-${u.id}`}
+                            className="text-sm font-bold text-bauhaus-black hover:underline flex items-center gap-1"
+                          >
+                            <ShieldCheck className="w-4 h-4" /> 簽署證據
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
+                  {evidenceUserId === u.id && isDesktopLayout && (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-5 bg-bauhaus-cream border-t-2 border-bauhaus-black/20">
+                        {renderEvidenceArea(u.id)}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -523,9 +686,25 @@ const ContractAdmin = () => {
                     <span className="text-xs text-bauhaus-black/50">
                       {new Date(c.signed_at).toLocaleDateString('zh-TW')}
                     </span>
-                    <Link to={`/contract/view/${c.id}`} className="text-xs font-bold text-bauhaus-blue hover:underline flex items-center gap-1">
-                      <Eye className="w-3 h-3" /> 查看
-                    </Link>
+                    <div className="flex items-center gap-4">
+                      <Link to={`/contract/view/${c.id}`} className="text-xs font-bold text-bauhaus-blue hover:underline flex items-center gap-1 min-h-[44px]">
+                        <Eye className="w-3 h-3" /> 查看
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => toggleEvidence(u.id, c.id)}
+                        aria-expanded={evidenceUserId === u.id}
+                        data-testid={`toggle-evidence-mobile-${u.id}`}
+                        className="text-xs font-bold text-bauhaus-black hover:underline flex items-center gap-1 min-h-[44px]"
+                      >
+                        <ShieldCheck className="w-3 h-3" /> 簽署證據
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {c && evidenceUserId === u.id && !isDesktopLayout && (
+                  <div className="mt-3 pt-3 border-t-2 border-bauhaus-black/20">
+                    {renderEvidenceArea(u.id)}
                   </div>
                 )}
               </div>

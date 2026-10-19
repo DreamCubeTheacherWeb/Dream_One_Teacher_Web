@@ -14,6 +14,8 @@
  *  R9 六位匿名未註冊樣本的缺漏分布           → 四個受保護頁面全部導回 /profile
  *  R10 個人頁完整度提示                       → 明列缺項，不要求重填已有資料
  *  R11 舊匯入資料與外部頭像                   → 可展開核對，且頭像正常 fallback
+ *  R12 認領後待啟用（pending＋啟用紀錄 pending）→ 所有受保護頁與 /pending 都導回 /profile，個人頁頂端顯示啟用提示；
+ *      新建帳號待審核（啟用狀態 none）維持「帳號審核中」
  * 用法：
  *   本地最新 build：node scripts/verify-complete-gate.mjs
  *   正式站 bundle：VERIFY_BASE_URL=https://example.com node scripts/verify-complete-gate.mjs
@@ -54,6 +56,9 @@ const FAKE_SESSION = {
     expires_at: Math.floor(Date.now() / 1000) + 31536000, refresh_token: 'mock.r', user: FAKE_AUTH_USER,
 };
 const SELF = { id: UID, name: '關卡復現員', email: 'gate@test.local', role: 'teacher', created_at: NOW, updated_at: NOW };
+// R12：認領後待啟用的人 users.role 仍是 pending；get_my_activation_status 由情境決定（null＝沿用舊行為，回空陣列）
+let selfRole = 'teacher';
+let activationStatus = null;
 
 // Gate 的必填清單（與 ProfileCompleteGate.jsx 對齊；instructor_role 已移除）
 const TEXT_KEYS = ['full_name','nickname','gender','birth_date','id_number','phone_mobile','line_id',
@@ -108,7 +113,10 @@ async function handleRoute(route) {
         if (p.startsWith('/auth/v1/token')) return jsonRes(route, FAKE_SESSION);
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     }
-    if (p.startsWith('/rest/v1/rpc/')) return jsonRes(route, []);
+    if (p.startsWith('/rest/v1/rpc/')) {
+        if (p.endsWith('/get_my_activation_status') && activationStatus) return jsonRes(route, activationStatus);
+        return jsonRes(route, []);
+    }
     if (p.startsWith('/rest/v1/')) {
         const table = p.replace('/rest/v1/', '').split('/')[0];
         const method = req.method();
@@ -117,7 +125,7 @@ async function handleRoute(route) {
         if (method !== 'GET') return route.fulfill({ status: 201, headers: { 'content-type': 'application/json' }, body: wantsObject ? '{}' : '[]' });
         let data;
         switch (table) {
-            case 'users': data = wantsObject ? SELF : [SELF]; break;
+            case 'users': { const self = { ...SELF, role: selfRole }; data = wantsObject ? self : [self]; break; }
             case 'instructors': data = wantsObject ? instructorRow : (instructorRow ? [instructorRow] : []); break;
             case 'announcements': {
                 const expectsSingle = wantsObject || url.searchParams.has('id');
@@ -286,6 +294,24 @@ async function inspectSanitizedAnnouncement(browser) {
     return state;
 }
 
+async function pendingUserView(browser, routePath) {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx.addInitScript(({ key, session }) => { window.localStorage.setItem(key, JSON.stringify(session)); }, { key: STORAGE_KEY, session: FAKE_SESSION });
+    await ctx.route('**/*', handleRoute);
+    const page = await ctx.newPage();
+    await page.goto(`${BASE}${routePath}`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.waitForTimeout(900);
+    const view = {
+        pathname: new URL(page.url()).pathname,
+        text: await page.locator('body').innerText(),
+        activationCards: await page.getByTestId('activation-card').count(),
+        activationButtons: await page.getByTestId('activation-button').count(),
+        overflow: await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+    };
+    await ctx.close();
+    return view;
+}
+
 async function main() {
     let preview = null;
     if (IS_REMOTE) {
@@ -375,6 +401,32 @@ async function main() {
                 && firstLoginHelp.externalAvatarSrc === 'https://legacy-avatar.test/avatar.png',
             JSON.stringify(firstLoginHelp),
         );
+
+        // R12：認領後待啟用（pending 角色＋啟用紀錄 pending）
+        selfRole = 'pending';
+        activationStatus = { status: 'pending', claim_method: 'name_slot', has_confirmed_email: true, masked_email: 'ga***@test.local', profile_complete: false };
+        instructorRow = { ...allComplete, nickname: '' };
+        let pendingView = await pendingUserView(browser, '/courses');
+        assert('R12a 待啟用且資料未完整：開 /courses 被導回 /profile', pendingView.pathname === '/profile', `landed=${pendingView.pathname}`);
+        assert('R12b /profile 頂端有啟用提示與缺項提示，仍可編輯（不顯示「帳號審核中」）',
+            pendingView.activationCards === 1 && pendingView.text.includes('請先補齊資料') && pendingView.text.includes('講師暱稱')
+            && !pendingView.text.includes('帳號審核中'), pendingView.text.slice(0, 160).replaceAll('\n', '｜'));
+        assert('R12c 資料未完整時沒有「確認資料無誤，驗證信箱啟用帳號」按鈕、390px 無水平溢出', pendingView.activationButtons === 0 && pendingView.overflow <= 0, `overflow=${pendingView.overflow}`);
+        pendingView = await pendingUserView(browser, '/pending');
+        assert('R12d 待啟用的人開 /pending 會被導去 /profile', pendingView.pathname === '/profile' && !pendingView.text.includes('帳號審核中'), `landed=${pendingView.pathname}`);
+
+        instructorRow = allComplete;
+        activationStatus = { ...activationStatus, profile_complete: true };
+        pendingView = await pendingUserView(browser, '/courses');
+        assert('R12e 資料完整但還沒啟用：仍不能進課程，被導回 /profile 並出現啟用按鈕',
+            pendingView.pathname === '/profile' && pendingView.activationButtons === 1 && pendingView.text.includes('確認資料無誤，驗證信箱啟用帳號'), `landed=${pendingView.pathname} buttons=${pendingView.activationButtons}`);
+
+        activationStatus = { status: 'none', claim_method: null, has_confirmed_email: false, masked_email: null, profile_complete: false };
+        pendingView = await pendingUserView(browser, '/courses');
+        assert('R12f 新建帳號待審核（無啟用紀錄）維持原行為：導到「帳號審核中」，沒有啟用提示',
+            pendingView.pathname === '/pending' && pendingView.text.includes('帳號審核中') && pendingView.activationCards === 0, `landed=${pendingView.pathname}`);
+        selfRole = 'teacher';
+        activationStatus = null;
     } finally {
         if (browser) await browser.close();
         preview?.kill('SIGTERM');

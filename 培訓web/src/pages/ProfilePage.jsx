@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, AlertCircle, Trophy, Lock, ChevronDown, ChevronUp, ExternalLink, History } from 'lucide-react';
+import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Camera, Landmark, Pencil, PartyPopper, FileSignature, CheckCircle2, Download, Eye, Calendar, Clock, AlertCircle, Trophy, Lock, ChevronDown, ChevronUp, ExternalLink, History, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
@@ -17,6 +17,11 @@ import {
     toFetchableExternalImageUrl,
 } from '../lib/profileCompletion';
 import { speedQualificationLabel } from '../lib/constants';
+import EmailOtpDialog from '../components/EmailOtpDialog';
+import { useActivationStatus } from '../lib/useActivationStatus';
+import { ACTIVATION_BUTTON_LABEL } from '../lib/accountActivation';
+import { OTP_PURPOSES } from '../lib/emailOtp';
+import { contractStatusLabel, formatTaipeiTime } from '../lib/esign';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -100,9 +105,13 @@ const readDraft = async (uid, baseUpdatedAt) => {
 };
 
 const ProfilePage = () => {
-    const { user, profile, claimState } = useAuth();
+    const { user, profile, claimState, refreshProfile } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    // 認領後帳號啟用（規格 2026-10-20）：待啟用的人在頂端看到提示與「驗證信箱啟用帳號」按鈕
+    const { activation, refresh: refreshActivation } = useActivationStatus(user?.id);
+    const [showActivationOtp, setShowActivationOtp] = useState(false);
+    const [activationHint, setActivationHint] = useState('');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [isFirstTime, setIsFirstTime] = useState(false);
@@ -125,6 +134,8 @@ const ProfilePage = () => {
     const savedSnapshot = useRef('');
     const savedBaseUpdatedAt = useRef(null);
     const [contractInfo, setContractInfo] = useState(null);
+    const [contractHistory, setContractHistory] = useState([]);
+    const [paperPending, setPaperPending] = useState(false);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
     const [wcaLocked, setWcaLocked] = useState(false);
@@ -134,14 +145,30 @@ const ProfilePage = () => {
 
     const loadContractStatus = async () => {
         try {
+            // 所有版本（有效＋已作廢）：作廢的舊版也要查得到，簽署證據不會因重簽而消失
             const { data: contractData } = await supabase
                 .from('instructor_contracts')
                 .select('*')
                 .eq('user_id', user.id)
-                .eq('status', 'signed')
-                .order('signed_at', { ascending: false })
+                .order('signed_at', { ascending: false });
+            const allContracts = contractData || [];
+            setContractHistory(allContracts);
+            const currentContract = allContracts.find(c => c.status === 'signed');
+            if (currentContract) setContractInfo(currentContract);
+
+            // 最近一次電子簽約同意是「不同意（改紙本）」，且之後沒有新的線上簽署 → 顯示「紙本簽約處理中」
+            // （esign-decline-paper-v1 文案承諾的狀態）。查不到（表格或政策還沒上線）就當作沒有。
+            const { data: consentRows } = await supabase
+                .from('contract_consent_records')
+                .select('decision, created_at')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
                 .limit(1);
-            if (contractData?.length) setContractInfo(contractData[0]);
+            const latestConsent = consentRows?.[0];
+            setPaperPending(Boolean(
+                latestConsent?.decision === 'decline_electronic'
+                && (!currentContract || new Date(latestConsent.created_at) > new Date(currentContract.signed_at)),
+            ));
 
             const { data: docsData } = await supabase
                 .from('contract_documents')
@@ -516,12 +543,43 @@ const ProfilePage = () => {
 
         if (profile?.role === 'pending' && isFirstTime) {
             setShowSuccess(true);
+        } else if (profile?.role === 'pending' && activation.pending) {
+            // 已認領待啟用：留在本頁。資料是否「完整」由伺服器判斷，存完要重新讀一次才會出現啟用按鈕。
+            setActivationHint('');
+            await refreshActivation();
+            alert('個人資料已儲存！');
         } else if (profile?.role === 'pending') {
             navigate('/pending');
         } else {
             alert('個人資料已儲存！');
         }
         setSaving(false);
+    };
+
+    const hasUnsavedChanges = () => (
+        profileSnapshot(form) !== savedSnapshot.current || Object.keys(pendingFiles).length > 0
+    );
+
+    const handleActivateClick = () => {
+        // 啟用條件看的是「已儲存」的資料：有改動沒存的話，先請使用者存檔，避免「確認資料無誤」確認的不是他看到的內容。
+        if (hasUnsavedChanges()) {
+            setActivationHint('你有尚未儲存的修改，請先按頁面最下方的「儲存個人資料」，再來啟用帳號。');
+            return;
+        }
+        setActivationHint('');
+        setShowActivationOtp(true);
+    };
+
+    const handleActivationVerified = async ({ activated }) => {
+        if (activated) {
+            await refreshProfile();
+            navigate('/courses', { replace: true });
+            return;
+        }
+        // 理論上啟用用途驗證成功一定會 activated；沒啟用就回報，不假裝成功
+        setShowActivationOtp(false);
+        await Promise.all([refreshProfile(), refreshActivation()]);
+        setActivationHint('信箱驗證已通過，但帳號還沒有啟用，請重新整理頁面確認；若仍未啟用請聯絡行政人員。');
     };
 
     if (loading) return <div className="p-12 text-center text-bauhaus-black/60 font-bold text-lg">載入中...</div>;
@@ -534,6 +592,34 @@ const ProfilePage = () => {
 
     return (
         <div className="p-6 max-w-4xl mx-auto">
+            {/* ── 帳號啟用（認領後待啟用）── */}
+            {activation.pending && (
+                <div data-testid="activation-card" className="bh-card bg-bauhaus-yellow/20 p-5 mb-6">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-lg flex items-center justify-center shrink-0">
+                            <ShieldCheck className="w-5 h-5 text-bauhaus-black" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="text-bauhaus-black font-black">{activation.title}</p>
+                            <p data-testid="activation-message" className="text-bauhaus-black/80 text-sm mt-1 font-medium break-words">{activation.message}</p>
+                            {activationHint && (
+                                <p role="alert" data-testid="activation-hint" className="mt-2 text-sm font-bold text-bauhaus-red break-words">{activationHint}</p>
+                            )}
+                        </div>
+                    </div>
+                    {activation.showButton && (
+                        <button
+                            type="button"
+                            data-testid="activation-button"
+                            onClick={handleActivateClick}
+                            className="bh-btn bh-btn-blue mt-4 w-full sm:w-auto min-h-[48px] px-6 py-3 text-sm justify-center"
+                        >
+                            <ShieldCheck className="w-4 h-4" /> {ACTIVATION_BUTTON_LABEL}
+                        </button>
+                    )}
+                </div>
+            )}
+
             {/* ── 首次註冊提示 ── */}
             {isFirstTime && (
                 <div className="bh-card bg-bauhaus-yellow/10 p-5 mb-6 flex items-center gap-3">
@@ -552,7 +638,7 @@ const ProfilePage = () => {
                     <div>
                         <p className="text-bauhaus-black font-black">已找到並認領您的講師主檔</p>
                         <p className="text-bauhaus-black/70 text-sm mt-0.5 font-medium">
-                            既有資料已自動帶入，不需要再次審核。請補齊尚缺欄位；完成前僅能查看個人資料與公告。
+                            既有資料已自動帶入，不需要再次審核。請補齊尚缺欄位，再用 Email 驗證碼啟用帳號；啟用前僅能查看個人資料與公告。
                         </p>
                     </div>
                 </div>
@@ -1027,6 +1113,14 @@ const ProfilePage = () => {
             {/* ── 簽約狀態 ── */}
             {canUseContracts && !isFirstTime && (
                 <Section icon={FileSignature} title="合約簽署">
+                    {paperPending && (
+                        <div data-testid="paper-pending" className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black rounded-xl p-3 mb-4 flex items-start gap-2">
+                            <Clock className="w-4 h-4 text-bauhaus-black mt-0.5 shrink-0" />
+                            <p className="text-sm text-bauhaus-black font-medium">
+                                <strong>紙本簽約處理中</strong>：你已選擇改以紙本簽約，行政人員會主動和你聯繫。如果想改用線上簽約，請按下方「{contractInfo ? '重新簽約' : '前往簽約'}」。
+                            </p>
+                        </div>
+                    )}
                     {contractInfo ? (
                         <div>
                             <div className="flex items-center gap-3 mb-4">
@@ -1036,7 +1130,7 @@ const ProfilePage = () => {
                                 <div>
                                     <div className="font-black text-bauhaus-blue text-sm">已簽約</div>
                                     <div className="text-xs text-bauhaus-black/50 font-bold">
-                                        {new Date(contractInfo.signed_at).toLocaleDateString('zh-TW')} 簽署
+                                        {formatTaipeiTime(contractInfo.signed_at)} 簽署
                                     </div>
                                 </div>
                             </div>
@@ -1074,6 +1168,38 @@ const ProfilePage = () => {
                                     <FileSignature className="w-4 h-4" /> 重新簽約
                                 </Link>
                             </div>
+
+                            {contractHistory.length > 1 && (
+                                <div className="mt-5" data-testid="contract-history">
+                                    <h4 className="text-sm font-black text-bauhaus-black mb-2">簽約紀錄（所有版本）</h4>
+                                    <ul className="space-y-2">
+                                        {contractHistory.map((contract) => (
+                                            <li key={contract.id} className="border-2 border-bauhaus-black/20 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className={`bh-chip ${contract.status === 'signed' ? 'bg-bauhaus-blue text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
+                                                            {contractStatusLabel(contract.status)}
+                                                        </span>
+                                                        <span className="text-sm font-bold text-bauhaus-black">{formatTaipeiTime(contract.signed_at)}</span>
+                                                    </div>
+                                                    {contract.status === 'voided' && (
+                                                        <p className="text-xs text-bauhaus-black/60 mt-1 break-words">
+                                                            已作廢{contract.voided_at ? `（${formatTaipeiTime(contract.voided_at)}）` : ''}
+                                                            {contract.voided_reason ? `：${contract.voided_reason}` : ''}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <Link
+                                                    to={`/contract/view/${contract.id}`}
+                                                    className="bh-btn bh-btn-outline min-h-[44px] px-4 py-2 text-xs justify-center"
+                                                >
+                                                    <Download className="w-3.5 h-3.5" /> 查看與下載
+                                                </Link>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="text-center py-6">
@@ -1091,6 +1217,14 @@ const ProfilePage = () => {
                         </div>
                     )}
                 </Section>
+            )}
+
+            {showActivationOtp && (
+                <EmailOtpDialog
+                    purpose={OTP_PURPOSES.ACTIVATION}
+                    onClose={() => setShowActivationOtp(false)}
+                    onVerified={handleActivationVerified}
+                />
             )}
 
             {/* ── 註冊完成彈窗 ── */}

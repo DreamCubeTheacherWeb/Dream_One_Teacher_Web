@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {
   INSTRUCTOR_PROGRESS_COLUMNS,
   PROGRESS_STAGES,
+  buildActivationMap,
   buildProgressRows,
   buildSignedUserIdSet,
   countProgress,
   getInstructorProgress,
+  getVisibleProgressStages,
+  hasConfirmedEmail,
   isProgressFilterKey,
   matchesProgressFilter,
 } from './instructorProgress.js';
@@ -178,6 +181,8 @@ test('buildProgressRows 依綁定帳號的 role 帶入待審核判斷，並能�
   assert.deepEqual(counts.byKey, {
     unclaimed: 1,
     pending_review: 1,
+    awaiting_email_confirm: 0,
+    awaiting_email_verify: 0,
     incomplete: 1,
     awaiting_contract: 1,
     complete: 1,
@@ -186,11 +191,21 @@ test('buildProgressRows 依綁定帳號的 role 帶入待審核判斷，並能�
   });
 });
 
-test('篩選：todo 只包含未認領、待審核、資料未完整、待簽約', () => {
+test('篩選：todo 只包含未認領、待審核、待確認 Email、待信箱驗證、資料未完整、待簽約', () => {
   const stageKeys = PROGRESS_STAGES.filter((stage) => stage.todo).map((stage) => stage.key);
-  assert.deepEqual(stageKeys, ['unclaimed', 'pending_review', 'incomplete', 'awaiting_contract']);
+  assert.deepEqual(stageKeys, [
+    'unclaimed',
+    'pending_review',
+    'awaiting_email_confirm',
+    'awaiting_email_verify',
+    'incomplete',
+    'awaiting_contract',
+  ]);
 
-  const rows = ['unclaimed', 'pending_review', 'incomplete', 'awaiting_contract', 'complete', 'disabled', 'profile_ready']
+  const rows = [
+    'unclaimed', 'pending_review', 'awaiting_email_confirm', 'awaiting_email_verify',
+    'incomplete', 'awaiting_contract', 'complete', 'disabled', 'profile_ready',
+  ]
     .map((key) => ({ key, todo: stageKeys.includes(key) }));
   assert.deepEqual(
     rows.filter((progress) => matchesProgressFilter(progress, 'todo')).map((progress) => progress.key),
@@ -205,8 +220,10 @@ test('篩選：todo 只包含未認領、待審核、資料未完整、待簽約
 });
 
 test('網址參數只接受已知的篩選 key', () => {
-  ['todo', 'unclaimed', 'pending_review', 'incomplete', 'awaiting_contract', 'complete', 'disabled', 'profile_ready']
-    .forEach((key) => assert.equal(isProgressFilterKey(key), true, key));
+  [
+    'todo', 'unclaimed', 'pending_review', 'awaiting_email_confirm', 'awaiting_email_verify',
+    'incomplete', 'awaiting_contract', 'complete', 'disabled', 'profile_ready',
+  ].forEach((key) => assert.equal(isProgressFilterKey(key), true, key));
   ['', 'all', 'linked', null, undefined].forEach((key) => assert.equal(isProgressFilterKey(key), false, String(key)));
 });
 
@@ -216,7 +233,7 @@ test('後台首頁只撈進度需要的欄位，且涵蓋必填欄位與三份�
     assert.ok(INSTRUCTOR_PROGRESS_COLUMNS.includes(`${key}_path`), `${key}_path`);
     assert.ok(INSTRUCTOR_PROGRESS_COLUMNS.includes(`${key}_external_url`), `${key}_external_url`);
   });
-  ['id', 'user_id', 'employment_status', 'name_slot', 'teaching_regions'].forEach((key) => (
+  ['id', 'user_id', 'employment_status', 'name_slot', 'teaching_regions', 'confirmed_email'].forEach((key) => (
     assert.ok(INSTRUCTOR_PROGRESS_COLUMNS.includes(key), key)
   ));
   assert.equal(new Set(INSTRUCTOR_PROGRESS_COLUMNS).size, INSTRUCTOR_PROGRESS_COLUMNS.length);
@@ -228,4 +245,121 @@ test('後台首頁只撈進度需要的欄位，且涵蓋必填欄位與三份�
     getInstructorProfileCompletion(slim).missingItems.length,
     getInstructorProfileCompletion(full).missingItems.length,
   );
+});
+
+// ── 認領後帳號啟用（規格 2026-10-20）：待確認 Email／待信箱驗證 ──
+
+const pendingActivations = (...userIds) => buildActivationMap(
+  userIds.map((user_id) => ({ user_id, status: 'pending', claim_method: 'name_slot' })),
+);
+
+test('已認領待啟用（有 pending 啟用紀錄）且公司還沒確認 Email：待確認 Email，不論資料完整與否', () => {
+  const activationsByUserId = pendingActivations(UID);
+  for (const instructor of [completeInstructor(), completeInstructor({ nickname: '' }), completeInstructor({ confirmed_email: '   ' })]) {
+    const progress = getInstructorProgress(instructor, { userRole: 'pending', signedUserIds: signed, activationsByUserId });
+    assert.equal(progress.key, 'awaiting_email_confirm');
+    assert.equal(progress.label, '待確認 Email');
+    assert.equal(progress.todo, true);
+  }
+});
+
+test('已認領待啟用且 Email 已確認：待信箱驗證（資料缺漏數照實回報）', () => {
+  const activationsByUserId = pendingActivations(UID);
+  const progress = getInstructorProgress(
+    completeInstructor({ confirmed_email: 'teacher@example.com', nickname: '' }),
+    { userRole: 'pending', signedUserIds: signed, activationsByUserId },
+  );
+  assert.equal(progress.key, 'awaiting_email_verify');
+  assert.equal(progress.label, '待信箱驗證');
+  assert.equal(progress.todo, true);
+  assert.equal(progress.missingCount, 1);
+});
+
+test('pending 帳號沒有啟用紀錄＝新建帳號待審核；有 confirmed_email 也一樣（不靠它判斷）', () => {
+  const activationsByUserId = pendingActivations(UID2);
+  const progress = getInstructorProgress(
+    completeInstructor({ confirmed_email: 'teacher@example.com' }),
+    { userRole: 'pending', signedUserIds: signed, activationsByUserId },
+  );
+  assert.equal(progress.key, 'pending_review');
+});
+
+test('讀不到啟用紀錄（輔導員）：有 confirmed_email 的 pending 帳號判成待信箱驗證，沒有的無法區分、維持待審核', () => {
+  const withEmail = getInstructorProgress(
+    completeInstructor({ confirmed_email: 'teacher@example.com' }),
+    { userRole: 'pending', signedUserIds: null, activationsByUserId: null },
+  );
+  assert.equal(withEmail.key, 'awaiting_email_verify');
+
+  const withoutEmail = getInstructorProgress(completeInstructor(), { userRole: 'pending', activationsByUserId: null });
+  assert.equal(withoutEmail.key, 'pending_review');
+});
+
+test('啟用成 teacher 之後不再算啟用階段，回到資料／簽約階段；停用與未認領優先', () => {
+  const activationsByUserId = pendingActivations(UID);
+  const activated = getInstructorProgress(
+    completeInstructor({ confirmed_email: 'teacher@example.com' }),
+    { userRole: 'teacher', signedUserIds: signed, activationsByUserId },
+  );
+  assert.equal(activated.key, 'complete');
+
+  assert.equal(
+    getInstructorProgress(completeInstructor({ employment_status: 'frozen' }), { userRole: 'pending', activationsByUserId }).key,
+    'disabled',
+  );
+  assert.equal(
+    getInstructorProgress(completeInstructor({ user_id: null }), { userRole: 'pending', activationsByUserId }).key,
+    'unclaimed',
+  );
+});
+
+test('啟用紀錄只收 status=pending 的列；非陣列回 null', () => {
+  const map = buildActivationMap([
+    { user_id: 'u1', status: 'pending' },
+    { user_id: 'u2', status: 'active' },
+    { user_id: 'u3', status: 'revoked' },
+    { user_id: null, status: 'pending' },
+  ]);
+  assert.deepEqual([...map.keys()], ['u1']);
+  assert.equal(buildActivationMap(null), null);
+  assert.equal(buildActivationMap(undefined), null);
+  assert.equal(buildActivationMap([]).size, 0);
+});
+
+test('hasConfirmedEmail 去除空白判斷', () => {
+  assert.equal(hasConfirmedEmail({ confirmed_email: 'a@b.co' }), true);
+  assert.equal(hasConfirmedEmail({ confirmed_email: '  ' }), false);
+  assert.equal(hasConfirmedEmail({ confirmed_email: null }), false);
+  assert.equal(hasConfirmedEmail({}), false);
+  assert.equal(hasConfirmedEmail(undefined), false);
+});
+
+test('buildProgressRows 帶入啟用紀錄，並統計新階段', () => {
+  const instructors = [
+    completeInstructor({ id: 'a', user_id: 'ua' }),
+    completeInstructor({ id: 'b', user_id: 'ub', confirmed_email: 'b@example.com' }),
+    completeInstructor({ id: 'c', user_id: 'uc' }),
+  ];
+  const usersById = new Map([['ua', { role: 'pending' }], ['ub', { role: 'pending' }], ['uc', { role: 'pending' }]]);
+  const rows = buildProgressRows(instructors, { usersById, activationsByUserId: pendingActivations('ua', 'ub') });
+  assert.deepEqual(rows.map((row) => row.progress.key), ['awaiting_email_confirm', 'awaiting_email_verify', 'pending_review']);
+  const counts = countProgress(rows);
+  assert.equal(counts.todo, 3);
+  assert.equal(counts.byKey.awaiting_email_confirm, 1);
+  assert.equal(counts.byKey.awaiting_email_verify, 1);
+});
+
+test('篩選列的階段：讀不到的資訊對應的階段不顯示', () => {
+  const keys = (options) => getVisibleProgressStages(options).map((stage) => stage.key);
+  assert.deepEqual(keys({ contractKnown: true, activationKnown: true }), [
+    'unclaimed', 'pending_review', 'awaiting_email_confirm', 'awaiting_email_verify',
+    'incomplete', 'awaiting_contract', 'complete', 'disabled',
+  ]);
+  // 輔導員：看不到啟用紀錄與簽約紀錄
+  assert.deepEqual(keys({ contractKnown: false, activationKnown: false }), [
+    'unclaimed', 'pending_review', 'awaiting_email_verify', 'incomplete', 'profile_ready', 'disabled',
+  ]);
+  assert.deepEqual(keys({ contractKnown: true, activationKnown: false }), [
+    'unclaimed', 'pending_review', 'awaiting_email_verify', 'incomplete', 'awaiting_contract', 'complete', 'disabled',
+  ]);
 });

@@ -2,8 +2,10 @@
 /*
  * 瀏覽器回歸：Email 未命中的 pending 帳號先選「認領帳號」或「新建帳號」。
  * 認領帳號分兩步：
- *   1. 只填姓名 → 呼叫 claim_instructor_name_slot；姓名命中後台空位就直接開通，不會出現手機與身分證末四碼欄。
+ *   1. 只填姓名 → 呼叫 claim_instructor_name_slot；姓名命中後台空位就直接綁定，不會出現手機與身分證末四碼欄。
  *   2. 姓名沒命中（not_found）才出現手機與身分證末四碼欄 → 呼叫 claim_existing_instructor_by_identity，成功後帶入既有主檔。
+ * 2026-10-20 帳號啟用改版：認領只是「綁定」，帳號仍是 pending（回傳 activation_required），
+ *   要在 /profile 用公司已確認的 Email 驗證碼啟用；已綁定待啟用的人開 /pending 會被導去 /profile，不顯示「帳號審核中」。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -77,10 +79,15 @@ let linked = false;
 let identityPayload = null;
 let identityCalls = 0;
 let nameClaimPayloads = [];
+// 認領後的啟用狀態（get_my_activation_status）：公司是否已確認 Email、資料是否完整由情境決定
+let confirmedEmail = false;
+let activationStatusCalls = 0;
 
-function resetScenario({ slots }) {
+function resetScenario({ slots, preLinked = false, hasConfirmedEmail = false }) {
   nameSlots = new Set(slots);
-  linked = false;
+  linked = preLinked;
+  confirmedEmail = hasConfirmedEmail;
+  activationStatusCalls = 0;
   identityPayload = null;
   identityCalls = 0;
   nameClaimPayloads = [];
@@ -108,8 +115,21 @@ async function handleRoute(route) {
 
   if (url.pathname === '/rest/v1/rpc/claim_my_precreated_instructor') {
     return jsonResponse(route, linked
-      ? { status: 'claimed', instructor_id: instructorId, claimed_now: false }
+      ? { status: 'claimed', instructor_id: instructorId, claimed_now: false, activation_required: true }
       : { status: 'new' });
+  }
+
+  if (url.pathname === '/rest/v1/rpc/get_my_activation_status') {
+    activationStatusCalls += 1;
+    return jsonResponse(route, linked
+      ? {
+        status: 'pending',
+        claim_method: 'name_slot',
+        has_confirmed_email: confirmedEmail,
+        masked_email: confirmedEmail ? 'yi***@dreamcube.tw' : null,
+        profile_complete: false,
+      }
+      : { status: 'none', claim_method: null, has_confirmed_email: false, masked_email: null, profile_complete: false });
   }
 
   if (url.pathname === '/rest/v1/rpc/claim_instructor_name_slot') {
@@ -119,7 +139,7 @@ async function handleRoute(route) {
     if (nameSlots.has(normalized)) {
       nameSlots.delete(normalized);
       linked = true;
-      return jsonResponse(route, { status: 'claimed', instructor_id: instructorId, claimed_now: true });
+      return jsonResponse(route, { status: 'claimed', instructor_id: instructorId, claimed_now: true, activation_required: true });
     }
     return jsonResponse(route, { status: 'not_found' });
   }
@@ -128,7 +148,7 @@ async function handleRoute(route) {
     identityPayload = request.postDataJSON();
     identityCalls += 1;
     linked = true;
-    return jsonResponse(route, { status: 'claimed', instructor_id: instructorId, claimed_now: true });
+    return jsonResponse(route, { status: 'claimed', instructor_id: instructorId, claimed_now: true, activation_required: true });
   }
 
   if (url.pathname.startsWith('/rest/v1/rpc/')) return jsonResponse(route, null);
@@ -147,7 +167,7 @@ async function handleRoute(route) {
         id: userId,
         name: '蔡宜津',
         email: authUser.email,
-        role: linked ? 'teacher' : 'pending',
+        role: 'pending', // 認領只是綁定；要用 Email 驗證碼啟用後才會變 teacher
         created_at: now,
       };
       return jsonResponse(route, wantsObject ? row : [row]);
@@ -232,9 +252,17 @@ async function main() {
       await page.waitForURL('**/profile', { timeout: 10000 });
       await page.waitForFunction(() => [...document.querySelectorAll('input')]
         .some((input) => input.value === '宜津'), null, { timeout: 8000 });
-      assertResult('姓名命中：送出 claim_instructor_name_slot 並直接開通',
+      assertResult('姓名命中：送出 claim_instructor_name_slot 並直接綁定',
         nameClaimPayloads.length === 1 && nameClaimPayloads[0]?.provided_full_name === '蔡宜津'
         && identityCalls === 0, JSON.stringify(nameClaimPayloads));
+      await page.getByTestId('activation-card').waitFor({ timeout: 8000 });
+      assertResult('認領後在 /profile 頂端顯示啟用提示：公司尚未確認 Email → 請聯絡行政人員，沒有啟用按鈕',
+        (await page.getByTestId('activation-message').innerText()).includes('你的 Email 尚未經公司確認，請聯絡行政人員確認後才能啟用帳號')
+        && await page.getByTestId('activation-button').count() === 0);
+      assertResult('認領後不是「帳號審核中」',
+        await page.getByText('帳號審核中', { exact: true }).count() === 0);
+      assertResult('390px 認領後的啟用提示無水平溢出',
+        await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0);
       await context.close();
     }
 
@@ -271,6 +299,29 @@ async function main() {
       assertResult('核對成功後帶入既有講師資料',
         await page.locator('input').evaluateAll((inputs) => inputs.some((input) => input.value === '宜津'))
         && await page.locator('input').evaluateAll((inputs) => inputs.some((input) => input.value === 'ww20413@gmail.com')));
+      await context.close();
+    }
+
+    // ── 情境 D：已綁定待啟用的人開 /pending，被導去 /profile，不顯示「帳號審核中」；公司已確認 Email 但資料未完整 → 先補資料
+    resetScenario({ slots: [], preLinked: true, hasConfirmedEmail: true });
+    {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addInitScript(({ key, value }) => {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }, { key: storageKey, value: session });
+      await context.route('**/*', handleRoute);
+      const page = await context.newPage();
+      await page.goto(`${baseUrl}/pending`, { waitUntil: 'networkidle', timeout: 20000 });
+      await page.waitForURL('**/profile', { timeout: 10000 });
+      await page.getByTestId('activation-card').waitFor({ timeout: 8000 });
+      assertResult('已綁定待啟用的人開 /pending 會被導去 /profile',
+        new URL(page.url()).pathname === '/profile' && activationStatusCalls >= 1, page.url());
+      assertResult('不顯示「帳號審核中」',
+        await page.getByText('帳號審核中', { exact: true }).count() === 0);
+      const message = await page.getByTestId('activation-message').innerText();
+      assertResult('已確認 Email 但資料未完整：請先補齊資料，並指向啟用按鈕，尚不顯示按鈕',
+        message.includes('請先補齊資料') && message.includes('確認資料無誤，驗證信箱啟用帳號')
+        && await page.getByTestId('activation-button').count() === 0, message);
       await context.close();
     }
 

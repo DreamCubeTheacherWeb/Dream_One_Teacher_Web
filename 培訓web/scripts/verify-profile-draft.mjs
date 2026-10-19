@@ -11,6 +11,7 @@
  *  T7 檔案替換失敗不刪舊檔；成功替換則 DB 儲存後才刪舊檔
  *  T8 只按移除但尚未儲存時，不可先刪 Storage 舊檔
  *  T9 存摺首次送出前可調整；講師送出後只能預覽並聯繫管理員，舊替換草稿不覆蓋正本，管理員仍可更換
+ *  T11 認領後待啟用（pending 角色＋啟用紀錄 pending）的人存檔：留在 /profile、重新讀取啟用狀態，不被導去「帳號審核中」
  * 用法：node scripts/verify-profile-draft.mjs
  */
 import { readFileSync } from 'fs';
@@ -63,6 +64,10 @@ function jsonRes(route, data, extra = {}) {
     return route.fulfill({ status: 200, headers, body: JSON.stringify(data) });
 }
 
+// T11：認領後待啟用的情境（get_my_activation_status 的回覆；null＝沿用舊行為）
+let activationMock = null;
+let activationReads = 0;
+
 async function handleRoute(route) {
     const req = route.request();
     const url = new URL(req.url());
@@ -75,7 +80,13 @@ async function handleRoute(route) {
         if (p.startsWith('/auth/v1/token')) return jsonRes(route, FAKE_SESSION);
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     }
-    if (p.startsWith('/rest/v1/rpc/')) return jsonRes(route, []);
+    if (p.startsWith('/rest/v1/rpc/')) {
+        if (p.endsWith('/get_my_activation_status') && activationMock) {
+            activationReads += 1;
+            return jsonRes(route, activationMock);
+        }
+        return jsonRes(route, []);
+    }
     if (p.startsWith('/storage/v1/object/sign/')) {
         if (signMode === 'fail') {
             return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'forced sign failure' }) });
@@ -444,6 +455,25 @@ async function main() {
         await page.close(); await ctx.close();
         currentRole = 'teacher';
 
+        // ── T11：認領後待啟用的人存檔，留在 /profile 並重新讀取啟用狀態 ──
+        currentRole = 'pending';
+        activationMock = { status: 'pending', claim_method: 'name_slot', has_confirmed_email: true, masked_email: 'ex***@test.local', profile_complete: true };
+        instructorRow = completeRow; draftRow = null; requestEvents = []; storageMode = 'upload-success';
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        page.on('dialog', (dialog) => dialog.accept());
+        await gotoProfile(page);
+        await page.getByTestId('activation-card').waitFor({ timeout: 8000 });
+        const activationReadsBefore = activationReads;
+        await page.fill(`input[placeholder="${ADDR}"]`, '待啟用者的新通訊地址');
+        await page.getByRole('button', { name: '儲存個人資料' }).click();
+        await page.waitForTimeout(1500);
+        assert('T11a 待啟用的人存檔成功（送出主檔更新）', requestEvents.includes('db-save'), `events=${requestEvents.join(' > ')}`);
+        assert('T11b 存檔後留在 /profile，不被導去「帳號審核中」', new URL(page.url()).pathname === '/profile', `landed=${new URL(page.url()).pathname}`);
+        assert('T11c 存檔後重新讀取啟用狀態（資料是否完整由伺服器判斷）', activationReads > activationReadsBefore, `reads=${activationReads - activationReadsBefore}`);
+        assert('T11d 啟用提示仍在頁面頂端，可按「確認資料無誤，驗證信箱啟用帳號」', await page.getByTestId('activation-button').count() === 1);
+        await page.close(); await ctx.close();
+        currentRole = 'teacher';
+        activationMock = null;
 
     } finally {
         if (browser) await browser.close();

@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Clock, RefreshCw, Search, Shie
 import { supabase } from '../../lib/supabaseClient';
 import { getInstructorProfileCompletion } from '../../lib/profileCompletion';
 import { findUnclaimedNameSlots } from '../../lib/instructorNameSlots';
+import { hasConfirmedEmail } from '../../lib/instructorProgress';
 
 const DEFAULT_MENTORS = ['懶懶', '叮叮', '樹懶'];
 const ROLE_CONFIG = {
@@ -17,6 +18,9 @@ const BLOCKED_STATUSES = new Set(['frozen', 'cancelled']);
 const TeacherManager = () => {
     const [users, setUsers] = useState([]);
     const [instructors, setInstructors] = useState([]);
+    // 已認領、等老師用 Email 驗證碼啟用的帳號（instructor_account_activations 的 pending 列）。
+    // 這些帳號 users.role 仍是 pending，但不是「新註冊待審核」：管理員不能直接核准，只能確認 Email 讓老師自己啟用。
+    const [pendingActivations, setPendingActivations] = useState(() => new Map());
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState(null);
     const [tab, setTab] = useState('pending');
@@ -25,12 +29,15 @@ const TeacherManager = () => {
 
     const fetchData = useCallback(async () => {
         setLoading(true);
-        const [usersResult, instructorsResult] = await Promise.all([
+        const [usersResult, instructorsResult, activationsResult] = await Promise.all([
             supabase.from('users').select('*').order('created_at', { ascending: false }),
             supabase.from('instructors').select('*').order('full_name'),
+            supabase.from('instructor_account_activations').select('user_id, status, claim_method').eq('status', 'pending'),
         ]);
         if (usersResult.error) console.error('讀取帳號失敗：', usersResult.error.message);
         if (instructorsResult.error) console.error('讀取講師主檔失敗：', instructorsResult.error.message);
+        if (activationsResult.error) console.error('讀取帳號啟用紀錄失敗：', activationsResult.error.message);
+        setPendingActivations(new Map((activationsResult.data || []).map((row) => [row.user_id, row])));
         const nextUsers = usersResult.data || [];
         setUsers(nextUsers);
         setInstructors(instructorsResult.data || []);
@@ -68,10 +75,16 @@ const TeacherManager = () => {
         });
     }, [instructorByUserId, search, tab, users]);
 
+    // 「新註冊待審核」只算沒有啟用紀錄的 pending 帳號（認領後待啟用的另外處理）
+    const newRegistrationCount = users.filter((item) => item.role === 'pending' && !pendingActivations.has(item.id)).length;
     const claimedCount = instructors.filter((item) => item.user_id).length;
     const unclaimedCount = instructors.length - claimedCount;
 
     const approvePending = async (account) => {
+        if (pendingActivations.has(account.id)) {
+            alert('這個帳號是認領既有講師主檔的帳號，必須由老師本人用 Email 驗證碼啟用，管理員不能直接核准。\n請到講師主檔確認他的 Email。');
+            return;
+        }
         const instructor = instructorByUserId.get(account.id);
         if (!instructor) {
             alert('此帳號尚未建立講師主檔，請對方先完成個人資料。');
@@ -150,7 +163,7 @@ const TeacherManager = () => {
                 <div>
                     <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">帳號審核與權限</h1>
                     <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">
-                        只有完全未預先建檔的新註冊講師需要審核；點選下方認領狀態卡片，可直接查看與編輯講師主檔。
+                        只有完全未預先建檔的新註冊講師需要審核；認領既有主檔的講師由本人用 Email 驗證碼啟用，管理員只需確認他的 Email。點選下方認領狀態卡片，可直接查看與編輯講師主檔。
                     </p>
                 </div>
                 <div className="flex gap-2">
@@ -164,7 +177,7 @@ const TeacherManager = () => {
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-                <StatCard icon={Clock} label="新註冊待審核" value={roleCounts.pending || 0} color="bg-bauhaus-yellow text-bauhaus-black" />
+                <StatCard icon={Clock} label="新註冊待審核" value={newRegistrationCount} color="bg-bauhaus-yellow text-bauhaus-black" />
                 <StatCard icon={UserCheck} label="主檔已認領" value={claimedCount} color="bg-bauhaus-blue text-white" to="/admin/instructors?claim=linked" />
                 <StatCard icon={Users} label="主檔未認領" value={unclaimedCount} color="bg-bauhaus-muted text-bauhaus-black" to="/admin/instructors?claim=unlinked" />
                 <StatCard icon={ShieldCheck} label="後台人員" value={(roleCounts.mentor || 0) + (roleCounts.admin || 0)} color="bg-bauhaus-black text-white" />
@@ -202,7 +215,9 @@ const TeacherManager = () => {
                     const instructor = instructorByUserId.get(account.id);
                     const completion = getInstructorProfileCompletion(instructor);
                     const blocked = BLOCKED_STATUSES.has(instructor?.employment_status);
-                    const canApprove = account.role === 'pending' && instructor && completion.complete && !blocked;
+                    const awaitingActivation = account.role === 'pending' && pendingActivations.has(account.id);
+                    const emailConfirmed = hasConfirmedEmail(instructor);
+                    const canApprove = account.role === 'pending' && !awaitingActivation && instructor && completion.complete && !blocked;
                     // 後台只填姓名建立的空位若與這個待審核帳號同名，可能是同一位老師誤選「新建帳號」。
                     const sameNameSlots = account.role === 'pending'
                         ? findUnclaimedNameSlots(instructor?.full_name || account.name, instructors)
@@ -220,6 +235,11 @@ const TeacherManager = () => {
                                             {instructor ? '已有講師主檔' : '尚未填寫主檔'}
                                         </span>
                                         {blocked && <span className="bh-chip bg-bauhaus-red text-white">已停止登入</span>}
+                                        {awaitingActivation && (
+                                            <span data-testid="awaiting-activation-chip" className={`bh-chip ${emailConfirmed ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-red text-white'}`}>
+                                                {emailConfirmed ? '待信箱驗證' : '待確認 Email'}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="text-sm text-bauhaus-black/60 mt-1">{account.email}</div>
                                     {account.role === 'pending' && instructor && !completion.complete && (
@@ -228,7 +248,14 @@ const TeacherManager = () => {
                                             {completion.missingItems.length > 5 ? '…' : ''}
                                         </div>
                                     )}
-                                    {account.role === 'pending' && completion.complete && !blocked && (
+                                    {awaitingActivation && (
+                                        <div data-testid="awaiting-activation-note" className="text-xs text-bauhaus-black/80 font-bold mt-2">
+                                            {emailConfirmed
+                                                ? '已認領綁定，等老師本人用 Email 驗證碼啟用；管理員不需要也不能直接核准。'
+                                                : '已認領綁定，但公司還沒確認這位老師的 Email。請到講師主檔按「確認 Email」，確認後由老師本人用驗證碼啟用。'}
+                                        </div>
+                                    )}
+                                    {account.role === 'pending' && !awaitingActivation && completion.complete && !blocked && (
                                         <div className="text-xs text-bauhaus-blue font-bold mt-2 flex items-center gap-1">
                                             <CheckCircle2 className="w-4 h-4" /> 資料已完成，可核准
                                         </div>
@@ -248,7 +275,14 @@ const TeacherManager = () => {
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row gap-2 lg:items-center">
-                                    {account.role === 'pending' ? (
+                                    {awaitingActivation ? (
+                                        <Link
+                                            to={`/admin/instructors?progress=${emailConfirmed ? 'awaiting_email_verify' : 'awaiting_email_confirm'}`}
+                                            className="bh-btn bh-btn-outline min-h-[44px] px-4 py-2.5 text-sm"
+                                        >
+                                            <Users className="w-4 h-4" /> {emailConfirmed ? '到講師主檔查看' : '到講師主檔確認 Email'}
+                                        </Link>
+                                    ) : account.role === 'pending' ? (
                                         <button
                                             type="button"
                                             disabled={!canApprove || busyId === account.id}

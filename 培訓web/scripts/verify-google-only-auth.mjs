@@ -142,6 +142,67 @@ check('Auth hook 權限只開給 supabase_auth_admin', () => {
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.hook_allow_known_google_signup\(jsonb\) TO supabase_auth_admin/);
 });
 
+// ── 2026-10-20 帳號啟用（Email OTP）與電子簽約：前端（UI）部分 ──
+const productionSource = collectFiles(path.join(appDir, 'src'))
+  .filter((file) => /\.(js|jsx)$/.test(file) && !/\.test\.js$/.test(file))
+  .map((file) => readFileSync(file, 'utf8'))
+  .join('\n');
+
+check('帳號啟用與簽約前身分驗證走本系統 OTP（request_email_otp／verify_email_otp），前端不再用 Supabase Auth 的 signInWithOtp／verifyOtp', () => {
+  assert.doesNotMatch(productionSource, /signInWithOtp|\.verifyOtp\(/);
+  const dialog = read('src/components/EmailOtpDialog.jsx');
+  assert.match(dialog, /request_email_otp/);
+  assert.match(dialog, /verify_email_otp/);
+  assert.match(dialog, /autoComplete="one-time-code"/);
+  assert.match(dialog, /inputMode="numeric"/);
+  assert.match(read('src/pages/ContractSigningFlow.jsx'), /OTP_PURPOSES\.CONTRACT/);
+  assert.match(read('src/pages/ProfilePage.jsx'), /OTP_PURPOSES\.ACTIVATION/);
+});
+
+check('認領後待啟用的人被導去 /profile 完成啟用，不顯示「帳號審核中」；個人頁頂端有啟用按鈕', () => {
+  assert.match(pendingApproval, /useActivationStatus/);
+  assert.match(pendingApproval, /activation\.pending[\s\S]{0,80}Navigate to="\/profile"/);
+  const profilePage = read('src/pages/ProfilePage.jsx');
+  assert.match(profilePage, /ACTIVATION_BUTTON_LABEL/);
+  assert.match(profilePage, /activation\.showButton/);
+  assert.equal(read('src/lib/accountActivation.js').includes("'確認資料無誤，驗證信箱啟用帳號'"), true);
+});
+
+check('簽約流程：電子簽約同意（同意／不同意）、簽約 OTP、送出帶 4 個新欄位與 WebCrypto SHA-256；舊的「一樣的法律效力」勾選句已移除', () => {
+  const signing = read('src/pages/ContractSigningFlow.jsx');
+  assert.match(signing, /record_contract_consent/);
+  assert.match(signing, /agree_electronic/);
+  assert.match(signing, /decline_electronic/);
+  for (const param of ['p_otp_challenge_id', 'p_consent_id', 'p_document_sha256', 'p_signed_pdf_sha256']) {
+    assert.match(signing, new RegExp(param), param);
+  }
+  assert.match(read('src/lib/esign.js'), /crypto\?*\.subtle|subtle\.digest\('SHA-256'/);
+  assert.doesNotMatch(productionSource, /一樣的法律效力|皆可遵守並配合/);
+  assert.equal(productionSource.includes('EmailOtpGate'), false);
+});
+
+check('法規顧問定稿的 7 個文案版本代碼都在 esignCopy.js', () => {
+  const copy = read('src/lib/esignCopy.js');
+  for (const code of ['esign-read-ack-v1', 'esign-consent-v1', 'esign-decline-paper-v1', 'esign-final-confirm-v1', 'esign-privacy-notice-v1', 'esign-signed-email-v1', 'esign-otp-email-v1']) {
+    assert.ok(copy.includes(code), code);
+  }
+});
+
+check('後台：講師名單可確認 Email、進度含待確認 Email／待信箱驗證；合約後台上傳帶 content_sha256、可看簽署證據並驗證檔案與證據鏈', () => {
+  assert.match(instructorList, /admin_confirm_instructor_email|ConfirmInstructorEmailModal/);
+  assert.match(read('src/components/ConfirmInstructorEmail.jsx'), /admin_confirm_instructor_email/);
+  const progress = read('src/lib/instructorProgress.js');
+  assert.match(progress, /awaiting_email_confirm/);
+  assert.match(progress, /awaiting_email_verify/);
+  const contractAdmin = read('src/pages/admin/ContractAdmin.jsx');
+  assert.match(contractAdmin, /content_sha256/);
+  assert.match(contractAdmin, /admin_set_document_hash/);
+  const evidence = read('src/components/ContractEvidencePanel.jsx');
+  assert.match(evidence, /admin_verify_contract_evidence_chain/);
+  assert.match(evidence, /email_delivery_log/);
+  assert.match(evidence, /contract_signing_evidence/);
+});
+
 const passed = checks.filter(Boolean).length;
 console.log(`\n=== ${passed}/${checks.length} PASS ===`);
 process.exit(passed === checks.length ? 0 : 1);

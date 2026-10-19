@@ -3,10 +3,19 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import DocumentViewer from '../components/DocumentViewer';
+import { downloadContractFile } from '../lib/contractFiles';
+import { contractStatusLabel, formatTaipeiTime, safeDownloadName } from '../lib/esign';
 import {
   ArrowLeft, Download, FileText, Calendar, User, Shield,
   CreditCard, MapPin, Phone, CheckCircle2, PenTool, AlertTriangle, BookOpen
 } from 'lucide-react';
+
+// 簽署成品 PDF 的路徑表 {doc_type: path}；舊資料只有單一 signed_pdf_path。
+const signedPdfPathsOf = (contract) => {
+  const paths = { ...(contract?.signed_pdf_paths || {}) };
+  if (contract?.signed_pdf_path && !Object.keys(paths).length) paths.contract = contract.signed_pdf_path;
+  return paths;
+};
 
 const ContractView = () => {
   const { contractId } = useParams();
@@ -17,12 +26,10 @@ const ContractView = () => {
   const [signedPdfUrls, setSignedPdfUrls] = useState({});
   const [docUrls, setDocUrls] = useState({});
   const [docMeta, setDocMeta] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [downloadError, setDownloadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-
-  useEffect(() => {
-    if (user && contractId) loadContract();
-  }, [user, contractId]);
 
   const loadContract = async () => {
     setLoading(true);
@@ -75,23 +82,38 @@ const ContractView = () => {
       }
       setDocUrls(urls);
       setDocMeta(meta);
+
+      // 同一位講師的所有簽署版本（含已作廢）：重簽不會讓舊版消失
+      const { data: allVersions } = await supabase
+        .from('instructor_contracts')
+        .select('id, status, signed_at, voided_at, voided_reason, doc_versions, signed_pdf_paths, signed_pdf_path, filled_name')
+        .eq('user_id', data.user_id)
+        .order('signed_at', { ascending: false });
+      setHistory(allVersions || []);
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
   };
 
-  const handleDownloadPdf = async (docType) => {
-    const url = signedPdfUrls[docType];
-    if (!url) return;
-    const a = document.createElement('a');
-    a.href = url;
+  // loadContract 在上方宣告後才由 effect 呼叫；只在登入者或合約 id 變動時載入。
+  useEffect(() => {
+    if (!user || !contractId) return undefined;
+    const timer = window.setTimeout(loadContract, 0);
+    return () => window.clearTimeout(timer);
+  }, [user, contractId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDownloadPdf = async (docType, target = contract) => {
+    const paths = signedPdfPathsOf(target);
     const meta = docMeta.find(d => d.doc_type === docType);
-    a.download = `${meta?.display_name || docType}_${contract?.filled_name || ''}_${new Date(contract?.signed_at).toLocaleDateString('zh-TW')}.pdf`;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const filename = safeDownloadName(
+      meta?.display_name || docType,
+      target?.filled_name,
+      formatTaipeiTime(target?.signed_at).slice(0, 10),
+    ) + '.pdf';
+    setDownloadError('');
+    const result = await downloadContractFile(paths[docType], filename);
+    if (!result.ok) setDownloadError(`下載失敗：${result.error}`);
   };
 
   if (loading) {
@@ -148,10 +170,20 @@ const ContractView = () => {
         )}
       </div>
 
+      {downloadError && (
+        <div role="alert" className="mb-4 bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl px-4 py-3 text-sm font-bold text-bauhaus-black">
+          {downloadError}
+        </div>
+      )}
+
       {contract.status === 'voided' && (
-        <div className="mb-6 bg-bauhaus-red border-2 border-bauhaus-black rounded-2xl p-4 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-white shrink-0" />
-          <p className="text-sm font-bold text-white">此合約已作廢（因重新簽約）</p>
+        <div data-testid="voided-banner" className="mb-6 bg-bauhaus-red border-2 border-bauhaus-black rounded-2xl p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-white shrink-0 mt-0.5" />
+          <p className="text-sm font-bold text-white break-words">
+            此合約已作廢
+            {contract.voided_at ? `（${formatTaipeiTime(contract.voided_at)}）` : ''}
+            {contract.voided_reason ? `：${contract.voided_reason}` : '（因重新簽約）'}
+          </p>
         </div>
       )}
 
@@ -183,7 +215,7 @@ const ContractView = () => {
                 <h3 className="font-bold text-bauhaus-black">
                   {contract.status === 'signed' ? '合約已簽署' : '合約已作廢'}
                 </h3>
-                <p className="text-sm text-bauhaus-black/60">簽署時間：{new Date(contract.signed_at).toLocaleString('zh-TW')}</p>
+                <p className="text-sm text-bauhaus-black/60">簽署時間：{formatTaipeiTime(contract.signed_at)}</p>
               </div>
             </div>
 
@@ -193,7 +225,7 @@ const ContractView = () => {
               <InfoRow icon={CreditCard} label="身分證字號" value={contract.filled_id_number?.replace(/(.{3}).+(.{3})/, '$1****$2')} />
               <InfoRow icon={MapPin} label="地址" value={contract.filled_address} />
               <InfoRow icon={Phone} label="電話" value={contract.filled_phone} />
-              <InfoRow icon={Calendar} label="簽約日期" value={new Date(contract.signed_at).toLocaleDateString('zh-TW')} />
+              <InfoRow icon={Calendar} label="簽約日期" value={formatTaipeiTime(contract.signed_at).slice(0, 10)} />
             </div>
 
             <div className="bg-bauhaus-paper border-2 border-bauhaus-black/10 rounded-xl p-4 text-sm text-bauhaus-black/60 space-y-1 mb-6">
@@ -212,9 +244,58 @@ const ContractView = () => {
               )}
             </div>
 
+            {history.length > 0 && (
+              <div className="mb-6" data-testid="contract-versions">
+                <h4 className="text-sm font-bold text-bauhaus-black mb-2">所有簽署版本（含已作廢）</h4>
+                <ul className="space-y-2">
+                  {history.map((version) => {
+                    const versionPaths = signedPdfPathsOf(version);
+                    const isCurrent = version.id === contract.id;
+                    return (
+                      <li key={version.id} className={`border-2 rounded-xl p-3 ${isCurrent ? 'border-bauhaus-black bg-bauhaus-cream' : 'border-bauhaus-black/20'}`}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`bh-chip ${version.status === 'signed' ? 'bg-bauhaus-blue text-white' : 'bg-bauhaus-muted text-bauhaus-black'}`}>
+                            {contractStatusLabel(version.status)}
+                          </span>
+                          <span className="text-sm font-bold text-bauhaus-black">{formatTaipeiTime(version.signed_at)}</span>
+                          {isCurrent && <span className="text-xs font-bold text-bauhaus-black/50">（目前檢視）</span>}
+                          {!isCurrent && (
+                            <Link to={`/contract/view/${version.id}`} className="text-xs font-bold text-bauhaus-blue hover:underline py-3 md:py-0">查看</Link>
+                          )}
+                        </div>
+                        {version.status === 'voided' && (
+                          <p className="text-xs text-bauhaus-black/60 mt-1 break-words">
+                            作廢時間：{version.voided_at ? formatTaipeiTime(version.voided_at) : '未記錄'}
+                            ；原因：{version.voided_reason || '重新簽約'}
+                          </p>
+                        )}
+                        {Object.keys(versionPaths).length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {Object.keys(versionPaths).map((docType) => {
+                              const meta = docMeta.find(d => d.doc_type === docType);
+                              return (
+                                <button
+                                  key={docType}
+                                  type="button"
+                                  onClick={() => handleDownloadPdf(docType, version)}
+                                  className="bh-btn bh-btn-outline min-h-[44px] px-3 py-2 text-xs"
+                                >
+                                  <Download className="w-3.5 h-3.5" /> {meta?.display_name || docType}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
             {signatureUrl && (
               <div>
-                <h4 className="text-sm font-bold text-bauhaus-black mb-2">甲方簽名</h4>
+                <h4 className="text-sm font-bold text-bauhaus-black mb-2">講師簽名</h4>
                 <div className="border-2 border-bauhaus-black rounded-xl p-4 bg-white">
                   <img src={signatureUrl} alt="簽名" className="max-h-20 mx-auto" />
                 </div>

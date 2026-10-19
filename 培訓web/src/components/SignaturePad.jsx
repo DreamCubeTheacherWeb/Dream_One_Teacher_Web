@@ -97,7 +97,7 @@ const SignaturePadComponent = ({ onConfirm, onCancel, isOpen }) => {
               {/* Signature line */}
               <div className="absolute bottom-12 left-8 right-8 border-b-2 border-bauhaus-black/20 pointer-events-none" />
               <div className="absolute bottom-8 left-8 pointer-events-none">
-                <span className="text-xs text-bauhaus-black/30">甲方簽名</span>
+                <span className="text-xs text-bauhaus-black/30">講師簽名</span>
               </div>
             </div>
           </div>

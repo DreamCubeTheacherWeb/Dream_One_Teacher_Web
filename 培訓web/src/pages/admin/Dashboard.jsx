@@ -315,13 +315,17 @@ const AdminDashboard = () => {
     );
 };
 
-// 老師資料追蹤：還沒完成（未認領＋待審核＋資料未完整＋待簽約）的人數，點了直接看名單
+// 老師資料追蹤：還沒完成（未認領＋待審核＋待確認 Email＋待信箱驗證＋資料未完整＋待簽約）的人數，點了直接看名單
 const TrackingCard = ({ tracking, isAdmin }) => {
     const counts = tracking?.counts;
     const contractKnown = Boolean(tracking?.contractKnown);
+    // 啟用紀錄只有管理員讀得到：讀不到時無法分出「待確認 Email」，只列「待信箱驗證」
+    const activationKnown = Boolean(tracking?.activationKnown);
     const parts = counts ? [
         `未認領 ${counts.byKey.unclaimed}`,
         `待審核 ${counts.byKey.pending_review}`,
+        ...(activationKnown ? [`待確認 Email ${counts.byKey.awaiting_email_confirm}`] : []),
+        `待信箱驗證 ${counts.byKey.awaiting_email_verify}`,
         `資料未完整 ${counts.byKey.incomplete}`,
         ...(contractKnown ? [`待簽約 ${counts.byKey.awaiting_contract}`] : []),
     ] : [];

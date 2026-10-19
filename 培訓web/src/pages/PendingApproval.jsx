@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import { useActivationStatus } from '../lib/useActivationStatus';
 import { ArrowLeft, Clock, LogOut, RefreshCw, ShieldCheck, UserCheck, UserPlus } from 'lucide-react';
 import { Navigate, useNavigate } from 'react-router-dom';
 
 const PendingApproval = () => {
     const { user, profile, signOut, refreshProfile, claimState, loading: authLoading } = useAuth();
     const navigate = useNavigate();
+    // 已認領待啟用的人不是「審核中」：導去個人資料頁完成補資料與信箱驗證（2026-10-20 帳號啟用流程）
+    const { loading: activationLoading, activation, refresh: refreshActivation } = useActivationStatus(user?.id);
     const [checking, setChecking] = useState(true);
     const [hasInstructorProfile, setHasInstructorProfile] = useState(false);
     const [mode, setMode] = useState('choice');
@@ -38,10 +41,11 @@ const PendingApproval = () => {
     if (authLoading) return <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">載入中...</div>;
     if (!user) return <Navigate to="/" />;
     if (profile?.role && profile.role !== 'pending') return <Navigate to="/courses" />;
-    if (checking) return <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">載入中...</div>;
+    if (checking || activationLoading) return <div className="p-12 text-center text-bauhaus-black/50 text-lg font-bold">載入中...</div>;
+    if (activation.pending) return <Navigate to="/profile" replace />;
 
     const handleRefresh = async () => {
-        await refreshProfile();
+        await Promise.all([refreshProfile(), refreshActivation()]);
     };
 
     const finishClaim = async () => {
@@ -171,7 +175,7 @@ const PendingApproval = () => {
                                     >
                                         <UserCheck className="w-8 h-8 mb-4 text-bauhaus-blue" />
                                         <span className="block text-xl font-black mb-1">認領帳號</span>
-                                        <span className="block text-sm font-medium text-bauhaus-black/65">後台已經有我的名字或舊資料，核對後直接開通</span>
+                                        <span className="block text-sm font-medium text-bauhaus-black/65">後台已經有我的名字或舊資料，核對後綁定，再用 Email 驗證碼啟用</span>
                                     </button>
                                     <button
                                         type="button"
@@ -195,8 +199,8 @@ const PendingApproval = () => {
                             >
                                 <p className="text-sm font-medium text-bauhaus-black/65 mb-5">
                                     {claimStep === 'name'
-                                        ? '請輸入你的完整姓名。後台已經登記你的名字時，會直接開通，不需等待審核。'
-                                        : '請填寫原講師資料中的姓名、完整手機號碼及身分證末四碼。核對成功後會立即開通，不需等待審核。'}
+                                        ? '請輸入你的完整姓名。後台已經登記你的名字時，會先綁定你的帳號，再請你用 Email 驗證碼啟用，不需等待審核。'
+                                        : '請填寫原講師資料中的姓名、完整手機號碼及身分證末四碼。核對成功後會先綁定帳號，再請你用 Email 驗證碼啟用，不需等待審核。'}
                                 </p>
 
                                 <label className="bh-label block mb-2" htmlFor="claim-full-name">姓名</label>

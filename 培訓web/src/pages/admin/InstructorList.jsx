@@ -2,18 +2,19 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Eye, FileText, Loader2, Settings, AlertCircle, Pencil, ListChecks, Trash2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, ExternalLink, FileImage, MapPin, Plus, Link2, Unlink, X, Check, Eye, FileText, Loader2, Settings, AlertCircle, Pencil, ListChecks, Trash2, Mail } from 'lucide-react';
 import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import { REQUIRED_PROFILE_DOCUMENTS, hasInstructorDocument } from '../../lib/profileCompletion';
 import {
-    PROFILE_READY_STAGE,
-    PROGRESS_STAGES,
     PROGRESS_TODO_FILTER,
     buildProgressRows,
     countProgress,
+    getVisibleProgressStages,
+    hasConfirmedEmail,
     isProgressFilterKey,
     matchesProgressFilter,
 } from '../../lib/instructorProgress';
+import { ConfirmInstructorEmailModal, InstructorEmailConfirmation } from '../../components/ConfirmInstructorEmail';
 import { fetchAllPages, loadProgressSupport } from '../../lib/instructorProgressLoader';
 import {
     MAX_NAME_SLOT_BATCH,
@@ -52,6 +53,8 @@ const PROGRESS_STYLES = {
     [PROGRESS_TODO_FILTER]: 'bg-bauhaus-red text-white',
     unclaimed: 'bg-bauhaus-muted text-bauhaus-black',
     pending_review: 'bg-bauhaus-yellow text-bauhaus-black',
+    awaiting_email_confirm: 'bg-bauhaus-red text-white',
+    awaiting_email_verify: 'bg-bauhaus-yellow text-bauhaus-black',
     incomplete: 'bg-bauhaus-red text-white',
     awaiting_contract: 'bg-bauhaus-black text-white',
     complete: 'bg-bauhaus-blue text-white',
@@ -80,6 +83,8 @@ const InstructorList = () => {
     // null＝讀不到（例如輔導員看不到簽約紀錄），畫面會誠實標示「簽約狀態未知」而不是亂猜。
     const [usersById, setUsersById] = useState(null);
     const [signedUserIds, setSignedUserIds] = useState(null);
+    const [activationsByUserId, setActivationsByUserId] = useState(null);
+    const [confirmingInst, setConfirmingInst] = useState(null);
     const [supportError, setSupportError] = useState(false);
     const [notice, setNotice] = useState('');
     const [loading, setLoading] = useState(true);
@@ -118,6 +123,7 @@ const InstructorList = () => {
         setInstructors(instructorResult.data || []);
         setUsersById(support.usersById);
         setSignedUserIds(support.signedUserIds);
+        setActivationsByUserId(support.activationsByUserId);
         setSupportError(support.supportError);
 
         const activeByType = new Map();
@@ -187,8 +193,8 @@ const InstructorList = () => {
     };
 
     const progressRows = useMemo(
-        () => buildProgressRows(instructors, { usersById, signedUserIds }),
-        [instructors, usersById, signedUserIds],
+        () => buildProgressRows(instructors, { usersById, signedUserIds, activationsByUserId }),
+        [instructors, usersById, signedUserIds, activationsByUserId],
     );
     const progressById = useMemo(
         () => new Map(progressRows.map(({ instructor, progress }) => [instructor.id, progress])),
@@ -197,17 +203,13 @@ const InstructorList = () => {
     const progressCounts = useMemo(() => countProgress(progressRows), [progressRows]);
     // 讀不到簽約紀錄時，用「資料已完整」取代「待簽約／已完成」兩顆，避免誤導。
     const contractKnown = signedUserIds !== null;
+    // 啟用紀錄（待確認 Email／待信箱驗證的判斷依據）同樣只有管理員讀得到，讀不到就不顯示「待確認 Email」。
+    const activationKnown = activationsByUserId !== null;
     const progressChips = [
         { key: '', label: '全部', count: instructors.length },
         { key: PROGRESS_TODO_FILTER, label: '還沒完成', count: progressCounts.todo },
-        ...(contractKnown
-            ? PROGRESS_STAGES
-            : [
-                ...PROGRESS_STAGES.filter(stage => ['unclaimed', 'pending_review', 'incomplete'].includes(stage.key)),
-                PROFILE_READY_STAGE,
-                ...PROGRESS_STAGES.filter(stage => stage.key === 'disabled'),
-            ]
-        ).map(stage => ({ key: stage.key, label: stage.label, count: progressCounts.byKey[stage.key] || 0 })),
+        ...getVisibleProgressStages({ contractKnown, activationKnown })
+            .map(stage => ({ key: stage.key, label: stage.label, count: progressCounts.byKey[stage.key] || 0 })),
     ];
     const progressFilter = progressChips.some(chip => chip.key === progressFilterParam) ? progressFilterParam : '';
     const loginEmailOf = (inst) => (inst.user_id ? usersById?.get(inst.user_id)?.email || null : null);
@@ -265,6 +267,13 @@ const InstructorList = () => {
             alert('解綁失敗:' + error.message);
             return;
         }
+        await loadInstructors();
+    };
+
+    const handleEmailConfirmed = async (confirmedEmail) => {
+        const name = confirmingInst?.full_name || '';
+        setConfirmingInst(null);
+        setNotice(`已登錄 ${name} 的已確認 Email：${confirmedEmail}。`);
         await loadInstructors();
     };
 
@@ -567,6 +576,7 @@ const InstructorList = () => {
                             onRoleChange={(newRole) => handleRoleChange(inst, newRole)}
                             onUnlink={() => handleUnlink(inst)}
                             onLink={() => setLinkingInst(inst)}
+                            onConfirmEmail={() => setConfirmingInst(inst)}
                             onDeleteSlot={() => handleDeleteSlot(inst)}
                             onPreview={() => handlePreviewForm(inst)}
                             previewDisabled={!selectedFormType || generatingFor !== null}
@@ -608,6 +618,7 @@ const InstructorList = () => {
                                 onRoleChange={(newRole) => handleRoleChange(inst, newRole)}
                                 onUnlink={() => handleUnlink(inst)}
                                 onLink={() => setLinkingInst(inst)}
+                                onConfirmEmail={() => setConfirmingInst(inst)}
                                 onDeleteSlot={() => handleDeleteSlot(inst)}
                                 onPreview={() => handlePreviewForm(inst)}
                                 previewDisabled={!selectedFormType || generatingFor !== null}
@@ -634,6 +645,14 @@ const InstructorList = () => {
                         if (message) setNotice(message);
                         loadInstructors();
                     }}
+                />
+            )}
+
+            {confirmingInst && (
+                <ConfirmInstructorEmailModal
+                    inst={confirmingInst}
+                    onClose={() => setConfirmingInst(null)}
+                    onConfirmed={handleEmailConfirmed}
                 />
             )}
 
@@ -704,7 +723,8 @@ const LoginEmailLine = ({ loginEmail, primaryEmail, truncate = false }) => (
 
 const ProgressBadge = ({ progress }) => {
     if (!progress) return null;
-    const showMissing = (progress.key === 'incomplete' || progress.key === 'pending_review') && progress.missingCount > 0;
+    const showMissing = ['incomplete', 'pending_review', 'awaiting_email_confirm', 'awaiting_email_verify'].includes(progress.key)
+        && progress.missingCount > 0;
     const title = progress.missingItems.length && progress.key !== 'disabled'
         ? `${progress.description}\n還缺：${progress.missingItems.join('、')}`
         : progress.description;
@@ -723,9 +743,12 @@ const ProgressBadge = ({ progress }) => {
 // ───────────────────────────────────────────────────────────────
 // 展開內容
 // ───────────────────────────────────────────────────────────────
-const InstructorExpandedContent = ({ inst, urls, progress }) => (
+const InstructorExpandedContent = ({ inst, urls, progress, isAdmin, onConfirmEmail }) => (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-3">
+            <h3 className="bh-label">Email 確認</h3>
+            <InstructorEmailConfirmation inst={inst} isAdmin={isAdmin} onConfirmEmail={onConfirmEmail} />
+            <div className="pt-1" />
             {progress && (
                 <>
                     <h3 className="bh-label">資料進度</h3>
@@ -856,7 +879,7 @@ const BioBlock = ({ label, text }) => (
     </div>
 );
 
-const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, loginEmail, isAdmin, onRoleChange, onUnlink, onLink, onDeleteSlot, onPreview, previewDisabled, previewing }) => (
+const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, loginEmail, isAdmin, onRoleChange, onUnlink, onLink, onConfirmEmail, onDeleteSlot, onPreview, previewDisabled, previewing }) => (
     <div className="bh-card overflow-hidden">
         <div
             className="p-4 flex items-start gap-3 cursor-pointer hover:bg-bauhaus-cream transition-colors"
@@ -929,6 +952,16 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
                         {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
                         {previewing ? '產生預覽' : '預覽表單'}
                     </button>
+                    {isAdmin && (
+                        <button
+                            type="button"
+                            onClick={onConfirmEmail}
+                            data-testid="confirm-email-button"
+                            className="bh-btn bh-btn-outline min-h-[44px] px-3 py-2 text-xs"
+                        >
+                            <Mail className="w-3.5 h-3.5" /> {hasConfirmedEmail(inst) ? '已確認 Email' : '確認 Email'}
+                        </button>
+                    )}
                     {isAdmin && isPristineNameSlot(inst) && (
                         <button type="button" onClick={onDeleteSlot} className="text-xs font-bold text-bauhaus-red hover:underline">刪除空位</button>
                     )}
@@ -943,13 +976,13 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
         </div>
         {expanded && (
             <div className="px-4 pb-4 pt-0 bg-bauhaus-cream border-t-2 border-bauhaus-black">
-                <InstructorExpandedContent inst={inst} urls={urls} progress={progress} />
+                <InstructorExpandedContent inst={inst} urls={urls} progress={progress} isAdmin={isAdmin} onConfirmEmail={onConfirmEmail} />
             </div>
         )}
     </div>
 );
 
-const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, loginEmail, isAdmin, onRoleChange, onUnlink, onLink, onDeleteSlot, onPreview, previewDisabled, previewing }) => (
+const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, loginEmail, isAdmin, onRoleChange, onUnlink, onLink, onConfirmEmail, onDeleteSlot, onPreview, previewDisabled, previewing }) => (
     <>
         <tr className="hover:bg-bauhaus-cream transition-colors cursor-pointer" onClick={onToggle}>
             {/* 姓名＋任職狀態一行、Email 在下面一行（Email 太長就截斷，滑過去看全文），省下一整欄；
@@ -981,6 +1014,18 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
                                 <Link2 className="w-3.5 h-3.5" />
                             </button>
                         )
+                    )}
+                    {isAdmin && (
+                        <button
+                            type="button"
+                            onClick={onConfirmEmail}
+                            data-testid="confirm-email-button"
+                            title={hasConfirmedEmail(inst) ? `已確認 Email：${inst.confirmed_email}（點擊更改）` : '確認 Email（老師要先有已確認的 Email 才能啟用帳號）'}
+                            aria-label="確認 Email"
+                            className={`transition-colors ${hasConfirmedEmail(inst) ? 'text-bauhaus-black/40 hover:text-bauhaus-black' : 'text-bauhaus-red/70 hover:text-bauhaus-red'}`}
+                        >
+                            <Mail className="w-3.5 h-3.5" />
+                        </button>
                     )}
                 </div>
                 {/* 「姓名認領」標籤、刪除空位、解除綁定說明都疊在下面，不跟「已認領」併排，才不會把剛好包住內容的綁定欄撐寬；
@@ -1071,7 +1116,7 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
         {expanded && (
             <tr>
                 <td colSpan={TABLE_COLS} className="px-6 py-6 bg-bauhaus-cream">
-                    <InstructorExpandedContent inst={inst} urls={urls} progress={progress} />
+                    <InstructorExpandedContent inst={inst} urls={urls} progress={progress} isAdmin={isAdmin} onConfirmEmail={onConfirmEmail} />
                 </td>
             </tr>
         )}

@@ -226,7 +226,8 @@ const selectProgress = async (page, key) => {
   await page.locator(`[data-progress-filter="${key}"][aria-pressed="true"]`).waitFor({ timeout: 5000 });
 };
 const nameCells = (page) => page.locator('tbody tr td:first-child .font-bold').allInnerTexts();
-const chipText = async (page, key) => (await page.locator(`[data-progress-filter="${key}"]`).innerText()).replace(/\s+/g, ' ').trim();
+// 篩選鈕有 CSS uppercase：innerText 會把「待確認 Email」變成 EMAIL，所以讀 textContent
+const chipText = async (page, key) => (await page.locator(`[data-progress-filter="${key}"]`).textContent()).replace(/\s+/g, ' ').trim();
 
 async function main() {
   execSync('npm run build', { cwd: appDir, stdio: 'ignore' });
@@ -264,7 +265,7 @@ async function main() {
       await page.goto(`${baseUrl}/admin/instructors?progress=todo`, { waitUntil: 'networkidle' });
       await page.locator('tbody tr').first().waitFor();
 
-      await step('?progress=todo 預選「還沒完成」，只列出未認領＋待審核＋資料未完整＋待簽約', async () => {
+      await step('?progress=todo 預選「還沒完成」，只列出未認領＋待審核＋待確認 Email＋待信箱驗證＋資料未完整＋待簽約', async () => {
         assert.equal(await page.locator('[data-progress-filter="todo"]').getAttribute('aria-pressed'), 'true');
         const names = (await nameCells(page)).sort();
         assert.deepEqual(names, ['王小明', '王小明', '李新建', '李新建', '趙匯入', '陳完整'].sort());
@@ -274,6 +275,7 @@ async function main() {
       await step('每顆篩選顯示人數（全部 8、還沒完成 6、未認領 3、待審核 1、資料未完整 1、待簽約 1、已完成 1、已停用 1）', async () => {
         const expected = {
           all: '全部 8', todo: '還沒完成 6', unclaimed: '未認領 3', pending_review: '待審核 1',
+          awaiting_email_confirm: '待確認 Email 0', awaiting_email_verify: '待信箱驗證 0',
           incomplete: '資料未完整 1', awaiting_contract: '待簽約 1', complete: '已完成 1', disabled: '已停用 1',
         };
         for (const [key, text] of Object.entries(expected)) {
@@ -442,7 +444,12 @@ async function main() {
         assert.equal(deletes[0].name_slot, 'eq.true');
         assert.equal(deletes[0].user_id, 'is.null');
         assert.match(deletes[0].id, /^eq\./);
-        assert.equal(await page.locator('tbody tr').filter({ hasText: '新人甲' }).count(), 1);
+        // 通知出現時列表可能還在重新讀取（多一個讀取請求後更明顯），輪詢等列表更新
+        await page.waitForFunction(
+          () => [...document.querySelectorAll('tbody tr')].filter((tr) => tr.textContent.includes('新人甲')).length === 1,
+          null,
+          { timeout: 5000 },
+        );
       });
 
       await page.screenshot({ path: path.join(shotDir, 'admin-instructors-desktop.png'), fullPage: true });
@@ -485,7 +492,7 @@ async function main() {
         await card.waitFor({ timeout: 5000 });
         const text = await card.innerText();
         assert.match(text, /6/);
-        assert.match(text, /未認領 3・待審核 1・資料未完整 1・待簽約 1/);
+        assert.match(text, /未認領 3・待審核 1・待確認 Email 0・待信箱驗證 0・資料未完整 1・待簽約 1/);
         await card.click();
         await page.waitForURL(`${baseUrl}/admin/instructors?progress=todo`);
         await page.locator('tbody tr').first().waitFor();
@@ -505,8 +512,9 @@ async function main() {
         const card = page.getByRole('link', { name: /老師資料追蹤，還沒完成 5 位/ });
         await card.waitFor({ timeout: 5000 });
         const text = await card.innerText();
-        assert.match(text, /未認領 3・待審核 1・資料未完整 1（簽約狀態僅管理員可見）/);
-        assert.doesNotMatch(text, /待簽約/);
+        // 啟用紀錄也只有管理員讀得到：輔導員看不到「待確認 Email」，「待信箱驗證」改用主檔的已確認 Email 判斷
+        assert.match(text, /未認領 3・待審核 1・待信箱驗證 0・資料未完整 1（簽約狀態僅管理員可見）/);
+        assert.doesNotMatch(text, /待簽約|待確認 Email/);
       });
       await page.goto(`${baseUrl}/admin/instructors?progress=todo`, { waitUntil: 'networkidle' });
       await page.locator('tbody tr').first().waitFor();
@@ -516,6 +524,8 @@ async function main() {
         assert.equal(await progressOf(page, '陳完整'), 'profile_ready');
         assert.equal(await progressOf(page, '林已簽'), 'profile_ready');
         assert.equal(await page.locator('[data-progress-filter="awaiting_contract"]').count(), 0);
+        assert.equal(await page.locator('[data-progress-filter="awaiting_email_confirm"]').count(), 0);
+        assert.equal(await chipText(page, 'awaiting_email_verify'), '待信箱驗證 0');
         assert.equal(await chipText(page, 'profile_ready'), '資料已完整 2');
         assert.equal(await page.getByRole('button', { name: '新增講師' }).count(), 0);
         assert.equal(await page.getByRole('button', { name: '刪除空位' }).count(), 0);
