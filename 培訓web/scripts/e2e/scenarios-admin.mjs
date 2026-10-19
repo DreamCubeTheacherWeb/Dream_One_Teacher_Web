@@ -38,13 +38,14 @@ export async function scenarioAdminSlots(ctx) {
     await dialog.getByLabel('老師姓名，一行一個').fill('新增甲老師\n新增乙老師');
     r.check('ADM 一次輸入兩位 → 顯示「將新增 2 位空位」', (await dialog.getByTestId('name-slot-count').innerText()).includes('將新增 2 位空位'));
     r.check('ADM 講師等級預設「實習」', (await dialog.getByLabel('講師等級').inputValue()) === '實習');
-    const hint = await dialog.getByText(/建好後，老師用 Google 登入/).innerText();
-    if (hint.includes('直接綁定並開通')) {
-      ctx.known('ADM 新增空位的說明仍寫「直接綁定並開通」', `ADM［文案過時］「只填姓名」表單提示寫「…就會直接綁定並開通」（src/pages/admin/InstructorList.jsx:1248），但 10/20 起姓名認領只綁定、要再用 Email 驗證碼啟用，且管理員要先「確認 Email」。`);
-    }
+    const hint = await dialog.getByText(/^建好後，/).innerText();
+    r.check('ADM「只填姓名」提示改成「先確認 Email → 認領綁定 → 驗證碼啟用」，不再寫「直接綁定並開通」（bf18fc4，嚴格斷言）',
+      hint.includes('按「確認 Email」登錄老師的 Email') && hint.includes('再用寄到該 Email 的驗證碼啟用') && !hint.includes('開通'), hint);
     await dualShot(ctx, admin, 'ADM-01-add-slots-modal', { fullPage: false });
     await dialog.getByRole('button', { name: '新增 2 位' }).click();
-    r.check('ADM 送出後顯示「已新增 2 位空位」', await visible(page.getByText(/已新增 2 位空位：新增甲老師、新增乙老師/), 10000));
+    const created = page.getByText(/已新增 2 位空位：新增甲老師、新增乙老師/);
+    r.check('ADM 送出後顯示「已新增 2 位空位」並提示下一步要確認 Email、用驗證碼啟用', await visible(created, 10000)
+      && (await created.first().innerText()).includes('下一步：在列表上按「確認 Email」'));
     const rows = ctx.api.json(`SELECT coalesce(json_agg(row_to_json(i)), '[]') FROM public.instructors i WHERE full_name IN ('新增甲老師', '新增乙老師')`);
     r.check('ADM 資料庫建立兩個空位（name_slot、未綁定、active、實習）', rows.length === 2
       && rows.every((x) => x.name_slot && !x.user_id && x.employment_status === 'active' && x.instructor_role === '實習'));

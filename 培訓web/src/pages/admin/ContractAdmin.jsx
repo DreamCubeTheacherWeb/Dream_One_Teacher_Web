@@ -178,12 +178,6 @@ const ContractAdmin = () => {
         .upload(filePath, file, { contentType: 'application/pdf' });
       if (uploadErr) throw uploadErr;
 
-      if (currentDoc) {
-        await supabase.from('contract_documents')
-          .update({ is_active: false })
-          .eq('id', currentDoc.id);
-      }
-
       const dt = docTypes.find(d => d.doc_type === docType);
       const newRecord = {
         doc_type: docType,
@@ -218,6 +212,18 @@ const ContractAdmin = () => {
       }
       if (insertErr) throw insertErr;
 
+      // 新版寫入成功後才停用舊版：寫入失敗時舊版仍啟用，簽約流程不會少一份文件。
+      // 停用失敗時，簽約流程與後端 RPC 都取版本號最高的啟用版本（新版），但舊版仍標示啟用，要提醒管理員處理。
+      let deactivateWarning = '';
+      if (currentDoc) {
+        const { error: deactivateErr } = await supabase.from('contract_documents')
+          .update({ is_active: false })
+          .eq('id', currentDoc.id);
+        if (deactivateErr) {
+          deactivateWarning = `\n注意：舊版（第 ${currentDoc.version} 版）停用失敗：${deactivateErr.message}。簽約流程會使用新版，但舊版仍標示為啟用，請重新整理確認並處理。`;
+        }
+      }
+
       if (INSTRUCTOR_CONTRACTS_ENABLED) {
         const { data: nonPendingUsers } = await supabase
           .from('users')
@@ -242,9 +248,9 @@ const ContractAdmin = () => {
 
       fileRefs.current[docType].value = '';
       await loadData();
-      alert(INSTRUCTOR_CONTRACTS_ENABLED
+      alert((INSTRUCTOR_CONTRACTS_ENABLED
         ? '上傳成功！已通知所有講師。'
-        : '上傳成功！前台簽約功能暫停中，未通知講師。');
+        : '上傳成功！前台簽約功能暫停中，未通知講師。') + deactivateWarning);
     } catch (err) {
       alert('上傳失敗：' + (err.message || '未知錯誤'));
     }

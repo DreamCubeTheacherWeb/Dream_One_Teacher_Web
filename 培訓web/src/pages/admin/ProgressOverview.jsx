@@ -8,6 +8,30 @@ const STATUS_OPTIONS = [
     { value: 'exempt', label: '無需培訓', color: 'bg-bauhaus-muted text-bauhaus-black' },
 ];
 
+// PostgREST 單次最多回 1000 筆，進度表（講師數 × 章節數）可能超過，必須分頁抓完。
+const PROGRESS_PAGE_SIZE = 1000;
+
+const fetchAllProgress = async (lessonIds) => {
+    const rows = [];
+    for (let from = 0; ; from += PROGRESS_PAGE_SIZE) {
+        const { data, error } = await supabase
+            .from('progress')
+            .select('user_id, lesson_id, completed')
+            .in('lesson_id', lessonIds)
+            .order('id', { ascending: true })
+            .range(from, from + PROGRESS_PAGE_SIZE - 1);
+        if (error) {
+            // 任何一頁失敗就整批作廢，避免只算到一半而顯示偏低的完成數
+            console.error('載入講師進度失敗：', error.message);
+            return [];
+        }
+        const page = data || [];
+        rows.push(...page);
+        if (page.length < PROGRESS_PAGE_SIZE) break;
+    }
+    return rows;
+};
+
 const CORNER_DECOS = [
     { shape: 'circle', color: 'bg-bauhaus-red' },
     { shape: 'square', color: 'bg-bauhaus-blue' },
@@ -34,47 +58,47 @@ const ProgressOverview = () => {
     }, []);
 
     useEffect(() => {
-        if (!selectedCourseId) return;
-        fetchCourseData(selectedCourseId);
+        if (!selectedCourseId) return undefined;
+        // 切換課程時舊請求的回應不可蓋掉新課程的畫面
+        let cancelled = false;
+        (async () => {
+            setLoading(true);
+
+            const [teachersRes, lessonsRes, statusRes] = await Promise.all([
+                supabase.from('users').select('id, name, email, mentor_name').eq('role', 'teacher'),
+                supabase.from('lessons').select('id').eq('course_id', selectedCourseId),
+                supabase.from('course_training_status').select('*').eq('course_id', selectedCourseId),
+            ]);
+            if (cancelled) return;
+
+            const teacherList = teachersRes.data || [];
+            const lessonList = lessonsRes.data || [];
+            setTeachers(teacherList);
+            setLessons(lessonList);
+
+            const sMap = {};
+            (statusRes.data || []).forEach(s => { sMap[s.user_id] = s.status; });
+            setStatusMap(sMap);
+
+            if (lessonList.length > 0 && teacherList.length > 0) {
+                const lessonIds = lessonList.map(l => l.id);
+                const progressData = await fetchAllProgress(lessonIds);
+                if (cancelled) return;
+
+                const pMap = {};
+                progressData.forEach(p => {
+                    if (!pMap[p.user_id]) pMap[p.user_id] = 0;
+                    if (p.completed) pMap[p.user_id]++;
+                });
+                setProgressMap(pMap);
+            } else {
+                setProgressMap({});
+            }
+
+            setLoading(false);
+        })();
+        return () => { cancelled = true; };
     }, [selectedCourseId]);
-
-    const fetchCourseData = async (courseId) => {
-        setLoading(true);
-
-        const [teachersRes, lessonsRes, statusRes] = await Promise.all([
-            supabase.from('users').select('id, name, email, mentor_name').eq('role', 'teacher'),
-            supabase.from('lessons').select('id').eq('course_id', courseId),
-            supabase.from('course_training_status').select('*').eq('course_id', courseId),
-        ]);
-
-        const teacherList = teachersRes.data || [];
-        const lessonList = lessonsRes.data || [];
-        setTeachers(teacherList);
-        setLessons(lessonList);
-
-        const sMap = {};
-        (statusRes.data || []).forEach(s => { sMap[s.user_id] = s.status; });
-        setStatusMap(sMap);
-
-        if (lessonList.length > 0 && teacherList.length > 0) {
-            const lessonIds = lessonList.map(l => l.id);
-            const { data: progressData } = await supabase
-                .from('progress')
-                .select('user_id, lesson_id, completed')
-                .in('lesson_id', lessonIds);
-
-            const pMap = {};
-            (progressData || []).forEach(p => {
-                if (!pMap[p.user_id]) pMap[p.user_id] = 0;
-                if (p.completed) pMap[p.user_id]++;
-            });
-            setProgressMap(pMap);
-        } else {
-            setProgressMap({});
-        }
-
-        setLoading(false);
-    };
 
     const handleStatusChange = async (userId, newStatus) => {
         const { error } = await supabase

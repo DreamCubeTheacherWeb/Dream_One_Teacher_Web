@@ -14,6 +14,9 @@
  *  T11 證件在表單匯入／後台代傳的資料夾（不在本人資料夾）時，儲存不重送未更動的證件路徑，
  *      mock 依正式庫 guard_instructor_file_paths 規則擋非本人資料夾路徑，確認儲存成功；新上傳的只送那一份
  *  T12 認領後待啟用（pending 角色＋啟用紀錄 pending）的人存檔：留在 /profile、重新讀取啟用狀態，不被導去「帳號審核中」
+ *  T13 已有主檔時 UPDATE 不送 user_id、沒改的主要 Email 也不送（mock 依正式庫 trigger「UPDATE OF user_id,
+ *      email_primary」只要欄位出現就觸發的規則擋 mentor）；改成非 Google 信箱被擋時顯示中文說明
+ *      （origin/main fa7f5a1 原編號 T12，合併時與本分支的 T12 撞號，改為 T13）
  * 用法：node scripts/verify-profile-draft.mjs
  */
 import { readFileSync } from 'fs';
@@ -59,6 +62,9 @@ let signMode = 'success';
 let draftRow = null;
 // 模擬正式庫 guard_instructor_file_paths：upsert 會先做 INSERT 檢查，非本人資料夾的路徑一律 42501
 let pathGuard = false;
+// 模擬正式庫 trg_guard_instructor_identity_email：SET 清單只要有 user_id／email_primary 就觸發（值沒變也一樣），
+// mentor 一律被擋；主要 Email 改成不是登入信箱也被擋。
+let identityGuard = false;
 
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=';
 
@@ -137,6 +143,24 @@ async function handleRoute(route) {
                         headers: { 'content-type': 'application/json' },
                         body: JSON.stringify({ code: '42501', message: 'instructor file paths must remain inside the current user folder' }),
                     });
+                }
+                const body = lastInstructorSaveBody || {};
+                const touchesIdentity = method === 'PATCH' && ('user_id' in body || 'email_primary' in body);
+                if (identityGuard && touchesIdentity) {
+                    let message = null;
+                    if (!['pending', 'teacher'].includes(currentRole)) message = 'instructor identity is not owned by the signed-in account';
+                    else if ('email_primary' in body && body.email_primary !== instructorRow?.email_primary
+                        && String(body.email_primary || '').trim().toLowerCase() !== FAKE_AUTH_USER.email) {
+                        message = 'changed instructor email must match the signed-in Google account';
+                    }
+                    if (message) {
+                        requestEvents.push('db-save-rejected');
+                        return route.fulfill({
+                            status: 403,
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ code: '42501', message }),
+                        });
+                    }
                 }
                 // 這位老師已有主檔：PATCH 回傳更新到的那一列，前端就不會再補 INSERT。
                 const savedRows = method === 'PATCH' ? JSON.stringify([{ updated_at: NOW }]) : '[]';
@@ -536,6 +560,45 @@ async function main() {
         await page.close(); await ctx.close();
         currentRole = 'teacher';
         activationMock = null;
+
+        // ── T13：UPDATE 不送 user_id／沒改的主要 Email；mentor 可存；改成非 Google 信箱被擋時顯示中文 ──
+        identityGuard = true; storageMode = 'default'; draftRow = null;
+        const saveOnce = async (role, edit) => {
+            currentRole = role; instructorRow = completeRow; requestEvents = [];
+            const messages = [];
+            const c = await newCtx(browser); const pg = await c.newPage();
+            pg.on('dialog', (dialog) => { messages.push(dialog.message()); dialog.accept(); });
+            await gotoProfile(pg);
+            await edit(pg);
+            lastInstructorSaveBody = null;
+            await pg.getByRole('button', { name: '儲存個人資料' }).click();
+            await pg.waitForTimeout(600);
+            const body = lastInstructorSaveBody;
+            await pg.close(); await c.close();
+            return { body, messages, events: [...requestEvents] };
+        };
+        const editAddress = (value) => (pg) => pg.fill(`input[placeholder="${ADDR}"]`, value);
+        const saved = (res) => res.events.includes('db-save') && !res.events.includes('db-save-rejected')
+            && res.messages.some((message) => message.includes('個人資料已儲存'));
+
+        const teacherSave = await saveOnce('teacher', editAddress('T13 講師新地址'));
+        assert('T13a 既有講師存檔：PATCH 不送 user_id、沒改的主要 Email 也不送，存檔成功', saved(teacherSave)
+            && teacherSave.body?.address === 'T13 講師新地址' && !('user_id' in (teacherSave.body || {})) && !('email_primary' in (teacherSave.body || {})),
+            `keys=${Object.keys(teacherSave.body || {}).filter((k) => ['user_id', 'email_primary'].includes(k)).join(',') || '(none)'}, events=${teacherSave.events.join(' > ')}`);
+
+        const mentorSave = await saveOnce('mentor', editAddress('T13 輔導員新地址'));
+        assert('T13b mentor 存自己的個人頁成功（沒觸發身分守門）', saved(mentorSave) && mentorSave.body?.address === 'T13 輔導員新地址',
+            `events=${mentorSave.events.join(' > ')}, dialogs=${mentorSave.messages.join(' | ')}`);
+
+        const otherEmail = await saveOnce('teacher', async (pg) => {
+            await pg.locator('xpath=(//label[contains(@class,"bh-label")][normalize-space(text()[1])="主要 Email"]/following-sibling::*[1]/descendant-or-self::input)[1]').fill('someone@other-mail.example');
+        });
+        const failMessage = otherEmail.messages.find((message) => message.includes('儲存失敗')) || '';
+        assert('T13c 主要 Email 改成非 Google 信箱：有送 email_primary、沒送 user_id，被擋時顯示中文說明', otherEmail.events.includes('db-save-rejected')
+            && otherEmail.body?.email_primary === 'someone@other-mail.example' && !('user_id' in (otherEmail.body || {}))
+            && failMessage.includes('主要 Email 必須是你登入用的 Google 信箱') && failMessage.includes(FAKE_AUTH_USER.email) && !/must match/.test(failMessage),
+            `dialog=${failMessage}`);
+        identityGuard = false; currentRole = 'teacher';
 
     } finally {
         if (browser) await browser.close();

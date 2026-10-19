@@ -296,11 +296,16 @@ const ContractSigningFlow = () => {
       const doc = docs[s.docType];
       if (!doc) continue;
 
-      const { data: positions } = await supabase
+      const { data: positions, error: posErr } = await supabase
         .from('contract_field_positions')
         .select('*')
         .eq('doc_type', doc.doc_type)
         .eq('doc_version', doc.version);
+      // 查不到欄位位置就不能產生簽署檔：照樣往下走會產出沒有簽名的 PDF，畫面卻顯示簽約完成。
+      if (posErr) throw new Error(`無法讀取「${s.title}」的欄位位置，請稍後再試`);
+      if (!(positions || []).some(p => p.field_type === 'signature')) {
+        throw new Error(`「${s.title}」缺少簽名欄位設定，請聯繫管理員`);
+      }
 
       const pdfBytes = templateBytes[s.docType];
       if (!pdfBytes) throw new Error(`無法下載 ${s.title}`);

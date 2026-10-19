@@ -264,7 +264,7 @@ export async function generateFilledForm({ docMeta, positions, instructor }) {
 
 /**
  * Load the active template + positions for a given doc_type.
- * Returns { docMeta, positions } or throws if template missing.
+ * Returns { docMeta, positions } or throws if template missing or has no field positions.
  */
 export async function loadFormTemplate(docType) {
   const { data: docs, error: docErr } = await supabase
@@ -285,8 +285,12 @@ export async function loadFormTemplate(docType) {
     .eq('doc_type', docType)
     .eq('doc_version', docMeta.version);
   if (posErr) throw new Error(`查欄位定位失敗：${posErr.message}`);
+  // 0 筆定位會產出一份完全空白的表單（例如上傳新版範本後還沒重新定位），一律擋下。
+  if (!positions?.length) {
+    throw new Error(`此表單（第 ${docMeta.version} 版）尚未設定欄位位置，請先到「講師表單預覽與下載」→「管理表單模板」按「定位欄位」設定`);
+  }
 
-  return { docMeta, positions: positions || [] };
+  return { docMeta, positions };
 }
 
 /**

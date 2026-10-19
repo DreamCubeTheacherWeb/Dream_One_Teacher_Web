@@ -273,13 +273,19 @@ export async function scenarioE(ctx) {
     await dialog.getByRole('tab', { name: /填完整資料/ }).click();
     await fieldControl(adminSession.page, '姓名').fill(name);
     await fieldControl(adminSession.page, 'Email(登入用)').fill(email);
+    const confirmBox = dialog.getByRole('checkbox', { name: /這個 Email 已和老師確認是本人的/ });
+    r.check('E「填完整資料」預設勾選「這個 Email 已和老師確認是本人的」（bf18fc4，嚴格斷言）', await confirmBox.isChecked());
     await dialog.getByRole('button', { name: /^新增$/ }).click();
-    await visible(adminSession.page.getByText(`已新增 ${name}`), 10000);
+    const notice = adminSession.page.getByText(`已新增 ${name}`);
+    await visible(notice, 10000);
+    r.check('E 新增成功訊息說明「自動綁定，再用寄到這個 Email 的驗證碼啟用」', (await notice.first().innerText()).includes('再用寄到這個 Email 的驗證碼啟用'));
   } finally {
     await adminSession.context.close();
   }
   const pre = ctx.api.json(`SELECT row_to_json(i) FROM public.instructors i WHERE email_primary = :'e'`, { e: email });
-  r.check('E 管理員用「填完整資料」建立帶 Email 的講師', Boolean(pre?.id) && pre.identity_verified_at && !pre.confirmed_email);
+  r.check('E 管理員用「填完整資料」建立的講師，Email 同時登錄為已確認（admin_trusted_channel，bf18fc4，嚴格斷言）',
+    Boolean(pre?.id) && pre.identity_verified_at && pre.confirmed_email === email && pre.confirmed_email_method === 'admin_trusted_channel'
+    && pre.confirmed_email_by === ctx.base.admin.id, JSON.stringify(pre ? { confirmed_email: pre.confirmed_email, method: pre.confirmed_email_method } : {}));
   const user = await createGoogleUser(ctx.stack, { email, fullName: 'Auto Mail' });
   r.check('E Before-User-Created hook 允許後台已建立的 Email', Boolean(user.id), JSON.stringify(user.hookRejected || {}));
   if (!user.id) return;
@@ -294,19 +300,17 @@ export async function scenarioE(ctx) {
     r.check('E 不經 /pending 選擇卡，直接到 /profile、帶入後台姓名', /\/profile$/.test(s.page.url())
       && !(await s.page.getByText('請選擇你的講師身分').isVisible()) && await fieldControl(s.page, '姓名').inputValue() === name);
     const message = await s.page.getByTestId('activation-message').innerText().catch(() => '');
-    if (message === NEEDS_EMAIL_TEXT) {
-      ctx.known('E 後台「填完整資料」建的講師仍要另外確認 Email', 'E［流程缺口］管理員用「新增講師 → 填完整資料」輸入的 Email（src/pages/admin/InstructorList.jsx:1338-1371 FullInstructorForm）不會登錄成已確認 Email，老師登入自動綁定後看到「你的 Email 尚未經公司確認，請聯絡行政人員」；管理員要再到同一列按「確認 Email」並寫註記。成功訊息仍寫「登入時會自動綁定」，沒提醒還要確認 Email。');
-    }
-    r.check('E 啟用卡依規則顯示（沒有已確認 Email → 請聯絡行政人員）', message === NEEDS_EMAIL_TEXT, message);
-    await dualShot(ctx, s, 'E-01-auto-linked-needs-email');
+    r.check('E 登入自動綁定後不用再等管理員確認 Email：啟用卡只提醒補齊資料', message !== NEEDS_EMAIL_TEXT && message.includes('請先補齊資料'), message);
+    const early = await ctx.api.rpc(user.token, 'request_email_otp', { p_purpose: 'account_activation' });
+    r.check('E 這時直接要驗證碼只差資料未完整（profile_incomplete，不是 no_confirmed_email）', early.data?.status === 'profile_incomplete', JSON.stringify(early.data));
+    await dualShot(ctx, s, 'E-01-auto-linked-needs-profile');
     const data = profileData(user, name, { email_primary: undefined });
     await fillProfile(s.page, data);
     r.check('E 補資料儲存成功', (await saveProfileAndWait(s)).includes('個人資料已儲存'));
-    const confirm = await ctx.api.rpc(ctx.base.admin.token, 'admin_confirm_instructor_email', { p_instructor_id: pre.id, p_email: email, p_note: '10/20 電話與老師確認（E2E）' });
-    r.check('E 管理員確認 Email（RPC）', confirm.data?.status === 'confirmed', JSON.stringify(confirm.data));
     await goto(ctx, s, '/profile');
     await waitProfileLoaded(s.page);
-    await activateViaUI(ctx, s, user, 'E');
+    const otp = await activateViaUI(ctx, s, user, 'E');
+    r.check('E 補完資料就能直接要驗證碼並啟用（中間沒有管理員再確認 Email）', otp?.to === email && roleOf(ctx, user.id) === 'teacher');
     checkActivationRecord(ctx, user, 'E', { method: 'email_match', email });
     const dup = await createGoogleUser(ctx.stack, { email: email.toUpperCase(), fullName: 'Dup' });
     r.check('E 同 Email（大小寫不同）第二次註冊被 hook 拒絕', !dup.id && dup.hookRejected?.http_code === 409, JSON.stringify(dup.hookRejected || {}));
@@ -458,33 +462,37 @@ export async function scenarioG(ctx) {
     await s.context.close();
   }
 
-  // 管理員在講師資料總覽按「解除綁定」
+  // 管理員在講師資料總覽按「解除綁定」，並在第二個確認視窗選「清除認領者資料」（bf18fc4）
   const adminSession = await openAs(ctx.browser, ctx.stack, ctx.base.admin, { label: 'admin' });
   try {
     await goto(ctx, adminSession, '/admin/instructors');
     await adminSession.page.getByPlaceholder('搜尋姓名、Email 或手機號碼⋯⋯').fill(slotName);
     const row = adminSession.page.locator('tbody tr', { hasText: slotName }).first();
     await row.waitFor({ state: 'visible' });
-    r.check('G 講師總覽在已認領空位旁顯示「若認領錯人：按解除綁定」說明', await row.getByTestId('name-slot-unlink-hint').isVisible());
+    r.check('G 講師總覽在已認領空位旁顯示解除綁定說明', await row.getByTestId('name-slot-unlink-hint').isVisible());
+    const before = adminSession.dialogs.length;
     await row.getByRole('button', { name: '解除綁定' }).click();
-    await pollUntil(() => !api.sql(`SELECT user_id FROM public.instructors WHERE id = :'id'`, { id: slot.id }), { timeoutMs: 10000 });
+    const notice = adminSession.page.getByText(`已解除綁定並清除資料，「${slotName}」恢復成只有姓名的空位。`);
+    r.check('G 畫面顯示「已解除綁定並清除資料」', await visible(notice, 10000));
+    const asked = adminSession.dialogs.slice(before).map((d) => d.message);
+    r.check('G 解除綁定時先確認解綁，再問要不要清除認領者資料（認領錯人按確定）',
+      asked.length === 2 && asked[1].includes('要同時清除認領者填寫的個人資料') && asked[1].includes('認領錯人'), asked.map((m) => m.slice(0, 30)).join(' | '));
+    await dualShot(ctx, adminSession, 'G-02-admin-unlink-and-clear');
   } finally {
     await adminSession.context.close();
   }
   const revoked = api.json(`SELECT row_to_json(a) FROM public.instructor_account_activations a WHERE a.user_id = :'uid' ORDER BY claimed_at DESC LIMIT 1`, { uid: impostor.id });
   r.check('G 解除綁定：空位釋出、冒認者的啟用紀錄改 revoked、冒認者仍 pending',
     !instructorById(ctx, slot.id).user_id && revoked?.status === 'revoked' && revoked.revoked_at && roleOf(ctx, impostor.id) === 'pending', JSON.stringify(revoked || {}).slice(0, 160));
+  const piiFields = ['gender', 'birth_date', 'id_number', 'phone_mobile', 'line_id', 'address', 'household_address', 'email_primary', 'nickname',
+    'bank_account_name', 'bank_name', 'bank_branch', 'bank_account_number', 'bank_code', 'id_front_path', 'id_back_path', 'bankbook_path'];
+  const after = instructorById(ctx, slot.id);
+  const leftovers = piiFields.filter((f) => after[f] !== null);
+  r.check('G 冒認者填的個資全部清空，空位回到只有姓名（已確認 Email 與等級保留）',
+    leftovers.length === 0 && after.full_name === slotName && after.name_slot && after.confirmed_email === realEmail && after.instructor_role === '實習',
+    leftovers.length ? `還留著：${leftovers.join(',')}` : '');
 
   const realTeacher = await newUser(ctx, 'g-real', '真老師甲', { email: realEmail });
-  const blocked = await api.rpc(realTeacher.token, 'claim_instructor_name_slot', { provided_full_name: slotName });
-  r.check('G 冒認者已在空位填了手機／身分證 → 解除後不能再只靠姓名認領（設計如此）', blocked.data?.status === 'not_found', JSON.stringify(blocked.data));
-  ctx.known('G 解除冒認後要手動清掉冒認者填的資料', 'G［流程缺口，設計使然］冒認者若已填個資，管理員按「解除綁定」後空位仍留著冒認者的手機、身分證、銀行、證件檔路徑，真老師無法再用姓名認領；後台沒有「清除冒認資料」的按鈕（src/pages/admin/InstructorList.jsx:260 handleUnlink 只呼叫 admin_unlink_instructor），測試以管理員 REST 清空後才繼續。');
-  const piiFields = ['nickname', 'gender', 'birth_date', 'id_number', 'phone_mobile', 'line_id', 'address', 'household_address', 'email_primary',
-    'teaching_freq_semester', 'teaching_freq_vacation', 'bio_notes', 'bank_account_name', 'bank_name', 'bank_branch', 'bank_account_number', 'bank_code',
-    'id_front_path', 'id_back_path', 'bankbook_path', 'id_front_mime', 'id_back_mime', 'bankbook_mime', 'id_front_size', 'id_back_size', 'bankbook_size',
-    'id_front_uploaded_at', 'id_back_uploaded_at', 'bankbook_uploaded_at'];
-  const cleared = await api.rest(ctx.base.admin.token, 'PATCH', `instructors?id=eq.${slot.id}`, { body: Object.fromEntries(piiFields.map((f) => [f, null])) });
-  r.check('G 管理員清空冒認者資料', cleared.status === 204, `HTTP ${cleared.status} ${JSON.stringify(cleared.data)}`);
   const s2 = await openAs(ctx.browser, ctx.stack, realTeacher);
   try {
     await goto(ctx, s2, '/pending');

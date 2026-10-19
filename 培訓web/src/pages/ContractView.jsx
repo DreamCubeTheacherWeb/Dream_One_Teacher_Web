@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useEffectEvent } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
@@ -96,12 +96,17 @@ const ContractView = () => {
     setLoading(false);
   };
 
-  // loadContract 在上方宣告後才由 effect 呼叫；只在登入者或合約 id 變動時載入。
+  // 只在登入者或合約編號改變時載入；用 Effect Event 讀最新的 loadContract，不把它列進依賴
+  // （origin/main cc1e737 的 react-hooks lint 修正）。延到下一個 tick 執行並在清除時取消：
+  // StrictMode 開發模式掛載兩次時只載入一次。
+  const onContractTargetChange = useEffectEvent(() => {
+    if (user && contractId) loadContract();
+  });
   useEffect(() => {
     if (!user || !contractId) return undefined;
-    const timer = window.setTimeout(loadContract, 0);
+    const timer = window.setTimeout(() => onContractTargetChange(), 0);
     return () => window.clearTimeout(timer);
-  }, [user, contractId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, contractId]);
 
   const handleDownloadPdf = async (docType, target = contract) => {
     const paths = signedPdfPathsOf(target);

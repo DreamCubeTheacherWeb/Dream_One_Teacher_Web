@@ -14,25 +14,6 @@ export function isAdmin(profile) {
 }
 
 /**
- * 是否為內部工作人員（管理員或講師導師 mentor）。
- * 用於「僅內部人員可見/可操作」的判斷。
- * @param {{ role?: string } | null | undefined} profile 使用者的 profile 物件
- * @returns {boolean}
- */
-export function isStaff(profile) {
-    return profile?.role === 'admin' || profile?.role === 'mentor';
-}
-
-/**
- * 是否為講師導師（mentor）。
- * @param {{ role?: string } | null | undefined} profile 使用者的 profile 物件
- * @returns {boolean}
- */
-export function isMentor(profile) {
-    return profile?.role === 'mentor';
-}
-
-/**
  * 是否為已核准使用平台內容的帳號。
  * 待審核或未登入狀態不得讀取講師公告等內部內容。
  * @param {{ role?: string } | null | undefined} profile 使用者的 profile 物件
