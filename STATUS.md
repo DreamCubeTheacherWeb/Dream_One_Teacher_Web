@@ -5,6 +5,47 @@
 
 ---
 
+## 🧱 2026-10-20：課程頁章節改成網格（桌機一列 4 個）（🛠 已改完＋本機實測，尚未 commit／上線）
+
+**需求**：業主看「教你怎麼教 - 各種教學項目」課程頁截圖：「下方做成一列四個的呈現方式，不然這樣太長了」。
+
+**改動**（只動 `培訓web/src/pages/LessonView.jsx`）：頁面寬度 `max-w-3xl`→`max-w-6xl`（說明文字仍限 `max-w-3xl` 保持好讀）；
+章節卡片由單欄橫式改為網格 `grid-cols-2 md:grid-cols-3 lg:grid-cols-4`，卡片改直式（上：完成圈＋章節 N＋箭頭；中：標題／預覽各最多兩行；
+下：hashtag／影片數／文章數標籤貼底，同列等高）；無章節時空狀態改在網格外渲染。資料讀取、連結、進度計算都沒動。
+
+**證據（2026-10-20 本機實跑，沙盒外，mock Supabase）**：新腳本 `培訓web/scripts/verify-lesson-grid.mjs` 34/34 PASS——
+1440／1280／1024 每列 4/4/1、820 每列 3/3/3、375 每列 2/2/2/2/1；同列高度差 0px、標題 ≤2 行、整頁無橫向捲軸、卡片最窄 166px（手機）；
+已完成勾勾與「2 / 9 章節」、「4 影片」標籤正確、點卡片進入該章節、空課程顯示空狀態。章節區高度：桌機 555px（9 張卡片）。
+截圖 `培訓web/docs/verification/2026-10-20-lesson-grid/`（6 張），fresh agent 看圖判讀：網格、陰影、截斷、對齊皆無問題。ESLint 該檔 0 問題。
+
+**待辦**：業主同意後 commit 並上線（本 worktree 目前在 `security/restrict-contract-document-reads` 分支，上線需另拉到 main）。
+
+**地雷（既有、非本次）**：頂部選單列在 768px 以上就切成桌機版（`Layout.jsx:135` `hidden md:flex`），管理員選單項目多，平板寬（約 820px）
+時選單文字被擠成直排、右側使用者名稱被切掉；講師帳號項目較少是否也會擠到未驗。建議把切換點改到 `lg`。
+同 worktree 另有並行工作的未提交改動（`InstructorList.jsx`、`verify-instructor-list-layout.mjs`），非本次，commit 時勿混入。
+
+---
+
+## 🧹 2026-10-20：後台「講師資料總覽」表格版面修正（🛠 已改完＋本機實測，尚未 commit／上線）
+
+**需求**：業主截圖「這個頁面下面的欄位看起來亂亂的，有一些還有奇怪的換行」——「未認領」「未取得」被擠成直排、表頭「速解資格」斷兩行、最右邊「預覽表單」被外框切掉。
+
+**原因**：8 欄每格左右 24px 留白＋Email 獨立一欄，後台內容區最寬也只有 1216px（Layout `max-w-7xl`），整張表塞不下，標籤被擠成直排，外框 `overflow-hidden` 又把最右欄切掉。不是螢幕太小。
+
+**改了什麼**（只動 `培訓web/src/pages/admin/InstructorList.jsx`）：
+- Email 收進姓名欄下方（lg 最寬 14rem／xl 20rem，一般長度完整顯示、超長才截斷，滑過看全文），表格 8 欄→7 欄；留白 lg 10px／xl 16px；標籤、表頭、按鈕一律不換行。
+- 綁定～操作 6 欄寬度貼齊內容（`w-px`），多出來的寬度給「講師」欄；「操作」表頭改靠左、對準按鈕。
+- 表格改從 1024px（lg）起顯示，以下用卡片；1024–1279px 按鈕縮成「編輯／預覽」（aria-label 仍是完整名稱，舊驗證腳本不受影響）；外框改 `overflow-x-auto`，再擠也只會出現捲軸、不會切掉按鈕。
+- 卡片版：綁定／解綁緊跟認領標籤、地區顯示「N 個縣市」（原本只有數字）、按鈕獨立一行對齊；地區摘要抽成共用 `RegionSummary`。
+
+**證據（2026-10-20 本機實跑，沙盒外）**：新腳本 `node scripts/verify-instructor-list-layout.mjs` **49/49 PASS**（mock Supabase、1024／1280／1440 桌機＋900 平板：表頭 7 欄單行、28 個標籤單行、14 顆按鈕單行且沒被切、表格不超出外框、列高一致 69–70px、「操作」對準按鈕差 0px、精簡欄多餘空白 0px、一般長度 Email 不截斷、展開列跨 7 欄、卡片按鈕對齊；另派兩輪 agent 看截圖判讀，指出的欄距不均／操作標題錯位／卡片按鈕參差都已修）；截圖 `培訓web/docs/verification/2026-10-20-instructor-list-layout/`。回歸：`verify-claim-admin-ui` 6/6、`verify-admin-instructor-editor-ui` 3/3、`verify-contract-feature-enabled` 40/40（重生的 10-18 截圖已還原）、`npm run build` 通過、ESLint 0 問題。
+
+**待業主**：同意後上線（本 worktree 目前在 `security/restrict-contract-document-reads` 分支且有並行對話的 `LessonView.jsx` 改動，上線要另開乾淨 worktree 從 origin/main 只帶這個檔）。
+
+**地雷／順手發現（未處理）**：頂端導覽列在 900–1024px 寬時「我的課程」「後台管理」等會被擠成直排／兩行、「管理員」徽章斷行（`src/components/Layout.jsx`，所有頁共用，另案處理）。
+
+---
+
 ## 🔒 2026-10-19：合約範本讀取只給已核准角色＋簽署 PDF 可信度評估（🟡 已完成、待業主套正式庫）
 
 **來源**：10-18 簽約重開的資安審查提到兩筆既有設計債（非該次引入）：① `contract_documents` 的 SELECT 政策是 `USING (true)`、
