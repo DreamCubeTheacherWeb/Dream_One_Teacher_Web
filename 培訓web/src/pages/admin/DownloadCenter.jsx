@@ -181,7 +181,7 @@ const DownloadCenter = () => {
 
       if (fileRefs.current[docType]) fileRefs.current[docType].value = '';
       await loadData();
-      alert('上傳成功！');
+      alert('上傳成功！新版本需重新設定欄位位置（按「定位欄位」），設定前無法產生表單。');
     } catch (err) {
       alert('上傳失敗：' + (err.message || '未知錯誤'));
     }
