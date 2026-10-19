@@ -15,6 +15,8 @@ const PendingApproval = () => {
         phoneMobile: '',
         idLastFour: '',
     });
+    // 認領分兩步：先只用姓名找後台建立的空位；找不到才請對方再填手機與身分證末四碼核對舊資料。
+    const [claimStep, setClaimStep] = useState('name');
     const [claiming, setClaiming] = useState(false);
     const [claimMessage, setClaimMessage] = useState(null);
 
@@ -38,6 +40,52 @@ const PendingApproval = () => {
 
     const handleRefresh = async () => {
         await refreshProfile();
+    };
+
+    const finishClaim = async () => {
+        setClaimMessage({ type: 'success', text: '認領完成，正在帶入你的講師資料…' });
+        await refreshProfile();
+        navigate('/profile', { replace: true });
+    };
+
+    const handleNameClaim = async (event) => {
+        event.preventDefault();
+        setClaimMessage(null);
+
+        const fullName = identityForm.fullName.trim();
+        if (!fullName) {
+            setClaimMessage({ type: 'error', text: '請輸入你的完整姓名。' });
+            return;
+        }
+
+        setClaiming(true);
+        const { data, error } = await supabase.rpc('claim_instructor_name_slot', {
+            provided_full_name: fullName,
+        });
+
+        if (error) {
+            setClaimMessage({ type: 'error', text: '目前無法核對資料，請稍後再試或聯繫管理員。' });
+            setClaiming(false);
+            return;
+        }
+
+        if (data?.status === 'claimed' || data?.status === 'already_linked') {
+            await finishClaim();
+            return;
+        }
+
+        if (data?.status === 'not_found') {
+            setClaimStep('identity');
+            setClaimMessage({
+                type: 'info',
+                text: '後台沒有只登記這個姓名的空位。如果你以前填過講師資料，請再填手機與身分證末四碼核對；如果你是新老師，請按「返回」改選「新建帳號」。',
+            });
+            setClaiming(false);
+            return;
+        }
+
+        setClaimMessage({ type: 'error', text: data?.reason || '請確認姓名後再試一次。' });
+        setClaiming(false);
     };
 
     const handleExistingClaim = async (event) => {
@@ -67,9 +115,7 @@ const PendingApproval = () => {
         }
 
         if (data?.status === 'claimed') {
-            setClaimMessage({ type: 'success', text: '身分核對完成，正在帶入你的講師資料…' });
-            await refreshProfile();
-            navigate('/profile', { replace: true });
+            await finishClaim();
             return;
         }
 
@@ -98,25 +144,16 @@ const PendingApproval = () => {
                         </div>
 
                         <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black mb-3 tracking-tight">
-                            {mode === 'existing' ? '核對既有講師資料' : '請選擇你的講師身分'}
+                            {mode === 'existing' ? '認領帳號' : '請選擇你的講師身分'}
                         </h1>
 
                         {mode === 'choice' ? (
                             <>
                                 <p className="text-bauhaus-black/70 mb-6 font-medium">
-                                    Gmail 尚未對應到講師主檔，請依加入時間選擇後續流程。
+                                    這個 Google 帳號還沒對應到講師資料，請選擇接下來要做什麼。
                                 </p>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => navigate('/profile')}
-                                        className="bh-card bg-bauhaus-yellow p-6 text-left hover:-translate-y-1 transition-transform"
-                                    >
-                                        <UserPlus className="w-8 h-8 mb-4" />
-                                        <span className="block text-xl font-black mb-1">新進</span>
-                                        <span className="block text-sm font-medium text-bauhaus-black/65">建立新的講師資料並送出審核</span>
-                                    </button>
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -124,24 +161,40 @@ const PendingApproval = () => {
                                                 ...current,
                                                 fullName: current.fullName || profile?.name || user?.user_metadata?.full_name || '',
                                             }));
+                                            setClaimStep('name');
+                                            setClaimMessage(null);
                                             setMode('existing');
                                         }}
                                         className="bh-card bg-white p-6 text-left hover:-translate-y-1 transition-transform"
                                     >
                                         <UserCheck className="w-8 h-8 mb-4 text-bauhaus-blue" />
-                                        <span className="block text-xl font-black mb-1">非新進</span>
-                                        <span className="block text-sm font-medium text-bauhaus-black/65">核對後直接帶入既有講師資料</span>
+                                        <span className="block text-xl font-black mb-1">認領帳號</span>
+                                        <span className="block text-sm font-medium text-bauhaus-black/65">後台已經有我的名字或舊資料，核對後直接開通</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate('/profile')}
+                                        className="bh-card bg-bauhaus-yellow p-6 text-left hover:-translate-y-1 transition-transform"
+                                    >
+                                        <UserPlus className="w-8 h-8 mb-4" />
+                                        <span className="block text-xl font-black mb-1">新建帳號</span>
+                                        <span className="block text-sm font-medium text-bauhaus-black/65">我是新老師，填寫講師資料後等管理員審核</span>
                                     </button>
                                 </div>
 
                                 <p className="text-sm font-bold text-bauhaus-black/60 bg-white/80 border border-bauhaus-black/20 rounded-lg px-4 py-3">
-                                    8/25 後才加入講師群組的，請選「新進」。
+                                    不確定選哪個？先試「認領帳號」，輸入姓名就知道後台有沒有你的資料。
                                 </p>
                             </>
                         ) : (
-                            <form onSubmit={handleExistingClaim} className="bg-white border-2 border-bauhaus-black rounded-2xl p-5 sm:p-6 text-left shadow-hard">
+                            <form
+                                onSubmit={claimStep === 'name' ? handleNameClaim : handleExistingClaim}
+                                className="bg-white border-2 border-bauhaus-black rounded-2xl p-5 sm:p-6 text-left shadow-hard"
+                            >
                                 <p className="text-sm font-medium text-bauhaus-black/65 mb-5">
-                                    請填寫原講師資料中的姓名、完整手機號碼及身分證末四碼。核對成功後會立即開通，不需等待審核。
+                                    {claimStep === 'name'
+                                        ? '請輸入你的完整姓名。後台已經登記你的名字時，會直接開通，不需等待審核。'
+                                        : '請填寫原講師資料中的姓名、完整手機號碼及身分證末四碼。核對成功後會立即開通，不需等待審核。'}
                                 </p>
 
                                 <label className="bh-label block mb-2" htmlFor="claim-full-name">姓名</label>
@@ -152,10 +205,12 @@ const PendingApproval = () => {
                                     value={identityForm.fullName}
                                     onChange={(event) => setIdentityForm((current) => ({ ...current, fullName: event.target.value }))}
                                     className="bh-input mb-4"
-                                    placeholder="請輸入原講師資料中的姓名"
+                                    placeholder="請輸入完整姓名"
                                     required
                                 />
 
+                                {claimStep === 'identity' && (
+                                <>
                                 <label className="bh-label block mb-2" htmlFor="claim-phone">完整手機號碼</label>
                                 <input
                                     id="claim-phone"
@@ -186,6 +241,8 @@ const PendingApproval = () => {
                                     required
                                 />
                                 <p className="text-xs text-bauhaus-black/50 font-medium mb-4">資料僅用於本次身分核對，不會顯示其他講師資訊。</p>
+                                </>
+                                )}
 
                                 {claimMessage && (
                                     <div
@@ -193,7 +250,9 @@ const PendingApproval = () => {
                                         className={`rounded-lg border-2 px-4 py-3 mb-4 text-sm font-bold ${
                                             claimMessage.type === 'success'
                                                 ? 'bg-green-50 border-green-700 text-green-800'
-                                                : 'bg-red-50 border-bauhaus-red text-bauhaus-red'
+                                                : claimMessage.type === 'info'
+                                                    ? 'bg-bauhaus-yellow/20 border-bauhaus-black text-bauhaus-black'
+                                                    : 'bg-red-50 border-bauhaus-red text-bauhaus-red'
                                         }`}
                                     >
                                         {claimMessage.text}
@@ -219,7 +278,7 @@ const PendingApproval = () => {
                                         disabled={claiming}
                                     >
                                         <ShieldCheck className="w-4 h-4" />
-                                        {claiming ? '核對中…' : '核對並帶入資料'}
+                                        {claiming ? '核對中…' : claimStep === 'name' ? '用姓名認領' : '核對並帶入資料'}
                                     </button>
                                 </div>
                             </form>
