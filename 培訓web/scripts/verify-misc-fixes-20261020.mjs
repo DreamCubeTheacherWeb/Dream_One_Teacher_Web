@@ -2,6 +2,7 @@
 // 2026-10-20 上線後大檢查的雜項修正：以 mock Supabase 實際開頁驗證（不連任何真實後端）。
 //  1. 後台「培訓進度總覽」：超過 1000 筆進度時要分頁抓完，完成數才不會被低估。
 //  2. 後台「作業審核中心」：改成 effect 內載入（修 lint）後，頁面載入、分組、待審核數、輔導員選單行為不變。
+//  3. 登入核心（AuthContext）：users 查詢遇到 5xx 要重試，不可把已存在的帳號當成新使用者／待審核。
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
@@ -209,6 +210,90 @@ async function verifyAssignmentReviewLoads(browser, base) {
     await context.close();
 }
 
+// ───────────────────────── 3. 登入核心：users 查詢 5xx 不可被當成「沒有這個帳號」 ─────────────────────────
+const RETRY_MESSAGE = '帳號資料載入失敗';
+const authScenario = (userId, { usersGet }) => {
+    const { authUser, session } = makeSession(userId, 'auth-admin@test.local', '登入測試管理員');
+    const log = [];
+    const scenario = {
+        authUser, session, log,
+        tables: {
+            users: (url, request) => {
+                // 登入核心查自己的 users 列（id=eq.<自己>）；其他頁面查的 users 不計入
+                if (request.method() === 'GET' && url.searchParams.get('id') === `eq.${userId}`) {
+                    return usersGet(log.filter(l => l.method === 'GET' && l.table === 'users' && l.search.includes(`id=eq.${userId}`)).length);
+                }
+                return request.method() === 'GET' ? [] : [];
+            },
+            courses: () => [],
+        },
+    };
+    return scenario;
+};
+const adminRow = (userId) => ({ id: userId, name: '登入測試管理員', email: 'auth-admin@test.local', role: 'admin', created_at: now });
+const waitForOutcome = (page) => page.waitForFunction((msg) => {
+    const text = document.body.innerText;
+    return location.pathname === '/pending' || text.includes(msg) || text.includes('培訓進度總覽');
+}, RETRY_MESSAGE, { timeout: 15000 }).catch(() => {});
+const usersInserts = (log) => log.filter(l => l.method === 'POST' && l.table === 'users').length;
+const usersGets = (log, userId) => log.filter(l => l.method === 'GET' && l.table === 'users' && l.search.includes(`id=eq.${userId}`)).length;
+
+async function verifyAuthRetry(browser, base) {
+    // 情境 A：503 兩次後成功 → 最後是管理員，不被導去 /pending，也不建立新 users 列
+    {
+        const userId = '00000000-0000-4000-8000-000000000201';
+        const scenario = authScenario(userId, {
+            usersGet: (n) => (n <= 2 ? { status: 503, body: { message: 'upstream unavailable' } } : [adminRow(userId)]),
+        });
+        const { context, page } = await openPage(browser, scenario);
+        await page.goto(`${base}/admin/progress`, { waitUntil: 'domcontentloaded' });
+        await waitForOutcome(page);
+        const pathName = new URL(page.url()).pathname;
+        check('登入重試 A：503 兩次後成功 → 停在管理員頁面、沒被導去 /pending', pathName === '/admin/progress' && await page.getByRole('heading', { name: '培訓進度總覽' }).isVisible(), `path=${pathName}`);
+        check('登入重試 A：共查 3 次（失敗 2 次＋成功 1 次）且沒有建立新 users 列', usersGets(scenario.log, userId) === 3 && usersInserts(scenario.log) === 0,
+            `查詢 ${usersGets(scenario.log, userId)} 次、建立 ${usersInserts(scenario.log)} 次`);
+        await context.close();
+    }
+    // 情境 B：一直 503 → 顯示可重試的錯誤，不是 pending、不建立新 users 列；按重試後（後端恢復）進得去
+    {
+        const userId = '00000000-0000-4000-8000-000000000202';
+        let backendUp = false;
+        const scenario = authScenario(userId, {
+            usersGet: () => (backendUp ? [adminRow(userId)] : { status: 503, body: { message: 'upstream unavailable' } }),
+        });
+        const { context, page } = await openPage(browser, scenario);
+        await page.goto(`${base}/admin/progress`, { waitUntil: 'domcontentloaded' });
+        await waitForOutcome(page);
+        const pathName = new URL(page.url()).pathname;
+        const bodyText = await page.evaluate(() => document.body.innerText);
+        const retryButton = page.getByRole('button', { name: /重試/ });
+        check('登入重試 B：一直 503 → 顯示「帳號資料載入失敗」與重試按鈕', bodyText.includes(RETRY_MESSAGE) && await retryButton.isVisible(), `path=${pathName}`);
+        check('登入重試 B：不是 pending（沒導去 /pending、沒有待審核畫面）', pathName !== '/pending' && !bodyText.includes('待審核'), `path=${pathName}`);
+        check('登入重試 B：共查 3 次（首次＋重試 2 次）且沒有建立新 users 列', usersGets(scenario.log, userId) === 3 && usersInserts(scenario.log) === 0,
+            `查詢 ${usersGets(scenario.log, userId)} 次、建立 ${usersInserts(scenario.log)} 次`);
+        backendUp = true;
+        let recovered = false;
+        if (await retryButton.isVisible()) {
+            await retryButton.click();
+            recovered = await page.getByRole('heading', { name: '培訓進度總覽' }).waitFor({ timeout: 15000 }).then(() => true, () => false);
+        }
+        check('登入重試 B：後端恢復後按「重試」→ 進入管理員頁面', recovered && new URL(page.url()).pathname === '/admin/progress' && usersInserts(scenario.log) === 0, `path=${new URL(page.url()).pathname}`);
+        await context.close();
+    }
+    // 情境 C：查無此列（2xx 空陣列）→ 照舊走新使用者流程：建立 users 列、進待審核頁
+    {
+        const userId = '00000000-0000-4000-8000-000000000203';
+        const scenario = authScenario(userId, { usersGet: () => [] });
+        const { context, page } = await openPage(browser, scenario);
+        await page.goto(`${base}/courses`, { waitUntil: 'domcontentloaded' });
+        await waitForOutcome(page);
+        const pathName = new URL(page.url()).pathname;
+        check('登入重試 C：查無此列 → 照舊建立新 users 列並進入 /pending', pathName === '/pending' && usersInserts(scenario.log) === 1, `path=${pathName}、建立 ${usersInserts(scenario.log)} 次`);
+        check('登入重試 C：查無此列不重試（只查 1 次）', usersGets(scenario.log, userId) === 1, `${usersGets(scenario.log, userId)} 次`);
+        await context.close();
+    }
+}
+
 async function run() {
     const port = await reservePort();
     const base = `http://127.0.0.1:${port}`;
@@ -229,6 +314,7 @@ async function run() {
         browser = await chromium.launch(existsSync(chromeExecutable) ? { executablePath: chromeExecutable } : {});
         await verifyProgressOverviewPaging(browser, base);
         await verifyAssignmentReviewLoads(browser, base);
+        await verifyAuthRetry(browser, base);
     } finally {
         if (browser) await browser.close();
         vite.kill('SIGTERM');
