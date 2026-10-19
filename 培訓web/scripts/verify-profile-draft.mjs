@@ -113,10 +113,12 @@ async function handleRoute(route) {
             if (table === 'instructors') {
                 requestEvents.push('db-save');
                 try { lastInstructorSaveBody = JSON.parse(req.postData() || '{}'); } catch { lastInstructorSaveBody = null; }
+                // 這位老師已有主檔：PATCH 回傳更新到的那一列，前端就不會再補 INSERT。
+                const savedRows = method === 'PATCH' ? JSON.stringify([{ updated_at: NOW }]) : '[]';
                 return route.fulfill({
-                    status: 201,
+                    status: method === 'PATCH' ? 200 : 201,
                     headers: { 'content-type': 'application/json' },
-                    body: wantsObject ? JSON.stringify({ updated_at: NOW }) : '[]',
+                    body: wantsObject ? JSON.stringify({ updated_at: NOW }) : savedRows,
                 });
             }
             if (table === 'instructor_profile_drafts') {
@@ -367,7 +369,9 @@ async function main() {
         signMode = 'fail'; instructorRow = completeRow;
         ctx = await newCtx(browser); page = await ctx.newPage();
         await gotoProfile(page);
-        const failedPreviewStaysLocked = await page.getByText('檔案已儲存，預覽目前無法載入', { exact: true }).count() === 1
+        // 2026-10-20 起身分證正反面也會鎖定，同一句說明會出現在三張卡；這裡只看存摺那張。
+        const failedPreviewStaysLocked = await page.getByTestId('document-upload-bankbook')
+            .getByText('檔案已儲存，預覽目前無法載入', { exact: true }).count() === 1
             && await page.getByTestId('bankbook-locked-notice').count() === 1
             && await page.getByTestId('bankbook-file-input').count() === 0;
         assert('T9d 存摺預覽失敗時仍維持鎖定並說明狀態', failedPreviewStaysLocked);

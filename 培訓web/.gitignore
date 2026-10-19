@@ -9,6 +9,8 @@ coverage/
 # Production
 dist/
 dist-ssr/
+# 瀏覽器回歸腳本各自的建置輸出（避免平行測試互蓋 dist/）
+dist-*-unlock/
 build/
 
 # Logs

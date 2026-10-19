@@ -27,7 +27,10 @@
     "verify:contract-signing": "node scripts/verify-contract-signing-rpc.mjs",
     "verify:contract-signing:browser": "node scripts/verify-contract-feature-enabled.mjs",
     "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs",
-    "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs"
+    "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs",
+    "verify:doc-edit-unlock": "node scripts/verify-doc-edit-unlock.mjs",
+    "verify:doc-edit-unlock:admin-browser": "node scripts/verify-doc-edit-unlock-admin-browser.mjs",
+    "verify:doc-edit-unlock:profile-browser": "node scripts/verify-doc-edit-unlock-profile-browser.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",

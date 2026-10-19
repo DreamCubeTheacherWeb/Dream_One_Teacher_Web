@@ -17,6 +17,17 @@ import {
     toFetchableExternalImageUrl,
 } from '../lib/profileCompletion';
 import { speedQualificationLabel } from '../lib/constants';
+import {
+    LOCKABLE_DOCUMENT_KEYS,
+    LOCK_NOTICE,
+    UNLOCKED_NOTICE,
+    fetchOpenEditUnlocks,
+    getBankAccountLockState,
+    getDocumentLockState,
+    isLockedDocumentError,
+    pickLockSource,
+    toOpenScopeSet,
+} from '../lib/instructorDocumentLocks';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -71,7 +82,6 @@ const INITIAL_FORM = {
 const legacyDraftKeyFor = (uid) => `profile_draft_${uid}`;
 const BANKBOOK_FIELDS = ['bankbook_path', 'bankbook_mime', 'bankbook_size', 'bankbook_uploaded_at'];
 const BANK_FIELDS = ['bank_account_name', 'bank_name', 'bank_branch', 'bank_code', 'bank_account_number'];
-const LOCK_NOTICE = '如需修改，請於講師群組提出。';
 const profileSnapshot = (form) => JSON.stringify(stripAdminManagedInstructorFields(form));
 const clearLegacyBrowserDraft = (uid) => {
     try { localStorage.removeItem(legacyDraftKeyFor(uid)); } catch { /* 略過 */ }
@@ -103,13 +113,16 @@ const ProfilePage = () => {
     const { user, profile, claimState } = useAuth();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
     const [saving, setSaving] = useState(false);
     const [isFirstTime, setIsFirstTime] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [form, setForm] = useState(INITIAL_FORM);
     const [importedProfile, setImportedProfile] = useState(null);
-    const [hasSavedBankbook, setHasSavedBankbook] = useState(false);
-    const [savedBankAccount, setSavedBankAccount] = useState(false);
+    // 身分證／存摺／匯款「已有資料就鎖定」的判斷一律看 DB 正本，不看表單；管理員開放一次後才可改。
+    const [savedLockSource, setSavedLockSource] = useState(null);
+    const [openUnlocks, setOpenUnlocks] = useState([]);
+    const savedPreviews = useRef({});
     const [filePreviews, setFilePreviews] = useState({});
     const [filePreviewSources, setFilePreviewSources] = useState({});
     const [pendingFiles, setPendingFiles] = useState({});
@@ -159,11 +172,21 @@ const ProfilePage = () => {
         pendingStorageDeletes.current.clear();
         Object.values(pendingPreviewUrls.current).forEach((url) => URL.revokeObjectURL(url));
         pendingPreviewUrls.current = {};
-        let { data } = await supabase
+        const { data, error: loadErrorResult } = await supabase
             .from('instructors')
             .select('*')
             .eq('user_id', user.id)
             .maybeSingle();
+
+        // 查詢失敗（網路／權限）不可當成「首次填表」：那樣會顯示空白表單、刪掉伺服器草稿，
+        // 送出時還會用空白覆蓋既有資料。停在錯誤畫面讓講師重試。
+        if (loadErrorResult) {
+            console.error('Failed to load instructor profile:', loadErrorResult);
+            setLoadError(loadErrorResult.message || '讀取失敗');
+            setLoading(false);
+            return;
+        }
+        setLoadError(null);
 
         let nextForm;
 
@@ -171,8 +194,10 @@ const ProfilePage = () => {
             setIsFirstTime(false);
             setImportedProfile(data);
             setInstructorId(data.id || null);
-            setHasSavedBankbook(hasInstructorDocument(data, 'bankbook'));
-            setSavedBankAccount(Boolean(data.bank_account_number?.trim()));
+            const lockSource = pickLockSource(data);
+            const unlocks = await fetchOpenEditUnlocks(supabase, data.id);
+            setSavedLockSource(lockSource);
+            setOpenUnlocks(unlocks);
             const formData = {};
             for (const key of Object.keys(INITIAL_FORM)) {
                 formData[key] = data[key] ?? INITIAL_FORM[key];
@@ -187,7 +212,11 @@ const ProfilePage = () => {
             if (hasInstructorDocument(data, 'bankbook') && profile?.role !== 'admin') {
                 for (const field of BANKBOOK_FIELDS) nextForm[field] = formData[field];
             }
-            if (data.bank_account_number?.trim() && profile?.role !== 'admin') {
+            if (getBankAccountLockState({
+                savedInstructor: lockSource,
+                isAdmin: profile?.role === 'admin',
+                openScopes: toOpenScopeSet(unlocks),
+            }).locked) {
                 for (const field of BANK_FIELDS) nextForm[field] = formData[field];
             }
             originalWcaId.current = formData.wca_id || '';
@@ -196,8 +225,8 @@ const ProfilePage = () => {
             setIsFirstTime(true);
             setImportedProfile(null);
             setInstructorId(null);
-            setHasSavedBankbook(false);
-            setSavedBankAccount(false);
+            setSavedLockSource(null);
+            setOpenUnlocks([]);
             const base = {
                 ...INITIAL_FORM,
                 full_name: profile?.name || '',
@@ -237,6 +266,7 @@ const ProfilePage = () => {
         }
         setFilePreviews(previews);
         setFilePreviewSources(previewSources);
+        savedPreviews.current = { previews, previewSources };
 
         hydrated.current = true; // 載入完成後才允許草稿自動寫入
         setLoading(false);
@@ -310,9 +340,15 @@ const ProfilePage = () => {
         });
     };
 
+    const isAdmin = profile?.role === 'admin';
+    const openScopes = toOpenScopeSet(openUnlocks);
+    const documentLockState = (key) => getDocumentLockState({ savedInstructor: savedLockSource, key, isAdmin, openScopes });
+    const bankLockState = getBankAccountLockState({ savedInstructor: savedLockSource, isAdmin, openScopes });
+    const documentLabel = (key) => DOC_TYPES.find((doc) => doc.key === key)?.label || '文件';
+
     const handleFileUpload = (docType, file) => {
-        if (docType === 'bankbook' && hasSavedBankbook && profile?.role !== 'admin') {
-            alert('存摺封面已鎖定，' + LOCK_NOTICE);
+        if (documentLockState(docType).locked) {
+            alert(`${documentLabel(docType)}已鎖定，${LOCK_NOTICE}`);
             return;
         }
         if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
@@ -334,12 +370,39 @@ const ProfilePage = () => {
     };
 
     const handleRemoveFile = (docType) => {
-        if (docType === 'bankbook' && hasSavedBankbook && profile?.role !== 'admin') {
-            alert('存摺封面已鎖定，' + LOCK_NOTICE);
+        const lockState = documentLockState(docType);
+        if (lockState.locked) {
+            alert(`${documentLabel(docType)}已鎖定，${LOCK_NOTICE}`);
+            return;
+        }
+        // 開放修改期間，已提交的文件只能「更換」：按 X 是取消這次選的新檔，回到已存的正本。
+        if (lockState.unlocked) {
+            const pendingPreview = pendingPreviewUrls.current[docType];
+            if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+            delete pendingPreviewUrls.current[docType];
+            setPendingFiles(prev => {
+                const next = { ...prev };
+                delete next[docType];
+                return next;
+            });
+            const { previews: savedMap = {}, previewSources: savedSources = {} } = savedPreviews.current;
+            setFilePreviews(prev => {
+                const next = { ...prev };
+                if (savedMap[docType]) next[docType] = savedMap[docType];
+                else delete next[docType];
+                return next;
+            });
+            setFilePreviewSources(prev => {
+                const next = { ...prev };
+                if (savedSources[docType]) next[docType] = savedSources[docType];
+                else delete next[docType];
+                return next;
+            });
             return;
         }
         const previousPath = form[`${docType}_path`];
-        if (previousPath) pendingStorageDeletes.current.add(previousPath);
+        // 身分證／存摺的舊檔一律保留（修改紀錄要能回看，DB 也不允許講師刪除）；大頭照照舊清掉。
+        if (previousPath && !LOCKABLE_DOCUMENT_KEYS.includes(docType)) pendingStorageDeletes.current.add(previousPath);
         const pendingPreview = pendingPreviewUrls.current[docType];
         if (pendingPreview) URL.revokeObjectURL(pendingPreview);
         delete pendingPreviewUrls.current[docType];
@@ -443,7 +506,10 @@ const ProfilePage = () => {
                 uploadedThisSave.push(path);
 
                 const previousPath = nextForm[`${docType}_path`];
-                if (previousPath && previousPath !== path) pendingStorageDeletes.current.add(previousPath);
+                // 身分證／存摺換新後舊檔保留，供管理員在修改紀錄回看。
+                if (previousPath && previousPath !== path && !LOCKABLE_DOCUMENT_KEYS.includes(docType)) {
+                    pendingStorageDeletes.current.add(previousPath);
+                }
                 nextForm[`${docType}_path`] = path;
                 nextForm[`${docType}_mime`] = file.type;
                 nextForm[`${docType}_size`] = file.size;
@@ -456,13 +522,25 @@ const ProfilePage = () => {
                 wca_id: nextForm.wca_id?.trim() || null,
             };
 
-            const { data, error } = await supabase
+            // 已有自己的主檔就 UPDATE；不能用 upsert：INSERT…ON CONFLICT 會先跑 INSERT 的 trigger，
+            // 舊講師核對認領後主要 Email 不是登入信箱時，會被「新建主檔 Email 必須等於登入帳號」擋下。
+            const { data: updatedRows, error: updateError } = await supabase
                 .from('instructors')
-                .upsert(payload, { onConflict: 'user_id' })
-                .select('updated_at')
-                .single();
-            if (error) throw error;
-            savedRow = data;
+                .update(payload)
+                .eq('user_id', user.id)
+                .select('id, updated_at');
+            if (updateError) throw updateError;
+            if (updatedRows?.length) {
+                savedRow = updatedRows[0];
+            } else {
+                const { data, error } = await supabase
+                    .from('instructors')
+                    .insert(payload)
+                    .select('id, updated_at')
+                    .single();
+                if (error) throw error;
+                savedRow = data;
+            }
         } catch (error) {
             if (uploadedThisSave.length) {
                 const { error: rollbackError } = await supabase.storage
@@ -471,6 +549,10 @@ const ProfilePage = () => {
                 if (rollbackError) console.error('Failed to roll back profile uploads:', rollbackError);
             }
             alert('儲存失敗：' + error.message);
+            // 被鎖定規則擋下時，可能是管理員剛收回開放；重讀一次讓畫面回到正確狀態。
+            if (isLockedDocumentError(error) && instructorId) {
+                setOpenUnlocks(await fetchOpenEditUnlocks(supabase, instructorId));
+            }
             setUploading({});
             setSaving(false);
             return;
@@ -497,8 +579,10 @@ const ProfilePage = () => {
         setUploading({});
         savedSnapshot.current = profileSnapshot(nextForm);
         savedBaseUpdatedAt.current = savedRow?.updated_at || null;
-        setHasSavedBankbook(hasInstructorDocument(nextForm, 'bankbook'));
-        setSavedBankAccount(Boolean(nextForm.bank_account_number?.trim()));
+        // 存檔即用掉開放權限：重讀一次，畫面會自動鎖回。
+        setSavedLockSource(pickLockSource(nextForm));
+        savedPreviews.current = { previews: { ...filePreviews }, previewSources: { ...filePreviewSources } };
+        setOpenUnlocks(await fetchOpenEditUnlocks(supabase, savedRow?.id || instructorId));
         window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: nextForm }));
 
         if (profile?.role === 'pending' && isFirstTime) {
@@ -512,9 +596,29 @@ const ProfilePage = () => {
     };
 
     if (loading) return <div className="p-12 text-center text-bauhaus-black/60 font-bold text-lg">載入中...</div>;
+    if (loadError) {
+        return (
+            <div className="max-w-xl mx-auto p-6 sm:p-12">
+                <div data-testid="profile-load-error" className="border-2 border-bauhaus-black rounded-2xl bg-white p-6 text-center shadow-hard-sm">
+                    <AlertCircle className="w-8 h-8 text-bauhaus-red mx-auto mb-3" />
+                    <div className="font-black text-lg text-bauhaus-black">個人資料暫時讀取不到</div>
+                    <p className="mt-2 text-sm font-medium text-bauhaus-black/70 leading-relaxed">
+                        可能是網路不穩。為了避免空白表單蓋掉你已填的資料，請重新載入後再編輯。
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => { setLoading(true); loadProfile(); }}
+                        className="mt-4 min-h-[44px] px-5 border-2 border-bauhaus-black rounded-xl bg-bauhaus-yellow font-black text-bauhaus-black hover:bg-bauhaus-yellow/80"
+                    >
+                        重新載入
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     const inputCls = 'bh-input';
-    const isBankLocked = savedBankAccount && profile?.role !== 'admin';
+    const isBankLocked = bankLockState.locked;
     const bankInputCls = inputCls + (isBankLocked ? ' disabled:bg-bauhaus-muted disabled:text-bauhaus-black/60 disabled:border-bauhaus-black/50 disabled:cursor-not-allowed' : '');
     const selectCls = inputCls + ' bg-white';
     const legacyReferenceGroups = getInstructorLegacyReferenceGroups(importedProfile);
@@ -827,6 +931,9 @@ const ProfilePage = () => {
                         <span>匯款銀行資訊已儲存並鎖定。{LOCK_NOTICE}</span>
                     </div>
                 )}
+                {bankLockState.unlocked && (
+                    <UnlockedNotice testId="bank-unlocked-notice" />
+                )}
                 <div className="mt-4 bg-bauhaus-yellow/10 border-2 border-bauhaus-black rounded-xl p-3 text-xs text-bauhaus-black font-bold">
                     💡 銀行帳戶為華南銀行者免扣手續費；非華南銀行將扣匯款手續費 30 元。
                 </div>
@@ -852,15 +959,16 @@ const ProfilePage = () => {
                     {DOC_TYPES.map(({ key, label, Icon: docIcon }) => {
                         const Icon = docIcon;
                         const externalUrl = form[`${key}_external_url`];
-                        const isBankbookLocked = key === 'bankbook'
-                            && hasSavedBankbook
-                            && profile?.role !== 'admin';
+                        const { locked: isDocLocked, unlocked: isDocUnlocked } = documentLockState(key);
+                        const hasPendingFile = Boolean(pendingFiles[key]);
+                        // 開放期間已提交的文件只能更換：正本上不給 X，選了新檔才出現「取消更換」。
+                        const canRemovePreview = !isDocLocked && (!isDocUnlocked || hasPendingFile);
                         return (
                         <div
                             key={key}
                             data-testid={`document-upload-${key}`}
                             className={`border-2 border-dashed rounded-xl p-4 text-center transition-colors ${
-                                isBankbookLocked
+                                isDocLocked
                                     ? 'border-bauhaus-black bg-bauhaus-muted/40'
                                     : 'border-bauhaus-black/30 hover:border-bauhaus-blue'
                             }`}
@@ -872,10 +980,10 @@ const ProfilePage = () => {
                             {filePreviews[key] ? (
                                 <div className="relative group">
                                     <img src={filePreviews[key]} alt={label} className="w-full h-32 object-cover border-2 border-bauhaus-black rounded-xl" />
-                                    {!isBankbookLocked && (
+                                    {canRemovePreview && (
                                         <button
                                             type="button"
-                                            aria-label={`移除${label}`}
+                                            aria-label={isDocUnlocked ? `取消更換${label}` : `移除${label}`}
                                             onClick={() => handleRemoveFile(key)}
                                             className="absolute top-1 right-1 bg-bauhaus-red hover:bg-bauhaus-red/90 text-white rounded-full p-3 md:p-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border-2 border-bauhaus-black flex items-center justify-center min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0"
                                         >
@@ -886,6 +994,16 @@ const ProfilePage = () => {
                                         <div className="text-[10px] text-bauhaus-black/50 mt-1 font-bold">
                                             {((pendingFiles[key]?.size || form[`${key}_size`]) / 1024 / 1024).toFixed(1)} MB
                                         </div>
+                                    )}
+                                    {isDocUnlocked && (
+                                        <button
+                                            type="button"
+                                            data-testid={`${key}-replace-button`}
+                                            onClick={() => fileRefs.current[key]?.click()}
+                                            className="mt-2 w-full min-h-[44px] border-2 border-bauhaus-black rounded-xl bg-white text-xs font-black text-bauhaus-black hover:bg-bauhaus-yellow transition-colors inline-flex items-center justify-center gap-1.5"
+                                        >
+                                            <Upload className="w-4 h-4" /> {hasPendingFile ? '改選其他檔案' : '更換檔案'}
+                                        </button>
                                     )}
                                 </div>
                             ) : externalUrl ? (
@@ -900,7 +1018,7 @@ const ProfilePage = () => {
                                     >
                                         查看既有文件 <ExternalLink className="w-3 h-3" />
                                     </a>
-                                    {!isBankbookLocked && (
+                                    {!isDocLocked && (
                                         <button
                                             type="button"
                                             onClick={() => fileRefs.current[key]?.click()}
@@ -910,7 +1028,7 @@ const ProfilePage = () => {
                                         </button>
                                     )}
                                 </div>
-                            ) : isBankbookLocked ? (
+                            ) : isDocLocked ? (
                                 <div className="h-32 border-2 border-bauhaus-black rounded-xl bg-white flex flex-col items-center justify-center gap-2 px-3 text-bauhaus-black/60">
                                     <Lock className="w-7 h-7" />
                                     <span className="text-xs font-bold leading-relaxed">檔案已儲存，預覽目前無法載入</span>
@@ -936,17 +1054,19 @@ const ProfilePage = () => {
                                 </button>
                             )}
 
-                            {isBankbookLocked ? (
+                            {isDocLocked ? (
                                 <div
-                                    data-testid="bankbook-locked-notice"
+                                    data-testid={`${key}-locked-notice`}
                                     className="mt-3 border-2 border-bauhaus-black rounded-xl bg-bauhaus-yellow px-3 py-2 text-left text-xs font-bold text-bauhaus-black leading-relaxed"
                                 >
                                     <div className="flex items-start gap-2">
                                         <Lock className="w-4 h-4 mt-0.5 shrink-0" />
-                                        <span>存摺封面已提交並鎖定。{LOCK_NOTICE}</span>
+                                        <span>{label}已提交並鎖定。{LOCK_NOTICE}</span>
                                     </div>
                                 </div>
                             ) : (
+                                <>
+                                {isDocUnlocked && <UnlockedNotice testId={`${key}-unlocked-notice`} compact />}
                                 <input
                                     ref={el => (fileRefs.current[key] = el)}
                                     data-testid={`${key}-file-input`}
@@ -958,6 +1078,7 @@ const ProfilePage = () => {
                                         e.target.value = '';
                                     }}
                                 />
+                                </>
                             )}
                         </div>
                         );
@@ -1397,6 +1518,16 @@ const Field = ({ label, required, children }) => (
             {label} {required && <span className="text-bauhaus-red">*</span>}
         </label>
         {children}
+    </div>
+);
+
+const UnlockedNotice = ({ testId, compact = false }) => (
+    <div
+        data-testid={testId}
+        className={`${compact ? 'mt-3 text-left' : 'mt-4'} border-2 border-bauhaus-black rounded-xl bg-bauhaus-blue/10 px-3 py-2 text-xs font-bold text-bauhaus-black leading-relaxed flex items-start gap-2`}
+    >
+        <Pencil className="w-4 h-4 mt-0.5 shrink-0 text-bauhaus-blue" />
+        <span>{UNLOCKED_NOTICE}</span>
     </div>
 );
 

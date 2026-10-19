@@ -1,7 +1,53 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-20（講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」已完成本機實測，分支 `feat/instructor-doc-edit-unlock`，待總指揮整合上線並套 migration `20261020120000`）。2026-10-19：表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+
+---
+
+## 🔐 2026-10-20：講師身分證／存摺／匯款「已有就鎖定，後台開放修改一次」＋修改紀錄（🛠 本機實測完成，待整合上線＋套 migration）
+
+**需求（業主 10/20）**：存摺或身分證照片只要已上傳（或已有匯入的舊資料）講師就不能自己改；要改由後台按「開放修改一次」，
+按一次給一次、講師存檔後自動鎖回，要再改就再按；避免大家自己改來改去沒人知道。業主同意的範圍：身分證正反面比照存摺鎖定、
+後台三顆按鈕（身分證正反面／存摺封面／匯款銀行資訊）、修改紀錄並保留舊檔、補「匯入雲端連結的存摺」漏洞。
+
+**完成（分支 `feat/instructor-doc-edit-unlock`，worktree `.claude/worktrees/doc-edit-unlock`，未推 main、未碰正式 Supabase）**：
+- 新 migration `supabase/migrations/20261020120000_instructor_document_edit_unlocks.sql`（可重複執行、單一交易）：
+  新表 `instructor_edit_unlocks`（一次性開放權限；同講師同項目最多一筆有效）與 `instructor_document_changes`（修改紀錄，只有 admin 可讀）；
+  新 trigger `trg_guard_instructor_locked_documents`（取代並刪除舊的 `trg_guard_instructor_bankbook`、`trg_guard_instructor_bank_account`）
+  ——非 admin 改到「原本已有資料」的身分證（正或反任一）／存摺／匯款時，必須用掉一筆對應開放，否則 42501；路徑或 `*_external_url` 任一非空就算已有資料（補漏洞）；
+  比對前一律 `NULLIF(BTRIM(...),'')`，修掉舊匯款 trigger 把 NULL 與空字串當成不同、會誤擋存檔的問題；
+  AFTER trigger `trg_log_instructor_document_changes` 記下每次變更（講師／管理員／系統、是否用了開放、新舊值，文件類含舊檔路徑）；
+  admin RPC `admin_grant_instructor_edit_unlock`（按兩次仍只有一筆）、`admin_revoke_instructor_edit_unlock`；
+  storage 講師更新／刪除政策改用 `is_protected_instructor_file()`：現行與曾經提交過的身分證／存摺檔講師都不能刪或覆寫（大頭照不受影響）。
+- 前端：`ProfilePage.jsx` 三張文件卡與匯款欄依 DB 正本＋開放狀態鎖定；開放時顯示藍色「管理員已開放修改一次，存檔後會自動鎖回。」與「更換檔案」，
+  選了新檔可「取消更換」；存檔後重讀開放狀態自動鎖回；身分證／存摺換新後不刪舊檔。`AdminInstructorEdit.jsx` 新增「講師自行修改權限」
+  （鎖定中／已開放＋收回／尚未提交；未認領講師停用）與「修改紀錄」（舊檔／新檔按需簽 300 秒連結、帳號遮罩），管理員代換文件也不刪舊檔。
+  共用規則 `src/lib/instructorDocumentLocks.js`；新資料表尚未套用時兩頁都照常運作（講師端照舊鎖定、後台顯示需先套 migration）。
+- 總指揮同場交辦一併修：① 講師存檔改「先 UPDATE、沒有列才 INSERT」（同 `cf62bf9` 那段；upsert 會先跑 INSERT trigger，認領過、主要 Email 非登入信箱的舊講師存檔 403）；
+  ② `ProfilePage` 讀 instructors 失敗時顯示「重新載入」，不再當成首次填表（原本會顯示空白表單、刪伺服器草稿，送出時用空白覆蓋）；
+  `ProfileCompleteGate` 查詢失敗時不判定完成度（原本把已完成的老師導回 /profile）。
+
+**證據（2026-10-20 本機實跑，沙盒外）**：
+- `npm run verify:doc-edit-unlock`（臨時 PostgreSQL，先套 20260818／20260825／20260826130000 再連套兩次新 migration）16/16 PASS；
+  另把「匯入連結也算已有資料」條件故意拿掉，確認第 12 項會 FAIL（測試有效）。
+- `npm run verify:doc-edit-unlock:profile-browser` 36/36（鎖定、匯入連結鎖定、開放→取消更換→更換存檔→不刪舊檔→自動鎖回、匯款開放、首次填寫、缺表照常、讀取失敗不清草稿、390px）。
+- `npm run verify:doc-edit-unlock:admin-browser` 33/33（開放／收回 RPC 參數、連點只送一次、未認領停用、修改紀錄四種、管理員換檔不刪舊身分證但照刪舊大頭照、缺表照常、390px）。
+- 既有 `node scripts/verify-profile-draft.mjs` 27/27（T9d 改為只看存摺卡：身分證現在也鎖，同句說明會出現三次；mock PATCH 同 cf62bf9）。
+- `npm test` 116/116（新增 10 項）；變更檔 ESLint 0 問題；截圖 `培訓web/docs/verification/2026-10-20-doc-edit-unlock/`（admin-desktop／admin-mobile／teacher-locked-desktop／teacher-unlocked-desktop／teacher-unlocked-mobile），
+  另派 agent 逐張判讀：可交付。
+
+**上線步驟（交總指揮）**：① Supabase SQL Editor 套 `20261020120000_instructor_document_edit_unlocks.sql`；套完檢查
+`SELECT tgname FROM pg_trigger WHERE tgname LIKE 'trg_%instructor%' ORDER BY 1;` 應有 `trg_guard_instructor_locked_documents`、`trg_log_instructor_document_changes`，
+且**不再有** `trg_guard_instructor_bankbook`／`trg_guard_instructor_bank_account`。② 合併分支推前端。順序無硬性要求：先推前端時開放按鈕顯示「需先套用資料庫更新」、講師端照舊鎖定；
+先套 migration 時舊前端的存摺／匯款鎖定行為不變，只是身分證在 DB 也開始擋（舊前端會顯示「儲存失敗：身分證照片已鎖定…」）。③ 上線後用一個講師帳號確認身分證卡顯示鎖定，
+後台按開放→講師更換存檔→後台修改紀錄出現一筆且可點舊檔。
+
+**地雷**：
+- 與並行工作衝突：`profile-save-docs`（`omitUnchangedDocumentFields`）與 `teacher-name-placeholder`（cf62bf9）都改了 ProfilePage 存檔同一段，合併時需手動對齊（本分支已含 cf62bf9 那段 UPDATE→INSERT）。
+- 舊的 `verify:bankbook-lock`、`scripts/verify-bank-account-lock.mjs` 只驗被取代的舊 migration 檔，套新 migration 後正式庫已不存在那兩個 trigger；以 `verify:doc-edit-unlock` 為準。
+- 開放權限沒有期限，開了沒用會一直有效；後台可「收回開放」。修改紀錄含完整帳號，只有 admin 讀得到。
+- 鎖定判準是「DB 已有資料」：管理員替講師清空某項後，講師可再自行填一次（預期行為，且會留紀錄）。
 
 ---
 
