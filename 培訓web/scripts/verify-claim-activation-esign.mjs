@@ -358,6 +358,65 @@ try {
   check('認領既有主檔（pending 啟用）的帳號不能由管理員直接核准開通',
     approveClaimed?.ok === false && approveClaimed.sqlstate === '23514' && roleOf(uId) === 'pending', approveClaimed);
 
+  // 路徑 4：後台手動綁定 admin_link_instructor（只綁不開通）
+  const linkSql = (instructorId, userId) => `SELECT public.admin_link_instructor(${ulit(instructorId)}, ${ulit(userId)})`;
+  const alInstructor = makeInstructor('手動綁定老師', 'al-old@t.test', { phone: '0944000222', idNumber: 'E123450002' });
+  const uAl = createAuthUser('al@t.test', '手動綁定 Google');
+  const alDenied = exec(uAl, linkSql(alInstructor, uAl));
+  check('非 admin 呼叫 admin_link_instructor → 42501', alDenied?.ok === false && alDenied.sqlstate === '42501' && !instructorOf(uAl), alDenied);
+  const al = exec(admin, linkSql(alInstructor, uAl));
+  check('admin_link_instructor：綁定成功', al?.ok && instructorOf(uAl)?.id === alInstructor, al);
+  check('admin_link_instructor：pending 帳號維持 pending（不再直接升 teacher）', roleOf(uAl) === 'pending');
+  const alAct = openActivation(uAl);
+  check('admin_link_instructor：寫 pending 啟用紀錄（claim_method admin_link、instructor_id、claimed_at）',
+    alAct?.status === 'pending' && alAct.claim_method === 'admin_link' && alAct.instructor_id === alInstructor && alAct.claimed_at && alAct.activated_at === null, alAct);
+  const alStatus = call(uAl, 'public.get_my_activation_status()').result;
+  check('手動綁定：get_my_activation_status → pending／admin_link', alStatus?.status === 'pending' && alStatus.claim_method === 'admin_link', alStatus);
+  const alApprove = exec(admin, `SELECT public.approve_new_instructor_account(${ulit(uAl)})`);
+  check('手動綁定的 pending 帳號也不能由 approve 直接開通', alApprove?.ok === false && alApprove.sqlstate === '23514' && roleOf(uAl) === 'pending', alApprove);
+  call(admin, `public.admin_confirm_instructor_email(${ulit(alInstructor)}, 'al@t.test', '電話確認')`);
+  const alOtp = freshOtp(uAl, 'account_activation');
+  const alVerify = verifyOtp(uAl, alOtp.id, alOtp.code);
+  const alActDone = openActivation(uAl);
+  check('手動綁定帳號由講師本人 OTP 啟用 → teacher、啟用紀錄 active（admin_link、otp 欄位齊全）',
+    alVerify.activated === true && roleOf(uAl) === 'teacher' && alActDone.status === 'active' && alActDone.claim_method === 'admin_link'
+    && alActDone.otp_challenge_id === alOtp.id && alActDone.otp_verified_at && alActDone.activation_email === 'al@t.test', { alVerify, alActDone });
+
+  // 已是 teacher：比照 mentor／admin 規則（不降級、不需再 OTP），寫 active 的 admin_link 讓簽約資格成立
+  const uAlTeacher = createAuthUser('al-teacher@t.test', '在職老師');
+  su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uAlTeacher)}`);
+  const alTeacherInstructor = makeInstructor('在職老師', 'alt-old@t.test', { phone: '0944000333', idNumber: 'E123450003' });
+  const alT = exec(admin, linkSql(alTeacherInstructor, uAlTeacher));
+  const alTAct = openActivation(uAlTeacher);
+  check('已是 teacher 的帳號手動綁定：角色不變、寫 active admin_link（otp 欄位 NULL）',
+    alT?.ok && roleOf(uAlTeacher) === 'teacher' && alTAct?.status === 'active' && alTAct.claim_method === 'admin_link'
+    && alTAct.otp_challenge_id === null && alTAct.activated_at && alTAct.instructor_id === alTeacherInstructor, { alT, alTAct });
+  call(admin, `public.admin_confirm_instructor_email(${ulit(alTeacherInstructor)}, 'al-teacher@t.test', 'Email 確認')`);
+  check('已是 teacher 的手動綁定帳號可直接要簽約碼（帳號有效）', requestOtp(uAlTeacher, 'contract_sign')?.status === 'sent');
+
+  // mentor：staff 免啟用紀錄
+  // repo 的 setup.sql 建 users.role CHECK 時只有 pending/teacher/admin，但整個應用（RLS、前端）都在用 mentor；
+  // 只在這個暫時資料庫把 CHECK 補上 mentor 來測 staff 規則（不改 repo SQL）。
+  su(`ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE public.users ADD CONSTRAINT users_role_check CHECK (role IN ('pending', 'teacher', 'mentor', 'admin'));`);
+  const uMentor = createAuthUser('mentor@t.test', '輔導員');
+  su(`UPDATE public.users SET role = 'mentor' WHERE id = ${lit(uMentor)}`);
+  const mentorInstructor = makeInstructor('輔導員本人', 'mentor-old@t.test', { phone: '0944000444', idNumber: 'E123450004' });
+  const alM = exec(admin, linkSql(mentorInstructor, uMentor));
+  check('mentor 手動綁定：角色維持 mentor、不寫啟用紀錄', alM?.ok && roleOf(uMentor) === 'mentor' && (activationsOf(uMentor) || []).length === 0, alM);
+  call(admin, `public.admin_confirm_instructor_email(${ulit(mentorInstructor)}, 'mentor@t.test', 'Email 確認')`);
+  check('mentor 手動綁定後可要簽約碼（staff 免啟用，仍須綁主檔＋已確認 Email）', requestOtp(uMentor, 'contract_sign')?.status === 'sent');
+
+  // 停用主檔：只綁定
+  const frozenInstructor = makeInstructor('停用老師', 'fz-old@t.test', { phone: '0944000555', idNumber: 'E123450005' });
+  su(`UPDATE public.instructors SET employment_status = 'frozen' WHERE id = ${lit(frozenInstructor)}`);
+  const uFrozen = createAuthUser('fz@t.test', '停用老師');
+  const alF = exec(admin, linkSql(frozenInstructor, uFrozen));
+  check('停用主檔手動綁定：只綁定、維持 pending、不寫啟用紀錄',
+    alF?.ok && instructorOf(uFrozen)?.id === frozenInstructor && roleOf(uFrozen) === 'pending' && (activationsOf(uFrozen) || []).length === 0, alF);
+  const alMissing = exec(admin, linkSql(randomUUID(), uFrozen));
+  check('admin_link_instructor：主檔不存在 → INSTRUCTOR_NOT_FOUND', alMissing?.ok === false && alMissing.message === 'INSTRUCTOR_NOT_FOUND', alMissing);
+
   // ════════════════════════════════════════════════════════════════
   group('OTP rules');
   check('Email 對應帳號沒有已確認 Email（新主檔未回填）→ no_confirmed_email', requestOtp(uEmail, 'account_activation')?.status === 'no_confirmed_email');
@@ -532,6 +591,11 @@ try {
   check('同意紀錄：IP 取 x-forwarded-for 第一段、UA 取 header、doc_versions、instructor_id',
     consentRow.ip_address === '198.51.100.7' && consentRow.user_agent === 'ConsentAgent/1.0' && JSON.stringify(consentRow.doc_versions) === JSON.stringify(V)
     && consentRow.instructor_id === emailInstructor, consentRow);
+  const privacySeed = suVal(`SELECT content FROM public.esign_text_versions WHERE version_code = 'esign-privacy-notice-v1'`);
+  const privacyLegal = legalQuoteLines('esign-privacy-notice-v1');
+  check('同意紀錄同時存同頁顯示的個資告知：privacy_notice_version＝esign-privacy-notice-v1、privacy_notice_text＝全文（逐句等於法規 §5-d）',
+    consentRow.privacy_notice_version === 'esign-privacy-notice-v1' && consentRow.privacy_notice_text === privacySeed
+    && privacyLegal.length >= 10 && privacyLegal.every((line) => consentRow.privacy_notice_text.includes(line)), consentRow.privacy_notice_text);
   check('不存在的文案代碼 → CONSENT_TEXT_UNKNOWN', errOf(recordConsent(uEmail, 'agree_electronic', V, 'esign-consent-v9')) === 'CONSENT_TEXT_UNKNOWN');
   check('決定值錯 → INVALID_INPUT', errOf(recordConsent(uEmail, 'maybe', V)) === 'INVALID_INPUT');
   check('pending（未啟用）帳號記同意 → ACCOUNT_NOT_ACTIVE', errOf(recordConsent(uSlot, 'agree_electronic', V)) === 'ACCOUNT_NOT_ACTIVE');
@@ -656,6 +720,10 @@ try {
     && notif.title === '講師選擇改以紙本簽約' && notif.body.includes('後建檔老師'), notif);
   const declineRow = suJson(`SELECT to_jsonb(r) FROM public.contract_consent_records r WHERE id = ${ulit(decline.result.consent_id)}`);
   check('decline 紀錄存 esign-decline-paper-v1 全文', declineRow.decision === 'decline_electronic' && declineRow.consent_text.startsWith('改以紙本簽約') && declineRow.consent_text.includes('講師管理辦法（第 1 版）'), declineRow.consent_text);
+  check('decline 紀錄也存個資告知版本與全文', declineRow.privacy_notice_version === 'esign-privacy-notice-v1' && declineRow.privacy_notice_text === privacySeed, declineRow);
+  check('個資告知欄位在 append-only 保護內（admin 改不了）',
+    exec(admin, `UPDATE public.contract_consent_records SET privacy_notice_text = 'x' WHERE id = ${ulit(decline.result.consent_id)}`)?.ok === false
+    && suExec(`UPDATE public.contract_consent_records SET privacy_notice_text = 'x' WHERE id = ${ulit(decline.result.consent_id)}`)?.message === 'EVIDENCE_IMMUTABLE');
 
   // 簽署途中契約改版
   const preConsent = recordConsent(uPre, 'agree_electronic', V).result.consent_id;

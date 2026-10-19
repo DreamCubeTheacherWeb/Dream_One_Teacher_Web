@@ -231,8 +231,7 @@ CREATE TABLE IF NOT EXISTS public.instructor_account_activations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   instructor_id uuid,
   user_id uuid NOT NULL,
-  claim_method text NOT NULL CHECK (claim_method IN (
-    'email_match', 'identity_check', 'name_slot', 'new_instructor_approved', 'legacy_pre_activation')),
+  claim_method text NOT NULL,
   claimed_at timestamptz NOT NULL DEFAULT now(),
   activation_email text,
   otp_challenge_id uuid,
@@ -242,6 +241,13 @@ CREATE TABLE IF NOT EXISTS public.instructor_account_activations (
   revoked_at timestamptz,
   revoked_reason text
 );
+
+-- claim_method 清單獨立成具名 CHECK，重跑時一併更新（admin_link＝後台手動綁定，2026-10-20 補）
+ALTER TABLE public.instructor_account_activations
+  DROP CONSTRAINT IF EXISTS instructor_account_activations_claim_method_check;
+ALTER TABLE public.instructor_account_activations
+  ADD CONSTRAINT instructor_account_activations_claim_method_check CHECK (claim_method IN (
+    'email_match', 'identity_check', 'name_slot', 'admin_link', 'new_instructor_approved', 'legacy_pre_activation'));
 
 COMMENT ON TABLE public.instructor_account_activations IS
   '講師帳號啟用紀錄。user_id／instructor_id 刻意不設外鍵：帳號刪除後紀錄仍保留作稽核。同一 user 同時只能有一筆 pending/active。';
@@ -324,6 +330,20 @@ CREATE TABLE IF NOT EXISTS public.contract_consent_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_contract_consent_records_user ON public.contract_consent_records (user_id, created_at DESC);
+
+-- 同意頁同時顯示的個資告知（esign-privacy-notice-v1）：版本代碼＋全文分欄保存，同意與不同意都存
+ALTER TABLE public.contract_consent_records
+  ADD COLUMN IF NOT EXISTS privacy_notice_version text,
+  ADD COLUMN IF NOT EXISTS privacy_notice_text text;
+
+DO $$ BEGIN
+  ALTER TABLE public.contract_consent_records ADD CONSTRAINT contract_consent_records_privacy_notice_version_fkey
+    FOREIGN KEY (privacy_notice_version) REFERENCES public.esign_text_versions(version_code);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+COMMENT ON COLUMN public.contract_consent_records.privacy_notice_text IS
+  '同意頁同時顯示的個資告知全文（record_contract_consent 固定帶入目前版本 privacy_notice_version）。';
 
 DO $$ BEGIN
   ALTER TABLE public.instructor_contracts ADD CONSTRAINT instructor_contracts_consent_id_fkey
@@ -1612,6 +1632,10 @@ DECLARE
   v_created timestamptz;
   v_prev text;
   v_user_name text;
+  -- 同意頁上同時顯示的個資告知：前端參數不變，由資料庫固定帶入目前版本（改版時改這裡並新增 -v2 文案）
+  v_privacy_version constant text := 'esign-privacy-notice-v1';
+  v_privacy_content text;
+  v_privacy_text text;
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'authentication required';
@@ -1636,7 +1660,17 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONSENT_TEXT_UNKNOWN';
   END IF;
 
+  SELECT t.content INTO v_privacy_content FROM public.esign_text_versions t WHERE t.version_code = v_privacy_version;
+  IF v_privacy_content IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONSENT_TEXT_UNKNOWN';
+  END IF;
+
   v_text := private.render_esign_text(v_content, jsonb_build_object(
+    'doc_list', private.esign_doc_list(p_doc_versions),
+    'masked_email', private.mask_email(v_email),
+    'instructor_name', v_full_name
+  ));
+  v_privacy_text := private.render_esign_text(v_privacy_content, jsonb_build_object(
     'doc_list', private.esign_doc_list(p_doc_versions),
     'masked_email', private.mask_email(v_email),
     'instructor_name', v_full_name
@@ -1647,10 +1681,10 @@ BEGIN
   v_prev := private.internal_write_begin();
   INSERT INTO public.contract_consent_records (
     user_id, instructor_id, decision, consent_text_version, consent_text, doc_versions,
-    ip_address, user_agent, created_at
+    ip_address, user_agent, created_at, privacy_notice_version, privacy_notice_text
   ) VALUES (
     v_uid, v_instructor_id, v_decision, v_version, v_text, p_doc_versions,
-    v_ip, v_ua, pg_catalog.now()
+    v_ip, v_ua, pg_catalog.now(), v_privacy_version, v_privacy_text
   )
   RETURNING id, created_at INTO v_id, v_created;
   PERFORM private.internal_write_end(v_prev);
@@ -2744,7 +2778,7 @@ BEGIN
     SELECT 1 FROM public.instructor_account_activations a
      WHERE a.user_id = target_user_id
        AND a.status = 'pending'
-       AND a.claim_method IN ('email_match', 'identity_check', 'name_slot')
+       AND a.claim_method IN ('email_match', 'identity_check', 'name_slot', 'admin_link')
   ) THEN
     RAISE EXCEPTION USING ERRCODE = '23514',
       MESSAGE = 'claimed account must be activated by the instructor via email verification';
@@ -2842,6 +2876,72 @@ $$;
 
 REVOKE ALL ON FUNCTION public.admin_unlink_instructor(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_unlink_instructor(uuid) TO authenticated;
+
+-- 7.6b 後台手動綁定：比照其他認領路徑「只綁不開通」
+--   * pending 帳號：綁定後維持 pending，寫 pending 啟用紀錄（admin_link），等講師本人用 Email OTP 啟用；
+--     不再直接升成 teacher（舊版 2025_instructor_claim.sql 會直接升）。
+--   * 已是 teacher：比照 mentor／admin 的規則＝已核准帳號不降級、不要求再做 OTP 啟用；
+--     因 teacher 簽約要有 active 啟用紀錄，這裡寫一筆 active 的 admin_link（otp 欄位為 NULL）。
+--   * mentor／admin：不寫啟用紀錄（staff 免啟用）；簽約仍須綁定主檔＋已確認 Email。
+--   * 主檔已停用（frozen／cancelled）：只綁定，不寫啟用紀錄、不改角色。
+CREATE OR REPLACE FUNCTION public.admin_link_instructor(target_instructor_id uuid, target_user_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_role text;
+  v_status text;
+  v_email text;
+  v_prev text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users u
+    WHERE u.id = auth.uid() AND u.role = 'admin'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'admin access required';
+  END IF;
+
+  SELECT u.role INTO v_role FROM public.users u WHERE u.id = target_user_id;
+  IF v_role IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'USER_NOT_FOUND';
+  END IF;
+
+  -- target_user_id 已綁其他講師主檔會被 instructors.user_id UNIQUE 擋住（與舊版相同）
+  UPDATE public.instructors i
+     SET user_id = target_user_id
+   WHERE i.id = target_instructor_id
+  RETURNING i.employment_status::text INTO v_status;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'INSTRUCTOR_NOT_FOUND';
+  END IF;
+
+  IF v_status IN ('frozen', 'cancelled') THEN
+    RETURN;
+  END IF;
+
+  IF v_role = 'pending' THEN
+    PERFORM private.open_pending_activation(target_user_id, target_instructor_id, 'admin_link');
+  ELSIF v_role = 'teacher' AND NOT EXISTS (
+    SELECT 1 FROM public.instructor_account_activations a
+     WHERE a.user_id = target_user_id AND a.status IN ('pending', 'active')
+  ) THEN
+    SELECT lower(BTRIM(au.email)) INTO v_email FROM auth.users au WHERE au.id = target_user_id;
+    v_prev := private.internal_write_begin();
+    INSERT INTO public.instructor_account_activations (
+      instructor_id, user_id, claim_method, claimed_at, activation_email, activated_at, status
+    ) VALUES (
+      target_instructor_id, target_user_id, 'admin_link', pg_catalog.now(), v_email, pg_catalog.now(), 'active'
+    );
+    PERFORM private.internal_write_end(v_prev);
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_link_instructor(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_link_instructor(uuid, uuid) TO authenticated;
 
 -- 7.7 刪除帳號：有任何簽署證據（契約、同意紀錄、證據列）就拒絕；啟用紀錄改 revoked 保留
 CREATE OR REPLACE FUNCTION public.delete_user_completely(target_user_id uuid)
