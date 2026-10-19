@@ -27,6 +27,7 @@
     "verify:contract-signing": "node scripts/verify-contract-signing-rpc.mjs",
     "verify:contract-signing:browser": "node scripts/verify-contract-feature-enabled.mjs",
     "verify:contract-document-reads": "node scripts/verify-contract-document-reads.mjs",
+    "verify:legacy-claim-cleanup": "node scripts/verify-legacy-claim-cleanup.mjs",
     "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs",
     "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs",
     "e2e:onboarding": "node scripts/e2e/run-onboarding.mjs"
