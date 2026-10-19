@@ -49,6 +49,8 @@ async function queryUserRows(userId) {
         if (attempt > 0) await sleep(PROFILE_RETRY_DELAY_MS);
         try {
             const token = (await supabase.auth.getSession()).data?.session?.access_token;
+            // 沒有登入憑證時 rawQuery 會改用匿名金鑰查，必然回空陣列，不能當成「查無此帳號」
+            if (!token) throw new Error('登入憑證暫時無法取得');
             const rows = await rawQuery('users', { select: '*', id: `eq.${userId}` }, token, { strict: true });
             if (!Array.isArray(rows)) throw new Error('users 查詢回應格式不符');
             return rows;

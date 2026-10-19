@@ -7,6 +7,8 @@ import App from './App.jsx'
 // 自動重新整理一次拿最新版；用 sessionStorage 記錄，避免新版本也載不到時無限重整。
 const RELOAD_FLAG = 'chunk-reload-at'
 window.addEventListener('vite:preloadError', (event) => {
+  // 斷網時重整只會換成瀏覽器的「無法連線」畫面；交給頁面的錯誤提示框，連線恢復後使用者再重試
+  if (!navigator.onLine) return
   let alreadyReloaded = false
   try {
     const last = Number(window.sessionStorage.getItem(RELOAD_FLAG) || 0)
