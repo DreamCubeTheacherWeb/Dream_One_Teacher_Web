@@ -325,7 +325,8 @@ export async function scenarioA(ctx) {
 export async function scenarioB(ctx) {
   const r = ctx.r;
   const slotName = '測試王小明';
-  const slot = await adminCreateInstructor(ctx.api, ctx.base.admin, { full_name: slotName, name_slot: true });
+  // 與後台「新增老師（只填姓名）」送出的欄位相同（src/pages/admin/InstructorList.jsx:1147-1151）
+  const slot = await adminCreateInstructor(ctx.api, ctx.base.admin, { full_name: slotName, employment_status: 'active', name_slot: true });
   r.check('B 管理員用 REST 建立 name_slot 空位', slot.name_slot === true && slot.user_id === null);
   const user = await newUser(ctx, 'b-slot', '小明 Wang');
   const s = await openAs(ctx.browser, ctx.stack, user);
@@ -370,7 +371,7 @@ export async function scenarioB(ctx) {
     let sign = await signContractUI(ctx, s, user, 'B');
     if (sign.roleMissing) {
       await shot(s.page, ctx.shotsDir, 'B-04-contract-role-missing');
-      ctx.known('B 空位沒有講師等級→不能簽約', 'B［產品缺口］管理員只填姓名建立的空位沒有講師等級（instructor_role 為 NULL）；老師認領並填完資料後，合約頁顯示「尚無法簽署：您的講師等級尚未設定」，要管理員另外設定等級才能簽約（src/pages/ContractSigningFlow.jsx:169 roleMissing；trigger guard_instructor_role 只在老師自己 INSERT 時預設「實習」，管理員建立的空位不會）。');
+      ctx.known('B 空位沒有講師等級→不能簽約', 'B［產品缺口］管理員只填姓名建立的空位沒有講師等級（instructor_role 為 NULL）；老師認領並填完資料後，合約頁顯示「尚無法簽署：您的講師等級尚未設定」，要管理員另外設定等級才能簽約（src/pages/ContractSigningFlow.jsx:169 roleMissing；trigger guard_instructor_role 只在老師自己 INSERT 時預設「實習」；後台新增空位 src/pages/admin/InstructorList.jsx:1147-1151 也沒帶等級）。');
       r.note('B 合約頁顯示「講師等級尚未設定」→ 管理員以 REST 設定等級「實習」後重試');
       const patch = await ctx.api.rest(ctx.base.admin.token, 'PATCH', `instructors?id=eq.${slot.id}`, { body: { instructor_role: '實習' } });
       r.check('B 管理員補設講師等級', patch.status === 204, `HTTP ${patch.status}`);
