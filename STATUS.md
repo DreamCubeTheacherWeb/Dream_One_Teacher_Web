@@ -185,6 +185,8 @@ pending 排最前無法在正式資料上看到）；2025/08 內搜尋第一位�
 「時薪」→「每小時」；後台報酬登記中心原本「（待核薪 N）」改為「（N 筆尚無金額）」，保留「還沒有金額」這個資訊（否則與既有的「待核准」狀態分不出來）。
 `pricing_status=needs_review` 的意義不變（仍是管理員要填金額），只是講師與管理員看到的字一樣叫「待核准」。驗證：`npm test` 106/106、變更檔 ESLint 0、
 `verify-speed-salary-ui` 9/9、`verify:salary-report-form:browser` 51/51、build 通過；src／scripts 內「薪」字 0 處（另一條工作線的 `salaryRegisterQuery.js` 註解除外）。
+**上線證據**：業主「可以，推上 main 部署」後 `52f2b4a` fast-forward 推上 `main`（15:39 UTC），GitHub deployment `7178131174` success（15:40:50 UTC）；
+每 60 秒探測正式站，15:41 起連續 5 次命中 `index-CX0z0Cbk.js`（SHA-256 前綴 `37d682368cc6e644`），內含「筆尚無金額」、不含「核薪／待核薪／時薪」。
 
 **正式環境證據（2026-10-19 23:15–23:32 台北）**：業主指示「可以，幫我把 migration 貼進 Supabase SQL Editor，我按 Run，然後推上 main 部署」，
 隨後明確要求「你按 Run」。Claude 透過 Chrome 擴充功能在 DreamCube_teacher（PRODUCTION，ref `mnovjlicwzwkefkhstte`）SQL Editor 先跑唯讀核對：
