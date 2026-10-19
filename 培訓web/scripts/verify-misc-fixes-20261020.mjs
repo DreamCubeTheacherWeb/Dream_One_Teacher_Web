@@ -3,6 +3,7 @@
 //  1. 後台「培訓進度總覽」：超過 1000 筆進度時要分頁抓完，完成數才不會被低估。
 //  2. 後台「作業審核中心」：改成 effect 內載入（修 lint）後，頁面載入、分組、待審核數、輔導員選單行為不變。
 //  3. 登入核心（AuthContext）：users 查詢遇到 5xx 要重試，不可把已存在的帳號當成新使用者／待審核。
+//  4. 後台課程編輯（CMSManager）：章節標題／「需繳交作業」寫入失敗時，畫面要還原並提示（不能顯示成已存）。
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
@@ -294,6 +295,65 @@ async function verifyAuthRetry(browser, base) {
     }
 }
 
+// ───────────────────────── 4. 課程編輯：章節寫入失敗要還原畫面並提示 ─────────────────────────
+async function verifyCmsWriteFailures(browser, base) {
+    const adminId = '00000000-0000-4000-8000-000000000204';
+    const { authUser, session } = makeSession(adminId, 'cms-admin@test.local', '課程測試管理員');
+    const courseId = '10000000-0000-4000-8000-000000000204';
+    const lessonId = '30000000-0000-4000-8000-000000000204';
+    let failWrites = true;
+    const lessonPatches = [];
+    const scenario = {
+        authUser, session,
+        tables: {
+            users: () => [{ id: adminId, name: '課程測試管理員', email: authUser.email, role: 'admin', created_at: now }],
+            course_categories: () => [{ id: 'cat1', title: '測試分類', visibility: 'all', is_published: true, order: 0 }],
+            courses: () => [{ id: courseId, title: '測試課程', description: '', is_published: true, category_id: 'cat1', visibility: 'all' }],
+            lessons: async (url, request) => {
+                if (request.method() === 'PATCH') {
+                    lessonPatches.push(JSON.parse(request.postData() || '{}'));
+                    return failWrites ? { status: 500, body: { message: 'simulated write failure' } } : [];
+                }
+                return [{ id: lessonId, course_id: courseId, title: '第一章', order: 0, requires_assignment: false, assignment_for: null, tags: [] }];
+            },
+        },
+    };
+    const { context, page } = await openPage(browser, scenario);
+    const dialogs = [];
+    page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
+    await page.goto(`${base}/admin/cms/${courseId}`, { waitUntil: 'networkidle' });
+    const titleInput = page.getByPlaceholder('輸入章節標題...');
+    await titleInput.waitFor();
+    const requiresBox = page.getByRole('checkbox').nth(1); // 第 0 個是「發佈此課程」
+
+    // 寫入失敗：標題
+    await titleInput.fill('改壞的標題');
+    await titleInput.blur();
+    await page.waitForFunction(() => document.querySelector('input[placeholder="輸入章節標題..."]').value === '第一章', null, { timeout: 5000 }).catch(() => {});
+    check('課程編輯（寫入失敗）：標題還原成「第一章」並跳出提示', await titleInput.inputValue() === '第一章' && dialogs.some(d => d.includes('章節標題儲存失敗')), `value=${await titleInput.inputValue()}、提示=${dialogs.join('|')}`);
+
+    // 寫入失敗：需繳交作業
+    dialogs.length = 0;
+    await requiresBox.check({ force: true, noWaitAfter: true }).catch(() => {});
+    await page.waitForTimeout(800);
+    check('課程編輯（寫入失敗）：「需繳交作業」勾選被還原成未勾並跳出提示', !(await requiresBox.isChecked()) && dialogs.some(d => d.includes('需繳交作業')), `checked=${await requiresBox.isChecked()}、提示=${dialogs.join('|')}`);
+
+    // 寫入成功：照舊保留改動、不跳提示
+    failWrites = false;
+    dialogs.length = 0;
+    lessonPatches.length = 0;
+    await titleInput.fill('第一章（新版）');
+    await titleInput.blur();
+    await page.waitForTimeout(800);
+    await requiresBox.check({ force: true });
+    await page.waitForTimeout(800);
+    check('課程編輯（寫入成功）：標題與勾選保留、沒有錯誤提示、兩筆更新都送出',
+        await titleInput.inputValue() === '第一章（新版）' && await requiresBox.isChecked() && dialogs.length === 0
+            && lessonPatches.some(b => b.title === '第一章（新版）') && lessonPatches.some(b => b.requires_assignment === true),
+        `title=${await titleInput.inputValue()}、checked=${await requiresBox.isChecked()}、提示=${dialogs.length}、PATCH=${JSON.stringify(lessonPatches)}`);
+    await context.close();
+}
+
 async function run() {
     const port = await reservePort();
     const base = `http://127.0.0.1:${port}`;
@@ -315,6 +375,7 @@ async function run() {
         await verifyProgressOverviewPaging(browser, base);
         await verifyAssignmentReviewLoads(browser, base);
         await verifyAuthRetry(browser, base);
+        await verifyCmsWriteFailures(browser, base);
     } finally {
         if (browser) await browser.close();
         vite.kill('SIGTERM');
