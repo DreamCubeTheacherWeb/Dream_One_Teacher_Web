@@ -28,82 +28,87 @@ const AssignmentReview = () => {
     const isAdmin = profile?.role === 'admin';
 
     useEffect(() => {
-        fetchAll();
-    }, []);
+        let cancelled = false;
+        (async () => {
+            const [assignRes, allMentorsRes] = await Promise.all([
+                supabase
+                    .from('assignments')
+                    .select('*, lessons(title, course_id, courses(title))')
+                    .order('created_at', { ascending: false }),
+                supabase
+                    .from('users')
+                    .select('mentor_name')
+                    .not('mentor_name', 'is', null),
+            ]);
+            if (cancelled) return;
 
-    const fetchAll = async () => {
-        const [assignRes, allMentorsRes] = await Promise.all([
-            supabase
-                .from('assignments')
-                .select('*, lessons(title, course_id, courses(title))')
-                .order('created_at', { ascending: false }),
-            supabase
-                .from('users')
-                .select('mentor_name')
-                .not('mentor_name', 'is', null),
-        ]);
+            const allAssignments = assignRes.data || [];
+            setAssignments(allAssignments);
 
-        const allAssignments = assignRes.data || [];
-        setAssignments(allAssignments);
+            const allMentorNames = [...new Set((allMentorsRes.data || []).map(u => u.mentor_name).filter(Boolean))].sort();
+            setMentorList(allMentorNames);
 
-        const allMentorNames = [...new Set((allMentorsRes.data || []).map(u => u.mentor_name).filter(Boolean))].sort();
-        setMentorList(allMentorNames);
+            const uids = [...new Set(allAssignments.map((a) => a.user_id))];
+            if (uids.length > 0) {
+                const { data: userData } = await supabase
+                    .from('users')
+                    .select('id, name, email, role, mentor_name')
+                    .in('id', uids);
+                if (cancelled) return;
+                const uMap = {};
+                userData?.forEach((u) => { uMap[u.id] = u; });
+                setUsers(uMap);
 
-        const uids = [...new Set(allAssignments.map((a) => a.user_id))];
-        if (uids.length > 0) {
-            const { data: userData } = await supabase
-                .from('users')
-                .select('id, name, email, role, mentor_name')
-                .in('id', uids);
-            const uMap = {};
-            userData?.forEach((u) => { uMap[u.id] = u; });
-            setUsers(uMap);
-
-            const { data: instrData } = await supabase
-                .from('instructors')
-                .select('user_id, full_name, nickname, instructor_role')
-                .in('user_id', uids);
-            const iMap = {};
-            instrData?.forEach((i) => { iMap[i.user_id] = i; });
-            setInstructors(iMap);
-        }
-
-        const assignIds = allAssignments.map(a => a.id);
-        if (assignIds.length > 0) {
-            const { data: fbData } = await supabase
-                .from('assignment_feedbacks')
-                .select('*')
-                .in('assignment_id', assignIds)
-                .order('created_at', { ascending: true });
-
-            const fbMap = {};
-            const authorUids = new Set();
-            (fbData || []).forEach(fb => {
-                if (!fbMap[fb.assignment_id]) fbMap[fb.assignment_id] = [];
-                fbMap[fb.assignment_id].push(fb);
-                authorUids.add(fb.user_id);
-            });
-            setFeedbacksMap(fbMap);
-
-            if (authorUids.size > 0) {
-                const authorIds = [...authorUids];
-                const [{ data: authorInstr }, { data: authorUsers }] = await Promise.all([
-                    supabase.from('instructors').select('user_id, full_name, nickname').in('user_id', authorIds),
-                    supabase.from('users').select('id, name, role').in('id', authorIds),
-                ]);
-                const aMap = {};
-                authorUsers?.forEach(u => { aMap[u.id] = { name: u.name, role: u.role }; });
-                authorInstr?.forEach(i => {
-                    if (!aMap[i.user_id]) aMap[i.user_id] = {};
-                    aMap[i.user_id].full_name = i.full_name;
-                    aMap[i.user_id].nickname = i.nickname;
-                });
-                setFeedbackAuthors(aMap);
+                const { data: instrData } = await supabase
+                    .from('instructors')
+                    .select('user_id, full_name, nickname, instructor_role')
+                    .in('user_id', uids);
+                if (cancelled) return;
+                const iMap = {};
+                instrData?.forEach((i) => { iMap[i.user_id] = i; });
+                setInstructors(iMap);
             }
-        }
 
-        setLoading(false);
-    };
+            const assignIds = allAssignments.map(a => a.id);
+            if (assignIds.length > 0) {
+                const { data: fbData } = await supabase
+                    .from('assignment_feedbacks')
+                    .select('*')
+                    .in('assignment_id', assignIds)
+                    .order('created_at', { ascending: true });
+                if (cancelled) return;
+
+                const fbMap = {};
+                const authorUids = new Set();
+                (fbData || []).forEach(fb => {
+                    if (!fbMap[fb.assignment_id]) fbMap[fb.assignment_id] = [];
+                    fbMap[fb.assignment_id].push(fb);
+                    authorUids.add(fb.user_id);
+                });
+                setFeedbacksMap(fbMap);
+
+                if (authorUids.size > 0) {
+                    const authorIds = [...authorUids];
+                    const [{ data: authorInstr }, { data: authorUsers }] = await Promise.all([
+                        supabase.from('instructors').select('user_id, full_name, nickname').in('user_id', authorIds),
+                        supabase.from('users').select('id, name, role').in('id', authorIds),
+                    ]);
+                    if (cancelled) return;
+                    const aMap = {};
+                    authorUsers?.forEach(u => { aMap[u.id] = { name: u.name, role: u.role }; });
+                    authorInstr?.forEach(i => {
+                        if (!aMap[i.user_id]) aMap[i.user_id] = {};
+                        aMap[i.user_id].full_name = i.full_name;
+                        aMap[i.user_id].nickname = i.nickname;
+                    });
+                    setFeedbackAuthors(aMap);
+                }
+            }
+
+            setLoading(false);
+        })();
+        return () => { cancelled = true; };
+    }, []);
 
     const getFeedbackAuthorDisplay = (uid) => {
         const a = feedbackAuthors[uid];

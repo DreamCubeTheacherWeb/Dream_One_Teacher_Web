@@ -32,6 +32,32 @@ export const omitUnchangedDocumentFields = (payload = {}, savedDocumentFields = 
     return next;
 };
 
+// 已有主檔時走 UPDATE：user_id 已是 WHERE 條件不重送；主要 Email 與載入時相同也不送。
+// 資料庫 trigger 是「UPDATE OF user_id, email_primary」（Email 守門，只放行 pending／teacher）與
+// 「UPDATE OF user_id, employment_status」（凍結／停止合作就把 teacher 降回 pending），
+// 欄位只要出現在 SET 清單就會觸發，即使值沒變：mentor 會存不了自己的個人頁，
+// 已凍結但被管理員手動恢復 teacher 的講師存一次就被降回 pending。
+// 第一次建主檔（INSERT）仍要送 user_id 與 email_primary，不走這裡。
+export const toInstructorUpdatePayload = (payload = {}, savedEmailPrimary = null) => {
+    const next = { ...payload };
+    delete next.user_id;
+    if ((next.email_primary ?? null) === (savedEmailPrimary ?? null)) delete next.email_primary;
+    return next;
+};
+
+const INSTRUCTOR_EMAIL_GUARD_MESSAGES = [
+    'changed instructor email must match the signed-in Google account',
+    'new instructor email must match the signed-in Google account',
+];
+
+// 資料庫 Email 守門 trigger 的英文錯誤轉成講師看得懂的中文；其他錯誤維持原訊息。
+export const describeInstructorSaveError = (error, { googleEmail } = {}) => {
+    const message = error?.message || String(error ?? '');
+    if (!INSTRUCTOR_EMAIL_GUARD_MESSAGES.some((guardMessage) => message.includes(guardMessage))) return message;
+    const account = googleEmail ? `（${googleEmail}）` : '';
+    return `主要 Email 必須是你登入用的 Google 信箱${account}；若要改用其他信箱，請聯繫管理員。`;
+};
+
 export const stripAdminManagedInstructorFields = (values = {}) => {
     const editableValues = { ...values };
     ADMIN_MANAGED_FIELDS.forEach((field) => delete editableValues[field]);

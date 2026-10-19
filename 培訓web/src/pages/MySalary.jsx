@@ -115,12 +115,26 @@ const MySalary = () => {
     const load = useCallback(async () => {
         setLoading(true);
         setLoadError('');
-        // 自己的彙總(VIEW 自動依 RLS 過濾)
-        const [sumRes, sessRes] = await Promise.all([
-            supabase.from('instructor_salary_summary').select('*').eq('user_id', user.id).maybeSingle(),
-            supabase.from('class_sessions').select('*').order('session_date', { ascending: false }).limit(1000),
-        ]);
-        if (sumRes.error || sessRes.error) {
+        // 先取自己的彙總(依 user_id 篩出本人的講師主檔)，清單再用它的 instructor_id 限定本人：
+        // 管理員／輔導員的 RLS 可讀全部報酬紀錄，清單若不帶本人條件，會變成全體講師最近 1000 筆。
+        const sumRes = await supabase.from('instructor_salary_summary').select('*').eq('user_id', user.id).maybeSingle();
+        if (sumRes.error) {
+            setLoadError('報酬資料暫時無法載入，請稍後再試。');
+            setLoading(false);
+            return;
+        }
+        const ownInstructorId = sumRes.data?.instructor_id;
+        if (!ownInstructorId) {
+            // 沒有講師主檔：沒有本人的紀錄，不送不帶條件的清單查詢
+            setSummary(sumRes.data);
+            setSessions([]);
+            setLoading(false);
+            return;
+        }
+        const sessRes = await supabase.from('class_sessions').select('*')
+            .eq('instructor_id', ownInstructorId)
+            .order('session_date', { ascending: false }).limit(1000);
+        if (sessRes.error) {
             setLoadError('報酬資料暫時無法載入，請稍後再試。');
         } else {
             setSummary(sumRes.data);

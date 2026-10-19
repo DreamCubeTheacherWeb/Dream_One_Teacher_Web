@@ -94,6 +94,7 @@ const INSTRUCTOR = {
     hide_from_leaderboard: false,
 };
 const SALARY_SUMMARY = {
+    instructor_id: INSTRUCTOR.id,   // 真實 VIEW 有此欄；我的報酬清單 2026-10-20 起用它限定本人
     user_id: UID,
     full_name: INSTRUCTOR.full_name,
     this_month_salary: 0,

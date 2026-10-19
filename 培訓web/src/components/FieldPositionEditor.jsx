@@ -58,10 +58,6 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
   const scale = containerWidth / pdfPageSize.width;
 
   useEffect(() => {
-    if (isOpen && docType && docVersion) loadExistingPositions();
-  }, [isOpen, docType, docVersion]);
-
-  useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(entries => {
       for (const e of entries) setContainerWidth(e.contentRect.width);
@@ -70,7 +66,7 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
     return () => ro.disconnect();
   }, [isOpen]);
 
-  const loadExistingPositions = async () => {
+  const loadExistingPositions = useCallback(async () => {
     const { data } = await supabase
       .from('contract_field_positions')
       .select('*')
@@ -90,7 +86,11 @@ const FieldPositionEditor = ({ isOpen, onClose, docType, docVersion, pdfUrl }) =
     } else {
       setFields([]);
     }
-  };
+  }, [docType, docVersion]);
+
+  useEffect(() => {
+    if (isOpen && docType && docVersion) loadExistingPositions();
+  }, [isOpen, docType, docVersion, loadExistingPositions]);
 
   const onDocumentLoadSuccess = useCallback(({ numPages: n }) => {
     setNumPages(n);

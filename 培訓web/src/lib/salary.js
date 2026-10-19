@@ -2,18 +2,6 @@ import { supabase } from './supabaseClient';
 
 export const taipeiToday = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-export const emptySalaryQuote = {
-    loading: false,
-    matched: false,
-    needs_review: false,
-    message: '',
-    pricing_basis: null,
-    pricing_label: null,
-    pricing_mode: null,
-    applied_rate: null,
-    base_salary: null,
-};
-
 const optionalNumber = (value) => value === '' || value === null || value === undefined
     ? null
     : Number(value);
