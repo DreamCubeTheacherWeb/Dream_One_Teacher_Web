@@ -44,7 +44,10 @@ export async function startStack({ appDir, viteMode = 'preview', log = console.l
   try {
     const t0 = Date.now();
     await db.start();
-    stack.chainReport = db.applyChain(appDir, { bootstrapFile: path.join(appDir, 'scripts/e2e/bootstrap.sql') });
+    stack.chainReport = db.applyChain(appDir, {
+      bootstrapFile: path.join(appDir, 'scripts/e2e/bootstrap.sql'),
+      afterChainFile: path.join(appDir, 'scripts/e2e/bootstrap-after-chain.sql'),
+    });
     log(`[stack] PostgreSQL ${db.port}（PID ${db.pid}）已套 ${stack.chainReport.applied.length} 個 SQL 檔（${Date.now() - t0} ms）`);
 
     const jwtSecret = randomSecret();

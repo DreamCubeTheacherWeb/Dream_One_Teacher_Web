@@ -185,7 +185,7 @@ export class TempPostgres {
   }
 
   // 套 bootstrap → supabase/*.sql（實際順序）→ supabase/migrations/*.sql（檔名順序）
-  applyChain(appDir, { bootstrapFile }) {
+  applyChain(appDir, { bootstrapFile, afterChainFile } = {}) {
     const report = { applied: [], patched: [], skipped: [], unlisted: [] };
     this.psqlSync(null, { file: bootstrapFile, tuplesOnly: false });
     report.applied.push('scripts/e2e/bootstrap.sql');
@@ -224,6 +224,10 @@ export class TempPostgres {
         throw err;
       }
       report.applied.push(rel);
+    }
+    if (afterChainFile) {
+      this.psqlSync(null, { file: afterChainFile, tuplesOnly: false });
+      report.applied.push(path.relative(appDir, afterChainFile));
     }
     return report;
   }

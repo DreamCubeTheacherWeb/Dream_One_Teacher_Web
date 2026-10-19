@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * 老師入門端到端測試（第一階段）：本機假 Supabase＋真瀏覽器。
+ * 老師入門＋帳號啟用＋電子簽約端到端測試（第一、二階段）：本機假 Supabase＋真瀏覽器。
  *
  *   npm run e2e:onboarding                    # 預設連跑 3 次，每次全新資料庫
  *   npm run e2e:onboarding -- --runs=1        # 只跑 1 次
@@ -19,7 +19,12 @@ import { startStack } from './lib/stack.mjs';
 import { makeApi, seedBaseline } from './lib/fixtures.mjs';
 import { launchBrowser } from './lib/browser.mjs';
 import { Results } from './lib/util.mjs';
-import { SCENARIOS, selfTest } from './scenarios.mjs';
+import { SCENARIOS as TEACHER_SCENARIOS, selfTest } from './scenarios.mjs';
+import { ADMIN_SCENARIOS } from './scenarios-admin.mjs';
+import { ESIGN_SCENARIOS } from './scenarios-esign.mjs';
+
+// 執行順序有意義：SEC 的最後一步會竄改證據鏈（全域），必須排最後
+const SCENARIOS = { ...TEACHER_SCENARIOS, ...ADMIN_SCENARIOS, ...ESIGN_SCENARIOS };
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
@@ -29,7 +34,7 @@ const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
 const runs = Number(args.runs || 3);
 const only = args.only ? args.only.split(',').map((x) => x.trim().toUpperCase()) : Object.keys(SCENARIOS);
 const viteMode = args.vite === 'dev' ? 'dev' : 'preview';
-const shotsDir = path.join(appDir, 'docs/verification/2026-10-20-teacher-onboarding-e2e');
+const shotsDir = path.join(appDir, 'docs/verification/2026-10-20-esign-e2e');
 mkdirSync(shotsDir, { recursive: true });
 
 let activeStack = null;
@@ -59,7 +64,7 @@ async function runOnce(runIndex) {
     const api = makeApi(activeStack);
     const base = await seedBaseline(activeStack, api);
     activeBrowser = await launchBrowser(appDir);
-    const ctx = { stack: activeStack, api, base, browser: activeBrowser, r, shotsDir, findings, consoleErrors, run: runIndex };
+    const ctx = { stack: activeStack, api, base, browser: activeBrowser, r, shotsDir, findings, consoleErrors, run: runIndex, state: {} };
     // 已知問題：同時進「發現」清單與 KNOWN-ISSUE 計數
     ctx.known = (title, text) => { findings.add(text); r.known(title); };
     console.log('\n── 底座自檢 ──');
