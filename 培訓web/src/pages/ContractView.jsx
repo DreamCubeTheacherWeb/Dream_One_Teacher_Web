@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useEffectEvent } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
@@ -19,10 +19,6 @@ const ContractView = () => {
   const [docMeta, setDocMeta] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-
-  useEffect(() => {
-    if (user && contractId) loadContract();
-  }, [user, contractId]);
 
   const loadContract = async () => {
     setLoading(true);
@@ -80,6 +76,14 @@ const ContractView = () => {
     }
     setLoading(false);
   };
+
+  // 只在登入者或合約編號改變時載入；用 Effect Event 讀最新的 loadContract，不把它列進依賴。
+  const onContractTargetChange = useEffectEvent(() => {
+    if (user && contractId) loadContract();
+  });
+  useEffect(() => {
+    onContractTargetChange();
+  }, [user, contractId]);
 
   const handleDownloadPdf = async (docType) => {
     const url = signedPdfUrls[docType];
