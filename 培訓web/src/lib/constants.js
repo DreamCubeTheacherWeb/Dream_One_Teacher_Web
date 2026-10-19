@@ -16,35 +16,60 @@ export const COURSE_LABELS = {
     other: '其他',
 };
 
-// 講師回報頁的分層選單（業主 2026-10-19：照原 Google 課後回報表單，最上面先選 B2B／B2C 並備註哪種課選哪個）。
-// 第一層「回報類別」、第二層「課程類型」用表單原本的用語；第三層「報酬項目」才是報酬規則使用的 course_type（資料庫欄位不變），
-// 同一種課只有一個報酬項目時第三層自動帶入、不顯示。
+// 講師回報頁的分層選單（業主 2026-10-19：選項與欄位要和兩份 Google 課後回報表單一樣，最上面先選 B2B／B2C 並備註哪種課選哪個）。
+// 第一層「回報類別」對應表單；第二層「課程種類」用表單原本的選項文字；第三層才是報酬規則使用的 course_type（資料庫欄位不變），
+// 只有同一種課對應多個報酬規則時才顯示，顯示文字照表單的問法（合作課＝課程講師身分別、營隊＝是否為營隊負責人）。
+// 兩份表單都沒有的課（常態課、站櫃等）放在「其他課程」，欄位維持原本的完整版。
 export const REPORT_CHANNELS = [
-    { key: 'b2c', label: 'B2C 直營課程', hint: '公司自己開的課：到府家教課／揪團課、線上課程、體驗課、速解研究所、寒暑假營隊、常態課、站櫃。' },
-    { key: 'b2b', label: 'B2B 合作單位', hint: '學校、社團、機構等合作單位委託的課，要填教學課程期間與上課單位。' },
+    { key: 'b2c', label: 'B2C 直營課程部', hint: '到府家教課／揪團課、線上課程、體驗課、速解研究所、寒暑假營隊（同「課後回報表單｜二處 B2C 版本」）。' },
+    { key: 'b2b', label: 'B2B 合作單位課程', hint: '補習班、學校社團、講座等合作單位的課（同「B2B 合作單位課程 課後回報單」）。' },
+    { key: 'other', label: '其他課程', hint: '不在上面兩份表單裡的課：常態課、幼兒啟蒙、速解培訓、站櫃／擺攤、認證、特殊講座。' },
 ];
 
 export const COURSE_CATEGORIES = [
-    { key: 'regular', channel: 'b2c', label: '常態課', types: ['regular_basic', 'regular_advanced', 'kids_lead', 'kids_assistant'] },
-    { key: 'onsite', channel: 'b2c', label: '到府家教課／到府揪團課', types: ['onsite_2hr', 'onsite_1_5hr'] },
+    { key: 'onsite', channel: 'b2c', label: '到府家教課 or 到府揪團課', types: ['onsite_2hr', 'onsite_1_5hr'] },
     { key: 'online', channel: 'b2c', label: '線上課程', types: ['online', 'overseas_online'] },
     { key: 'trial', channel: 'b2c', label: '體驗課', types: ['trial'] },
-    { key: 'speed_onsite', channel: 'b2c', label: '速解研究所｜實體課程', types: ['speed_onsite', 'speed_training_lead', 'speed_training_assistant'] },
+    { key: 'speed_onsite', channel: 'b2c', label: '速解研究所｜實體課程', types: ['speed_onsite'] },
     { key: 'speed_online', channel: 'b2c', label: '速解研究所｜線上課程', types: ['speed_online'] },
-    { key: 'camp', channel: 'b2c', label: '寒暑假營隊', types: ['camp', 'camp_director_5d', 'camp_director_4d', 'camp_director_2d', 'speed_camp'] },
-    { key: 'counter', channel: 'b2c', label: '站櫃／擺攤', types: ['counter', 'event_booth'] },
-    { key: 'other', channel: 'b2c', label: '其他', types: ['cert_sub_judge', 'special_lecture_recorded', 'special_lecture_unrecorded', 'other'] },
-    { key: 'collab', channel: 'b2b', label: '合作單位課程', types: ['collab_lead', 'collab_assistant', 'collab_project'] },
+    { key: 'camp', channel: 'b2c', label: '寒暑假營隊 二日營、五日營', itemLabel: '是否為營隊負責人', types: ['camp', 'speed_camp', 'camp_director_5d', 'camp_director_4d', 'camp_director_2d'] },
+    { key: 'collab', channel: 'b2b', label: '合作單位課程', itemLabel: '課程講師身分別', types: ['collab_lead', 'collab_assistant', 'collab_project'] },
+    { key: 'regular', channel: 'other', label: '常態課', types: ['regular_basic', 'regular_advanced'] },
+    { key: 'kids', channel: 'other', label: '幼兒啟蒙', types: ['kids_lead', 'kids_assistant'] },
+    { key: 'speed_training', channel: 'other', label: '速解培訓', types: ['speed_training_lead', 'speed_training_assistant'] },
+    { key: 'counter', channel: 'other', label: '站櫃／擺攤', types: ['counter', 'event_booth'] },
+    { key: 'misc', channel: 'other', label: '其他', types: ['cert_sub_judge', 'special_lecture_recorded', 'special_lecture_unrecorded', 'other'] },
 ];
 
-export const courseCategoryFor = (courseType = '') =>
-    COURSE_CATEGORIES.find(category => category.types.includes(courseType))?.key || 'other';
+// 第三層選項照表單問法顯示；沒列的用 COURSE_LABELS
+export const REPORT_ITEM_LABELS = {
+    collab_lead: '合作課程 主講',
+    collab_assistant: '合作課程 助教',
+    camp: '否（一般講師）',
+    speed_camp: '否（一般講師，速解營）',
+    camp_director_5d: '是（5 日營負責人）',
+    camp_director_4d: '是（4 日營負責人）',
+    camp_director_2d: '是（2 日營負責人）',
+};
 
-export const courseTypesInCategory = (categoryKey) =>
-    COURSE_CATEGORIES.find(category => category.key === categoryKey)?.types || [];
+// 表單上沒有的報酬項目，講師端不列（管理員後台仍可登記）
+export const TEACHER_REPORT_HIDDEN_TYPES = new Set(['collab_project']);
+
+export const courseCategoryFor = (courseType = '') =>
+    COURSE_CATEGORIES.find(category => category.types.includes(courseType))?.key || 'misc';
+
+export const courseCategoryConfig = (categoryKey) =>
+    COURSE_CATEGORIES.find(category => category.key === categoryKey) || null;
+
+export const courseTypesInCategory = (categoryKey) => courseCategoryConfig(categoryKey)?.types || [];
+
+export const teacherCourseItems = (categoryKey) =>
+    courseTypesInCategory(categoryKey).filter(type => !TEACHER_REPORT_HIDDEN_TYPES.has(type));
+
+export const reportItemLabel = (courseType) => REPORT_ITEM_LABELS[courseType] || COURSE_LABELS[courseType] || courseType;
 
 export const reportChannelFor = (courseType = '') =>
-    COURSE_CATEGORIES.find(category => category.key === courseCategoryFor(courseType))?.channel || 'b2c';
+    courseCategoryConfig(courseCategoryFor(courseType))?.channel || 'other';
 
 export const categoriesInChannel = (channelKey) =>
     COURSE_CATEGORIES.filter(category => category.channel === channelKey);
