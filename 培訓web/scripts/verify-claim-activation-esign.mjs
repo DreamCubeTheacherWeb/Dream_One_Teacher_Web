@@ -475,6 +475,10 @@ try {
 
   const cool = requestOtp(uEmail, 'account_activation');
   check('60 秒內重寄 → cooldown（retry_after_seconds 1～60）', cool.status === 'cooldown' && cool.retry_after_seconds >= 1 && cool.retry_after_seconds <= 60, cool);
+  check('cooldown 一併帶回本人剛寄出、仍有效的 challenge（challenge_id／expires_at／masked_email，可繼續輸入同一組碼）',
+    cool.challenge_id === c1.challenge_id && cool.expires_at === c1.expires_at && cool.masked_email === 'e***@t.test', cool);
+  check('cooldown 不會另外產生新 challenge 或寄信', suVal(`SELECT count(*) FROM private.email_otp_challenges WHERE user_id = ${lit(uEmail)}`) === '1'
+    && Number(suVal(`SELECT count(*) FROM net._e2e_http_requests`)) === reqCount0 + 1);
 
   const wrong = code1 === '000000' ? '111111' : '000000';
   const w1 = verifyOtp(uEmail, c1.challenge_id, wrong);
@@ -486,6 +490,10 @@ try {
   const w5 = verifyOtp(uEmail, c1.challenge_id, wrong);
   check('第 5 次錯 → locked', w5.status === 'locked', w5);
   check('鎖住後輸入正確碼仍是 locked', verifyOtp(uEmail, c1.challenge_id, code1).status === 'locked');
+  su(`UPDATE private.email_otp_challenges SET created_at = now() - interval '10 seconds' WHERE id = ${ulit(c1.challenge_id)}`);
+  const coolLocked = requestOtp(uEmail, 'account_activation');
+  check('cooldown 時若唯一的 challenge 已鎖 → 只回 retry_after_seconds，不帶 challenge',
+    coolLocked.status === 'cooldown' && coolLocked.retry_after_seconds > 0 && !('challenge_id' in coolLocked) && !('masked_email' in coolLocked), coolLocked);
 
   su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(uEmail)}`);
   const c2 = requestOtp(uEmail, 'account_activation');
@@ -520,6 +528,12 @@ try {
     sentStatuses.push(requestOtp(uPre, 'account_activation').status);
     su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(uPre)}`);
   }
+  su(`UPDATE private.email_otp_challenges SET created_at = now() - interval '5 seconds' WHERE id = (SELECT id FROM private.email_otp_challenges WHERE user_id = ${lit(uPre)} ORDER BY created_at DESC LIMIT 1)`);
+  const preCool = requestOtp(uPre, 'account_activation');
+  const preCoolOwner = preCool.challenge_id ? suVal(`SELECT user_id FROM private.email_otp_challenges WHERE id = ${ulit(preCool.challenge_id)}`) : null;
+  check('cooldown 只回本人自己的 challenge（另一位講師拿到的是自己的、遮罩是自己的信箱）',
+    preCool.status === 'cooldown' && preCoolOwner === uPre && preCool.masked_email === 'pr***@t.test', { preCool, preCoolOwner });
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(uPre)}`);
   const sixth = requestOtp(uPre, 'account_activation');
   check('一小時內第 1～5 封 sent、第 6 封 rate_limited', sentStatuses.every((s) => s === 'sent') && sixth.status === 'rate_limited', { sentStatuses, sixth });
   const preOtp = freshOtp(uPre, 'account_activation');
@@ -625,11 +639,16 @@ try {
   const consentId = consentOk.result.consent_id;
   check('沒有 OTP → OTP_REQUIRED', errOf(submit(uEmail, { otp: null, consent: consentId })) === 'OTP_REQUIRED');
   check('OTP 尚未驗證 → OTP_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentId })) === 'OTP_REQUIRED');
+  const k1Cool = requestOtp(uEmail, 'contract_sign');
+  check('簽約用途 cooldown 帶回的是同一用途（contract_sign）最新一筆，不是啟用用途的 challenge',
+    k1Cool.status === 'cooldown' && k1Cool.challenge_id === k1.id, k1Cool);
   check('拿啟用用途的 challenge 簽約 → OTP_REQUIRED', errOf(submit(uEmail, { otp: c3.id, consent: consentId })) === 'OTP_REQUIRED');
   const preK = verifiedContractOtp(uPre);
   check('拿別人的（已驗證）簽約 challenge → OTP_REQUIRED', errOf(submit(uEmail, { otp: preK, consent: consentId })) === 'OTP_REQUIRED');
   check('簽約碼驗證 → verified、activated:false', JSON.stringify(Object.keys(verifyOtp(uEmail, k1.id, k1.code)).sort()) === JSON.stringify(['activated', 'status', 'verified_at'])
     && suVal(`SELECT verified_at IS NOT NULL AND consumed_at IS NULL FROM private.email_otp_challenges WHERE id = ${ulit(k1.id)}`) === 't');
+  const k1CoolVerified = requestOtp(uEmail, 'contract_sign');
+  check('challenge 已驗證後的 cooldown 不再帶回它', k1CoolVerified.status === 'cooldown' && !('challenge_id' in k1CoolVerified), k1CoolVerified);
   su(`UPDATE private.email_otp_challenges SET verified_at = now() - interval '16 minutes' WHERE id = ${ulit(k1.id)}`);
   check('OTP 驗證超過 15 分鐘 → OTP_EXPIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentId })) === 'OTP_EXPIRED');
   su(`UPDATE private.email_otp_challenges SET verified_at = now() - interval '14 minutes' WHERE id = ${ulit(k1.id)}`);

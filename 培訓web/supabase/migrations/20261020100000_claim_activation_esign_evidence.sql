@@ -1356,6 +1356,7 @@ DECLARE
   v_subject text := '夢想一號講師資源站驗證碼';
   v_purpose_line text;
   v_extra text;
+  v_pending_email text;
   v_text text;
   v_html text;
 BEGIN
@@ -1420,8 +1421,25 @@ BEGIN
     FROM private.email_otp_challenges c
    WHERE c.user_id = v_uid AND c.purpose = v_purpose;
   IF v_last IS NOT NULL AND v_last > v_now - interval '60 seconds' THEN
+    -- 冷卻中：一併帶回本人同一用途最新一筆仍可輸入的 challenge（未過期、未作廢、未驗證／消耗、未鎖），
+    -- 讓使用者關掉視窗再打開還能輸入剛寄出的碼；沒有就不帶。只查 user_id = 本人。
+    SELECT c.id, c.expires_at, c.target_email
+      INTO v_challenge_id, v_expires, v_pending_email
+      FROM private.email_otp_challenges c
+     WHERE c.user_id = v_uid
+       AND c.purpose = v_purpose
+       AND c.superseded_at IS NULL
+       AND c.verified_at IS NULL
+       AND c.consumed_at IS NULL
+       AND c.attempts < c.max_attempts
+       AND c.expires_at > v_now
+     ORDER BY c.created_at DESC
+     LIMIT 1;
     RETURN jsonb_build_object('status', 'cooldown',
-      'retry_after_seconds', GREATEST(1, ceil(60 - extract(epoch FROM (v_now - v_last))))::integer);
+      'retry_after_seconds', GREATEST(1, ceil(60 - extract(epoch FROM (v_now - v_last))))::integer)
+      || CASE WHEN v_challenge_id IS NULL THEN '{}'::jsonb
+              ELSE jsonb_build_object('challenge_id', v_challenge_id, 'expires_at', v_expires,
+                                      'masked_email', private.mask_email(v_pending_email)) END;
   END IF;
 
   -- 每人每小時最多 5 封（兩種目的合計）
