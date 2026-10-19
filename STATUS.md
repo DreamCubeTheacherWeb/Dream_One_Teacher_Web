@@ -5,6 +5,41 @@
 
 ---
 
+## 🪪 2026-10-20：講師證件搬進系統儲存空間＋個人頁儲存修正（✅ 證件已在正式庫；🟡 程式修正在分支，待總指揮上線）
+
+**需求**：業主看過 10/19 新講師建檔後說：「那些證件我會需要是真的存在資料庫並且在講師自己的資料那裡可以看到」。
+業主同意連 5 位同樣只有雲端硬碟連結的舊老師一起做（侯十方、張世隆、黃于倫，以及已認領的侯宥圻、黃冠鈞）。
+
+**查到的事實**：
+- 講師個人頁（`ProfilePage.jsx`）的證件預覽只讀 `*_path`，也就是 Storage 裡的檔案。只有 `*_external_url`（雲端硬碟連結）的身分證、存摺，老師看不到圖，只有一個外連。
+- 講師認領後，讀得到「自己主檔有登記路徑」的檔案（Storage 政策「Users can view files referenced by own instructor profile」）。後台代傳的檔案也算。
+- **既有 bug（已在正式庫重現）**：個人頁用 `upsert(onConflict: user_id)` 儲存，Postgres 一定先跑 BEFORE INSERT 的 `guard_instructor_file_paths`。證件路徑不在 `instructors/<本人 uid>/` 的講師，只改文字也一律被擋（42501），包括 8 月 `form-import/` 匯入的 137 位、管理員在認領前代傳的。
+  證據：在 SQL Editor 用「一定會取消的交易」模擬，舊送法回 `SIM_RESULT 42501 instructor file paths must remain inside the current user folder`；新送法（不帶未更動的證件欄位）回 `upsert_ok front_kept=t bankbook_kept=t`。三次模擬都已取消，正式庫沒有留下資料。
+
+**程式修正（分支 `fix/profile-save-unchanged-docs`，worktree `.claude/worktrees/profile-save-docs`，commit `bb7c944`，已 rebase 到 `1f5c350`，未推 main）**：
+- `src/lib/instructorProfile.js` 新增 `pickInstructorDocumentFields`／`omitUnchangedDocumentFields`。
+- `ProfilePage.jsx` 記下載入時與每次成功儲存後 DB 的證件欄位。儲存時只送這次換掉或移除的證件，沒動的不送；upsert 只更新有送的欄位，所以 DB 原值保留。
+- 驗證：`npm test` 114/114（新增 `instructorProfile.test.js` 6 項）。`verify-profile-draft.mjs` 31/31，新增 T11 四項：mock 照正式庫規則擋非本人資料夾的路徑。反向對照：改回舊送法時 T11 四項全 FAIL，錯誤文字與正式庫相同。原本的 T9c 斷言改成「存摺沒動就不送，有送也必須是 DB 正本」。變更檔 ESLint 0。
+- fresh-context sonnet 審查：未發現誤清或誤留證件的問題，可上線。它查證過 PostgREST 單筆 upsert 的 `DO UPDATE SET` 只含有送的欄位。
+
+**正式庫已做（2026-10-20 00:13–01:10 台北）**：
+- 用業主的 Chrome 從雲端硬碟下載證件，經後台「編輯資料 → 選擇新圖片 → 儲存講師資料」上傳。共 **14 位、51 個檔**：今日新建 10 位 39 個檔；侯十方 4、黃于倫 4；侯宥圻、黃冠鈞「已認領那筆」各 2。
+- 路徑：未認領的放 `instructors/<講師主檔 id>/<種類>/<uuid>`，已認領的放 `instructors/<user_id>/...`。
+- 格式：林俊諺 3 張 HEIC、方羿淳 2 份單頁 PDF（身分證），用 macOS `sips` 轉成 JPEG 才上傳；其餘照原檔。
+- 防放錯格：每位存檔前先比對每格預覽的長寬，存檔後用 SQL 總核對。結果 51/51 的「DB 大小＝Storage 物件大小＝本機下載大小」、路徑前綴正確、雲端硬碟連結 51/51 保留。
+- 新建 10 位的其他欄位未被後台存檔改動：active、實習、未認領、銀行分欄空、表單時間、`bank_info_raw`、地區都在，4 筆上課紀錄仍掛著。
+- 暫存的證件檔已全部刪除（`.claude/tmp-instructor-docs/` 內 0 個檔，`~/Downloads` 數量回到 899）。
+- 還原：在後台該講師「編輯資料」對證件按「移除」再儲存，會清掉 `*_path` 並刪 Storage 檔，雲端硬碟連結不受影響。
+
+**沒搬的、要業主決定的**：
+- **張世隆**：身分證正面、存摺兩個雲端檔，這個 Chrome 帳號沒有下載權限（雲端回錯誤頁）。身分證反面那格是 6 頁 A4、檔名帶「備審」的 PDF，看起來傳錯檔，所以沒上傳。
+- **藍恩熹**：身分證正面、反面、存摺三格上傳的是同一張圖（三檔指紋相同）。已照原樣搬進系統，請業主看一眼，要他補正確的檔。
+- **重複主檔**：侯宥圻（`bbc9e1cc` 舊匯入、`06f95180`「樹懶老師侯宥圻」已認領）、黃冠鈞（`adbf7b06` 舊匯入、`822ae591` 已認領）各有兩筆。舊那筆有證件，已認領那筆原本沒有，這次補了身分證正反面。兩筆是否合併待業主決定，這次沒動。
+
+**上線注意**：分支上線前，未認領且證件在 `instructors/<主檔 id>/` 或 `form-import/` 的講師，認領後在個人頁按儲存會失敗。這包括這次的 12 位與 8 月匯入的 137 位。建議盡快上線；上線後找一位證件在 `form-import/` 的講師實測一次個人頁儲存。
+
+---
+
 ## 🧱 2026-10-20：課程頁章節改成網格（桌機一列 4 個）（🛠 已改完＋本機實測，尚未 commit／上線）
 
 **需求**：業主看「教你怎麼教 - 各種教學項目」課程頁截圖：「下方做成一列四個的呈現方式，不然這樣太長了」。
