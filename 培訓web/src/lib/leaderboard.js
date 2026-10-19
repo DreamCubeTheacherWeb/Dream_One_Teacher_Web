@@ -19,31 +19,10 @@ export const MILESTONES = [
 // 時數顯示用（四捨五入到小數 1 位）
 export const toHours = (v) => Math.round((Number(v) || 0) * 10) / 10;
 
-// 點數 = 時數×每小時點數 + 已達成里程碑的獎勵總和
-export function computePoints(totalHours) {
-  const h = Number(totalHours) || 0;
-  let pts = Math.round(h * POINTS_PER_HOUR);
-  for (const m of MILESTONES) if (h >= m.hours) pts += m.bonus;
-  return pts;
-}
-
 // 目前達成的最高里程碑（未達任何里程碑回 null）
 export function highestMilestone(totalHours) {
   const h = Number(totalHours) || 0;
   let earned = null;
   for (const m of MILESTONES) if (h >= m.hours) earned = m;
   return earned;
-}
-
-// 下一個里程碑與還差多少小時（已達頂回 null）——給「再 X 小時解鎖」的激勵用
-export function nextMilestone(totalHours) {
-  const h = Number(totalHours) || 0;
-  for (const m of MILESTONES) if (h < m.hours) return { ...m, remain: toHours(m.hours - h) };
-  return null;
-}
-
-// 稱號：第一名依範圍（年度/歷屆）給頭銜；二三名交給獎牌呈現
-export function rankTitle(rank, year) {
-  if (rank !== 1) return null;
-  return `${year ? `${year} 年度` : '歷屆'}教學王`;
 }
