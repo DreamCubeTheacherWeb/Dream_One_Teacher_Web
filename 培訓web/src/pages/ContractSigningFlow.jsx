@@ -237,11 +237,16 @@ const ContractSigningFlow = () => {
       const doc = docs[s.docType];
       if (!doc) continue;
 
-      const { data: positions } = await supabase
+      const { data: positions, error: posErr } = await supabase
         .from('contract_field_positions')
         .select('*')
         .eq('doc_type', doc.doc_type)
         .eq('doc_version', doc.version);
+      // 查不到欄位位置就不能產生簽署檔：照樣往下走會產出沒有簽名的 PDF，畫面卻顯示簽約完成。
+      if (posErr) throw new Error(`無法讀取「${s.title}」的欄位位置，請稍後再試`);
+      if (!(positions || []).some(p => p.field_type === 'signature')) {
+        throw new Error(`「${s.title}」缺少簽名欄位設定，請聯繫管理員`);
+      }
 
       const { data: fileData, error: dlErr } = await supabase.storage
         .from('contract-documents')
@@ -314,6 +319,9 @@ const ContractSigningFlow = () => {
         return;
       }
 
+      // 先在本機產生所有簽署 PDF，成功了才開始上傳；產生失敗時不留下任何檔案。
+      const signedPdfs = await generateSignedPdfs();
+
       const sigBlob = await (await fetch(signatureDataUrl)).blob();
       const sigFileName = `signed/${user.id}/signature_${Date.now()}.png`;
       const { error: sigErr } = await supabase.storage
@@ -321,7 +329,6 @@ const ContractSigningFlow = () => {
         .upload(sigFileName, sigBlob, { contentType: 'image/png' });
       if (sigErr) throw sigErr;
 
-      const signedPdfs = await generateSignedPdfs();
       const signedPdfPaths = {};
       for (const [docType, { bytes }] of Object.entries(signedPdfs)) {
         const pdfFileName = `signed/${user.id}/${docType}_${Date.now()}.pdf`;
