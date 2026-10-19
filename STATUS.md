@@ -126,7 +126,7 @@ pending 排最前無法在正式資料上看到）；2025/08 內搜尋第一位�
 → 已修（分支 `fix/speed-salary-verify-v2-form`，只改測試腳本）：講師段改照第二版三層選課（B2C → 速解研究所｜實體課程）、
 填課程名稱／時數下拉／人數；未取得資格那段改為時數人數都填好、只剩「沒有速解資格」才待核薪，並驗送出的課程類型；`npm run build` 後 13/13 PASS、ESLint 0。
 
-## 🧭 2026-10-19（第三版）：全站「薪資」改「報酬」、合作單位分寒暑假／學期間、期間文字照表單、到府課免選報酬項目（🛠 已改完＋本機實測，⚠️ 需先套 migration 再上線）
+## 🧭 2026-10-19（第三版）：全站「薪資」改「報酬」、合作單位分寒暑假／學期間、期間文字照表單、到府課免選報酬項目（✅ 正式環境已上線）
 
 **需求（業主 2026-10-19 晚間）**：① 全部提到「薪資」的部分改成「報酬」；② B2B 寒暑假和學期間兩題分開，後台可各自改，選到某個期間時下面的單位選項對應好；
 ③ 寒假／學期間／暑假文字要和表單一樣（2026年寒假、115學年度上學期、2026年暑假），後台可設定、好設定且直覺；④ B2C 上課日期欄位位置固定，不要跳來跳去；
@@ -150,7 +150,16 @@ pending 排最前無法在正式資料上看到）；2025/08 內搜尋第一位�
 改學期間清掉已選單位、未選期間提示）；`verify:salary-report-options:browser` 56/56；`npm run build` 通過；ESLint 0；`git diff --check` 乾淨；src 內「薪資」0 處。
 截圖：`docs/verification/2026-10-19-salary-report-form-channel/`（10 張）與 `docs/verification/2026-10-18-salary-report-options/`（6 張，本次覆寫）。
 
-**上線順序（⚠️ 必守）**：① 業主在 Supabase SQL Editor 套 `20261019220000_partner_units_by_term_and_period_labels.sql`（只加欄位、回填、改三個 label）；
+**正式環境證據（2026-10-19 23:15–23:32 台北）**：業主指示「可以，幫我把 migration 貼進 Supabase SQL Editor，我按 Run，然後推上 main 部署」，
+隨後明確要求「你按 Run」。Claude 透過 Chrome 擴充功能在 DreamCube_teacher（PRODUCTION，ref `mnovjlicwzwkefkhstte`）SQL Editor 先跑唯讀核對：
+term_scope 欄位 0、合作單位 78、sort_order ≥ 490 者 30、含「115上」28、期間文字仍為預設、種子後無新增單位——與 migration 假設一致；
+再以 `BEGIN … COMMIT` 單一交易套用 `20261019220000`，回 Success；套用後核對：欄位 1、約束 1、寒暑假 48、學期間 30、無組別 0、非合作單位帶組別 0、
+總數 112 不變、三個期間文字為「2026年寒假／115學年度上學期／2026年暑假」、學期間不含「115上」者 2（與種子相符）。
+接著 `e781745` fast-forward 推上 `main`（15:23 UTC），GitHub deployment `7177831901` success（15:24:44 UTC）；每 60 秒探測正式站，15:28 起連續 5 次
+命中新程式包 `index-65O15yza.js`（SHA-256 前綴 `93388917308a7dd7`），內含「請先選擇教學課程期間，再選單位」與「報酬登記中心」、不含「薪資登記中心」。
+驗證過程未送出任何回報、未改既有回報資料。
+
+**原上線順序（已照做）**：① 業主在 Supabase SQL Editor 套 `20261019220000_partner_units_by_term_and_period_labels.sql`（只加欄位、回填、改三個 label）；
 ② 再推 main。順序反了，新前端 select 的 `term_scope` 欄位不存在 → 選項讀取失敗 → 退回自由輸入（可回報但沒有下拉）。先套 migration 時舊前端照常運作。
 套完可在後台「回報選項管理 → 合作單位」確認兩組筆數 48／30，分錯的用「移到另一組」調整。
 
