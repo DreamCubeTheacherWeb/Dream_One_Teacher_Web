@@ -27,7 +27,8 @@
     "verify:contract-signing": "node scripts/verify-contract-signing-rpc.mjs",
     "verify:contract-signing:browser": "node scripts/verify-contract-feature-enabled.mjs",
     "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs",
-    "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs"
+    "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs",
+    "e2e:onboarding": "node scripts/e2e/run-onboarding.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.1",
