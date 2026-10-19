@@ -11,6 +11,8 @@
  *  T7 檔案替換失敗不刪舊檔；成功替換則 DB 儲存後才刪舊檔
  *  T8 只按移除但尚未儲存時，不可先刪 Storage 舊檔
  *  T9 存摺首次送出前可調整；講師送出後只能預覽並聯繫管理員，舊替換草稿不覆蓋正本，管理員仍可更換
+ *  T11 證件在表單匯入／後台代傳的資料夾（不在本人資料夾）時，儲存不重送未更動的證件路徑，
+ *      mock 依正式庫 guard_instructor_file_paths 規則擋非本人資料夾路徑，確認儲存成功；新上傳的只送那一份
  * 用法：node scripts/verify-profile-draft.mjs
  */
 import { readFileSync } from 'fs';
@@ -54,6 +56,8 @@ let currentRole = 'teacher';
 let lastInstructorSaveBody = null;
 let signMode = 'success';
 let draftRow = null;
+// 模擬正式庫 guard_instructor_file_paths：upsert 會先做 INSERT 檢查，非本人資料夾的路徑一律 42501
+let pathGuard = false;
 
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=';
 
@@ -113,6 +117,16 @@ async function handleRoute(route) {
             if (table === 'instructors') {
                 requestEvents.push('db-save');
                 try { lastInstructorSaveBody = JSON.parse(req.postData() || '{}'); } catch { lastInstructorSaveBody = null; }
+                const foreignPath = pathGuard && lastInstructorSaveBody && Object.entries(lastInstructorSaveBody)
+                    .some(([field, value]) => field.endsWith('_path') && value && !String(value).startsWith(`instructors/${UID}/`));
+                if (foreignPath) {
+                    requestEvents.push('db-save-rejected');
+                    return route.fulfill({
+                        status: 403,
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ code: '42501', message: 'instructor file paths must remain inside the current user folder' }),
+                    });
+                }
                 return route.fulfill({
                     status: 201,
                     headers: { 'content-type': 'application/json' },
@@ -359,7 +373,9 @@ async function main() {
         lastInstructorSaveBody = null;
         await page.getByRole('button', { name: '儲存個人資料' }).click();
         await page.waitForTimeout(250);
-        assert('T9c 舊的存摺替換草稿不覆蓋 DB 正本', lastInstructorSaveBody?.bankbook_path === completeRow.bankbook_path,
+        // 存摺未更動時不重送路徑（只更新這次換掉的文件）；若有送也必須是 DB 正本，不可是草稿裡的路徑
+        assert('T9c 舊的存摺替換草稿不覆蓋 DB 正本', lastInstructorSaveBody !== null
+            && (!('bankbook_path' in lastInstructorSaveBody) || lastInstructorSaveBody.bankbook_path === completeRow.bankbook_path),
             `path=${lastInstructorSaveBody?.bankbook_path}`);
         await page.close(); await ctx.close();
 
@@ -442,6 +458,52 @@ async function main() {
         await page.close(); await ctx.close();
         currentRole = 'teacher';
 
+        // ── T11：證件在表單匯入／後台代傳的資料夾 → 儲存成功、不重送未更動的路徑 ──
+        const importedRow = {
+            ...completeRow,
+            photo_path: 'form-import/inst-x--photo.jpg',
+            id_front_path: 'instructors/inst-x/id_front/admin-upload.jpg',
+            id_back_path: 'form-import/inst-x--id_back.jpg',
+            bankbook_path: 'form-import/inst-x--bankbook.jpg',
+        };
+        const documentPathFields = (body) => Object.keys(body || {}).filter((field) => field.endsWith('_path'));
+        currentRole = 'teacher'; instructorRow = importedRow; draftRow = null;
+        pathGuard = true; storageMode = 'upload-success'; requestEvents = [];
+        let dialogs = [];
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
+        await gotoProfile(page);
+        await page.fill(`input[placeholder="${ADDR}"]`, 'T11 新通訊地址');
+        lastInstructorSaveBody = null;
+        await page.getByRole('button', { name: '儲存個人資料' }).click();
+        await page.waitForTimeout(600);
+        assert('T11a 匯入／代傳證件未更動時儲存成功', requestEvents.includes('db-save') && !requestEvents.includes('db-save-rejected')
+            && dialogs.some((message) => message.includes('個人資料已儲存')),
+            `events=${requestEvents.join(' > ')}, dialogs=${dialogs.join(' | ')}`);
+        assert('T11b 未更動的證件路徑不重送', documentPathFields(lastInstructorSaveBody).length === 0
+            && lastInstructorSaveBody?.address === 'T11 新通訊地址',
+            `paths=${documentPathFields(lastInstructorSaveBody).join(',') || '(none)'}`);
+        await page.close(); await ctx.close();
+
+        requestEvents = []; dialogs = [];
+        ctx = await newCtx(browser); page = await ctx.newPage();
+        page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
+        await gotoProfile(page);
+        await page.getByTestId('document-upload-id_back').locator('input[type="file"]').setInputFiles(replacement);
+        await page.waitForTimeout(300);
+        lastInstructorSaveBody = null;
+        await page.getByRole('button', { name: '儲存個人資料' }).click();
+        await page.waitForTimeout(600);
+        const sentPaths = documentPathFields(lastInstructorSaveBody);
+        assert('T11c 只換身分證反面時只送那一份，且在本人資料夾', sentPaths.length === 1 && sentPaths[0] === 'id_back_path'
+            && String(lastInstructorSaveBody?.id_back_path).startsWith(`instructors/${UID}/id_back/`)
+            && Number(lastInstructorSaveBody?.id_back_size) > 0,
+            `paths=${sentPaths.join(',') || '(none)'}, id_back=${lastInstructorSaveBody?.id_back_path}`);
+        assert('T11d 替換後儲存成功，舊檔清理排在 DB 儲存之後', requestEvents.join(' > ') === 'upload-new > db-save > delete-old'
+            && dialogs.some((message) => message.includes('個人資料已儲存')),
+            `events=${requestEvents.join(' > ')}, dialogs=${dialogs.join(' | ')}`);
+        await page.close(); await ctx.close();
+        pathGuard = false;
 
     } finally {
         if (browser) await browser.close();

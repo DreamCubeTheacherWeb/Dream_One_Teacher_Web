@@ -6,7 +6,12 @@ import { Save, Upload, X, User, Phone, GraduationCap, FileText, CreditCard, Came
 import { Link } from 'react-router-dom';
 import { fetchTeacherBadges, groupByCategory, CATEGORY_ORDER } from '../lib/badges';
 import { downloadCertificate } from '../lib/certificate';
-import { pickInstructorProfileDraftFields, stripAdminManagedInstructorFields } from '../lib/instructorProfile';
+import {
+    omitUnchangedDocumentFields,
+    pickInstructorDocumentFields,
+    pickInstructorProfileDraftFields,
+    stripAdminManagedInstructorFields,
+} from '../lib/instructorProfile';
 import BadgeVisual from '../components/BadgeVisual';
 import { INSTRUCTOR_CONTRACTS_ENABLED, canAccessInstructorContracts } from '../lib/featureFlags';
 import {
@@ -123,6 +128,7 @@ const ProfilePage = () => {
     const hydrated = useRef(false);
     const savedSnapshot = useRef('');
     const savedBaseUpdatedAt = useRef(null);
+    const savedDocumentFields = useRef({});
     const [contractInfo, setContractInfo] = useState(null);
     const [latestDocVersions, setLatestDocVersions] = useState(null);
     const [instructorId, setInstructorId] = useState(null);
@@ -180,6 +186,7 @@ const ProfilePage = () => {
             // 記下「已存進 DB 的文字欄位版本」，並套用未儲存的伺服器草稿（若有）
             savedSnapshot.current = profileSnapshot(formData);
             savedBaseUpdatedAt.current = data.updated_at || null;
+            savedDocumentFields.current = pickInstructorDocumentFields(data);
             const draft = await readDraft(user.id, savedBaseUpdatedAt.current);
             nextForm = draft ? { ...formData, ...draft } : formData;
             // 功能上線前若瀏覽器留有「已儲存存摺的替換草稿」，不可讓草稿蓋過 DB 正本，
@@ -205,6 +212,7 @@ const ProfilePage = () => {
             };
             savedSnapshot.current = profileSnapshot(base);
             savedBaseUpdatedAt.current = null;
+            savedDocumentFields.current = {};
             const draft = await readDraft(user.id, null);
             nextForm = draft ? { ...base, ...draft } : base;
         }
@@ -450,11 +458,11 @@ const ProfilePage = () => {
                 nextForm[`${docType}_uploaded_at`] = new Date().toISOString();
             }
 
-            payload = {
+            payload = omitUnchangedDocumentFields({
                 user_id: user.id,
                 ...stripAdminManagedInstructorFields(nextForm),
                 wca_id: nextForm.wca_id?.trim() || null,
-            };
+            }, savedDocumentFields.current);
 
             const { data, error } = await supabase
                 .from('instructors')
@@ -497,6 +505,7 @@ const ProfilePage = () => {
         setUploading({});
         savedSnapshot.current = profileSnapshot(nextForm);
         savedBaseUpdatedAt.current = savedRow?.updated_at || null;
+        savedDocumentFields.current = pickInstructorDocumentFields(nextForm);
         setHasSavedBankbook(hasInstructorDocument(nextForm, 'bankbook'));
         setSavedBankAccount(Boolean(nextForm.bank_account_number?.trim()));
         window.dispatchEvent(new CustomEvent(PROFILE_SAVED_EVENT, { detail: nextForm }));
