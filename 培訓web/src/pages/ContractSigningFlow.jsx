@@ -163,7 +163,9 @@ const ContractSigningFlow = () => {
   const isLastStep = step === steps.length - 1;
   const currentStep = steps[step];
   const isFillSign = currentStep?.docMode === 'fill_sign';
-  const showFormOnThisStep = isFillSign && isLastStep;
+  // 簽約表單固定放在最後一步（只要有需簽署的文件）：後台若把唯讀文件排在最後，
+  // 講師讀完仍有表單可送出，不會跳到空白畫面。
+  const showFormOnThisStep = hasFillSignSteps && isLastStep;
 
   // 講師等級空白＝缺前置資料（唯讀欄，由系統帶入），不是使用者操作錯
   const roleMissing = hasFillSignSteps && !formData.instructorRole.trim();
@@ -513,18 +515,18 @@ const ContractSigningFlow = () => {
         <div className="p-5 sm:p-6 border-b-2 border-bauhaus-black bg-bauhaus-paper">
           <h2 className="text-lg sm:text-xl font-bold text-bauhaus-black">{currentStep?.title}</h2>
           <p className="text-sm text-bauhaus-black/60 mt-1">
-            {isFillSign ? '請仔細閱讀文件內容，並填寫下方欄位後進行簽名' : '請仔細閱讀以下文件內容'}
+            {isFillSign || showFormOnThisStep ? '請仔細閱讀文件內容，並填寫下方欄位後進行簽名' : '請仔細閱讀以下文件內容'}
           </p>
         </div>
 
         <div className="p-4 sm:p-6">
           <DocumentViewer
             fileUrl={docUrls[currentStep?.docType]}
-            onFinishReading={!isFillSign ? () => setStep(step + 1) : null}
+            onFinishReading={!isFillSign && !showFormOnThisStep ? () => setStep(step + 1) : null}
           />
         </div>
 
-        {/* Contract form - shown on the last fill_sign step */}
+        {/* Contract form - shown on the last step whenever any document needs signing */}
         {showFormOnThisStep && (
           <div className="px-4 sm:px-6 pb-6">
             <div className="border-t-2 border-bauhaus-black/10 pt-6 mt-2">
