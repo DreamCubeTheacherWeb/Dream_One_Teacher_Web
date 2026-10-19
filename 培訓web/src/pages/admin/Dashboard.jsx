@@ -6,7 +6,7 @@ import {
     ClipboardCheck, UserCog, BarChart3, Megaphone, ChevronRight,
     ContactRound, BookOpen, GraduationCap, Settings, Shield, FileSignature, Wallet, Download, Award, Layers3, FileSpreadsheet, ListChecks
 } from 'lucide-react';
-import { loadInstructorProgressSummary } from '../../lib/instructorProgressLoader';
+import { fetchAllPages, loadInstructorProgressSummary } from '../../lib/instructorProgressLoader';
 import { Link2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -40,7 +40,16 @@ const AdminDashboard = () => {
             setCourses(coursesData || []);
 
             const { count: instructorCount } = await supabase.from('instructors').select('*', { count: 'exact', head: true });
-            const { count: assignCount } = await supabase.from('assignments').select('*', { count: 'exact', head: true }).is('feedback', null);
+            // 回饋只寫進 assignment_feedbacks（AssignmentReview），assignments.feedback 欄位已不再使用；
+            // 「待審核」＝還沒有任何一筆回饋的作業。
+            const [assignmentRows, feedbackRows] = await Promise.all([
+                fetchAllPages(() => supabase.from('assignments').select('id').order('id')),
+                fetchAllPages(() => supabase.from('assignment_feedbacks').select('assignment_id').order('id')),
+            ]);
+            const reviewedIds = new Set((feedbackRows.data || []).map((row) => row.assignment_id));
+            const assignCount = assignmentRows.data
+                ? assignmentRows.data.filter((row) => !reviewedIds.has(row.id)).length
+                : 0;
 
             setStats({
                 teachers: instructorCount || 0,
