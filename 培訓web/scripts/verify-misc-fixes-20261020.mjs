@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 2026-10-20 上線後大檢查的雜項修正：以 mock Supabase 實際開頁驗證（不連任何真實後端）。
 //  1. 後台「培訓進度總覽」：超過 1000 筆進度時要分頁抓完，完成數才不會被低估。
+//  2. 後台「作業審核中心」：改成 effect 內載入（修 lint）後，頁面載入、分組、待審核數、輔導員選單行為不變。
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
@@ -166,6 +167,48 @@ async function verifyProgressOverviewPaging(browser, base) {
     await context.close();
 }
 
+// ───────────────────────── 2. 作業審核中心：載入行為不變（lint 修正的回歸） ─────────────────────────
+async function verifyAssignmentReviewLoads(browser, base) {
+    const adminId = '00000000-0000-4000-8000-000000000102';
+    const { authUser, session } = makeSession(adminId, 'review-admin@test.local', '審核測試管理員');
+    const teacherA = '50000000-0000-4000-8000-00000000000a';
+    const teacherB = '50000000-0000-4000-8000-00000000000b';
+    const lesson = { title: '第一章', course_id: 'c1', courses: { title: '測試課程' } };
+    const assignments = [
+        { id: 'a1', user_id: teacherA, lesson_id: 'l1', type: 'text', content: '心得一', created_at: '2026-10-01T00:00:00Z', lessons: lesson },
+        { id: 'a2', user_id: teacherA, lesson_id: 'l2', type: 'text', content: '心得二', created_at: '2026-10-02T00:00:00Z', lessons: lesson },
+        { id: 'a3', user_id: teacherB, lesson_id: 'l1', type: 'text', content: '心得三', created_at: '2026-10-03T00:00:00Z', lessons: lesson },
+    ];
+    const scenario = {
+        authUser, session,
+        tables: {
+            users: (url) => {
+                const id = url.searchParams.get('id');
+                if (id === `eq.${adminId}`) return [{ id: adminId, name: '審核測試管理員', email: authUser.email, role: 'admin', created_at: now }];
+                return [
+                    { id: teacherA, name: '甲講師', email: 'a@example.com', role: 'teacher', mentor_name: '輔導甲' },
+                    { id: teacherB, name: '乙講師', email: 'b@example.com', role: 'teacher', mentor_name: null },
+                    { id: adminId, name: '審核測試管理員', email: authUser.email, role: 'admin', mentor_name: null },
+                ];
+            },
+            assignments: () => assignments,
+            assignment_feedbacks: () => [{ id: 'f1', assignment_id: 'a1', user_id: adminId, content: '很好', created_at: '2026-10-04T00:00:00Z' }],
+        },
+    };
+    const { context, page } = await openPage(browser, scenario);
+    await page.goto(`${base}/admin/assignments`, { waitUntil: 'networkidle' });
+    await page.getByRole('heading', { name: '作業審核中心' }).waitFor();
+    const buttons = await page.locator('button:has(span.font-bold)').allInnerTexts();
+    const cardA = buttons.find(t => t.includes('甲講師')) || '';
+    const cardB = buttons.find(t => t.includes('乙講師')) || '';
+    check('作業審核：兩位講師各一張卡片', Boolean(cardA) && Boolean(cardB), buttons.join(' | ').replace(/\n/g, ' '));
+    check('作業審核：甲講師 2 份作業、1 份已回饋 → 待審核數 1，並顯示輔導員標籤', /\b1\b/.test(cardA) && cardA.includes('輔導甲'), cardA.replace(/\n/g, ' '));
+    check('作業審核：乙講師 1 份作業、尚未回饋 → 待審核數 1', /\b1\b/.test(cardB), cardB.replace(/\n/g, ' '));
+    const mentorOptions = await page.locator('select').first().locator('option').allInnerTexts();
+    check('作業審核：輔導員下拉選單載入「輔導甲」', mentorOptions.includes('輔導甲'), mentorOptions.join('/'));
+    await context.close();
+}
+
 async function run() {
     const port = await reservePort();
     const base = `http://127.0.0.1:${port}`;
@@ -185,6 +228,7 @@ async function run() {
         }
         browser = await chromium.launch(existsSync(chromeExecutable) ? { executablePath: chromeExecutable } : {});
         await verifyProgressOverviewPaging(browser, base);
+        await verifyAssignmentReviewLoads(browser, base);
     } finally {
         if (browser) await browser.close();
         vite.kill('SIGTERM');
