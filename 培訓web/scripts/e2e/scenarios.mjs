@@ -812,4 +812,35 @@ export async function scenarioH(ctx) {
   }
 }
 
+// ═══ 底座自檢（每次都跑）：假 GoTrue／閘道金鑰／repo SQL 與正式庫的已知落差 ═══════════
+export async function selfTest(ctx) {
+  const r = ctx.r;
+  const { api } = ctx;
+  const u = await newUser(ctx, 'z-self', '自檢帳號');
+  const me = await api.request(u.token, 'GET', '/auth/v1/user');
+  r.check('底座 /auth/v1/user 回傳登入者（含 Google provider 與 full_name）',
+    me.status === 200 && me.data?.id === u.id && me.data?.app_metadata?.provider === 'google' && me.data?.user_metadata?.full_name === '自檢帳號');
+  const refreshed = await api.request(null, 'POST', '/auth/v1/token?grant_type=refresh_token', { body: { refresh_token: u.session.refresh_token } });
+  const reused = await api.request(null, 'POST', '/auth/v1/token?grant_type=refresh_token', { body: { refresh_token: u.session.refresh_token } });
+  const viaNew = refreshed.data?.access_token ? await api.request(refreshed.data.access_token, 'GET', '/auth/v1/user') : { status: 0 };
+  r.check('底座 refresh_token 換新 session（新 token 可用）、舊 refresh token 不能重用',
+    refreshed.status === 200 && refreshed.data?.refresh_token !== u.session.refresh_token && viaNew.status === 200 && viaNew.data?.id === u.id && reused.status === 400,
+    `refresh=${refreshed.status} reuse=${reused.status}`);
+  const logout = await api.request(u.token, 'POST', '/auth/v1/logout');
+  r.check('底座 /auth/v1/logout 回 204', logout.status === 204);
+  const badJwt = await api.request(`${u.token.slice(0, -4)}AAAA`, 'GET', '/auth/v1/user');
+  const badKey = await api.request(u.token, 'GET', '/rest/v1/users?select=id', { headers: { apikey: 'not-a-project-key' } });
+  r.check('底座 竄改過的 JWT 與非本專案 apikey 一律 401', badJwt.status === 401 && badKey.status === 401);
+  const otpUnknown = await api.request(null, 'POST', '/auth/v1/otp', { body: { email: 'nobody@e2e.test', create_user: false } });
+  r.check('底座 未註冊信箱要求 OTP 被拒（create_user=false）', otpUnknown.status === 422);
+  const asSelf = await api.rest(u.token, 'GET', 'users?select=id,role');
+  r.check('底座 PostgREST 以 authenticated 身分跑 RLS（只看得到自己的 users 列）', asSelf.status === 200 && asSelf.data.length === 1 && asSelf.data[0].id === u.id);
+
+  // repo SQL 從頭建庫與正式庫的落差：public.users.role 的 CHECK 沒有 mentor
+  const mentor = ctx.stack.db.psqlSync(`BEGIN; UPDATE public.users SET role = 'mentor' WHERE id = :'id'; ROLLBACK;`, { vars: { id: u.id }, expectFail: true });
+  if (!mentor.ok) {
+    ctx.known('repo SQL 建出的 users.role 不允許 mentor', '［schema 落差］只用 repo SQL 從頭建庫時，public.users 的 CHECK 只允許 pending/teacher/admin（supabase/setup.sql:8），沒有任何 migration 把 mentor 加進去；但程式與 RLS 到處用 mentor，正式庫應是在版控外改過。第二階段若要測輔導員，需先補 migration 或在測試底座補這條約束。');
+  }
+}
+
 export const SCENARIOS = { A: scenarioA, B: scenarioB, C: scenarioC, D: scenarioD, E: scenarioE, F: scenarioF, G: scenarioG, H: scenarioH };

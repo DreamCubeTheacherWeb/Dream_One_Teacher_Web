@@ -19,7 +19,7 @@ import { startStack } from './lib/stack.mjs';
 import { makeApi, seedBaseline } from './lib/fixtures.mjs';
 import { launchBrowser } from './lib/browser.mjs';
 import { Results } from './lib/util.mjs';
-import { SCENARIOS } from './scenarios.mjs';
+import { SCENARIOS, selfTest } from './scenarios.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => {
@@ -62,6 +62,12 @@ async function runOnce(runIndex) {
     const ctx = { stack: activeStack, api, base, browser: activeBrowser, r, shotsDir, findings, consoleErrors, run: runIndex };
     // 已知問題：同時進「發現」清單與 KNOWN-ISSUE 計數
     ctx.known = (title, text) => { findings.add(text); r.known(title); };
+    console.log('\n── 底座自檢 ──');
+    try {
+      await selfTest(ctx);
+    } catch (error) {
+      r.check('底座自檢中途例外', false, error.message);
+    }
     for (const key of only) {
       const fn = SCENARIOS[key];
       if (!fn) {
