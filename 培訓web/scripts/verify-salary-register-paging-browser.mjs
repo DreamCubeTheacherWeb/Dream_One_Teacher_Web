@@ -353,9 +353,9 @@ async function run() {
         check('月份選單列出 2026/10～2024/02 共 33 個月＋全部月份',
             monthTexts.length === 34 && monthTexts[0] === '全部月份' && monthTexts[1] === '2026/10' && monthTexts.at(-1) === '2024/02' && monthTexts.includes('2025/08'),
             JSON.stringify(monthTexts.slice(0, 3)));
-        check(`待處理按鈕是全庫數字（${globalPending}，含待核准 2）`,
+        check(`待處理按鈕是全庫數字（${globalPending}，含 2 筆尚無金額）`,
             await page.getByRole('button', { name: new RegExp(`待處理 ${globalPending}`) }).isVisible()
-            && await page.getByText('（待核准 2）').isVisible());
+            && await page.getByText('（2 筆尚無金額）').isVisible());
         check('2026/10 的 45 筆依「待處理優先、日期新到舊」排列',
             JSON.stringify(await tableLabels(page)) === JSON.stringify(expectedRows({ month: '2026-10' }).map(rowLabel)));
         check('第一次載入只抓一頁（每次 select=* 都有 limit≤100）',

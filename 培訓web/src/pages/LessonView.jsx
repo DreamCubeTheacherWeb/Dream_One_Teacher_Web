@@ -106,7 +106,7 @@ const LessonView = () => {
     const completedCount = lessons.filter(l => progress[l.id]).length;
 
     return (
-        <div className="max-w-3xl mx-auto px-6 py-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
             {/* Back link */}
             <Link
                 to={course.category_id ? `/courses?category=${course.category_id}` : '/courses'}
@@ -120,7 +120,7 @@ const LessonView = () => {
                 <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">{course.title}</h1>
             </div>
             {course.description && (
-                <p className="text-bauhaus-black/60 mb-6 font-medium">{course.description}</p>
+                <p className="text-bauhaus-black/60 mb-6 font-medium max-w-3xl">{course.description}</p>
             )}
 
             {/* Progress bar */}
@@ -141,10 +141,10 @@ const LessonView = () => {
                 </div>
             )}
 
-            {/* Lesson list */}
-            <div className="space-y-3">
-                {lessons.length > 0 ? (
-                    lessons.map((lesson, idx) => {
+            {/* Lesson grid：手機 2 欄、平板 3 欄、桌機 4 欄 */}
+            {lessons.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 lg:gap-6" data-testid="lesson-grid">
+                    {lessons.map((lesson, idx) => {
                         const isCompleted = !!progress[lesson.id];
                         const preview = contentPreviews[lesson.id];
                         const count = contentCounts[lesson.id] || { video: 0, text: 0 };
@@ -154,68 +154,66 @@ const LessonView = () => {
                             <Link
                                 key={lesson.id}
                                 to={`/courses/${courseId}/lessons/${lesson.id}`}
-                                className="group flex items-start gap-4 bh-card bh-card-hover px-6 py-5"
+                                className="group flex flex-col bh-card bh-card-hover p-4 lg:p-5 min-w-0"
                             >
-                                {/* Chapter number & completion icon */}
-                                <div className="shrink-0 flex flex-col items-center gap-1 pt-0.5">
-                                    {isCompleted ? (
-                                        <CheckCircle className="w-6 h-6 text-bauhaus-blue fill-bauhaus-blue/10" />
-                                    ) : (
-                                        <Circle className="w-6 h-6 text-bauhaus-black/20 group-hover:text-bauhaus-blue/40 transition-colors duration-200" />
-                                    )}
+                                {/* 章節編號＋完成狀態＋箭頭 */}
+                                <div className="flex items-center justify-between gap-2 mb-2.5">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        {isCompleted ? (
+                                            <CheckCircle className="w-5 h-5 shrink-0 text-bauhaus-blue fill-bauhaus-blue/10" />
+                                        ) : (
+                                            <Circle className="w-5 h-5 shrink-0 text-bauhaus-black/20 group-hover:text-bauhaus-blue/40 transition-colors duration-200" />
+                                        )}
+                                        <span className="text-[10px] font-black text-bauhaus-black/40 uppercase tracking-[0.2em] truncate">
+                                            章節 {idx + 1}
+                                        </span>
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-bauhaus-black/20 group-hover:text-bauhaus-blue group-hover:translate-x-0.5 transition-all duration-200 shrink-0" />
                                 </div>
 
-                                {/* Text content */}
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[10px] font-black text-bauhaus-black/40 uppercase tracking-[0.2em] mb-1">
-                                        章節 {idx + 1}
-                                    </div>
-                                    <div className={`text-base font-bold mb-1.5 line-clamp-2 transition-colors duration-200 ${isCompleted ? 'text-bauhaus-black/40' : 'text-bauhaus-black group-hover:text-bauhaus-blue'}`}>
-                                        {lesson.title}
-                                    </div>
-                                    {preview && (
-                                        <p className="text-sm text-bauhaus-black/50 leading-relaxed line-clamp-2">
-                                            {preview}
-                                        </p>
-                                    )}
-                                    {/* Hashtag 標籤（後台自訂）＋影片數；傳統文章式課程仍顯示文章數 */}
-                                    {(count.video > 0 || tags.length > 0 || (!count.canvas && count.text > 0)) && (
-                                        <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-                                            {tags.map(t => (
-                                                <span key={t} className="inline-flex items-center gap-0.5 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
-                                                    #{t}
-                                                </span>
-                                            ))}
-                                            {count.video > 0 && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-white bg-bauhaus-blue px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
-                                                    <Play className="w-2.5 h-2.5" /> {count.video} 影片
-                                                </span>
-                                            )}
-                                            {!count.canvas && count.text > 0 && (
-                                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
-                                                    <FileText className="w-2.5 h-2.5" /> {count.text} 文章
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
+                                <div className={`text-sm sm:text-base font-bold mb-1 line-clamp-2 break-words transition-colors duration-200 ${isCompleted ? 'text-bauhaus-black/40' : 'text-bauhaus-black group-hover:text-bauhaus-blue'}`}>
+                                    {lesson.title}
                                 </div>
+                                {preview && (
+                                    <p className="text-xs sm:text-sm text-bauhaus-black/50 leading-relaxed line-clamp-2 break-words">
+                                        {preview}
+                                    </p>
+                                )}
 
-                                {/* Arrow */}
-                                <ChevronRight className="w-5 h-5 text-bauhaus-black/20 group-hover:text-bauhaus-blue group-hover:translate-x-0.5 transition-all duration-200 shrink-0 mt-1" />
+                                {/* Hashtag 標籤（後台自訂）＋影片數；傳統文章式課程仍顯示文章數；固定貼卡片底部 */}
+                                {(count.video > 0 || tags.length > 0 || (!count.canvas && count.text > 0)) && (
+                                    <div className="flex items-center gap-1.5 mt-auto pt-3 flex-wrap">
+                                        {tags.map(t => (
+                                            <span key={t} className="inline-flex items-center gap-0.5 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
+                                                #{t}
+                                            </span>
+                                        ))}
+                                        {count.video > 0 && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-white bg-bauhaus-blue px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
+                                                <Play className="w-2.5 h-2.5" /> {count.video} 影片
+                                            </span>
+                                        )}
+                                        {!count.canvas && count.text > 0 && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-bauhaus-black bg-bauhaus-yellow px-2 py-0.5 border-2 border-bauhaus-black rounded-lg">
+                                                <FileText className="w-2.5 h-2.5" /> {count.text} 文章
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </Link>
                         );
-                    })
-                ) : (
-                    <div className="py-20 text-center bg-white border-2 border-bauhaus-black rounded-2xl">
-                        <div className="flex items-center justify-center gap-2 mb-4" aria-hidden="true">
-                            <span className="w-4 h-4 rounded-full bg-bauhaus-red" />
-                            <span className="w-4 h-4 bg-bauhaus-blue" />
-                            <span className="w-4 h-4 bg-bauhaus-yellow" style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />
-                        </div>
-                        <p className="font-black text-bauhaus-black">此課程目前尚無章節</p>
+                    })}
+                </div>
+            ) : (
+                <div className="py-20 text-center bg-white border-2 border-bauhaus-black rounded-2xl">
+                    <div className="flex items-center justify-center gap-2 mb-4" aria-hidden="true">
+                        <span className="w-4 h-4 rounded-full bg-bauhaus-red" />
+                        <span className="w-4 h-4 bg-bauhaus-blue" />
+                        <span className="w-4 h-4 bg-bauhaus-yellow" style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />
                     </div>
-                )}
-            </div>
+                    <p className="font-black text-bauhaus-black">此課程目前尚無章節</p>
+                </div>
+            )}
         </div>
     );
 };

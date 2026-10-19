@@ -1,7 +1,127 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-20（總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+
+---
+
+## 🪪 2026-10-20：講師證件搬進系統儲存空間＋個人頁儲存修正（✅ 證件已在正式庫；🟡 程式修正在分支，待總指揮上線）
+
+**需求**：業主看過 10/19 新講師建檔後說：「那些證件我會需要是真的存在資料庫並且在講師自己的資料那裡可以看到」。
+業主同意連 5 位同樣只有雲端硬碟連結的舊老師一起做（侯十方、張世隆、黃于倫，以及已認領的侯宥圻、黃冠鈞）。
+
+**查到的事實**：
+- 講師個人頁（`ProfilePage.jsx`）的證件預覽只讀 `*_path`，也就是 Storage 裡的檔案。只有 `*_external_url`（雲端硬碟連結）的身分證、存摺，老師看不到圖，只有一個外連。
+- 講師認領後，讀得到「自己主檔有登記路徑」的檔案（Storage 政策「Users can view files referenced by own instructor profile」）。後台代傳的檔案也算。
+- **既有 bug（已在正式庫重現）**：個人頁用 `upsert(onConflict: user_id)` 儲存，Postgres 一定先跑 BEFORE INSERT 的 `guard_instructor_file_paths`。證件路徑不在 `instructors/<本人 uid>/` 的講師，只改文字也一律被擋（42501），包括 8 月 `form-import/` 匯入的 137 位、管理員在認領前代傳的。
+  證據：在 SQL Editor 用「一定會取消的交易」模擬，舊送法回 `SIM_RESULT 42501 instructor file paths must remain inside the current user folder`；新送法（不帶未更動的證件欄位）回 `upsert_ok front_kept=t bankbook_kept=t`。三次模擬都已取消，正式庫沒有留下資料。
+
+**程式修正（分支 `fix/profile-save-unchanged-docs`，worktree `.claude/worktrees/profile-save-docs`，commit `bb7c944`，已 rebase 到 `1f5c350`，未推 main）**：
+- `src/lib/instructorProfile.js` 新增 `pickInstructorDocumentFields`／`omitUnchangedDocumentFields`。
+- `ProfilePage.jsx` 記下載入時與每次成功儲存後 DB 的證件欄位。儲存時只送這次換掉或移除的證件，沒動的不送；upsert 只更新有送的欄位，所以 DB 原值保留。
+- 驗證：`npm test` 114/114（新增 `instructorProfile.test.js` 6 項）。`verify-profile-draft.mjs` 31/31，新增 T11 四項：mock 照正式庫規則擋非本人資料夾的路徑。反向對照：改回舊送法時 T11 四項全 FAIL，錯誤文字與正式庫相同。原本的 T9c 斷言改成「存摺沒動就不送，有送也必須是 DB 正本」。變更檔 ESLint 0。
+- fresh-context sonnet 審查：未發現誤清或誤留證件的問題，可上線。它查證過 PostgREST 單筆 upsert 的 `DO UPDATE SET` 只含有送的欄位。
+
+**正式庫已做（2026-10-20 00:13–01:10 台北）**：
+- 用業主的 Chrome 從雲端硬碟下載證件，經後台「編輯資料 → 選擇新圖片 → 儲存講師資料」上傳。共 **14 位、51 個檔**：今日新建 10 位 39 個檔；侯十方 4、黃于倫 4；侯宥圻、黃冠鈞「已認領那筆」各 2。
+- 路徑：未認領的放 `instructors/<講師主檔 id>/<種類>/<uuid>`，已認領的放 `instructors/<user_id>/...`。
+- 格式：林俊諺 3 張 HEIC、方羿淳 2 份單頁 PDF（身分證），用 macOS `sips` 轉成 JPEG 才上傳；其餘照原檔。
+- 防放錯格：每位存檔前先比對每格預覽的長寬，存檔後用 SQL 總核對。結果 51/51 的「DB 大小＝Storage 物件大小＝本機下載大小」、路徑前綴正確、雲端硬碟連結 51/51 保留。
+- 新建 10 位的其他欄位未被後台存檔改動：active、實習、未認領、銀行分欄空、表單時間、`bank_info_raw`、地區都在，4 筆上課紀錄仍掛著。
+- 暫存的證件檔已全部刪除（`.claude/tmp-instructor-docs/` 內 0 個檔，`~/Downloads` 數量回到 899）。
+- 還原：在後台該講師「編輯資料」對證件按「移除」再儲存，會清掉 `*_path` 並刪 Storage 檔，雲端硬碟連結不受影響。
+
+**沒搬的、要業主決定的**：
+- **張世隆**：身分證正面、存摺兩個雲端檔，這個 Chrome 帳號沒有下載權限（雲端回錯誤頁）。身分證反面那格是 6 頁 A4、檔名帶「備審」的 PDF，看起來傳錯檔，所以沒上傳。
+- **藍恩熹**：身分證正面、反面、存摺三格上傳的是同一張圖（三檔指紋相同）。已照原樣搬進系統，請業主看一眼，要他補正確的檔。
+- **重複主檔**：侯宥圻（`bbc9e1cc` 舊匯入、`06f95180`「樹懶老師侯宥圻」已認領）、黃冠鈞（`adbf7b06` 舊匯入、`822ae591` 已認領）各有兩筆。舊那筆有證件，已認領那筆原本沒有，這次補了身分證正反面。兩筆是否合併待業主決定，這次沒動。
+
+**上線注意**：分支上線前，未認領且證件在 `instructors/<主檔 id>/` 或 `form-import/` 的講師，認領後在個人頁按儲存會失敗。這包括這次的 12 位與 8 月匯入的 137 位。建議盡快上線；上線後找一位證件在 `form-import/` 的講師實測一次個人頁儲存。
+
+---
+
+## 🧱 2026-10-20：課程頁章節改成網格（桌機一列 4 個）（🛠 已改完＋本機實測，尚未 commit／上線）
+
+**需求**：業主看「教你怎麼教 - 各種教學項目」課程頁截圖：「下方做成一列四個的呈現方式，不然這樣太長了」。
+
+**改動**（只動 `培訓web/src/pages/LessonView.jsx`）：頁面寬度 `max-w-3xl`→`max-w-6xl`（說明文字仍限 `max-w-3xl` 保持好讀）；
+章節卡片由單欄橫式改為網格 `grid-cols-2 md:grid-cols-3 lg:grid-cols-4`，卡片改直式（上：完成圈＋章節 N＋箭頭；中：標題／預覽各最多兩行；
+下：hashtag／影片數／文章數標籤貼底，同列等高）；無章節時空狀態改在網格外渲染。資料讀取、連結、進度計算都沒動。
+
+**證據（2026-10-20 本機實跑，沙盒外，mock Supabase）**：新腳本 `培訓web/scripts/verify-lesson-grid.mjs` 34/34 PASS——
+1440／1280／1024 每列 4/4/1、820 每列 3/3/3、375 每列 2/2/2/2/1；同列高度差 0px、標題 ≤2 行、整頁無橫向捲軸、卡片最窄 166px（手機）；
+已完成勾勾與「2 / 9 章節」、「4 影片」標籤正確、點卡片進入該章節、空課程顯示空狀態。章節區高度：桌機 555px（9 張卡片）。
+截圖 `培訓web/docs/verification/2026-10-20-lesson-grid/`（6 張），fresh agent 看圖判讀：網格、陰影、截斷、對齊皆無問題。ESLint 該檔 0 問題。
+
+**待辦**：業主同意後 commit 並上線（本 worktree 目前在 `security/restrict-contract-document-reads` 分支，上線需另拉到 main）。
+
+**地雷（既有、非本次）**：頂部選單列在 768px 以上就切成桌機版（`Layout.jsx:135` `hidden md:flex`），管理員選單項目多，平板寬（約 820px）
+時選單文字被擠成直排、右側使用者名稱被切掉；講師帳號項目較少是否也會擠到未驗。建議把切換點改到 `lg`。
+同 worktree 另有並行工作的未提交改動（`InstructorList.jsx`、`verify-instructor-list-layout.mjs`），非本次，commit 時勿混入。
+
+---
+
+## 🧹 2026-10-20：後台「講師資料總覽」表格版面修正（🛠 已改完＋本機實測，尚未 commit／上線）
+
+**需求**：業主截圖「這個頁面下面的欄位看起來亂亂的，有一些還有奇怪的換行」——「未認領」「未取得」被擠成直排、表頭「速解資格」斷兩行、最右邊「預覽表單」被外框切掉。
+
+**原因**：8 欄每格左右 24px 留白＋Email 獨立一欄，後台內容區最寬也只有 1216px（Layout `max-w-7xl`），整張表塞不下，標籤被擠成直排，外框 `overflow-hidden` 又把最右欄切掉。不是螢幕太小。
+
+**改了什麼**（只動 `培訓web/src/pages/admin/InstructorList.jsx`）：
+- Email 收進姓名欄下方（lg 最寬 14rem／xl 20rem，一般長度完整顯示、超長才截斷，滑過看全文），表格 8 欄→7 欄；留白 lg 10px／xl 16px；標籤、表頭、按鈕一律不換行。
+- 綁定～操作 6 欄寬度貼齊內容（`w-px`），多出來的寬度給「講師」欄；「操作」表頭改靠左、對準按鈕。
+- 表格改從 1024px（lg）起顯示，以下用卡片；1024–1279px 按鈕縮成「編輯／預覽」（aria-label 仍是完整名稱，舊驗證腳本不受影響）；外框改 `overflow-x-auto`，再擠也只會出現捲軸、不會切掉按鈕。
+- 卡片版：綁定／解綁緊跟認領標籤、地區顯示「N 個縣市」（原本只有數字）、按鈕獨立一行對齊；地區摘要抽成共用 `RegionSummary`。
+
+**證據（2026-10-20 本機實跑，沙盒外）**：新腳本 `node scripts/verify-instructor-list-layout.mjs` **49/49 PASS**（mock Supabase、1024／1280／1440 桌機＋900 平板：表頭 7 欄單行、28 個標籤單行、14 顆按鈕單行且沒被切、表格不超出外框、列高一致 69–70px、「操作」對準按鈕差 0px、精簡欄多餘空白 0px、一般長度 Email 不截斷、展開列跨 7 欄、卡片按鈕對齊；另派兩輪 agent 看截圖判讀，指出的欄距不均／操作標題錯位／卡片按鈕參差都已修）；截圖 `培訓web/docs/verification/2026-10-20-instructor-list-layout/`。回歸：`verify-claim-admin-ui` 6/6、`verify-admin-instructor-editor-ui` 3/3、`verify-contract-feature-enabled` 40/40（重生的 10-18 截圖已還原）、`npm run build` 通過、ESLint 0 問題。
+
+**待業主**：同意後上線（本 worktree 目前在 `security/restrict-contract-document-reads` 分支且有並行對話的 `LessonView.jsx` 改動，上線要另開乾淨 worktree 從 origin/main 只帶這個檔）。
+
+**地雷／順手發現（未處理）**：頂端導覽列在 900–1024px 寬時「我的課程」「後台管理」等會被擠成直排／兩行、「管理員」徽章斷行（`src/components/Layout.jsx`，所有頁共用，另案處理）。
+
+---
+
+## 🔒 2026-10-19：合約範本讀取只給已核准角色＋簽署 PDF 可信度評估（🟡 已完成、待業主套正式庫）
+
+**來源**：10-18 簽約重開的資安審查提到兩筆既有設計債（非該次引入）：① `contract_documents` 的 SELECT 政策是 `USING (true)`、
+storage 對 `contract-documents` bucket 非 `signed/` 路徑全體登入者可讀——任何 Google 帳號首次登入即為 `pending`，等於任何人登入後
+直打 PostgREST／Storage API 就能列出並下載「講師委任報酬表」等範本；② 簽署 PDF 由瀏覽器產生再上傳，RPC 只驗存在不驗內容。
+
+**第一部分（已實作，分支 `security/restrict-contract-document-reads`，未推 main、未碰正式 Supabase）**：
+- 新 migration `supabase/migrations/20261019103000_restrict_contract_document_reads.sql`（可重複執行、只改政策）：
+  `contract_documents` 讀取改為單一政策「Approved roles can read contract documents」＝`users.role IN ('teacher','mentor','admin')`，
+  同時移除舊的 `USING (true)` 政策與後台若手動加過的其他 SELECT 專用政策（迴圈清掉，permissive 政策是 OR 關係，留著等於沒收緊），
+  並 `REVOKE ALL … FROM anon`；管理員 FOR ALL 政策不動。storage 的「read contract documents scoped」重建：本人 `signed/<uid>/`、
+  admin／mentor 整個 bucket 兩條規則原樣保留，**非 `signed/` 路徑（範本）改為只給已核准角色**。`contracts_setup.sql` 同步同一組政策。
+- 前端：`featureFlags.canAccessInstructorContracts` 原本開關打開時對 pending 也回 true，待審帳號的個人頁會顯示「尚未簽約」區塊並查
+  `contract_documents`（點進 `/contract` 又被導回待審頁）；改為只有 teacher／mentor（admin 永遠可）才為 true，與後端 RLS 一致。
+  pending 可到達的路由只有 `/profile`（allowPending），其餘 `/contract`、`/contract/view`、所有 `/admin/*` 都會把 pending 導走，
+  所以前端沒有任何 pending 需要讀 `contract_documents` 的路徑（驗證腳本有靜態檢查）。
+- 新驗證腳本 `scripts/verify-contract-document-reads.{mjs,sql}`、npm `verify:contract-document-reads`。
+
+**證據（2026-10-19 本機實跑，沙盒外）**：`npm run verify:contract-document-reads` SQL 11 項 PASS＋靜態 4 項：引導區先重現漏洞
+（pending 讀到 6 列文件、5 個範本檔）→ migration 連跑兩次 → `contract_documents` 只剩 1 條 SELECT 政策＋管理員 FOR ALL、storage 讀取政策
+1 條且含 teacher 條件、anon 無表級權限（直查回 42501、storage 0 列）；pending 文件 0 列、範本 0 檔、只看得到自己 `signed/` 底下那個檔、不能寫；
+teacher 看到的列與收緊前相同（全部 6 列；簽約頁 3 份且順序 rules→compensation→contract；個人頁版本比對 3；合約檢視頁 4；匯款表單模板取到 v2），
+範本 5 檔可讀、自己的簽署檔可讀、別人的 `signed/` 讀不到、不能寫；mentor 讀全部 6 列與 bucket 全部 9 檔（行為未變）；admin 讀全部、講師名單 1、
+下載中心 2、增改刪照常；新建庫路徑（`contracts_setup.sql` 兩次＋再疊 migration）政策集合相同。另 `npm run verify:contract-signing`
+16＋3 項 PASS、`npm run verify:contract-signing:browser` 40/40（截圖重生後已還原，不入本 commit）、`npm test` 74/74（新增 featureFlags 2 項）、
+`npm run build` 通過、變更檔 ESLint 0 問題（全專案 5 個既有問題在 FieldPositionEditor／ContractView／AssignmentReview／ProgressOverview，非本次）、
+`git diff --check` 乾淨。
+
+**待業主**：① 在 Supabase SQL Editor 以單一交易套用 `20261019103000_restrict_contract_document_reads.sql`（只改政策、不動資料；
+套用後 pending 帳號個人頁不再顯示簽約區塊、講師與管理員不受影響）；② 套完合併本分支到 main 推前端（順序無硬性要求：先套 migration 時，
+pending 的個人頁查詢只是回 0 列不報錯；先推前端時 pending 單純看不到區塊）；③ 套用後用一個 pending 帳號對 `/rest/v1/contract_documents`
+與 `/storage/v1/object/contract-documents/<範本路徑>` 各打一次確認拿不到，再用講師帳號開簽約頁確認三份文件仍載入。
+
+**第二部分（評估，未實作）**：`培訓web/docs/decisions/2026-10-19-signed-pdf-trust-options.md`。結論：**建議先做輕量方案 B**
+（範本上傳時記 SHA-256、已被引用的版本凍結不可改、RPC 寫入時由伺服器端把範本雜湊抄進 `instructor_contracts`、管理員可隨時重製 PDF，
+估 0.5–1 天、零新基礎設施）；伺服器端套印（Edge Function）估 3–5 天，要新增 Deno 部署管線與嵌入繁中字型，留待法務要求「PDF 檔本身必須是正本」
+或簽約量成長時再做。文件第 5 節另列「mentor 是否該讀 `signed/` 檔」：現況 mentor 可用 Storage API 列出並下載所有講師含個資的簽署 PDF，
+但畫面上沒有合約入口（「畫面沒有、API 有」）；建議選②從 storage 政策拿掉 mentor 的整個 bucket 讀取，業主決定。
+
+**地雷**：`contract_field_positions` 的 SELECT 仍是 `USING (true)`（只有座標、無個資，先不動）。驗證腳本在沙盒內會因 PostgreSQL 共享記憶體
+（`shmget: Operation not permitted`）起不來，要在沙盒外跑並帶 `LC_ALL=C`。
 
 ---
 

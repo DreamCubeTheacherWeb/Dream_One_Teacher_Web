@@ -155,7 +155,7 @@ try {
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: '匯出 1 位老師' }).click();
     const download = await downloadPromise;
-    assert.equal(download.suggestedFilename(), '夢想講師供應商_2026-06-01-2026-06-30_20260826.csv');
+    assert.match(download.suggestedFilename(), /^夢想講師供應商_2026-06-01-2026-06-30_\d{8}\.csv$/);
     const downloadPath = await download.path();
     const csv = readFileSync(downloadPath, 'utf8');
     assert.equal(csv.charCodeAt(0), 0xFEFF);
