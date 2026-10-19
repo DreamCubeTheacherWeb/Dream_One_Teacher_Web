@@ -19,7 +19,8 @@ const salaryHelpers = read('src/lib/salary.js');
 const checks = [
     ['站內報酬與課程回報路由已恢復', () => {
         assert.doesNotMatch(mySalary, /SALARY_PAGE_PAUSED/);
-        assert.match(app, /<Layout><MySalaryNew \/><\/Layout>/);
+        // 2026-10-20 起頁面改 lazy 載入，外層換成 PageLayout（Layout＋Suspense＋錯誤提示框）
+        assert.match(app, /<(Page)?Layout><MySalaryNew \/><\/(Page)?Layout>/);
     }],
     ['舊外部表單收進轉換期備援，並提示不可重複回報', () => {
         assert.match(mySalary, /仍在使用舊表單/);
