@@ -10,6 +10,27 @@ const ADMIN_MANAGED_FIELDS = [
 ];
 
 const FILE_FIELD_SUFFIXES = ['_path', '_mime', '_size', '_uploaded_at'];
+export const INSTRUCTOR_DOCUMENT_KEYS = ['photo', 'id_front', 'id_back', 'bankbook'];
+
+export const pickInstructorDocumentFields = (values = {}) => Object.fromEntries(
+    INSTRUCTOR_DOCUMENT_KEYS.flatMap((key) => FILE_FIELD_SUFFIXES.map((suffix) => {
+        const field = `${key}${suffix}`;
+        return [field, values[field] ?? null];
+    })),
+);
+
+// 講師本人儲存是 upsert：資料庫會先用 INSERT 檢查整列，非本人資料夾的路徑一律擋下。
+// 管理員代傳或表單匯入的檔案（instructors/<講師主檔 id>/、form-import/）沒換就不重送，
+// 讓 upsert 只更新這次真的換掉或移除的文件。
+export const omitUnchangedDocumentFields = (payload = {}, savedDocumentFields = {}) => {
+    const next = { ...payload };
+    INSTRUCTOR_DOCUMENT_KEYS.forEach((key) => {
+        const pathField = `${key}_path`;
+        if ((next[pathField] ?? null) !== (savedDocumentFields[pathField] ?? null)) return;
+        FILE_FIELD_SUFFIXES.forEach((suffix) => delete next[`${key}${suffix}`]);
+    });
+    return next;
+};
 
 export const stripAdminManagedInstructorFields = (values = {}) => {
     const editableValues = { ...values };

@@ -103,7 +103,7 @@ const Layout = ({ children }) => {
     // Bauhaus：目前頁面色塊指示（選中＝黑底白字，未選＝hover 變灰底）
     const isActivePath = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
     const navLinkClass = (path) =>
-        `flex items-center gap-1.5 px-3 py-2 text-sm font-bold uppercase tracking-wide rounded-lg transition-colors duration-200 ${
+        `flex items-center gap-1.5 px-3 py-2 text-sm font-bold uppercase tracking-wide whitespace-nowrap rounded-lg transition-colors duration-200 ${
             isActivePath(path) ? 'bg-bauhaus-black text-white' : 'text-bauhaus-black hover:bg-bauhaus-muted'
         }`;
     const mobileNavLinkClass = (path) =>
@@ -132,7 +132,7 @@ const Layout = ({ children }) => {
                     </Link>
 
                     {/* 桌面版導航 */}
-                    <nav className="hidden md:flex items-center gap-1">
+                    <nav className="hidden xl:flex items-center gap-1">
                         {user ? (
                             <>
                                 {profile && profile.role !== 'pending' ? (
@@ -143,7 +143,7 @@ const Layout = ({ children }) => {
                                 ) : (
                                     <button
                                         onClick={() => alert('權限尚未開啟，請檢查是否有資料尚未填寫完畢，如有疑問請於講師群組提出')}
-                                        className="flex items-center gap-1.5 px-3 py-2 text-sm text-bauhaus-black/40 hover:text-bauhaus-black font-bold uppercase tracking-wide cursor-pointer"
+                                        className="flex items-center gap-1.5 px-3 py-2 text-sm text-bauhaus-black/40 hover:text-bauhaus-black font-bold uppercase tracking-wide whitespace-nowrap cursor-pointer"
                                     >
                                         <BookOpen className="w-4 h-4" />
                                         我的課程
@@ -168,7 +168,7 @@ const Layout = ({ children }) => {
                                             aria-disabled="true"
                                             aria-label="教材資源（請先完成個人資料）"
                                             title="請先完成個人資料後才能開啟教材資源"
-                                            className="flex items-center gap-1.5 px-3 py-2 text-sm text-bauhaus-black/40 font-bold uppercase tracking-wide cursor-not-allowed"
+                                            className="flex items-center gap-1.5 px-3 py-2 text-sm text-bauhaus-black/40 font-bold uppercase tracking-wide whitespace-nowrap cursor-not-allowed"
                                         >
                                             <LibraryBig className="w-4 h-4" />
                                             教材資源
@@ -237,12 +237,14 @@ const Layout = ({ children }) => {
                     </nav>
 
                     {/* 手機版：通知 + 漢堡按鈕 */}
-                    <div className="flex md:hidden items-center gap-2">
+                    <div className="flex xl:hidden items-center gap-2">
                         {user && profile && profile.role !== 'pending' && (
                             <NotificationBell userId={user.id} />
                         )}
                         <button
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                            aria-label={mobileMenuOpen ? '關閉選單' : '開啟選單'}
+                            aria-expanded={mobileMenuOpen}
                             className="p-3 rounded-xl border-2 border-bauhaus-black text-bauhaus-black hover:bg-bauhaus-muted transition-colors duration-200"
                         >
                             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -252,7 +254,7 @@ const Layout = ({ children }) => {
 
                 {/* 手機版展開選單 */}
                 {mobileMenuOpen && (
-                    <div className="md:hidden bg-white border-t-4 border-bauhaus-black rounded-b-2xl overflow-hidden">
+                    <div className="xl:hidden bg-white border-t-4 border-bauhaus-black rounded-b-2xl overflow-hidden">
                         <div className="px-4 py-4 space-y-1">
                             {user ? (
                                 <>

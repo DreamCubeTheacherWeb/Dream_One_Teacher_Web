@@ -86,6 +86,11 @@ const equal = (actual, expected, label) => {
         throw new Error(`${label}：期望 ${JSON.stringify(expected)}，實際 ${JSON.stringify(actual)}`);
     }
 };
+// 沒換的證件欄位：主線 01b9884 起存檔不重送（omitUnchangedDocumentFields），送了也必須是原值。
+const unchangedOrOmitted = (payload, field, expected) => {
+    if (!(field in payload)) return;
+    equal(payload[field], expected, `payload.${field} 不變`);
+};
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const waitUntil = async (fn, message, timeout = 8000) => {
     const start = Date.now();
@@ -664,8 +669,8 @@ try {
             equal(payload.user_id, UID, 'payload.user_id');
             equal(payload.id_front_path, uploadedPath, 'payload.id_front_path 應是新路徑');
             equal(payload.id_front_mime, 'image/png', 'payload.id_front_mime');
-            equal(payload.id_back_path, oldBackPath, 'payload.id_back_path 不變');
-            equal(payload.bankbook_path, oldBankbookPath, 'payload.bankbook_path 不變');
+            unchangedOrOmitted(payload, 'id_back_path', oldBackPath);
+            unchangedOrOmitted(payload, 'bankbook_path', oldBankbookPath);
             equal(state.rejections.length, 0, '假 DB 擋下次數');
             equal(state.unlocks[0].consumed_at !== null, true, 'id_card 開放應被用掉');
         });
@@ -708,7 +713,7 @@ try {
             await saveAndWait(page, ctl);
             equal(state.uploads.length, 0, '上傳數');
             equal(state.saves.length, 1, '存檔請求數');
-            equal(state.saves[0].payload.id_front_path, oldFrontPath, 'id_front_path');
+            unchangedOrOmitted(state.saves[0].payload, 'id_front_path', oldFrontPath);
             equal(state.rejections.length, 0, '假 DB 擋下次數');
             equal(state.unlocks[0].consumed_at, null, '開放不應被用掉');
             equal(await tid(page, 'id_front-replace-button').count(), 1, '更換按鈕仍在（仍是開放狀態）');
@@ -739,7 +744,7 @@ try {
             for (const field of ['bank_account_name', 'bank_name', 'bank_branch', 'bank_code']) {
                 equal(payload[field], before[field], `payload.${field}`);
             }
-            for (const key of ['id_front_path', 'id_back_path', 'bankbook_path']) equal(payload[key], before[key], `payload.${key}`);
+            for (const key of ['id_front_path', 'id_back_path', 'bankbook_path']) unchangedOrOmitted(payload, key, before[key]);
             equal(state.rejections.length, 0, '假 DB 擋下次數');
             equal(state.uploads.length + state.storageDeletes.length, 0, 'storage 請求數');
             equal(state.unlocks[0].consumed_at !== null, true, 'bank_account 開放應被用掉');

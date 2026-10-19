@@ -64,13 +64,21 @@ WHERE display_name = '' OR display_name IS NULL;
 
 ALTER TABLE public.contract_documents ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  CREATE POLICY "Authenticated users can read active contract documents"
-    ON public.contract_documents FOR SELECT
-    TO authenticated
-    USING (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- 讀取只給已核准角色（2026-10-19 收緊；pending 讀不到範本清單）。
+-- 舊名政策 USING (true) 若存在一併移除，確保只剩這一條讀取政策。
+DROP POLICY IF EXISTS "Authenticated users can read active contract documents" ON public.contract_documents;
+DROP POLICY IF EXISTS "Approved roles can read contract documents" ON public.contract_documents;
+CREATE POLICY "Approved roles can read contract documents"
+  ON public.contract_documents FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.users u
+       WHERE u.id = (SELECT auth.uid()) AND u.role IN ('teacher', 'mentor', 'admin')
+    )
+  );
+
+REVOKE ALL ON TABLE public.contract_documents FROM anon;
 
 DO $$ BEGIN
   CREATE POLICY "Admins can manage contract documents"
@@ -328,18 +336,29 @@ ON CONFLICT (id) DO NOTHING;
 
 DROP POLICY IF EXISTS "Authenticated can read contract documents storage" ON storage.objects;
 DROP POLICY IF EXISTS "read contract documents scoped" ON storage.objects;
+-- 本人 signed/<uid>/、admin／mentor 整個 bucket、範本等非 signed/ 路徑只給已核准角色
+-- （2026-10-19 收緊：pending 讀不到範本檔）。
 CREATE POLICY "read contract documents scoped"
   ON storage.objects FOR SELECT
   TO authenticated
   USING (
     bucket_id = 'contract-documents'
     AND (
-      EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('admin', 'mentor'))
-      OR (
+      (
         (storage.foldername(name))[1] = 'signed'
-        AND (storage.foldername(name))[2] = auth.uid()::text
+        AND (storage.foldername(name))[2] = (SELECT auth.uid())::text
       )
-      OR (storage.foldername(name))[1] IS DISTINCT FROM 'signed'
+      OR EXISTS (
+        SELECT 1 FROM public.users u
+         WHERE u.id = (SELECT auth.uid()) AND u.role IN ('admin', 'mentor')
+      )
+      OR (
+        (storage.foldername(name))[1] IS DISTINCT FROM 'signed'
+        AND EXISTS (
+          SELECT 1 FROM public.users u
+           WHERE u.id = (SELECT auth.uid()) AND u.role IN ('teacher', 'mentor', 'admin')
+        )
+      )
     )
   );
 
