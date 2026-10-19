@@ -4,6 +4,7 @@
 //  2. 後台「作業審核中心」：改成 effect 內載入（修 lint）後，頁面載入、分組、待審核數、輔導員選單行為不變。
 //  3. 登入核心（AuthContext）：users 查詢遇到 5xx 要重試，不可把已存在的帳號當成新使用者／待審核。
 //  4. 後台課程編輯（CMSManager）：章節標題／「需繳交作業」寫入失敗時，畫面要還原並提示（不能顯示成已存）。
+//  5. 章節頁（LessonDetail）：快速切章時舊章節較晚回來的回應不可蓋掉新章節；留言按讚不可連點多加、失敗要還原。
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
@@ -354,6 +355,109 @@ async function verifyCmsWriteFailures(browser, base) {
     await context.close();
 }
 
+// ───────────────────────── 5. 章節頁：快速切章不被舊回應蓋掉；按讚防連點、失敗還原 ─────────────────────────
+async function verifyLessonDetail(browser, base) {
+    const adminId = '00000000-0000-4000-8000-000000000205';
+    const { authUser, session } = makeSession(adminId, 'lesson-admin@test.local', '章節測試管理員');
+    const courseId = '10000000-0000-4000-8000-000000000205';
+    const L1 = '30000000-0000-4000-8000-000000000251';
+    const L2 = '30000000-0000-4000-8000-000000000252';
+    const lessonRows = {
+        [L1]: { id: L1, course_id: courseId, title: '第一章：快速載入', order: 0, requires_assignment: false },
+        [L2]: { id: L2, course_id: courseId, title: '第二章：很慢才回來', order: 1, requires_assignment: false },
+    };
+    const SLOW_MS = 2500;
+    // 點「下一章節」進入 L2 時（armSlow）的第一個課程請求故意很慢，模擬舊章節的回應比新章節晚回來
+    const state = { armSlow: false, slowStarted: false, slowDelivered: false, likeMode: 'slow-ok', likePosts: 0 };
+    const scenario = {
+        authUser, session,
+        tables: {
+            users: () => [{ id: adminId, name: '章節測試管理員', email: authUser.email, role: 'admin', created_at: now }],
+            courses: async () => {
+                if (state.armSlow) {
+                    state.armSlow = false;
+                    state.slowStarted = true;
+                    await new Promise(resolve => setTimeout(resolve, SLOW_MS));
+                    state.slowDelivered = true;
+                }
+                return [{ id: courseId, title: '測試課程' }];
+            },
+            lessons: async (url) => {
+                const id = url.searchParams.get('id');
+                if (id) return [lessonRows[id.replace('eq.', '')]]; // 單一章節（.single()）
+                return [lessonRows[L1], lessonRows[L2]].map(({ id: rowId, title, order }) => ({ id: rowId, title, order }));
+            },
+            lesson_comments: () => [{ id: 'cm1', lesson_id: L1, user_id: '50000000-0000-4000-8000-0000000000aa', body: '一則留言', created_at: '2026-10-05T00:00:00Z' }],
+            lesson_comment_likes: async (url, request) => {
+                if (request.method() === 'POST') {
+                    state.likePosts += 1;
+                    if (state.likeMode === 'fail') return { status: 500, body: { message: 'simulated like failure' } };
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                    return [];
+                }
+                return [];
+            },
+        },
+    };
+
+    // 快速切章：L1 載入完 → 點「下一章節」到慢的 L2 → 還沒回來就按上一頁回 L1
+    {
+        const { context, page } = await openPage(browser, scenario);
+        await page.goto(`${base}/courses/${courseId}/lessons/${L1}`, { waitUntil: 'networkidle' });
+        await page.getByRole('heading', { name: '第一章：快速載入' }).waitFor();
+        state.armSlow = true;
+        await page.getByRole('link', { name: '下一章節' }).click();
+        await page.waitForURL(`**/lessons/${L2}`);
+        const waitStarted = Date.now();
+        while (!state.slowStarted && Date.now() - waitStarted < 5000) await page.waitForTimeout(20);
+        await page.goBack(); // 慢的 L2 請求還在路上時就回到 L1
+        await page.waitForURL(`**/lessons/${L1}`);
+        await page.getByRole('heading', { name: '第一章：快速載入' }).waitFor();
+        const start = Date.now();
+        while (!state.slowDelivered && Date.now() - start < SLOW_MS + 3000) await page.waitForTimeout(100);
+        await page.waitForTimeout(1500); // 讓慢的回應有機會（錯誤地）接著把 L2 的內容蓋到畫面上
+        const heading = await page.locator('h1').allInnerTexts();
+        const pathName = new URL(page.url()).pathname;
+        check('章節頁：舊章節（慢）的回應已送達，但畫面仍是最後點的章節（第一章）', state.slowStarted && state.slowDelivered && pathName.endsWith(L1) && heading.includes('第一章：快速載入') && !heading.includes('第二章：很慢才回來'),
+            `slowStarted=${state.slowStarted}、slowDelivered=${state.slowDelivered}、path=...${pathName.slice(-8)}、標題=${heading.join('|')}`);
+        await context.close();
+    }
+
+    // 按讚：連點只送一次、數字只 +1
+    const likeButton = (page) => page.locator('button:has(svg.lucide-thumbs-up)');
+    {
+        state.likeMode = 'slow-ok';
+        state.likePosts = 0;
+        const { context, page } = await openPage(browser, scenario);
+        await page.goto(`${base}/courses/${courseId}/lessons/${L1}`, { waitUntil: 'networkidle' });
+        await likeButton(page).waitFor();
+        await likeButton(page).dblclick();
+        await page.waitForTimeout(1500);
+        const text = (await likeButton(page).innerText()).trim();
+        check('按讚：快速連點兩下只送出 1 次寫入、數字是 1', state.likePosts === 1 && text === '1', `寫入 ${state.likePosts} 次、顯示「${text}」`);
+        await context.close();
+    }
+
+    // 按讚失敗：數字與按鈕狀態還原並提示
+    {
+        state.likeMode = 'fail';
+        state.likePosts = 0;
+        const { context, page } = await openPage(browser, scenario);
+        const dialogs = [];
+        page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
+        await page.goto(`${base}/courses/${courseId}/lessons/${L1}`, { waitUntil: 'networkidle' });
+        await likeButton(page).waitFor();
+        await likeButton(page).click();
+        await page.waitForTimeout(1000);
+        const text = (await likeButton(page).innerText()).trim();
+        const className = await likeButton(page).getAttribute('class');
+        check('按讚：寫入失敗 → 數字還原（不顯示 1）、不是已按讚樣式，並跳出提示', text === '' && !className.includes('bg-bauhaus-blue') && dialogs.some(d => d.includes('按讚失敗')),
+            `顯示「${text}」、提示=${dialogs.join('|')}`);
+        check('按讚：失敗後按鈕恢復可再按', await likeButton(page).isEnabled());
+        await context.close();
+    }
+}
+
 async function run() {
     const port = await reservePort();
     const base = `http://127.0.0.1:${port}`;
@@ -376,6 +480,7 @@ async function run() {
         await verifyAssignmentReviewLoads(browser, base);
         await verifyAuthRetry(browser, base);
         await verifyCmsWriteFailures(browser, base);
+        await verifyLessonDetail(browser, base);
     } finally {
         if (browser) await browser.close();
         vite.kill('SIGTERM');

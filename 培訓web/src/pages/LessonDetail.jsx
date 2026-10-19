@@ -30,11 +30,14 @@ const LessonDetail = () => {
     const isAdmin = profile?.role === 'admin';
 
     useEffect(() => {
+        // 快速切換上一章／下一章時，前一章較晚回來的回應不可蓋掉目前章節（比照 Leaderboard 的 cancelled 旗標）
+        let cancelled = false;
         const fetchData = async () => {
             setLoading(true);
 
             // Get current user
             const { data: { user } } = await supabase.auth.getUser();
+            if (cancelled) return;
             setCurrentUser(user);
 
             // Fetch course
@@ -43,6 +46,7 @@ const LessonDetail = () => {
                 .select('*')
                 .eq('id', courseId)
                 .single();
+            if (cancelled) return;
             setCourse(courseData);
 
             // Fetch all lessons (for prev/next nav)
@@ -51,6 +55,7 @@ const LessonDetail = () => {
                 .select('id, title, order')
                 .eq('course_id', courseId)
                 .order('order', { ascending: true });
+            if (cancelled) return;
             setLessons(allLessons || []);
 
             // Fetch this lesson
@@ -59,6 +64,7 @@ const LessonDetail = () => {
                 .select('*')
                 .eq('id', lessonId)
                 .single();
+            if (cancelled) return;
             setLesson(lessonData);
 
             // Fetch contents
@@ -67,6 +73,7 @@ const LessonDetail = () => {
                 .select('*')
                 .eq('lesson_id', lessonId)
                 .order('order', { ascending: true });
+            if (cancelled) return;
             setContents(contentsData || []);
 
             // Fetch progress & instructor role
@@ -76,6 +83,7 @@ const LessonDetail = () => {
                     .select('instructor_role')
                     .eq('user_id', user.id)
                     .maybeSingle();
+                if (cancelled) return;
                 setInstructorRole(instrData?.instructor_role || null);
 
                 const { data: progressData } = await supabase
@@ -83,6 +91,7 @@ const LessonDetail = () => {
                     .select('lesson_id, completed')
                     .eq('user_id', user.id)
                     .eq('lesson_id', lessonId);
+                if (cancelled) return;
                 const progMap = {};
                 progressData?.forEach(p => { progMap[p.lesson_id] = p.completed; });
                 setProgress(progMap);
@@ -94,6 +103,7 @@ const LessonDetail = () => {
                     .eq('user_id', user.id)
                     .eq('lesson_id', lessonId)
                     .order('created_at', { ascending: false });
+                if (cancelled) return;
 
                 if (assignData && assignData.length > 0) {
                     const assignIds = assignData.map(a => a.id);
@@ -102,6 +112,7 @@ const LessonDetail = () => {
                         .select('*')
                         .in('assignment_id', assignIds)
                         .order('created_at', { ascending: true });
+                    if (cancelled) return;
 
                     const fbMap = {};
                     const fbAuthorUids = new Set();
@@ -118,6 +129,7 @@ const LessonDetail = () => {
                             supabase.from('instructors').select('user_id, full_name, nickname').in('user_id', authorIds),
                             supabase.from('users').select('id, name, role').in('id', authorIds),
                         ]);
+                        if (cancelled) return;
                         aUsers?.forEach(u => { fbAuthorMap[u.id] = { name: u.name, role: u.role }; });
                         aInstr?.forEach(i => {
                             if (!fbAuthorMap[i.user_id]) fbAuthorMap[i.user_id] = {};
@@ -151,12 +163,14 @@ const LessonDetail = () => {
                 .select('*')
                 .eq('lesson_id', lessonId)
                 .order('created_at', { ascending: true });
+            if (cancelled) return;
             if (commentData && commentData.length > 0) {
                 const uids = [...new Set(commentData.map((c) => c.user_id))];
                 const { data: instrData } = await supabase
                     .from('instructors')
                     .select('user_id, full_name, nickname')
                     .in('user_id', uids);
+                if (cancelled) return;
                 const nameMap = {};
                 instrData?.forEach((i) => { nameMap[i.user_id] = { full_name: i.full_name, nickname: i.nickname }; });
                 setComments(commentData.map((c) => ({
@@ -171,6 +185,7 @@ const LessonDetail = () => {
                     .from('lesson_comment_likes')
                     .select('comment_id, user_id')
                     .in('comment_id', commentIds);
+                if (cancelled) return;
                 const likeCounts = {};
                 const myLikeSet = new Set();
                 likesData?.forEach((l) => {
@@ -188,6 +203,7 @@ const LessonDetail = () => {
             setLoading(false);
         };
         fetchData();
+        return () => { cancelled = true; };
     }, [courseId, lessonId]);
 
     const toggleComplete = async () => {
@@ -273,27 +289,42 @@ const LessonDetail = () => {
         setCommentSubmitting(false);
     };
 
+    // 按讚進行中同一則留言不可重複送出；寫入失敗要把畫面還原並提示
+    const likeBusyRef = useRef(new Set());
+    const [likeBusy, setLikeBusy] = useState(new Set());
+
+    const applyLike = (commentId, nextLiked) => {
+        setMyLikes((prev) => { const next = new Set(prev); if (nextLiked) next.add(commentId); else next.delete(commentId); return next; });
+        setCommentLikes((prev) => ({
+            ...prev,
+            [commentId]: nextLiked ? (prev[commentId] || 0) + 1 : Math.max(0, (prev[commentId] || 1) - 1),
+        }));
+    };
+
     const toggleLike = async (commentId) => {
-        if (!currentUser) return;
+        if (!currentUser || likeBusyRef.current.has(commentId)) return;
+        likeBusyRef.current.add(commentId);
+        setLikeBusy(new Set(likeBusyRef.current));
         const liked = myLikes.has(commentId);
-        if (liked) {
-            await supabase
+        applyLike(commentId, !liked);
+
+        // 通知由 lesson_comment_likes 的資料庫 trigger 依真實留言與課程資料建立，
+        // client 不可自行指定收件人、文案或連結。
+        const { error } = liked
+            ? await supabase
                 .from('lesson_comment_likes')
                 .delete()
                 .eq('comment_id', commentId)
-                .eq('user_id', currentUser.id);
-            setMyLikes((prev) => { const next = new Set(prev); next.delete(commentId); return next; });
-            setCommentLikes((prev) => ({ ...prev, [commentId]: Math.max(0, (prev[commentId] || 1) - 1) }));
-        } else {
-            await supabase
+                .eq('user_id', currentUser.id)
+            : await supabase
                 .from('lesson_comment_likes')
                 .insert({ comment_id: commentId, user_id: currentUser.id });
-            setMyLikes((prev) => new Set(prev).add(commentId));
-            setCommentLikes((prev) => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 }));
-
-            // 通知由 lesson_comment_likes 的資料庫 trigger 依真實留言與課程資料建立，
-            // client 不可自行指定收件人、文案或連結。
+        if (error) {
+            applyLike(commentId, liked);
+            alert('按讚失敗，已還原：' + error.message);
         }
+        likeBusyRef.current.delete(commentId);
+        setLikeBusy(new Set(likeBusyRef.current));
     };
 
     const deleteComment = async (commentId) => {
@@ -605,7 +636,7 @@ const LessonDetail = () => {
                                     <div className="flex items-center mt-3 pt-2 border-t-2 border-bauhaus-black/10">
                                         <button
                                             onClick={() => toggleLike(c.id)}
-                                            disabled={!currentUser}
+                                            disabled={!currentUser || likeBusy.has(c.id)}
                                             className={`flex items-center gap-1.5 text-xs font-medium transition-colors duration-200 px-2.5 py-1.5 rounded-lg border-2 ${
                                                 liked
                                                     ? 'text-white bg-bauhaus-blue border-bauhaus-blue'
