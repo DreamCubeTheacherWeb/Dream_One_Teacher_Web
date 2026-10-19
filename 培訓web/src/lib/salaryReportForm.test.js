@@ -6,6 +6,11 @@ import {
     buildReportExtrasParams,
     groupReportOptions,
     reportGroupFor,
+    reportLayoutFor,
+    reportFieldsFor,
+    roleForCourseType,
+    validateReportBasics,
+    buildReportBasicParams,
     termPeriodChoices,
     validateReportExtras,
 } from './salaryReportForm.js';
@@ -89,4 +94,64 @@ test('options are grouped, sorted, and fall back to built-in term labels', () =>
     assert.deepEqual(grouped.camp_batch.map(o => o.value), ['A', 'B']);
     assert.deepEqual(grouped.partner_unit, []);
     assert.deepEqual(termPeriodChoices(groupReportOptions(null)).map(o => o.label), ['寒假', '學期間', '暑假']);
+});
+
+test('版面依回報類別：B2B／B2C 直營／B2C 營隊／其他', () => {
+    assert.equal(reportLayoutFor('collab_assistant'), 'b2b');
+    assert.equal(reportLayoutFor('onsite_1_5hr'), 'b2c_direct');
+    assert.equal(reportLayoutFor('trial'), 'b2c_direct');
+    assert.equal(reportLayoutFor('camp_director_5d'), 'b2c_camp');
+    assert.equal(reportLayoutFor('speed_camp'), 'b2c_camp');
+    assert.equal(reportLayoutFor('regular_basic'), 'other');
+    assert.equal(reportLayoutFor('counter'), 'other');
+});
+
+test('B2B 與 B2C 只保留表單上的基本欄位；其他課程維持完整欄位', () => {
+    assert.deepEqual([...reportFieldsFor('collab_lead')], ['hours', 'students']);
+    assert.deepEqual([...reportFieldsFor('online')], ['course_name', 'hours_preset', 'students', 'transport']);
+    assert.deepEqual([...reportFieldsFor('camp')], ['students', 'transport']);
+    assert.ok(reportFieldsFor('regular_basic').has('location') && reportFieldsFor('regular_basic').has('progress'));
+});
+
+test('角色由報酬項目推定', () => {
+    assert.equal(roleForCourseType('collab_lead'), 'lead');
+    assert.equal(roleForCourseType('collab_assistant'), 'assistant');
+    assert.equal(roleForCourseType('camp_director_2d'), 'project_lead');
+    assert.equal(roleForCourseType('counter'), 'counter');
+    assert.equal(roleForCourseType('trial'), 'lead');
+});
+
+test('表單必填：B2C 直營要課程名稱、時數、人數；B2B 要時數、人數；營隊要人數；其他不強制', () => {
+    const base = { course_name: '', duration_hours: '', student_count: '' };
+    assert.equal(validateReportBasics('online', base), '請填寫課程名稱（學生代表姓名或課程地點）。');
+    assert.equal(validateReportBasics('online', { ...base, course_name: '王小明' }), '請填寫上課時數。');
+    assert.equal(validateReportBasics('online', { ...base, course_name: '王小明', duration_hours: '1.5' }), '請填寫本次上課人數。');
+    assert.equal(validateReportBasics('online', { course_name: '王小明', duration_hours: '1.5', student_count: '2' }), '');
+    assert.equal(validateReportBasics('collab_lead', base), '請填寫上課時數。');
+    assert.equal(validateReportBasics('collab_lead', { ...base, duration_hours: '2' }), '請填寫本次上課人數。');
+    assert.equal(validateReportBasics('camp', base), '請填寫本次上課人數。');
+    assert.equal(validateReportBasics('regular_basic', base), '');
+});
+
+test('只送出目前版面看得到的基本欄位', () => {
+    const form = {
+        course_name: '王小明', duration_hours: '1.5', student_count: '2', location: '台北', role_in_session: 'assistant',
+        self_review: '還行', progress_note: '進度', incident_report: '無事',
+    };
+    assert.deepEqual(buildReportBasicParams('collab_assistant', form), {
+        p_role_in_session: 'assistant', p_course_name: null, p_location: null, p_duration_hours: 1.5, p_student_count: 2,
+        p_self_review: null, p_progress_note: null, p_incident_report: '無事',
+    });
+    assert.deepEqual(buildReportBasicParams('camp_director_5d', form), {
+        p_role_in_session: 'project_lead', p_course_name: null, p_location: null, p_duration_hours: null, p_student_count: 2,
+        p_self_review: null, p_progress_note: null, p_incident_report: '無事',
+    });
+    const direct = buildReportBasicParams('onsite_1_5hr', form);
+    assert.equal(direct.p_course_name, '王小明');
+    assert.equal(direct.p_location, null);
+    assert.equal(direct.p_role_in_session, 'lead');
+    const other = buildReportBasicParams('regular_basic', form);
+    assert.equal(other.p_location, '台北');
+    assert.equal(other.p_role_in_session, 'assistant');
+    assert.equal(other.p_progress_note, '進度');
 });

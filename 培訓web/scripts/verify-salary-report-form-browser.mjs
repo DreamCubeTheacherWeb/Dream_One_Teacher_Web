@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
 const { chromium } = require(path.join(appDir, 'node_modules/playwright-core'));
-const { courseCategoryFor, courseTypesInCategory, reportChannelFor } = await import(path.join(appDir, 'src/lib/constants.js'));
+const { categoriesInChannel, courseCategoryConfig, courseCategoryFor, reportChannelFor, teacherCourseItems } = await import(path.join(appDir, 'src/lib/constants.js'));
 const chromeExecutable = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const shotDir = path.join(appDir, 'docs/verification/2026-10-19-salary-report-form-channel');
 mkdirSync(shotDir, { recursive: true });
@@ -185,13 +185,26 @@ async function openReport(page, base) {
     await page.getByRole('heading', { name: '登記課程回報' }).waitFor();
 }
 
-// 2026-10-19 起回報頁改三層：回報類別（B2B／B2C）→ 課程類型（表單用語）→ 報酬項目（course_type，單一項目時不顯示）
+// 2026-10-19 起回報頁照兩份 Google 表單分層：回報類別（B2C／B2B／其他）→ 課程種類（類別只有一種時不顯示）
+// → 第三層（同一種課有多個報酬規則時才顯示；合作課叫「課程講師身分別」、營隊叫「是否為營隊負責人」、其餘叫「報酬項目」）
 async function pickCourse(page, courseType) {
     const categoryKey = courseCategoryFor(courseType);
-    await page.getByLabel('回報類別').selectOption(reportChannelFor(courseType));
-    await page.getByLabel('課程類型').selectOption(categoryKey);
-    if (courseTypesInCategory(categoryKey).length > 1) await page.getByLabel('報酬項目').selectOption(courseType);
+    const channel = reportChannelFor(courseType);
+    await page.getByLabel('回報類別').selectOption(channel);
+    if (categoriesInChannel(channel).length > 1) await page.getByLabel('課程種類').selectOption(categoryKey);
+    if (teacherCourseItems(categoryKey).length > 1) {
+        await page.getByLabel(courseCategoryConfig(categoryKey)?.itemLabel || '報酬項目', { exact: true }).selectOption(courseType);
+    }
 }
+const fillBasics = async (page, { name, hours, students }) => {
+    if (name !== undefined) await page.getByLabel('課程名稱', { exact: true }).fill(name);
+    if (hours !== undefined) {
+        const hoursField = page.getByLabel('上課時數', { exact: true });
+        if ((await hoursField.evaluate(el => el.tagName)) === 'SELECT') await hoursField.selectOption(hours);
+        else await hoursField.fill(hours);
+    }
+    if (students !== undefined) await page.getByLabel('上課人數', { exact: true }).fill(students);
+};
 
 async function run() {
     const port = await reservePort();
@@ -218,30 +231,56 @@ async function run() {
         let page = await context.newPage();
         await openReport(page, base);
 
-        // 三層選單：回報類別 → 課程類型 → 報酬項目
-        const optionLabels = async (label) => page.getByLabel(label).locator('option').allInnerTexts();
-        check('回報類別預設 B2C 直營，選項為 B2C／B2B', await page.getByLabel('回報類別').inputValue() === 'b2c'
-            && JSON.stringify(await optionLabels('回報類別')) === JSON.stringify(['B2C 直營課程', 'B2B 合作單位']));
-        check('回報類別下方有兩行備註說明哪種課選哪個',
-            await page.getByText('公司自己開的課：到府家教課／揪團課').isVisible() && await page.getByText('學校、社團、機構等合作單位委託的課').isVisible());
-        check('B2C 的課程類型照表單用語', JSON.stringify(await optionLabels('課程類型')) === JSON.stringify([
-            '常態課', '到府家教課／到府揪團課', '線上課程', '體驗課', '速解研究所｜實體課程', '速解研究所｜線上課程', '寒暑假營隊', '站櫃／擺攤', '其他']));
-        check('常態課有多個報酬項目時顯示第三層', await page.getByLabel('報酬項目').isVisible()
-            && JSON.stringify(await optionLabels('報酬項目')) === JSON.stringify(['實體常態-初階', '實體常態-進階', '幼兒啟蒙 主講', '幼兒啟蒙 助教']));
-        await page.getByLabel('課程類型').selectOption('trial');
+        // 分層選單：回報類別 → 課程種類 → 第三層
+        const optionLabels = async (label) => page.getByLabel(label, { exact: true }).locator('option').allInnerTexts();
+        check('回報類別預設 B2C 直營，選項為 B2C／B2B／其他', await page.getByLabel('回報類別').inputValue() === 'b2c'
+            && JSON.stringify(await optionLabels('回報類別')) === JSON.stringify(['B2C 直營課程部', 'B2B 合作單位課程', '其他課程']));
+        check('回報類別下方有三行備註說明哪種課選哪個',
+            await page.getByText('同「課後回報表單｜二處 B2C 版本」').isVisible()
+            && await page.getByText('同「B2B 合作單位課程 課後回報單」').isVisible()
+            && await page.getByText('不在上面兩份表單裡的課').isVisible());
+        check('B2C 的課程種類與二處表單選項一字不差', JSON.stringify(await optionLabels('課程種類')) === JSON.stringify([
+            '到府家教課 or 到府揪團課', '線上課程', '體驗課', '速解研究所｜實體課程', '速解研究所｜線上課程', '寒暑假營隊 二日營、五日營']));
+        check('B2C 到府課欄位照表單：課程名稱、時數下拉（1／1.5／2／2.5／3／其他）、人數、交通補助；沒有角色／地點／自評／進度',
+            await page.getByLabel('課程名稱', { exact: true }).isVisible()
+            && JSON.stringify(await optionLabels('上課時數')) === JSON.stringify(['請選擇', '1', '1.5', '2', '2.5', '3', '其他（自行填寫）'])
+            && await page.getByLabel('上課人數', { exact: true }).isVisible()
+            && await page.getByLabel('申請交通補助').isVisible()
+            && await page.getByLabel('角色').count() === 0 && await page.getByLabel('地點').count() === 0
+            && await page.getByLabel('課程自評').count() === 0 && await page.getByLabel('學習進度').count() === 0);
+        check('到府課有兩個報酬項目時顯示第三層', JSON.stringify(await optionLabels('報酬項目')) === JSON.stringify(['到府 2hr/節', '到府 1.5hr/節']));
+        await page.getByLabel('課程種類').selectOption('trial');
         check('體驗課只有一個報酬項目時第三層自動帶入並隱藏', await page.getByLabel('報酬項目').count() === 0);
+        await page.getByLabel('上課時數', { exact: true }).selectOption('__other__');
+        check('時數選「其他」出現自填欄位', await page.getByLabel('上課時數（自行填寫）').isVisible());
+        await page.getByLabel('課程種類').selectOption('camp');
+        check('營隊照表單問「是否為營隊負責人」、有梯次與人數、沒有時數與課程名稱',
+            JSON.stringify(await optionLabels('是否為營隊負責人')) === JSON.stringify(['否（一般講師）', '否（一般講師，速解營）', '是（5 日營負責人）', '是（4 日營負責人）', '是（2 日營負責人）'])
+            && await page.getByLabel('營隊梯次').isVisible() && await page.getByLabel('上課人數', { exact: true }).isVisible()
+            && await page.getByLabel('上課時數', { exact: true }).count() === 0 && await page.getByLabel('課程名稱', { exact: true }).count() === 0);
+        await page.screenshot({ path: path.join(shotDir, 'desktop-channel-b2c-camp.png'), fullPage: true });
         await page.getByLabel('回報類別').selectOption('b2b');
-        check('切到 B2B 後課程類型只剩合作單位課程、報酬項目為主講／助教／專案且立即出現上課單位下拉',
-            JSON.stringify(await optionLabels('課程類型')) === JSON.stringify(['合作單位課程'])
-            && JSON.stringify(await optionLabels('報酬項目')) === JSON.stringify(['合作 主講', '合作 助教', '合作 專案'])
-            && await page.getByLabel('本次上課單位').isVisible() && await page.getByLabel('教學課程期間').isVisible());
+        check('B2B 照表單：沒有課程種類與課程名稱，有身分別（主講／助教）、期間、單位、時數、人數、教材，沒有交通補助',
+            await page.getByLabel('課程種類').count() === 0 && await page.getByLabel('課程名稱', { exact: true }).count() === 0
+            && JSON.stringify(await optionLabels('課程講師身分別')) === JSON.stringify(['合作課程 主講', '合作課程 助教'])
+            && await page.getByLabel('教學課程期間').isVisible() && await page.getByLabel('本次上課單位', { exact: true }).isVisible()
+            && await page.getByLabel('上課時數', { exact: true }).isVisible() && await page.getByLabel('上課人數', { exact: true }).isVisible()
+            && await page.getByLabel('本次發出教材數量').isVisible() && await page.getByLabel('申請交通補助').count() === 0
+            && await page.getByLabel('地點').count() === 0 && await page.getByLabel('課程自評').count() === 0);
         await page.screenshot({ path: path.join(shotDir, 'desktop-channel-b2b.png'), fullPage: true });
+        await page.getByLabel('回報類別').selectOption('other');
+        check('其他課程維持完整欄位（常態課、角色、地點、自評、進度）',
+            JSON.stringify(await optionLabels('課程種類')) === JSON.stringify(['常態課', '幼兒啟蒙', '速解培訓', '站櫃／擺攤', '其他'])
+            && await page.getByLabel('角色').isVisible() && await page.getByLabel('地點').isVisible()
+            && await page.getByLabel('課程自評').isVisible() && await page.getByLabel('學習進度').isVisible());
         await page.getByLabel('回報類別').selectOption('b2c');
-        check('切回 B2C 回到常態課初階', await page.getByLabel('課程類型').inputValue() === 'regular'
-            && await page.getByLabel('報酬項目').inputValue() === 'regular_basic');
+        check('切回 B2C 回到到府家教課', await page.getByLabel('課程種類').inputValue() === 'onsite'
+            && await page.getByLabel('報酬項目').inputValue() === 'onsite_2hr');
 
-        // 直營（預設常態課）→ 只顯示交通補助
-        await page.getByPlaceholder('今天教到哪個段落、下一場預計教什麼…').fill('教到第一層十字');
+        // B2C 直營（預設到府）→ 表單必填與交通補助
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('直營課沒填課程名稱被擋', (await alertText(page)) === '請填寫課程名稱（學生代表姓名或課程地點）。' && submitBodies.length === 0);
+        await fillBasics(page, { name: '王小明', hours: '1.5', students: '2' });
         check('直營課顯示交通補助開關', await page.getByLabel('申請交通補助').isVisible());
         check('直營課不顯示上課單位／營隊梯次／教學期間',
             await page.getByLabel('本次上課單位').count() === 0
@@ -266,6 +305,10 @@ async function run() {
             && await page.getByLabel('本次發出教材數量').isVisible());
         check('合作課不顯示交通補助', await page.getByLabel('申請交通補助').count() === 0);
         check('教材欄位提示照表單原文精神', (await page.getByLabel('本次發出教材數量').getAttribute('placeholder')).includes('楓葉10，無則打 0'));
+        await fillBasics(page, { hours: '', students: '' });
+        await page.getByRole('button', { name: '送出回報' }).click();
+        check('合作課沒填時數被擋（表單必填）', (await alertText(page)) === '請填寫上課時數。');
+        await fillBasics(page, { hours: '2', students: '18' });
         await page.getByRole('button', { name: '送出回報' }).click();
         check('合作課缺教學期間被擋', (await alertText(page)) === '合作課程請選擇教學課程期間。' && submitBodies.length === 0);
         await page.getByLabel('教學課程期間').selectOption('semester');
@@ -285,7 +328,9 @@ async function run() {
             submitBodies.length === 1 && body.p_course_type === 'collab_lead'
             && body.p_term_period === 'semester' && body.p_unit_name === '【臺北】新開合作單位 週五班'
             && body.p_materials_issued === '楓葉10' && body.p_transport_subsidy_requested === false
-            && body.p_transport_distance_km === null);
+            && body.p_transport_distance_km === null
+            && body.p_course_name === null && body.p_location === null && body.p_role_in_session === 'lead'
+            && body.p_duration_hours === 2 && body.p_student_count === 18);
 
         // 營隊 → 只顯示營隊梯次
         await openReport(page, base);
@@ -295,6 +340,7 @@ async function run() {
             && await page.getByLabel('教學課程期間').count() === 0
             && await page.getByLabel('本次發出教材數量').count() === 0
             && await page.getByLabel('申請交通補助').count() === 1);
+        await fillBasics(page, { students: '8' });
         await page.getByRole('button', { name: '送出回報' }).click();
         check('營隊缺梯次被擋', (await alertText(page)) === '營隊課程請選擇營隊梯次。' && submitBodies.length === 1);
         await page.getByLabel('營隊梯次').selectOption('【臺北A】中山 | 7/1~7/3 三日營');
@@ -311,6 +357,7 @@ async function run() {
         // 直營到府＋交通補助
         await openReport(page, base);
         await pickCourse(page, 'onsite_1_5hr');
+        await fillBasics(page, { name: '王小明', hours: '1.5', students: '2' });
         await page.getByLabel('申請交通補助').check();
         await page.getByLabel('單趟公里數').fill('12.35');
         await page.getByRole('button', { name: '送出回報' }).click();
@@ -318,7 +365,9 @@ async function run() {
         body = submitBodies.at(-1);
         check('直營送出交通補助＝是、單趟 12.4 km，合作／營隊欄位為空',
             submitBodies.length === 3 && body.p_transport_subsidy_requested === true
-            && body.p_transport_distance_km === 12.4 && body.p_unit_name === null && body.p_term_period === null);
+            && body.p_transport_distance_km === 12.4 && body.p_unit_name === null && body.p_term_period === null
+            && body.p_course_type === 'onsite_1_5hr' && body.p_course_name === '王小明' && body.p_duration_hours === 1.5
+            && body.p_student_count === 2 && body.p_location === null && body.p_self_review === null);
         check('三次回報都只走受控 RPC', directSessionWrites === 0);
         await context.close();
 
@@ -332,6 +381,7 @@ async function run() {
         check('選項讀取失敗時教學期間仍有內建三個選項', (await page.getByLabel('教學課程期間').locator('option').count()) === 4);
         await page.getByLabel('教學課程期間').selectOption('summer_break');
         await page.locator('input[aria-label="本次上課單位"]').fill('【新竹】愛丁堡');
+        await fillBasics(page, { hours: '1.5', students: '12' });
         await page.getByRole('button', { name: '送出回報' }).click();
         await page.getByText('課程回報已送出，管理員核薪後會更新狀態。').waitFor();
         body = submitBodies.at(-1);

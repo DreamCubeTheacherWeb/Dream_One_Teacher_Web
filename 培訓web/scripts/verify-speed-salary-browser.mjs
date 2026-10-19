@@ -125,6 +125,16 @@ async function handleRoute(route) {
     if (url.pathname.startsWith('/rest/v1/')) {
         const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
         const acceptsObject = ((await request.allHeaders()).accept || '').includes('vnd.pgrst.object+json');
+        // 後台薪資登記頁 2026-10-19 起用 HEAD＋count=exact 向伺服器要全庫待辦數（只讀，不算寫入）
+        if (request.method() === 'HEAD' && table === 'class_sessions') {
+            const rows = (appRole === 'admin' ? [salarySession] : []).filter(row => ['status', 'pricing_status', 'is_anomaly']
+                .every(column => !url.searchParams.get(column) || url.searchParams.get(column) === `eq.${row[column]}`));
+            return route.fulfill({
+                status: 200,
+                headers: { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'Content-Range', 'content-range': `*/${rows.length}` },
+                body: '',
+            });
+        }
         if (request.method() !== 'GET') {
             if (table === 'class_sessions') directSessionWrites += 1;
             return json(route, acceptsObject ? {} : [], 201);

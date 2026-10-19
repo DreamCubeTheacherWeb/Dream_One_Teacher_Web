@@ -1,11 +1,24 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Search, Plus, AlertTriangle, X, CheckCircle2, Clock, Wallet, Edit3, MessageSquare, RefreshCw, ListChecks } from 'lucide-react';
+import { Search, Plus, AlertTriangle, X, CheckCircle2, Clock, Wallet, Edit3, MessageSquare, RefreshCw, ListChecks, ChevronDown } from 'lucide-react';
 import { COURSE_LABELS, ROLE_LABELS, TERM_PERIOD_LABELS, speedQualificationLabel } from '../../lib/constants';
 import { reportGroupFor } from '../../lib/salaryReportForm';
 import { getSalaryQuote, money, salaryErrorMessage, taipeiToday } from '../../lib/salary';
+import {
+    SALARY_REGISTER_PAGE_SIZE,
+    SALARY_STATS_CHUNK_SIZE,
+    applySalaryRegisterFilters,
+    applySalaryRegisterOrder,
+    defaultMonthKey,
+    fetchRows,
+    mergeById,
+    monthKeyOf,
+    monthLabel,
+    monthOptions,
+    sumSalaryStats,
+} from '../../lib/salaryRegisterQuery';
 import SalaryQuotePanel from '../../components/SalaryQuotePanel';
 
 const STATUS_STYLES = {
@@ -31,69 +44,204 @@ const useDialogDismiss = (onClose) => {
     }, [onClose]);
 };
 
+const EMPTY_STATS = { total: 0, paid: 0, unpaid: 0, count: 0 };
+
+// 每次都建新的查詢物件（supabase-js 的查詢送出一次就不能再接條件）
+const sessionsQuery = (columns, filters) => applySalaryRegisterFilters(
+    supabase.from('class_sessions').select(columns, { count: 'exact' }),
+    filters,
+);
+const listQuery = (filters) => applySalaryRegisterOrder(sessionsQuery('*', filters));
+const countSessions = (apply = (query) => query) => apply(
+    supabase.from('class_sessions').select('id', { count: 'exact', head: true }),
+);
+
 const SalaryRegister = () => {
     const { profile } = useAuth();
     const [sessions, setSessions] = useState([]);
     const [instructors, setInstructors] = useState([]);
+    const [overview, setOverview] = useState(null);  // 全庫：總筆數、待處理、待核薪、異常、月份選項
+    const [listTotal, setListTotal] = useState(0);   // 目前篩選條件下的總筆數（伺服器端計算）
+    const [fetchedCount, setFetchedCount] = useState(0);  // 已向伺服器抓到的原始筆數＝下一頁的起點
+    const [stats, setStats] = useState(EMPTY_STATS);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [loadError, setLoadError] = useState('');
+    const [loadMoreError, setLoadMoreError] = useState('');
     const [search, setSearch] = useState('');
-    const [monthFilter, setMonthFilter] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');  // 停止輸入 300ms 後才送查詢
+    const [monthFilter, setMonthFilter] = useState(null);  // null＝還在決定預設月份；''＝全部月份；否則 'YYYY-MM'
     const [statusFilter, setStatusFilter] = useState('');
     const [anomalyOnly, setAnomalyOnly] = useState(false);
     const [showAdd, setShowAdd] = useState(false);
     const [editing, setEditing] = useState(null);  // session being edited
+    const listRequest = useRef(0);
+    const overviewRequest = useRef(0);
 
-    const load = useCallback(async () => {
-        setLoading(true);
-        setLoadError('');
-        const [s, i] = await Promise.all([
-            supabase.from('class_sessions').select('*').order('session_date', { ascending: false }).limit(500),
+    const filters = useMemo(() => ({
+        month: monthFilter || '',
+        status: statusFilter,
+        anomalyOnly,
+        search: searchTerm,
+    }), [monthFilter, statusFilter, anomalyOnly, searchTerm]);
+
+    // 全庫概況：講師清單、待辦數、可選月份。待辦數不受月份篩選影響，早期月份的待處理也數得到。
+    const loadOverview = useCallback(async () => {
+        const requestId = ++overviewRequest.current;
+        const today = taipeiToday();
+        const results = await Promise.all([
             supabase.from('instructors').select('id, full_name, instructor_role, speed_qualification').order('full_name'),
+            countSessions(),
+            countSessions((query) => query.eq('status', 'pending')),
+            countSessions((query) => query.eq('pricing_status', 'needs_review')),
+            countSessions((query) => query.eq('is_anomaly', true)),
+            supabase.from('class_sessions').select('session_date').order('session_date', { ascending: true }).limit(1),
+            supabase.from('class_sessions').select('session_date').order('session_date', { ascending: false }).limit(1),
         ]);
-        if (s.error || i.error) {
-            setLoadError(salaryErrorMessage(s.error || i.error, '薪資資料載入失敗，請稍後再試。'));
-        } else {
-            setSessions(s.data || []);
-            setInstructors(i.data || []);
+        // 連續核准時會同時送出好幾次，只採用最後一次，避免較晚到的舊回應把數字蓋回去
+        if (requestId !== overviewRequest.current) return;
+        const failed = results.find((result) => result.error);
+        if (failed) {
+            setLoadError(salaryErrorMessage(failed.error, '薪資資料載入失敗，請稍後再試。'));
+            setLoading(false);
+            return;
         }
-        setLoading(false);
+        const [inst, all, pending, needsPricing, anomaly, earliest, latest] = results;
+        const latestDate = latest.data?.[0]?.session_date;
+        setInstructors(inst.data || []);
+        setOverview({
+            total: all.count ?? 0,
+            pending: pending.count ?? 0,
+            needsPricing: needsPricing.count ?? 0,
+            anomaly: anomaly.count ?? 0,
+            months: monthOptions(earliest.data?.[0]?.session_date, latestDate, today),
+        });
+        // 預設看最近一個月；之後重新整理概況不覆蓋使用者選的月份
+        setMonthFilter((current) => (current === null ? defaultMonthKey(latestDate, today) : current));
     }, []);
 
-    useEffect(() => {
-        const timer = window.setTimeout(load, 0);
-        return () => window.clearTimeout(timer);
-    }, [load]);
+    // 第一頁＋篩選範圍的金額統計。keepCount：核准／修改後重載時保留已載入的筆數，畫面不會跳回只剩 100 筆。
+    const loadList = useCallback(async (keepCount = 0) => {
+        if (monthFilter === null) return;
+        const requestId = ++listRequest.current;
+        setLoading(true);
+        setLoadingMore(false);
+        setLoadError('');
+        setLoadMoreError('');
+        try {
+            const [page, totals] = await Promise.all([
+                fetchRows(() => listQuery(filters), {
+                    limit: Math.max(SALARY_REGISTER_PAGE_SIZE, keepCount),
+                    chunkSize: SALARY_STATS_CHUNK_SIZE,
+                }),
+                fetchRows(() => sessionsQuery('id, total_salary, paid_amount', filters).order('id'), { chunkSize: SALARY_STATS_CHUNK_SIZE }),
+            ]);
+            if (requestId !== listRequest.current) return;
+            setSessions(page.rows);
+            setFetchedCount(page.fetched);
+            setListTotal(page.total);
+            setStats(sumSalaryStats(totals.rows, totals.total));
+        } catch (error) {
+            if (requestId !== listRequest.current) return;
+            // 清掉舊條件的資料，「重新載入」才會從第一頁開始，不沿用上一個篩選的筆數
+            setSessions([]);
+            setFetchedCount(0);
+            setListTotal(0);
+            setStats(EMPTY_STATS);
+            setLoadError(salaryErrorMessage(error, '薪資資料載入失敗，請稍後再試。'));
+        }
+        if (requestId === listRequest.current) setLoading(false);
+    }, [filters, monthFilter]);
 
-    const filtered = useMemo(() => {
-        return sessions.filter(s => {
-            if (monthFilter && s.month_label !== monthFilter) return false;
-            if (statusFilter && s.status !== statusFilter) return false;
-            if (anomalyOnly && !s.is_anomaly) return false;
-            if (search) {
-                const q = search.toLowerCase();
-                return s.instructor_name?.toLowerCase().includes(q)
-                    || s.course_name?.toLowerCase().includes(q)
-                    || s.course_type?.toLowerCase().includes(q);
+    const loadMore = async () => {
+        const requestId = listRequest.current;
+        setLoadingMore(true);
+        setLoadMoreError('');
+        try {
+            // 多抓上一頁的最後一筆當「接縫」：它還在同一個位置，代表前面的排序沒被別人動過，接著抓才不會漏筆
+            const page = await fetchRows(() => listQuery(filters), {
+                from: fetchedCount - 1,
+                limit: SALARY_REGISTER_PAGE_SIZE + 1,
+                chunkSize: SALARY_STATS_CHUNK_SIZE,
+            });
+            if (requestId !== listRequest.current) return;
+            const [seam, ...rows] = page.rows;
+            const merged = mergeById(sessions, rows);
+            // 瀏覽期間有人新增、刪除或改了狀態（排序位置變了），offset 分頁會漏筆或重複：整批重抓到同樣的筆數再多一頁
+            if (seam?.id !== sessions.at(-1)?.id || page.total !== listTotal || merged.length - sessions.length !== rows.length) {
+                loadList(fetchedCount + SALARY_REGISTER_PAGE_SIZE);
+                return;
             }
-            return true;
-        }).sort((a, b) => {
-            const aPriority = a.status === 'pending' ? 0 : a.status === 'approved' ? 1 : 2;
-            const bPriority = b.status === 'pending' ? 0 : b.status === 'approved' ? 1 : 2;
-            return aPriority - bPriority || String(b.session_date).localeCompare(String(a.session_date));
-        });
-    }, [sessions, monthFilter, statusFilter, anomalyOnly, search]);
+            setSessions(merged);
+            setFetchedCount(fetchedCount + page.fetched - 1);
+            setListTotal(page.total);
+        } catch (error) {
+            if (requestId !== listRequest.current) return;
+            setLoadMoreError(salaryErrorMessage(error, '載入更多失敗，請再試一次。'));
+        }
+        if (requestId === listRequest.current) setLoadingMore(false);
+    };
 
-    const months = useMemo(() => [...new Set(sessions.map(s => s.month_label).filter(Boolean))].sort().reverse(), [sessions]);
-    const anomalyCount = sessions.filter(s => s.is_anomaly).length;
-    const pendingCount = sessions.filter(s => s.status === 'pending').length;
-    const needsPricingCount = sessions.filter(s => s.pricing_status === 'needs_review').length;
+    const refresh = () => {
+        loadOverview();
+        loadList(sessions.length);
+    };
 
-    const stats = useMemo(() => {
-        const total = filtered.reduce((sum, s) => sum + Number(s.total_salary || 0), 0);
-        const paid = filtered.reduce((sum, s) => sum + Number(s.paid_amount || 0), 0);
-        return { total, paid, unpaid: total - paid, count: filtered.length };
-    }, [filtered]);
+    // 新增的紀錄若不在目前看的月份，切到那個月，管理員才看得到剛存的那筆
+    const handleAdded = (sessionDate) => {
+        const month = monthKeyOf(sessionDate);
+        if (monthFilter && month && month !== monthFilter) {
+            loadOverview();
+            setMonthFilter(month);
+            return;
+        }
+        refresh();
+    };
+
+    const retry = () => {
+        setLoadError('');
+        setLoading(true);
+        refresh();
+    };
+
+    useEffect(() => {
+        const timer = window.setTimeout(loadOverview, 0);
+        return () => window.clearTimeout(timer);
+    }, [loadOverview]);
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => setSearchTerm(search.trim()), 300);
+        return () => window.clearTimeout(timer);
+    }, [search]);
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => loadList(), 0);
+        return () => window.clearTimeout(timer);
+    }, [loadList]);
+
+    // 待處理／異常的數字是全庫的，點下去同時切到「全部月份」，才不會漏看早期月份的待辦
+    const togglePending = () => {
+        if (statusFilter === 'pending') {
+            setStatusFilter('');
+            return;
+        }
+        setStatusFilter('pending');
+        setMonthFilter('');
+    };
+    const toggleAnomaly = () => {
+        if (anomalyOnly) {
+            setAnomalyOnly(false);
+            return;
+        }
+        setAnomalyOnly(true);
+        setMonthFilter('');
+    };
+
+    const pendingCount = overview?.pending ?? 0;
+    const needsPricingCount = overview?.needsPricing ?? 0;
+    const anomalyCount = overview?.anomaly ?? 0;
+    const hasMore = fetchedCount < listTotal;
+    const nextPageSize = Math.min(SALARY_REGISTER_PAGE_SIZE, listTotal - fetchedCount);
 
     return (
         <div className="p-4 sm:p-8">
@@ -101,7 +249,7 @@ const SalaryRegister = () => {
                 <div>
                     <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">薪資登記中心</h1>
                     <p className="text-bauhaus-black/60 font-medium mt-1 text-sm">
-                        先處理講師回報，確認報酬規則後再核准與付款。共 {sessions.length} 筆紀錄。
+                        先處理講師回報，確認報酬規則後再核准與付款。共 {overview ? overview.total.toLocaleString() : '…'} 筆紀錄。
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -113,7 +261,7 @@ const SalaryRegister = () => {
                     <button
                         type="button"
                         onClick={() => setShowAdd(true)}
-                        disabled={loading || Boolean(loadError)}
+                        disabled={!overview || Boolean(loadError)}
                         className="bh-btn bh-btn-blue px-4 py-2.5"
                     >
                         <Plus className="w-4 h-4" /> 新增薪資紀錄
@@ -124,7 +272,7 @@ const SalaryRegister = () => {
             {(pendingCount > 0 || anomalyCount > 0) && (
                 <div className="flex flex-wrap gap-2 mb-6" aria-label="快速篩選">
                     {pendingCount > 0 && (
-                        <button type="button" onClick={() => setStatusFilter(statusFilter === 'pending' ? '' : 'pending')}
+                        <button type="button" onClick={togglePending}
                             aria-pressed={statusFilter === 'pending'}
                             className={`bh-btn px-4 py-2.5 ${statusFilter === 'pending' ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bh-btn-outline'}`}>
                             <Clock className="w-4 h-4" />待處理 {pendingCount}
@@ -132,7 +280,7 @@ const SalaryRegister = () => {
                         </button>
                     )}
                     {anomalyCount > 0 && (
-                        <button type="button" onClick={() => setAnomalyOnly(!anomalyOnly)} aria-pressed={anomalyOnly}
+                        <button type="button" onClick={toggleAnomaly} aria-pressed={anomalyOnly}
                             className={`bh-btn px-4 py-2.5 ${anomalyOnly ? 'bg-bauhaus-red text-white' : 'bh-btn-outline'}`}>
                             <AlertTriangle className="w-4 h-4" />異常 {anomalyCount}
                         </button>
@@ -156,15 +304,18 @@ const SalaryRegister = () => {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="搜尋姓名、課程名稱..."
+                        aria-label="搜尋講師姓名或課程"
                         className="bh-input w-full pl-9 pr-3 py-2 text-sm"
                     />
                 </div>
-                <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
+                <select value={monthFilter ?? ''} onChange={e => setMonthFilter(e.target.value)}
+                    aria-label="月份" disabled={monthFilter === null}
                     className="bh-input text-sm px-3 py-2 w-auto">
                     <option value="">全部月份</option>
-                    {months.map(m => <option key={m} value={m}>{m}</option>)}
+                    {(overview?.months || []).map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
                 </select>
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                    aria-label="狀態"
                     className="bh-input text-sm px-3 py-2 w-auto">
                     <option value="">全部狀態</option>
                     <option value="pending">待核准</option>
@@ -183,15 +334,15 @@ const SalaryRegister = () => {
             ) : loadError ? (
                 <div role="alert" className="bh-card bg-bauhaus-red text-white p-5">
                     <div className="font-black">{loadError}</div>
-                    <button type="button" onClick={load} className="bh-btn bg-white text-bauhaus-black px-4 py-2.5 mt-4">
+                    <button type="button" onClick={retry} className="bh-btn bg-white text-bauhaus-black px-4 py-2.5 mt-4">
                         <RefreshCw className="w-4 h-4" />重新載入
                     </button>
                 </div>
             ) : (
                 <div className="bh-card overflow-hidden">
                     <div className="md:hidden divide-y-2 divide-bauhaus-black/20">
-                        {filtered.slice(0, 200).map(s => <SalaryCard key={s.id} session={s} onEdit={() => setEditing(s)} />)}
-                        {filtered.length === 0 && <div className="px-4 py-12 text-center text-bauhaus-black/50">沒有符合的紀錄</div>}
+                        {sessions.map(s => <SalaryCard key={s.id} session={s} onEdit={() => setEditing(s)} />)}
+                        {sessions.length === 0 && <div className="px-4 py-12 text-center text-bauhaus-black/50">沒有符合的紀錄</div>}
                     </div>
                     <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-sm">
@@ -208,27 +359,39 @@ const SalaryRegister = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y-2 divide-bauhaus-black/20">
-                                {filtered.slice(0, 200).map(s => <SalaryRow key={s.id} session={s} onEdit={() => setEditing(s)} />)}
-                                {filtered.length === 0 && (
+                                {sessions.map(s => <SalaryRow key={s.id} session={s} onEdit={() => setEditing(s)} />)}
+                                {sessions.length === 0 && (
                                     <tr><td colSpan={8} className="px-4 py-12 text-center text-bauhaus-black/50">沒有符合的紀錄</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
-                    {filtered.length > 200 && (
-                        <div className="px-4 py-3 text-xs text-bauhaus-black/50 text-center bg-bauhaus-cream border-t-2 border-bauhaus-black">
-                            僅顯示前 200 筆,請使用篩選縮小範圍
+                    {sessions.length > 0 && (
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 text-sm bg-bauhaus-cream border-t-2 border-bauhaus-black">
+                            <span className="font-bold text-bauhaus-black/70 tabular-nums" aria-live="polite" data-testid="salary-register-progress">
+                                {hasMore
+                                    ? `已顯示 ${sessions.length.toLocaleString()}／${listTotal.toLocaleString()} 筆`
+                                    : `已顯示全部 ${listTotal.toLocaleString()} 筆`}
+                            </span>
+                            {loadMoreError && <span role="alert" className="font-bold text-bauhaus-red">{loadMoreError}</span>}
+                            {hasMore && (
+                                <button type="button" onClick={loadMore} disabled={loadingMore}
+                                    className="bh-btn bh-btn-outline bg-white px-4 py-2.5 min-h-[44px] w-full sm:w-auto">
+                                    <ChevronDown className="w-4 h-4" />
+                                    {loadingMore ? '載入中...' : `載入更多（再 ${nextPageSize} 筆）`}
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
             )}
 
             {showAdd && (
-                <AddSalaryModal instructors={instructors} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} profile={profile} />
+                <AddSalaryModal instructors={instructors} onClose={() => setShowAdd(false)} onSaved={(sessionDate) => { setShowAdd(false); handleAdded(sessionDate); }} profile={profile} />
             )}
 
             {editing && (
-                <EditSalaryModal session={editing} instructors={instructors} profile={profile} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+                <EditSalaryModal session={editing} instructors={instructors} profile={profile} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />
             )}
         </div>
     );
@@ -522,7 +685,7 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
         const { error } = await supabase.from('class_sessions').insert(payload);
         setSaving(false);
         if (error) { setError(salaryErrorMessage(error)); return; }
-        onSaved();
+        onSaved(payload.session_date);
     };
 
     const manualRequired = form.base_salary !== '' && quote && (
