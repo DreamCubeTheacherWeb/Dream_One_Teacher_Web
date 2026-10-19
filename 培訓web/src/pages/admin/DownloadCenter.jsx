@@ -334,6 +334,14 @@ const DownloadCenter = () => {
       const zip = new JSZip();
       const logs = [];
       const errs = [];
+      // zip 內同名檔案會互相覆蓋（同名講師只剩最後一位），重名時加序號：王小明-匯款申請書-2.pdf
+      const usedNames = new Set();
+      const uniqueZipName = (base) => {
+        let name = `${base}.pdf`;
+        for (let n = 2; usedNames.has(name.toLowerCase()); n++) name = `${base}-${n}.pdf`;
+        usedNames.add(name.toLowerCase());
+        return name;
+      };
 
       for (let i = 0; i < targets.length; i++) {
         const inst = targets[i];
@@ -341,7 +349,7 @@ const DownloadCenter = () => {
         try {
           const bytes = await generateFilledForm({ docMeta, positions, instructor: inst });
           const safe = (inst.full_name || `unknown_${i}`).replace(/[/\\?%*:|"<>]/g, '_');
-          zip.file(`${safe}-${docMeta.display_name || selectedForm}.pdf`, bytes);
+          zip.file(uniqueZipName(`${safe}-${docMeta.display_name || selectedForm}`), bytes);
           logs.push({
             downloaded_by: user.id,
             target_user_id: inst.user_id || null,
