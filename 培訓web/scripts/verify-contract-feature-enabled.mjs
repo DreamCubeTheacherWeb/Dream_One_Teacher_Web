@@ -364,9 +364,10 @@ async function main() {
         await page.goto(`${BASE}/my/salary`, { waitUntil: 'networkidle', timeout: 20000 });
         const compensationRouteWorks = new URL(page.url()).pathname === '/my/salary'
             && await page.getByRole('heading', { name: '我的報酬' }).count() === 1
-            && await page.getByRole('link', { name: /報酬／點數確認區/ }).getAttribute('href') === 'https://example.com/compensation'
+            && await page.getByRole('button', { name: '報酬確認區' }).count() === 1
+            && await page.getByRole('link', { name: /報酬／點數試算表/ }).getAttribute('href') === 'https://example.com/compensation'
             && await page.getByRole('link', { name: /登記課程回報/ }).getAttribute('href') === '/my/salary/new';
-        assert('T8a 我的報酬顯示站內回報與後台設定的確認連結', compensationRouteWorks, `landed=${new URL(page.url()).pathname}`);
+        assert('T8a 我的報酬顯示站內回報、站內報酬確認區與後台設定的試算表連結', compensationRouteWorks, `landed=${new URL(page.url()).pathname}`);
         assert('T8b 我的報酬會讀取自己的站內薪資明細', teacherSalaryReads >= 2, `reads=${teacherSalaryReads}`);
         await page.getByText('仍在使用舊表單？', { exact: true }).click();
         const legacyLinksWork = await page.getByRole('link', { name: /測試直營課程表單舊表單/ }).getAttribute('href') === 'https://example.com/direct-form'

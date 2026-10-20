@@ -32,6 +32,7 @@
     "verify:code-split": "node scripts/verify-code-split.mjs",
     "verify:misc-fixes": "node scripts/verify-misc-fixes-20261020.mjs",
     "verify:salary-fixes": "node scripts/verify-salary-fixes-20261020.mjs",
+    "verify:compensation-confirm:browser": "node scripts/verify-compensation-confirm-browser.mjs",
     "verify:contract-download-fixes": "node scripts/verify-contract-download-fixes-20261020.mjs",
     "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs",
     "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs",
