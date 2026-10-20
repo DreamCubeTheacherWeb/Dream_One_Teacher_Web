@@ -6,13 +6,15 @@
 -- 新總表 5,535 筆中 427 筆是這樣來的；規則 4「有時數但薪資為 0」另標了 58 筆業主核對過的總表資料。
 --
 -- 改動（只動判定規則，不改任何資料；資料整理在 scripts/salary_master_import/06_dedupe_and_mark_paid.sql）：
---   規則 1：同講師同日，且課程種類、課程名、角色、時數、人數、薪資、獎金、備註、課程自評、學習進度、
---           特殊狀況回報都相同，才標「可能重複登記」。
+--   規則 1：同講師同日，且課程種類、課程名、地點、合作單位、期間、發放教材、交通補助與公里數、角色、
+--           時數、人數、薪資、獎金、備註、課程自評、學習進度、特殊狀況回報都相同，才標「可能重複登記」。
+--           （合作課回報常不帶課程名，所以要連合作單位一起比，同日兩校各上一堂才不會被誤標。
+--           自訂欄位 extra_fields 不比：它由 20261020130000 新增，這支 migration 不依賴它。）
 --   規則 4：來源是業主核對過的薪資總表（source = 'historical_import'）不再標「有時數但薪資為 0」；
 --           網站回報與後台手動新增的紀錄照舊檢查。
 --   規則 2、3 不變。
 -- 觸發時機不變（新增或修改紀錄時重算該筆），可重複執行。
--- 還原：scripts/salary_master_import/96_rollback_dedupe_and_mark_paid.sql 會一併換回舊規則。
+-- 還原：scripts/salary_master_import/97_restore_old_anomaly_rule.sql 換回舊規則（可單獨執行）。
 
 CREATE OR REPLACE FUNCTION public.detect_session_anomaly()
 RETURNS trigger
@@ -31,6 +33,12 @@ BEGIN
        AND s.id <> COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid)
        AND s.course_type IS NOT DISTINCT FROM NEW.course_type
        AND s.course_name IS NOT DISTINCT FROM NEW.course_name
+       AND s.location IS NOT DISTINCT FROM NEW.location
+       AND s.unit_name IS NOT DISTINCT FROM NEW.unit_name
+       AND s.term_period IS NOT DISTINCT FROM NEW.term_period
+       AND s.materials_issued IS NOT DISTINCT FROM NEW.materials_issued
+       AND s.transport_subsidy_requested IS NOT DISTINCT FROM NEW.transport_subsidy_requested
+       AND s.transport_distance_km IS NOT DISTINCT FROM NEW.transport_distance_km
        AND s.role_in_session IS NOT DISTINCT FROM NEW.role_in_session
        AND s.duration_hours IS NOT DISTINCT FROM NEW.duration_hours
        AND s.student_count IS NOT DISTINCT FROM NEW.student_count

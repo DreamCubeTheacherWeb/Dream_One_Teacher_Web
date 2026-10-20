@@ -1,27 +1,37 @@
 -- ════════════════════════════════════════════════════════════════
--- 96｜還原 06（去重＋標已付款）與 migration 20261020150000（新異常規則）
+-- 96｜還原 06（去重＋標已付款）的資料；舊異常規則另用 97_restore_old_anomaly_rule.sql
 -- ════════════════════════════════════════════════════════════════
 -- 單一交易：
---   1. 隔離區本批 91 筆搬回 class_sessions（原 id、原內容）。
---   2. 依備份表把每筆的付款狀態、已領金額、付款時間、異常標記、更新時間逐欄還原
---      （還原期間暫停異常與更新時間兩個 trigger，避免被重算）。
---   3. 異常規則換回 2026-10-20 以前的版本。
+--   1. 隔離區本批 91 筆搬回 class_sessions（原 id、原內容、原異常標記）。
+--   2. 06 改到的列（備份表 touched），而且 06 之後沒人再改過（updated_at 仍等於 06 執行時間）者，
+--      依備份逐欄還原付款狀態、已領金額、付款時間、異常標記、更新時間。
+--      還原期間暫停異常與更新時間兩個 trigger，避免被重算。
+--   3. 06 之後有人改過（後台核准、標已付款、刪除）的列一律不動：預設模式下只要有這種列就整批停止，
+--      把下方 'apply' 改成 'skip-changed' 才會略過它們、只還原其他列（略過的筆數會列出）。
 --   4. 刪除備份表。
--- 只還原 06 動過的欄位；06 之後網站端新增的紀錄不受影響（備份表裡沒有它們）。
+-- 預演：把下方 'apply' 改成 'dry-run'，跑到最後會拋出 DRY_RUN_OK（附統計）並整批取消。
 
 BEGIN;
 
 LOCK TABLE public.class_sessions IN SHARE ROW EXCLUSIVE MODE;
 
+SELECT set_config('salary_cleanup.rollback_mode', 'apply', true);
+
 DO $$
 DECLARE
+  v_mode text := current_setting('salary_cleanup.rollback_mode');
   v_cols text;
+  v_changed int;
+  v_touched int;
   v_restored int;
   v_updated int;
-  v_backup int;
+  v_summary text;
 BEGIN
+  IF v_mode NOT IN ('apply', 'skip-changed', 'dry-run') THEN
+    RAISE EXCEPTION '不認得的模式 %', v_mode;
+  END IF;
   IF to_regclass('public.salary_cleanup_20261020_backup') IS NULL THEN
-    RAISE EXCEPTION '找不到備份表 salary_cleanup_20261020_backup，無法還原';
+    RAISE EXCEPTION '找不到備份表 salary_cleanup_20261020_backup，無法還原（只要換回舊規則請用 97）';
   END IF;
   IF (SELECT count(*) FROM public.class_sessions_quarantine
        WHERE quarantine_batch = '2026-10-20 完全相同重複列（業主指示只留一筆）') <> 91 THEN
@@ -31,6 +41,15 @@ BEGIN
                JOIN public.class_sessions_quarantine q ON q.id = cs.id
               WHERE q.quarantine_batch = '2026-10-20 完全相同重複列（業主指示只留一筆）') THEN
     RAISE EXCEPTION '要搬回的紀錄已經在 class_sessions，停止';
+  END IF;
+
+  SELECT count(*) FILTER (WHERE b.touched),
+         count(*) FILTER (WHERE b.touched AND (cs.id IS NULL OR cs.updated_at IS DISTINCT FROM b.cleanup_run_at))
+    INTO v_touched, v_changed
+    FROM public.salary_cleanup_20261020_backup b
+    LEFT JOIN public.class_sessions cs ON cs.id = b.id;
+  IF v_changed > 0 AND v_mode <> 'skip-changed' THEN
+    RAISE EXCEPTION '06 之後有 % 筆被改過或刪除（後台核准、標已付款等），預設不還原；確認要略過它們請改用 skip-changed 模式', v_changed;
   END IF;
 
   ALTER TABLE public.class_sessions DISABLE TRIGGER trg_session_anomaly;
@@ -54,71 +73,28 @@ BEGIN
   DELETE FROM public.class_sessions_quarantine
    WHERE quarantine_batch = '2026-10-20 完全相同重複列（業主指示只留一筆）';
 
-  -- 2. 逐欄還原付款狀態與異常標記
+  -- 2. 只還原 06 改過、而且之後沒人再改過的列
   UPDATE public.class_sessions cs
      SET status = b.status, paid_amount = b.paid_amount, paid_at = b.paid_at,
          is_anomaly = b.is_anomaly, anomaly_reasons = b.anomaly_reasons, updated_at = b.updated_at
     FROM public.salary_cleanup_20261020_backup b
-   WHERE b.id = cs.id;
+   WHERE b.id = cs.id AND b.touched AND cs.updated_at = b.cleanup_run_at;
   GET DIAGNOSTICS v_updated = ROW_COUNT;
-  SELECT count(*) INTO v_backup FROM public.salary_cleanup_20261020_backup;
 
   ALTER TABLE public.class_sessions ENABLE TRIGGER trg_session_anomaly;
   ALTER TABLE public.class_sessions ENABLE TRIGGER trg_class_sessions_updated_at;
 
-  IF v_restored <> 91 OR v_updated <> v_backup THEN
-    RAISE EXCEPTION '還原筆數不符：搬回 %（應 91）、還原狀態 %（應 %）', v_restored, v_updated, v_backup;
+  v_summary := format('搬回 %s 筆、還原 %s 筆、06 之後被改過而略過 %s 筆', v_restored, v_updated, v_changed);
+  IF v_restored <> 91 OR v_updated <> v_touched - v_changed THEN
+    RAISE EXCEPTION '還原筆數不符，已取消：%（應搬回 91、還原 %）', v_summary, v_touched - v_changed;
   END IF;
-  RAISE NOTICE 'ROLLBACK_OK 搬回 % 筆、還原 % 筆', v_restored, v_updated;
+  IF v_mode = 'dry-run' THEN
+    RAISE EXCEPTION 'DRY_RUN_OK %', v_summary;
+  END IF;
+  RAISE NOTICE 'ROLLBACK_OK %', v_summary;
 END $$;
 
--- 3. 異常規則換回舊版（2025_salary_system.sql 原文＋20260819 的 search_path 設定）
-CREATE OR REPLACE FUNCTION public.detect_session_anomaly()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = ''
-AS $$
-DECLARE
-  reasons text[] := '{}';
-  duplicate_count int;
-BEGIN
-  -- 規則 1:同講師同日期同課程名(可能重複登記)
-  IF NEW.instructor_id IS NOT NULL AND NEW.course_name IS NOT NULL THEN
-    SELECT count(*) INTO duplicate_count
-    FROM public.class_sessions
-    WHERE instructor_id = NEW.instructor_id
-      AND session_date = NEW.session_date
-      AND course_name = NEW.course_name
-      AND id <> COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid);
-    IF duplicate_count > 0 THEN
-      reasons := array_append(reasons, '同講師同日同課程名可能重複');
-    END IF;
-  END IF;
-
-  -- 規則 2:月份在 2020 之前
-  IF NEW.session_date < DATE '2020-01-01' THEN
-    reasons := array_append(reasons, '日期早於 2020 年');
-  END IF;
-
-  -- 規則 3:日期晚於當月底 + 1 個月(預排允許,過遠就警示)
-  IF NEW.session_date > (CURRENT_DATE + INTERVAL '2 months')::date THEN
-    reasons := array_append(reasons, '日期超過 2 個月後');
-  END IF;
-
-  -- 規則 4:薪資 0 但時數 > 0(可能漏填)
-  IF COALESCE(NEW.duration_hours, 0) > 0
-     AND COALESCE(NEW.base_salary, 0) = 0
-     AND COALESCE(NEW.bonus, 0) = 0 THEN
-    reasons := array_append(reasons, '有時數但薪資為 0');
-  END IF;
-
-  NEW.is_anomaly := cardinality(reasons) > 0;
-  NEW.anomaly_reasons := reasons;
-  RETURN NEW;
-END;
-$$;
-
--- 4. 備份表用完即刪
+-- 3. 備份表用完即刪
 DROP TABLE public.salary_cleanup_20261020_backup;
 
 COMMIT;

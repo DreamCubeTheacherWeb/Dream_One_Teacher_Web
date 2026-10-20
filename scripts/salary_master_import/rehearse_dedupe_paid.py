@@ -23,6 +23,7 @@ check = R.check
 MIG = R.APP / "supabase" / "migrations" / "20261020150000_salary_anomaly_exact_duplicates.sql"
 APPLY = HERE / "06_dedupe_and_mark_paid.sql"
 ROLLBACK = HERE / "96_rollback_dedupe_and_mark_paid.sql"
+OLD_RULE = HERE / "97_restore_old_anomaly_rule.sql"
 QB = "2026-10-20 完全相同重複列（業主指示只留一筆）"
 
 STATE_SQL = f"""
@@ -61,6 +62,19 @@ def prepare(pg, label, null_empty):
     return db
 
 
+def with_mode(pg, path, line_old, line_new, name):
+    text = path.read_text(encoding="utf-8")
+    assert text.count(line_old) == 1, line_old
+    out = pg.dir / name
+    out.write_text(text.replace(line_old, line_new), encoding="utf-8")
+    return out
+
+
+def clone(pg, src, name):
+    pg.psql("postgres", f"CREATE DATABASE {name} TEMPLATE {src}")
+    return name
+
+
 def as_role(pg, db, role, sql):
     return pg.psql(db, f"BEGIN; SET LOCAL ROLE {role}; {sql}; ROLLBACK;", expect_fail=True)
 
@@ -94,6 +108,17 @@ def rehearse(pg, label, null_empty):
     check("正式庫若有版控外的 trigger（例如發通知）06 會停下、資料不動",
           r.returncode != 0 and "trg_fake_paid_notify" in r.stderr and pg.psql(db, STATE_SQL) == s_mig,
           r.stderr.strip()[-80:])
+
+    c = clone(pg, db, f"{db}_fk")
+    pg.psql(c, "CREATE TABLE public._child (id serial PRIMARY KEY, cs uuid REFERENCES public.class_sessions(id) ON DELETE CASCADE)")
+    s_c = pg.psql(c, STATE_SQL)
+    r = pg.psql(c, file=APPLY, expect_fail=True)
+    check("有外鍵指向 class_sessions 時 06 會停下、資料不動",
+          r.returncode != 0 and "有外鍵指向 class_sessions" in r.stderr and pg.psql(c, STATE_SQL) == s_c, r.stderr.strip()[-80:])
+
+    c = clone(pg, db, f"{db}_old_rule")
+    pg.psql(c, file=OLD_RULE)
+    check("97 可單獨換回舊規則（migration 套了但 06 沒跑時）、資料不動", pg.psql(c, STATE_SQL) == s_pre)
 
     dry = pg.dir / f"{db}_dry.sql"
     text = APPLY.read_text(encoding="utf-8")
@@ -152,6 +177,13 @@ def rehearse(pg, label, null_empty):
       UNION ALL
       SELECT course_type, instructor_id, instructor_name, session_date, 2, 0, source, status, pricing_status,
              '網站回報 零元' FROM _src;
+      -- 合作課回報常不帶課程名：同日兩校各上一堂（其他都一樣）不算重複；同一校再送一次才算
+      INSERT INTO public.class_sessions (course_type, instructor_id, instructor_name, session_date, duration_hours,
+        base_salary, source, status, pricing_status, course_name, unit_name)
+      SELECT 'collab_lead', instructor_id, instructor_name, session_date, 1, 600, 'self_report', 'pending', 'legacy', NULL, u
+        FROM _src, unnest(ARRAY['甲國小', '乙國小', '乙國小']) WITH ORDINALITY AS t(u, o) ORDER BY o;
+      SELECT string_agg(unit_name || '=' || is_anomaly, ' ' ORDER BY unit_name DESC, is_anomaly)
+        FROM public.class_sessions WHERE unit_name IN ('甲國小', '乙國小');
       SELECT string_agg(course_name || '/' || duration_hours::float8 || 'h/' || base_salary::float8 || '=' || is_anomaly || ':'
                         || array_to_string(anomaly_reasons, '+'), ' | ' ORDER BY created_at, course_name, duration_hours, is_anomaly)
         FROM public.class_sessions WHERE course_name IN ('網站回報 A', '網站回報 零元');
@@ -161,6 +193,8 @@ def rehearse(pg, label, null_empty):
           "網站回報 A/1.5h/450=true:同講師同日有內容完全相同的紀錄，可能重複登記" in rule
           and "網站回報 A/1.5h/450=false:" in rule, rule)
     check("新規則：同日同講師但時數不同的回報不會被標", "網站回報 A/2.5h/450=false:" in rule, rule)
+    check("新規則：課名空白、同日不同合作單位不算重複；同單位再送一次才標",
+          "甲國小=false 乙國小=false 乙國小=true" in rule, rule)
     check("新規則：網站回報有時數沒薪資照舊標異常（且不算重複）", "網站回報 零元/2h/0=true:有時數但薪資為 0 |" in rule + " |", rule)
     check("規則測試已撤銷、資料不動", pg.psql(db, STATE_SQL) == s_after)
 
@@ -168,9 +202,34 @@ def rehearse(pg, label, null_empty):
         r = as_role(pg, db, role, "SELECT count(*) FROM public.salary_cleanup_20261020_backup")
         check(f"權限：{role} 讀不到備份表", r.returncode != 0 and "permission denied" in r.stderr, r.stderr.strip()[-60:])
 
+    rb_line = "SELECT set_config('salary_cleanup.rollback_mode', 'apply', true);"
+    r = pg.psql(db, file=with_mode(pg, ROLLBACK, rb_line, rb_line.replace("'apply'", "'dry-run'"), f"{db}_rb_dry.sql"),
+                expect_fail=True)
+    check("96 預演：拋出 DRY_RUN_OK 且資料完全不動",
+          r.returncode != 0 and "DRY_RUN_OK 搬回 91 筆" in r.stderr and pg.psql(db, STATE_SQL) == s_after,
+          r.stderr.strip()[-120:])
+
+    # 06 之後後台把一筆 9/26 以後的課標成已付款 → 96 預設停下；skip-changed 只略過那筆
+    c = clone(pg, db, f"{db}_changed")
+    pg.psql(c, "UPDATE public.class_sessions SET status = 'paid', paid_amount = total_salary, paid_at = now() "
+               "WHERE id = (SELECT id FROM public.class_sessions WHERE source = 'historical_import' "
+               "AND session_date >= DATE '2026-09-26' ORDER BY id LIMIT 1)")
+    s_c = pg.psql(c, STATE_SQL)
+    r = pg.psql(c, file=ROLLBACK, expect_fail=True)
+    check("06 之後有人改過資料：96 預設整批停下、資料不動",
+          r.returncode != 0 and "06 之後有 1 筆被改過" in r.stderr and pg.psql(c, STATE_SQL) == s_c, r.stderr.strip()[-100:])
+    r = pg.psql(c, file=with_mode(pg, ROLLBACK, rb_line, rb_line.replace("'apply'", "'skip-changed'"), f"{db}_rb_skip.sql"),
+                raw=True)
+    after_skip = pg.psql(c, "SELECT count(*) || '/' || count(*) FILTER (WHERE status = 'paid') || '/' || "
+                            "count(*) FILTER (WHERE status = 'paid' AND session_date >= DATE '2026-09-26') "
+                            "FROM public.class_sessions WHERE source = 'historical_import'")
+    check("skip-changed：其他列還原（5,535 筆、原本 3 筆已付款），後台後來標的那筆保持已付款",
+          "略過 1 筆" in r.stderr and after_skip == "5535/4/1", f"{after_skip} {r.stderr.strip()[-80:]}")
+
     pg.psql(db, file=ROLLBACK)
+    pg.psql(db, file=OLD_RULE)
     s_back = pg.psql(db, STATE_SQL)
-    check("96 還原後 class_sessions 逐欄相同、隔離區本批清空、舊異常規則換回、備份表已刪", s_back == s_pre,
+    check("96＋97 還原後 class_sessions 逐欄相同、隔離區本批清空、舊異常規則換回、備份表已刪", s_back == s_pre,
           f"{s_back} vs {s_pre}")
     check("還原後網站端紀錄仍完全不動", pg.psql(db, WEB_SQL) == web0)
 

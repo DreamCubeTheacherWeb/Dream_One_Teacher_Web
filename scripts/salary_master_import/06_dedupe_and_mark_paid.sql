@@ -13,7 +13,7 @@
 --      → 已付款，已領金額＝總計，付款時間＝本次執行時間（5,435 筆）。網站回報與後台手動新增的紀錄不動。
 --   5. 依新規則重算異常標記，事後核對筆數、金額、異常全部符合預期才提交。
 -- 預演：把最下方 'apply' 改成 'dry-run'，跑到最後會拋出 DRY_RUN_OK（附統計）並整批取消。
--- 還原：96_rollback_dedupe_and_mark_paid.sql。
+-- 還原：96_rollback_dedupe_and_mark_paid.sql（資料；只還原 06 之後沒人再改過的列）＋97_restore_old_anomaly_rule.sql（舊規則）。
 
 BEGIN;
 
@@ -36,6 +36,12 @@ BEGIN
      AND tgname NOT IN ('trg_class_sessions_updated_at', 'trg_session_anomaly', 'trg_guard_class_session_pricing');
   IF v_src IS NOT NULL THEN
     RAISE EXCEPTION 'class_sessions 有預期以外的 trigger：%，停止', v_src;
+  END IF;
+  -- 要刪 91 筆：若有表用外鍵（含 ON DELETE CASCADE）指向 class_sessions，會連帶刪掉或擋住，先停下來查清楚
+  SELECT string_agg(conrelid::regclass::text || '.' || conname, ', ') INTO v_src
+    FROM pg_constraint WHERE confrelid = 'public.class_sessions'::regclass;
+  IF v_src IS NOT NULL THEN
+    RAISE EXCEPTION '有外鍵指向 class_sessions：%，停止', v_src;
   END IF;
   IF to_regclass('public.salary_cleanup_20261020_backup') IS NOT NULL THEN
     RAISE EXCEPTION '已經執行過（備份表 salary_cleanup_20261020_backup 已存在）';
@@ -64,8 +70,10 @@ BEGIN
 END $$;
 
 -- ── 2. 備份（還原用；只有資料庫擁有者讀得到）
+-- cleanup_run_at＝本次執行時間（06 改過的列 updated_at 都會等於它）；touched＝06 有改到這一列（最後一步填）
 CREATE TABLE public.salary_cleanup_20261020_backup AS
-  SELECT id, status, paid_amount, paid_at, is_anomaly, anomaly_reasons, updated_at
+  SELECT id, status, paid_amount, paid_at, is_anomaly, anomaly_reasons, updated_at,
+         now() AS cleanup_run_at, false AS touched
     FROM public.class_sessions;
 ALTER TABLE public.salary_cleanup_20261020_backup ADD PRIMARY KEY (id);
 ALTER TABLE public.salary_cleanup_20261020_backup ENABLE ROW LEVEL SECURITY;
@@ -212,6 +220,12 @@ UPDATE public.class_sessions
  WHERE (source = 'historical_import' OR is_anomaly)
    AND paid_at IS DISTINCT FROM now();
 
+-- 記下 06 改到的列（步驟 4、5 的列 updated_at 都被 trigger 設成本次執行時間），96 只還原這些、且之後沒人再改過的
+UPDATE public.salary_cleanup_20261020_backup b
+   SET touched = true
+  FROM public.class_sessions cs
+ WHERE cs.id = b.id AND cs.updated_at = b.cleanup_run_at;
+
 -- ── 6. 事後核對（不符就整批取消），預演模式在這裡拋出 DRY_RUN_OK
 SELECT set_config('salary_cleanup.mode', 'apply', true);
 
@@ -220,6 +234,7 @@ DECLARE
   r record;
   v_expected_flag int;
   v_unexpected int;
+  v_touched int;
   v_summary text;
 BEGIN
   SELECT count(*) AS n,
@@ -248,6 +263,11 @@ BEGIN
      AND cs.id NOT IN (SELECT class_session_id FROM public.salary_master_rows
                         WHERE batch = '2026-10-19' AND row_no IN ('3222', '3622'));
 
+  SELECT count(*) INTO v_touched
+    FROM public.salary_cleanup_20261020_backup b
+    JOIN public.class_sessions cs ON cs.id = b.id
+   WHERE b.touched AND cs.source = 'historical_import';
+
   v_summary := format('總表 %s 筆、總計 %s；已付款 %s 筆 %s 元；未付款 %s 筆 %s 元；異常 %s 筆（應 %s）；隔離區本批 %s 筆',
     r.n, r.total, r.paid_n, r.paid_sum, r.unpaid_n, r.unpaid_sum, r.anomaly_n, v_expected_flag,
     (SELECT count(*) FROM public.class_sessions_quarantine
@@ -255,9 +275,9 @@ BEGIN
 
   IF r.n <> 5444 OR r.total <> 10649987 OR r.paid_n <> 5438 OR r.paid_sum <> 10642401
      OR r.unpaid_n <> 6 OR r.unpaid_sum <> 7586 OR r.unpaid_before <> 0 OR r.paid_after <> 0
-     OR r.anomaly_n <> v_expected_flag OR v_unexpected <> 0 THEN
-    RAISE EXCEPTION '事後核對不符，已取消：%（9/26 前未付款 %、9/26 後已付款 %、非預期異常 %）',
-      v_summary, r.unpaid_before, r.paid_after, v_unexpected;
+     OR r.anomaly_n <> v_expected_flag OR v_unexpected <> 0 OR v_touched <> 5444 THEN
+    RAISE EXCEPTION '事後核對不符，已取消：%（9/26 前未付款 %、9/26 後已付款 %、非預期異常 %、備份標記改過 %／應 5444）',
+      v_summary, r.unpaid_before, r.paid_after, v_unexpected, v_touched;
   END IF;
 
   IF current_setting('salary_cleanup.mode') = 'dry-run' THEN
