@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { Wallet, TrendingUp, Calendar, AlertCircle, Plus, ExternalLink, ChevronDown, RefreshCw, CheckCircle2, X } from 'lucide-react';
 import { COURSE_LABELS } from '../lib/constants';
 import { isSafeHttpUrl } from '../lib/siteLinks';
+import { taipeiToday } from '../lib/salary';
+import { monthNameOf, payoutScheduleFromResponse, resolvePayout, shortDateOf, summarizePayrollMonth } from '../lib/salaryPayday';
 
 const STATUS_LABELS = { pending: '待核准', approved: '已核准', paid: '已付款' };
 const STATUS_COLORS = {
@@ -111,13 +113,23 @@ const MySalary = () => {
     const [showSubmitSuccess, setShowSubmitSuccess] = useState(Boolean(location.state?.salaryReportSubmitted));
     const salaryLinks = useSalaryLinks();
     const pointsLink = salaryLinks.find(link => link.key === 'salary_points');
+    // 後台設定的匯款日（supabase/migrations/20261020150000_salary_payout_schedule.sql）；讀不到就用每月 10 號
+    const [payoutSchedule, setPayoutSchedule] = useState({ nextPayday: null, regularDay: null, failed: false });
+    const { payday: nextPayday, payrollMonth } = resolvePayout(payoutSchedule, taipeiToday());
 
     const load = useCallback(async () => {
         setLoading(true);
         setLoadError('');
         // 先取自己的彙總(依 user_id 篩出本人的講師主檔)，清單再用它的 instructor_id 限定本人：
         // 管理員／輔導員的 RLS 可讀全部報酬紀錄，清單若不帶本人條件，會變成全體講師最近 1000 筆。
-        const sumRes = await supabase.from('instructor_salary_summary').select('*').eq('user_id', user.id).maybeSingle();
+        // 匯款日設定一起讀，「重新載入」時也會重讀。
+        const [sumRes, scheduleRes] = await Promise.all([
+            supabase.from('instructor_salary_summary').select('*').eq('user_id', user.id).maybeSingle(),
+            supabase.from('salary_payout_schedule').select('next_payday, regular_day').maybeSingle(),
+        ]);
+        const schedule = payoutScheduleFromResponse(scheduleRes);
+        if (schedule.failed) console.warn('讀取匯款日設定失敗，先以每月 10 號預估：', scheduleRes.error?.message);
+        setPayoutSchedule(schedule);
         if (sumRes.error) {
             setLoadError('報酬資料暫時無法載入，請稍後再試。');
             setLoading(false);
@@ -171,6 +183,9 @@ const MySalary = () => {
         }
         return Object.entries(map).map(([m, v]) => ({ month: m, ...v })).sort((a, b) => b.month.localeCompare(a.month));
     }, [sessions]);
+
+    // 下次匯款日匯的那個月（例：12/10 匯 11 月）
+    const payroll = summarizePayrollMonth(sessions, payrollMonth);
 
     if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 
@@ -264,7 +279,7 @@ const MySalary = () => {
                 </div>
             )}
 
-            {/* 主要數字:本月 + 累計 + 應領未領 */}
+            {/* 主要數字:本月 + 今年 + 下次匯款日要匯的那個月 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
                 <BigStat
                     icon={Calendar}
@@ -281,19 +296,24 @@ const MySalary = () => {
                 />
                 <BigStat
                     icon={Wallet}
-                    label="未領金額"
-                    value={fmt(summary.total_unpaid)}
-                    sub={`已領 ${fmt(summary.total_paid)}`}
+                    label={`${monthNameOf(payrollMonth)}累計報酬`}
+                    value={fmt(payroll.total)}
+                    badge={`${shortDateOf(nextPayday)} 匯款${payoutSchedule.failed ? '（預估）' : ''}`}
+                    sub={[
+                        `${payroll.count} 場`,
+                        payroll.pendingTotal > 0 ? `含待核准 ${fmt(payroll.pendingTotal)}` : '',
+                        payroll.awaitingPriceCount > 0 ? `${payroll.awaitingPriceCount} 筆待確認金額` : '',
+                    ].filter(Boolean).join('・')}
                     tone="yellow"
                 />
             </div>
 
-            {/* 細項:累計 + 三狀態分桶 */}
+            {/* 細項:累計 + 待核准 + 已匯款 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
                 <MiniStat label="累計總報酬" value={fmt(summary.total_salary)} />
                 <MiniStat label="總場次" value={summary.total_sessions} sub={fmtHr(summary.total_hours)} />
                 <MiniStat label="待核准" value={fmt(summary.pending_salary)} accent="yellow" />
-                <MiniStat label="已核准未付" value={fmt(summary.approved_unpaid_salary)} accent="blue" />
+                <MiniStat label="已匯款" value={fmt(summary.paid_salary)} accent="blue" />
             </div>
 
             {/* 月份明細 */}
@@ -433,13 +453,20 @@ const TONE_STYLES = {
     yellow: { bg: 'bg-bauhaus-yellow', text: 'text-bauhaus-black',   sub: 'text-bauhaus-black/70' },
 };
 
-const BigStat = ({ icon, label, value, sub, tone }) => {
+const BigStat = ({ icon, label, value, sub, tone, badge }) => {
     const Icon = icon;
     const t = TONE_STYLES[tone] || TONE_STYLES.black;
     return (
     <div className={`${t.bg} border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard lg:shadow-hard-lg p-5`}>
-        <div className={`flex items-center gap-2 text-sm font-bold uppercase tracking-wide ${t.sub}`}>
-            <Icon className="w-4 h-4" /> {label}
+        <div className="flex items-start justify-between gap-2">
+            <div className={`flex items-center gap-2 text-sm font-bold uppercase tracking-wide ${t.sub}`}>
+                <Icon className="w-4 h-4" /> {label}
+            </div>
+            {badge && (
+                <span className="shrink-0 rounded-full border-2 border-bauhaus-black bg-white px-2.5 py-0.5 text-xs font-black text-bauhaus-black tabular-nums">
+                    {badge}
+                </span>
+            )}
         </div>
         <div className={`text-3xl font-black mt-2 tabular-nums ${t.text}`}>{value}</div>
         {sub && <div className={`text-xs mt-1 ${t.sub}`}>{sub}</div>}
