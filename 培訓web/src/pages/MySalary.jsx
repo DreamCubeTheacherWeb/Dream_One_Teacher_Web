@@ -20,8 +20,9 @@ const STATUS_COLORS = {
 const CONFIRM_GROUPS = [
     { key: 'b2b', title: '合作單位課程', note: '補習班、學校社團、講座', contact: 'SEP', nameHeader: '單位' },
     { key: 'b2c', title: '直營課程', note: '體驗課、營隊、到府、速解', contact: '芳儒', nameHeader: '課程名稱' },
-    // 薪資總表匯入時「學校社團」「楓葉體驗課」都轉成 course_type='other'（scripts/salary_master_import/build_upload_csv.py），站內分不出原類別，暫列這區
-    { key: 'other', title: '其他課程', note: '常態課、幼兒啟蒙、速解培訓、站櫃／擺攤等；薪資總表匯入的「學校社團」「楓葉體驗課」也暫列在這裡', contact: null, nameHeader: '課程名稱', hideWhenEmpty: true },
+    // 薪資總表匯入時原課程種類「其他」「徵稿」等雜項轉成 course_type='other'（scripts/salary_master_import/build_upload_csv.py），歸這區；
+    // 楓葉體驗課由 08_reclassify_maple_trial.sql 改成 trial（業主 2026-10-20 選方案 A），總表裡沒有學校社團
+    { key: 'other', title: '其他課程', note: '常態課、幼兒啟蒙、速解培訓、站櫃／擺攤，以及薪資總表裡登記為「其他」的課', contact: null, nameHeader: '課程名稱', hideWhenEmpty: true },
 ];
 const CONFIRM_PAGE_SIZE = 50;
 

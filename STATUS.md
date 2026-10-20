@@ -116,9 +116,11 @@ sonnet 看圖判讀：無破版；建議的欄位對齊、退回原因字級已�
 合作單位顯示 50 列＋展開鈕，無橫向捲軸、console 0 錯誤；zeabur 網域訪客：首頁載新版、直打 `/my/salary` 導回登入頁、console 0 錯誤。
 並行對話「講師累計報酬與匯款日期」（worktree `payday-card`）也在改 MySalary.jsx 統計卡，已傳訊告知合併時頂端 import 兩行會碰到。
 
-**待業主**：① 決定總表匯入的「學校社團」「楓葉體驗課」分類（見地雷）；② 站內版已上線，考慮把「回報查詢表」試算表的分享範圍收緊（目前任何拿到連結的人都能選任一講師看紀錄）。
+**說明文字更正（業主 2026-10-20「以上都同意」）**：分類盤點（分支 `data/reclassify-imported-other`）查出總表沒有「學校社團」，業主選方案 A＝只把楓葉體驗課改體驗課（`08_reclassify_maple_trial.sql`，待業主在 SQL Editor 執行，正式庫改 11 筆）；「其他課程」區說明改成「常態課、幼兒啟蒙、速解培訓、站櫃／擺攤，以及薪資總表裡登記為「其他」的課」（08 套用前後都正確），驗證 `verify:compensation-confirm:browser` 41/41、`verify:salary-fixes` 32/32、`verify:speed-salary:browser` 13/13、`npm test` 143/143。16:15:53 推 main f0dac3e；16:17 起兩網域各連續 5 次載到本機同名 `index-C6-AW5xv.js`，線上 `MySalary-BKstdgjw.js` 含新說明、舊句「也暫列在這裡」0 處（剩下的「學校社團」是合作單位區與舊表單的正確說明）；Chrome 開 teacher.dreamcube.tw `/my/salary`：三區正常、其他課程區顯示新說明、console 0 錯誤（業主帳號合作單位由 104 變 102 筆，時間上與同日 06 重複資料清理吻合，未逐筆核對）。
 
-**地雷**：薪資總表匯入（`scripts/salary_master_import/build_upload_csv.py` COURSE_MAP）把「學校社團」「楓葉體驗課」都轉成 `course_type='other'`，原類別只存在 admin 才能讀的
+**待業主**：① 在 SQL Editor 執行 `08_reclassify_maple_trial.sql`（預期結果摘要一列：trial 11 筆）；② 站內版已上線，考慮把「回報查詢表」試算表的分享範圍收緊（目前任何拿到連結的人都能選任一講師看紀錄）。
+
+**地雷**：薪資總表匯入（`scripts/salary_master_import/build_upload_csv.py` COURSE_MAP）把原類別「其他」「徵稿」「楓葉體驗課」（及 COURSE_MAP 的「學校社團」，但總表實際沒有）都轉成 `course_type='other'`，原類別只存在 admin 才能讀的
 `salary_master_rows`，所以這些課在確認區會出現在「其他課程」（類型寫「其他」）而不是合作單位／直營；已在其他課程區說明寫明，數量未查（需唯讀查正式庫：2026 年起
 `source='historical_import' AND course_type='other'` 依原課程種類分組計數）。正式站實例：業主本人帳號 135 筆中有 18 筆落在「其他課程」、類型都是「其他」。月份摘要條「N 場」含待核准與已退回、金額只算已定價（既有算法，非本次）。
 用舊 Google 表單回報、未匯入站內的課不會出現在確認區（已在區塊底部引導去試算表）。
