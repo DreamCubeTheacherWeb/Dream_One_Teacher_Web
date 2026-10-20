@@ -114,8 +114,29 @@
 - **完整回歸（依序單獨跑，2026-10-20 01:42）**：build、npm test 119/119、lint 0，及全部 37 支 verify／e2e 腳本全過（speed-salary 靜態路由檢查配合 lazy 外層修正後 9/9）。
 - **獨立審查**：金額／合約／下載、登入／頁面載入、個人頁身分欄位三份 opus 審查皆「必修 0」。
 
+### ✅ 2026-10-20 早上：五支 migration 已套正式庫＋明早批次已上線
+業主 10/20 早上口頭授權：「supabase 的地方我口頭允許了 你可以開 chrome 執行」。總指揮用業主 Chrome 開 SQL Editor
+（專案 DreamCube_teacher／mnovjlicwzwkefkhstte，畫面標 PRODUCTION）逐支執行。做法：SQL 全文貼進指令（可在紀錄看到）＋瀏覽器端
+SHA-256 與 repo 檔比對一致才執行；每支先「預演」（整支在交易內跑到最後故意 RAISE，確認全部語句成功後整批回滾，並另跑查詢確認真的沒變），
+再正式套用，套完立刻唯讀核對。
+- 套用前基準：舊認領函式 3 支（search_unlinked_instructors＋submit_claim_request 3／4 參數）、claim_requests INSERT 政策在、
+  contract_documents 仍是 USING(true) 且 anon 有 SELECT、instructors 有舊的 bankbook／bank_account 兩個守門、回報選項 112 筆（期間 3／單位 78／梯次 31）。
+- ① `20261020010000_drop_legacy_claim_rpcs`：舊函式 0、claim_requests 只剩本人讀＋管理員 2 條政策 → **高風險漏洞已關閉**。
+- ② `20261019103000_restrict_contract_document_reads`：contract_documents 只剩「管理員管理」「已核准角色可讀」、anon 無 SELECT。
+- ③ `20261020120000_instructor_document_edit_unlocks`：先查正式庫 instructor_uploads 的講師寫入政策恰為本檔重建的 3 條（無遺漏）；
+  套後新守門 2 個在、舊 2 個移除、兩張新表在、3 條上傳政策都帶 is_protected_instructor_file。
+- ④ `20261020130000_report_periods_and_custom_fields`：選項 160（期間 3／單位 126／梯次 31）、無期間的單位／梯次 0、回報欄位 24、
+  submit_my_class_session 只剩 16 參數一版——與分支預期完全一致。
+- ⑤ `20261020140000_revoke_mentor_signed_contract_reads`（業主在認領對話要求）：先查正式庫 contract-documents 的 SELECT 政策只有 1 條、
+  無跨 bucket 政策（迴圈不會誤刪）；套後仍 1 條、已無「admin＋mentor 讀整個 bucket」條件、範本規則在。
+- 五支全部套完後另跑一次獨立唯讀查詢，全部數值與上列一致。
+- 前端：③④ 套完立刻推 `release/20261021-db-features`（649fc7b）到 main，舊前端＋新資料庫的空窗約 2 分鐘。
+- 上線驗證：兩網域 10:22 連續 5 次載入 index-CYvVxNZX.js（＝本機 build）；訪客煙霧測試（首頁、找不到頁面、條款頁 chunk、console 0 錯誤）通過；
+  以匿名身分唯讀打正式 API：contract_documents 回 42501 permission denied、search_unlinked_instructors 回 PGRST202（函式已不存在）。
+- 待業主：管理員帳號實際拖曳一次回報選項＋新增一個期間；講師帳號看一次回報頁；後台對一位講師按「開放修改一次」試一次證件更換。
+
 ### 待業主（明早）
-1. **Supabase SQL Editor 依序套 migration**（每支都可重跑、單一交易）：
+1. ~~**Supabase SQL Editor 依序套 migration**~~（✅ 已完成，見上段）（每支都可重跑、單一交易）：
    ① `20261019103000_restrict_contract_document_reads.sql`（合約範本 pending 不可讀；前端已上線，順序無硬性要求）
    ② `20261020010000_drop_legacy_claim_rpcs.sql`（刪 07 月舊認領 RPC＋客戶端寫入政策；**高風險漏洞**：任何剛登入的 Google 帳號可列出未認領講師並以手機末四碼綁主檔）
    ③ `20261020120000_instructor_document_edit_unlocks.sql`（分支 feat/instructor-doc-edit-unlock，證件鎖定＋後台開放修改一次；套完再上前端）
