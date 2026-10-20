@@ -1,0 +1,66 @@
+# 2026-10-20 去重＋標已付款 本機演練紀錄（python3 -I scripts/salary_master_import/rehearse_dedupe_paid.py）
+# 執行時間：2026-10-20 10:51 CST
+
+══ 情境 A：空白欄 為空字串 ══
+PASS  模擬正式庫：總表 5,535 筆、總計 10,724,608、已付款 3 筆  5535/10724608.00/3/476
+      （舊規則下異常 476 筆；正式庫畫面為 481，差異來自本機講師名單與正式庫不同）
+PASS  沒套新 migration 就跑 06 會被擋、資料不動  61020150000（新異常規則）
+CONTEXT:  PL/pgSQL function inline_code_block line 8 at RAISE
+PASS  新 migration 連跑兩次無誤
+PASS  正式庫若有版控外的 trigger（例如發通知）06 會停下、資料不動  ke_paid_notify，停止
+CONTEXT:  PL/pgSQL function inline_code_block line 16 at RAISE
+PASS  預演模式：拋出 DRY_RUN_OK 且資料完全不動  RUN_OK 總表 5444 筆、總計 10649987.00；已付款 5438 筆 10642401.00 元；未付款 6 筆 7586.00 元；異常 2 筆（應 2）；隔離區本批 91 筆
+CONTEXT:  PL/pgSQL function inline_code_block line 47 at RAISE
+PASS  06 正式執行成功（APPLY_OK）  /worktrees/salary-dedupe-paid/scripts/salary_master_import/06_dedupe_and_mark_paid.sql:267: NOTICE:  APPLY_OK 總表 5444 筆、總計 10649987.00；已付款 5438 筆 10642401.00 元；未付款 6 筆 7586.00 元；異常 2 筆（應 2）；隔離區本批 91 筆
+PASS  總表 5,444 筆（少 91）、總計 10,649,987（少 74,621）  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+PASS  已付款 5,438 筆、已付金額 10,642,401；每筆已付＝總計、都有付款時間  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+PASS  未付款只剩 9/26 以後 6 筆、7,586 元；最晚的已付款在 9/26 之前  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+PASS  異常只剩曾瑀希 2026/3/27 南瓜田兩筆（或講師未對應時 0 筆）  異常列號＝3222,3622（曾瑀希已對應 2 筆）
+PASS  隔離區本批 91 筆、對應 81 個留下的列、金額 74,621、原因有寫列號  91/81/74621.00/91
+PASS  每筆搬走的列，對應的留下那筆仍在正式資料中  91
+PASS  網站端紀錄完全不動
+PASS  06 重跑會被擋、資料不動  61020_backup 已存在）
+CONTEXT:  PL/pgSQL function inline_code_block line 19 at RAISE
+PASS  新規則：一模一樣的第二份回報會標「內容完全相同」  網站回報 A/1.5h/450=false: | 網站回報 A/1.5h/450=true:同講師同日有內容完全相同的紀錄，可能重複登記 | 網站回報 A/2.5h/450=false: | 網站回報 零元/2h/0=true:有時數但薪資為 0
+PASS  新規則：同日同講師但時數不同的回報不會被標  網站回報 A/1.5h/450=false: | 網站回報 A/1.5h/450=true:同講師同日有內容完全相同的紀錄，可能重複登記 | 網站回報 A/2.5h/450=false: | 網站回報 零元/2h/0=true:有時數但薪資為 0
+PASS  新規則：網站回報有時數沒薪資照舊標異常（且不算重複）  網站回報 A/1.5h/450=false: | 網站回報 A/1.5h/450=true:同講師同日有內容完全相同的紀錄，可能重複登記 | 網站回報 A/2.5h/450=false: | 網站回報 零元/2h/0=true:有時數但薪資為 0
+PASS  規則測試已撤銷、資料不動
+PASS  權限：authenticated 讀不到備份表    permission denied for table salary_cleanup_20261020_backup
+PASS  權限：anon 讀不到備份表    permission denied for table salary_cleanup_20261020_backup
+PASS  96 還原後 class_sessions 逐欄相同、隔離區本批清空、舊異常規則換回、備份表已刪  f9e2aee1314146a95943440d84842284/0/b01722dba8b38a95e2ba8c7f96451795/no-backup vs f9e2aee1314146a95943440d84842284/0/b01722dba8b38a95e2ba8c7f96451795/no-backup
+PASS  還原後網站端紀錄仍完全不動
+PASS  還原後可再次執行，結果與第一次相同  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+
+══ 情境 B：空白欄 變 NULL ══
+PASS  模擬正式庫：總表 5,535 筆、總計 10,724,608、已付款 3 筆  5535/10724608.00/3/476
+      （舊規則下異常 476 筆；正式庫畫面為 481，差異來自本機講師名單與正式庫不同）
+PASS  沒套新 migration 就跑 06 會被擋、資料不動  61020150000（新異常規則）
+CONTEXT:  PL/pgSQL function inline_code_block line 8 at RAISE
+PASS  新 migration 連跑兩次無誤
+PASS  正式庫若有版控外的 trigger（例如發通知）06 會停下、資料不動  ke_paid_notify，停止
+CONTEXT:  PL/pgSQL function inline_code_block line 16 at RAISE
+PASS  預演模式：拋出 DRY_RUN_OK 且資料完全不動  RUN_OK 總表 5444 筆、總計 10649987.00；已付款 5438 筆 10642401.00 元；未付款 6 筆 7586.00 元；異常 2 筆（應 2）；隔離區本批 91 筆
+CONTEXT:  PL/pgSQL function inline_code_block line 47 at RAISE
+PASS  06 正式執行成功（APPLY_OK）  /worktrees/salary-dedupe-paid/scripts/salary_master_import/06_dedupe_and_mark_paid.sql:267: NOTICE:  APPLY_OK 總表 5444 筆、總計 10649987.00；已付款 5438 筆 10642401.00 元；未付款 6 筆 7586.00 元；異常 2 筆（應 2）；隔離區本批 91 筆
+PASS  總表 5,444 筆（少 91）、總計 10,649,987（少 74,621）  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+PASS  已付款 5,438 筆、已付金額 10,642,401；每筆已付＝總計、都有付款時間  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+PASS  未付款只剩 9/26 以後 6 筆、7,586 元；最晚的已付款在 9/26 之前  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+PASS  異常只剩曾瑀希 2026/3/27 南瓜田兩筆（或講師未對應時 0 筆）  異常列號＝3222,3622（曾瑀希已對應 2 筆）
+PASS  隔離區本批 91 筆、對應 81 個留下的列、金額 74,621、原因有寫列號  91/81/74621.00/91
+PASS  每筆搬走的列，對應的留下那筆仍在正式資料中  91
+PASS  網站端紀錄完全不動
+PASS  06 重跑會被擋、資料不動  61020_backup 已存在）
+CONTEXT:  PL/pgSQL function inline_code_block line 19 at RAISE
+PASS  新規則：一模一樣的第二份回報會標「內容完全相同」  網站回報 A/1.5h/450=false: | 網站回報 A/1.5h/450=true:同講師同日有內容完全相同的紀錄，可能重複登記 | 網站回報 A/2.5h/450=false: | 網站回報 零元/2h/0=true:有時數但薪資為 0
+PASS  新規則：同日同講師但時數不同的回報不會被標  網站回報 A/1.5h/450=false: | 網站回報 A/1.5h/450=true:同講師同日有內容完全相同的紀錄，可能重複登記 | 網站回報 A/2.5h/450=false: | 網站回報 零元/2h/0=true:有時數但薪資為 0
+PASS  新規則：網站回報有時數沒薪資照舊標異常（且不算重複）  網站回報 A/1.5h/450=false: | 網站回報 A/1.5h/450=true:同講師同日有內容完全相同的紀錄，可能重複登記 | 網站回報 A/2.5h/450=false: | 網站回報 零元/2h/0=true:有時數但薪資為 0
+PASS  規則測試已撤銷、資料不動
+PASS  權限：authenticated 讀不到備份表    permission denied for table salary_cleanup_20261020_backup
+PASS  權限：anon 讀不到備份表    permission denied for table salary_cleanup_20261020_backup
+PASS  96 還原後 class_sessions 逐欄相同、隔離區本批清空、舊異常規則換回、備份表已刪  32523e8b87ae46c89705185a756b9200/0/b01722dba8b38a95e2ba8c7f96451795/no-backup vs 32523e8b87ae46c89705185a756b9200/0/b01722dba8b38a95e2ba8c7f96451795/no-backup
+PASS  還原後網站端紀錄仍完全不動
+PASS  還原後可再次執行，結果與第一次相同  {'n': 5444, 'total': 10649987.0, 'paid_n': 5438, 'paid_sum': 10642401.0, 'unpaid_n': 6, 'unpaid_sum': 7586.0, 'unpaid_min_date': '2026-10-13', 'paid_max_date': '2026-09-22', 'anomaly': 2, 'paid_amount_mismatch': 0, 'paid_at_null': 3}
+PASS  兩種上傳情境結果一致
+
+47/47 PASS
+# exit=0
