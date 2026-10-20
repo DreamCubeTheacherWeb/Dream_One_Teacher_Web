@@ -6,6 +6,7 @@ import {
     normalizePaydayDay,
     parseIsoDate,
     payoutScheduleFromResponse,
+    regularPaydayFor,
     resolvePayout,
     shortDateOf,
     summarizePayrollPeriod,
@@ -53,6 +54,19 @@ test('讀不到設定時用每月 10 號', () => {
     assert.equal(at({ nextPayday: 'bad', regularDay: 'x' }, '2026-10-09'), '2026-10-10 2026/09');
     assert.equal(at({ nextPayday: null, regularDay: 25 }, '2026-10-26'), '2026-11-25 2026/10');
     assert.equal(at({}, '2027-01-11'), '2027-02-10 2027/01');
+});
+
+test('某一期照固定日的匯款日（後台改固定日時用來帶出同一期的新日期）', () => {
+    assert.equal(regularPaydayFor('2026/10', 10), '2026-11-10');
+    assert.equal(regularPaydayFor('2026/10', 28), '2026-11-28');
+    assert.equal(regularPaydayFor('2026/12', 5), '2027-01-05');
+    assert.equal(regularPaydayFor('2027/01', 28), '2027-02-28');
+    assert.equal(regularPaydayFor('bad', 10), null);
+    // 帶出來的日期回頭算期別，必須還是同一期（審查 2026-10-20 必修：只改固定日不能換期）
+    for (const day of [1, 5, 10, 15, 20, 25, 26, 27, 28]) {
+        const payday = regularPaydayFor('2026/10', day);
+        assert.equal(resolvePayout({ nextPayday: payday, regularDay: day }, '2026-10-20').periodMonth, '2026/10', String(day));
+    }
 });
 
 test('讀取結果：表還沒建或沒資料就安靜退回；其他錯誤標 failed', () => {

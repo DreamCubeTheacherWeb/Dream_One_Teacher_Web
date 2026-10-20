@@ -79,6 +79,14 @@ export const resolvePayout = ({ nextPayday, regularDay } = {}, today) => {
     throw new Error('找不到下次匯款日');
 };
 
+// 某一期（'YYYY/MM'）照固定日該在哪天匯：那一期的隔月固定日（'2026/10', 10 → '2026-11-10'）
+export const regularPaydayFor = (periodMonth, regularDay) => {
+    const match = /^(\d{4})\/(\d{2})$/.exec(String(periodMonth ?? ''));
+    if (!match) return null;
+    const next = shiftMonth({ year: Number(match[1]), month: Number(match[2]) }, 1);
+    return toIso(paydayIn(next, normalizePaydayDay(regularDay)));
+};
+
 // 前端讀 salary_payout_schedule 的結果 → 設定值；表還沒建或讀不到列時用每月 10 號，
 // 其他錯誤（網路、伺服器）也先用 10 號，但標 failed 讓畫面註明「預估」。
 export const payoutScheduleFromResponse = ({ data, error } = {}) => {

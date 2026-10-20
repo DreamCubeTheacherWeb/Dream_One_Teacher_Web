@@ -574,10 +574,35 @@ async function run() {
         check('後台9：改回原本的日期後「儲存」又變回 disabled', await saveButton.isDisabled());
         check('後台9：修改日期後，先前的「請選今天或之後的日期。」錯誤訊息自動消失', (await section.getByText('請選今天或之後的日期。').count()) === 0);
 
-        // 8. 改成 2026-12-09
+        // 8a. 只能改「目前這一期」：12/9 屬於 11 月期 → 擋下（審查 2026-10-20 必修）
+        patches.length = 0;
         await dateInput.fill('2026-12-09');
-        const previewText = '儲存後講師會看到「11月累計報酬（10/26～11/25）・12/9 匯款」';
-        check(`後台8：改日期為 2026-12-09 → 出現預覽「${previewText}」`, (await section.getByText(previewText).count()) === 1,
+        const mismatchNov = '這樣設定會變成匯「11月」，但目前這一期是「10月」。';
+        check('後台8a：日期改 2026-12-09（下一期）→ 顯示期別不符警告、不顯示預覽', (await section.getByText(mismatchNov).count()) === 1
+            && (await section.getByText(/儲存後講師會看到/).count()) === 0, await section.innerText());
+        check('後台8a：期別不符時「儲存」是 disabled', await saveButton.isDisabled());
+        await section.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+        await page.waitForTimeout(600);
+        check('後台8a：繞過按鈕直接送 submit 也不會送出請求', patches.length === 0, `patches=${patches.length}`);
+
+        // 8b. 只改每月固定日 → 日期自動換成同一期的新固定日
+        await dateInput.fill('2026-11-10');
+        await daySelect.selectOption('28');
+        check('後台8b：固定日 10→28，下次匯款日自動換成 2026-11-28（仍是 10 月期）', (await dateInput.inputValue()) === '2026-11-28', await dateInput.inputValue());
+        check('後台8b：預覽「儲存後講師會看到「10月累計報酬（9/26～10/25）・11/28 匯款」」',
+            (await section.getByText('儲存後講師會看到「10月累計報酬（9/26～10/25）・11/28 匯款」').count()) === 1 && await saveButton.isEnabled(), await section.innerText());
+        // 審查者的失敗情境：固定日 28、日期留 11/10 → 會變成 9 月期，必須擋
+        await dateInput.fill('2026-11-10');
+        check('後台8b：固定日 28＋日期 11/10 → 擋下（會變成匯「9月」）', (await section.getByText('這樣設定會變成匯「9月」，但目前這一期是「10月」。').count()) === 1
+            && await saveButton.isDisabled(), await section.innerText());
+        await daySelect.selectOption('10');
+        check('後台8b：固定日改回 10 → 日期 11/10、沒有變更、儲存 disabled、警告消失',
+            (await dateInput.inputValue()) === '2026-11-10' && await saveButton.isDisabled() && (await section.getByText(/這樣設定會變成匯/).count()) === 0);
+
+        // 8. 遇假日提前到 2026-11-09（同一期）→ 可存
+        await dateInput.fill('2026-11-09');
+        const previewText = '儲存後講師會看到「10月累計報酬（9/26～10/25）・11/9 匯款」';
+        check(`後台8：改日期為 2026-11-09 → 出現預覽「${previewText}」`, (await section.getByText(previewText).count()) === 1,
             await section.innerText());
         check('後台8：改完「儲存」變成可按', await saveButton.isEnabled());
         await section.screenshot({ path: shot('admin-desktop-1280-preview.png') });
@@ -590,24 +615,24 @@ async function run() {
         check('後台8：PATCH 網址條件含 id=eq.true', patch?.params.get('id') === 'eq.true', patch?.search);
         check('後台8：PATCH body 只含 next_payday 與 regular_day（不含 updated_by／id）',
             JSON.stringify(Object.keys(patch?.body ?? {}).sort()) === JSON.stringify(['next_payday', 'regular_day'])
-            && patch.body.next_payday === '2026-12-09' && patch.body.regular_day === 10, JSON.stringify(patch?.body));
+            && patch.body.next_payday === '2026-11-09' && patch.body.regular_day === 10, JSON.stringify(patch?.body));
         check('後台8：成功後顯示「已儲存」訊息與新的「講師目前看到」',
-            (await section.getByText('已儲存。講師現在看到「11月累計報酬（10/26～11/25）・12/9 匯款」。').count()) === 1
-            && (await current.innerText()).trim() === '講師目前看到：11月累計報酬（10/26～11/25）・12/9 匯款', await section.innerText());
+            (await section.getByText('已儲存。講師現在看到「10月累計報酬（9/26～10/25）・11/9 匯款」。').count()) === 1
+            && (await current.innerText()).trim() === '講師目前看到：10月累計報酬（9/26～10/25）・11/9 匯款', await section.innerText());
         check('後台8：儲存後「儲存」鈕回到 disabled、預覽消失', (await saveButton.isDisabled()) && (await section.getByText(/儲存後講師會看到/).count()) === 0);
         await section.screenshot({ path: shot('admin-desktop-1280-after-save.png') });
 
         // 重新整理仍是新日期（資料真的寫進 mock 資料庫）
         await page.reload({ waitUntil: 'networkidle' });
         await dateInput.waitFor({ timeout: 15000 });
-        check('後台8：重新整理後日期仍是 2026-12-09', (await dateInput.inputValue()) === '2026-12-09' && (await current.innerText()).trim() === '講師目前看到：11月累計報酬（10/26～11/25）・12/9 匯款');
+        check('後台8：重新整理後日期仍是 2026-11-09', (await dateInput.inputValue()) === '2026-11-09' && (await current.innerText()).trim() === '講師目前看到：10月累計報酬（9/26～10/25）・11/9 匯款');
         await context.close();
 
         // 8 延伸：剛存的日期，講師端真的看到
-        console.log('\n── 後台→講師端：admin 剛存的 12/9，講師開「我的報酬」');
+        console.log('\n── 後台→講師端：admin 剛存的 11/9，講師開「我的報酬」');
         ({ context, page } = await teacherScenario(browser, base, {
             id: '後台存檔→講師端', now: TAIPEI_NOON('2026-10-20'), mode: 'ok',
-            expected: { title: '11月累計報酬', value: '$5,650', badge: '12/9 匯款', sub: '10/26～11/25・4 場・含待核准 $300' },
+            expected: { title: '10月累計報酬', value: '$2,700', badge: '11/9 匯款', sub: '9/26～10/25・5 場・含待核准 $600・1 筆待確認金額' },
         }));
         await context.close();
 
@@ -683,9 +708,9 @@ async function run() {
         check('後台12：日期框、每月固定日、儲存鈕在手機上高度 ≥ 44px 且都在視窗內',
             mControls.every(b => b && b.height >= 44 && b.x >= 0 && b.x + b.width <= 390.5), JSON.stringify(mControls));
         await page.screenshot({ path: shot('admin-mobile-390-payday-section.png'), fullPage: false });
-        await mDate.fill('2026-12-09');
-        check('後台12：手機上改日期後出現預覽、「儲存」可按',
-            (await mSection.getByText('儲存後講師會看到「11月累計報酬（10/26～11/25）・12/9 匯款」').count()) === 1 && await mButton.isEnabled());
+        await mDate.fill('2026-11-11');
+        check('後台12：手機上改日期（同一期 11/11）後出現預覽、「儲存」可按',
+            (await mSection.getByText('儲存後講師會看到「10月累計報酬（9/26～10/25）・11/11 匯款」').count()) === 1 && await mButton.isEnabled());
         await mSection.scrollIntoViewIfNeeded();
         await page.waitForTimeout(500);  // 等按鈕的顏色轉場結束再截圖
         await page.screenshot({ path: shot('admin-mobile-390-preview.png'), fullPage: false });

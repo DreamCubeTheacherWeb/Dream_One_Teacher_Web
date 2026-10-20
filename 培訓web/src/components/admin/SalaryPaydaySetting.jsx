@@ -10,6 +10,7 @@ import {
     monthNameOf,
     normalizePaydayDay,
     parseIsoDate,
+    regularPaydayFor,
     resolvePayout,
     shortDateOf,
 } from '../../lib/salaryPayday';
@@ -61,6 +62,17 @@ const SalaryPaydaySetting = () => {
     const changed = Boolean(saved) && (
         form.nextPayday !== effectivePayday(saved, today) || Number(form.regularDay) !== saved.regularDay
     );
+    // 只能改「目前這一期」的匯款日：換固定日或日期離太遠，會讓講師看到別的期別與金額（審查 2026-10-20 必修）
+    const currentPeriod = saved ? resolvePayout(saved, today).periodMonth : null;
+    const formPeriod = formValid ? resolvePayout(form, today).periodMonth : null;
+    const periodMismatch = changed && formValid && formPeriod !== currentPeriod;
+
+    const changeRegularDay = (value) => {
+        const regularDay = Number(value);
+        const sameTermPayday = currentPeriod ? regularPaydayFor(currentPeriod, regularDay) : null;
+        setForm({ nextPayday: sameTermPayday || form.nextPayday, regularDay });
+        setMessage(null);
+    };
 
     const save = async (event) => {
         event.preventDefault();
@@ -69,6 +81,7 @@ const SalaryPaydaySetting = () => {
             setMessage({ tone: 'error', text: '請選今天或之後的日期。' });
             return;
         }
+        if (periodMismatch) return;
         setSaving(true);
         setMessage(null);
         const regularDay = normalizePaydayDay(form.regularDay);
@@ -142,7 +155,7 @@ const SalaryPaydaySetting = () => {
                         <span className="flex items-center gap-2">
                             <select
                                 value={form.regularDay}
-                                onChange={e => { setForm({ ...form, regularDay: Number(e.target.value) }); setMessage(null); }}
+                                onChange={e => changeRegularDay(e.target.value)}
                                 className="min-h-[44px] px-3 border-2 border-bauhaus-black rounded-xl bg-white text-sm font-bold text-bauhaus-black outline-none focus:ring-2 focus:ring-bauhaus-blue"
                             >
                                 {DAY_OPTIONS.map(day => <option key={day} value={day}>{day}</option>)}
@@ -150,10 +163,16 @@ const SalaryPaydaySetting = () => {
                             <span className="text-sm text-bauhaus-black">號</span>
                         </span>
                     </label>
-                    <button type="submit" disabled={saving || !changed} className="bh-btn bh-btn-blue px-4 py-2.5 min-h-[44px]">
+                    <button type="submit" disabled={saving || !changed || periodMismatch} className="bh-btn bh-btn-blue px-4 py-2.5 min-h-[44px]">
                         <Save className="w-4 h-4" aria-hidden="true" /> {saving ? '儲存中…' : '儲存'}
                     </button>
-                    {changed && formValid && (
+                    {periodMismatch && (
+                        <p role="alert" className="w-full text-sm font-bold text-bauhaus-red">
+                            這樣設定會變成匯「{monthNameOf(formPeriod)}」，但目前這一期是「{monthNameOf(currentPeriod)}」。
+                            下次匯款日請選這一期的匯款日（固定日前後幾天內）；這期日期過了會自動換下一期。
+                        </p>
+                    )}
+                    {changed && formValid && !periodMismatch && (
                         <p className="w-full text-xs font-bold text-bauhaus-black/70">
                             儲存後講師會看到「{teacherSees({ nextPayday: form.nextPayday, regularDay: form.regularDay }, today)}」。
                         </p>
