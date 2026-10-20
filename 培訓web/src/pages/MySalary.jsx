@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { Wallet, TrendingUp, Calendar, AlertCircle, Plus, ExternalLink, ChevronDown, RefreshCw, CheckCircle2, X } from 'lucide-react';
-import { COURSE_LABELS } from '../lib/constants';
+import { Wallet, TrendingUp, Calendar, AlertCircle, Plus, ExternalLink, ChevronDown, RefreshCw, CheckCircle2, X, ClipboardCheck } from 'lucide-react';
+import { TERM_PERIOD_LABELS, courseCategoryConfig, courseCategoryFor, reportChannelFor, reportItemLabel } from '../lib/constants';
 import { isSafeHttpUrl } from '../lib/siteLinks';
 import { taipeiToday } from '../lib/salary';
 import { monthNameOf, payoutScheduleFromResponse, resolvePayout, shortDateOf, summarizePayrollMonth } from '../lib/salaryPayday';
@@ -13,6 +13,44 @@ const STATUS_COLORS = {
     pending:  'bg-bauhaus-yellow text-bauhaus-black',
     approved: 'bg-bauhaus-muted text-bauhaus-black',
     paid:     'bg-bauhaus-blue text-white',
+};
+
+// 報酬確認區：對照業主「回報查詢表」試算表的「登記查詢表」分頁（2026-10-20 業主要求搬進站內）。
+// 試算表分「合作單位」「直營課程」兩區、各寫提問窗口；站內多一區「其他課程」放兩份表單都沒有的課，有紀錄才顯示。
+const CONFIRM_GROUPS = [
+    { key: 'b2b', title: '合作單位課程', note: '補習班、學校社團、講座', contact: 'SEP', nameHeader: '單位' },
+    { key: 'b2c', title: '直營課程', note: '體驗課、營隊、到府、速解', contact: '芳儒', nameHeader: '課程名稱' },
+    // 薪資總表匯入時「學校社團」「楓葉體驗課」都轉成 course_type='other'（scripts/salary_master_import/build_upload_csv.py），站內分不出原類別，暫列這區
+    { key: 'other', title: '其他課程', note: '常態課、幼兒啟蒙、速解培訓、站櫃／擺攤等；薪資總表匯入的「學校社團」「楓葉體驗課」也暫列在這裡', contact: null, nameHeader: '課程名稱', hideWhenEmpty: true },
+];
+const CONFIRM_PAGE_SIZE = 50;
+
+const fmt = (n) => `$${Math.round(Number(n || 0)).toLocaleString()}`;
+
+// 一筆課程在確認區顯示的名稱與課程類型。
+// 合作課的單位：站內回報存在 unit_name；薪資總表匯入的舊資料沒有 unit_name，單位寫在 course_name。
+const confirmRowOf = (session) => {
+    const channel = reportChannelFor(session.course_type);
+    const category = courseCategoryConfig(courseCategoryFor(session.course_type));
+    if (channel === 'b2b') {
+        return {
+            channel,
+            name: session.unit_name || session.course_name || '–',
+            type: reportItemLabel(session.course_type),
+            typeSub: TERM_PERIOD_LABELS[session.term_period] || '',
+        };
+    }
+    // 同一類有多個報酬項目（到府、常態課、營隊）→ 主標用表單上的課程類型、副標寫報酬項目；「其他」類直接寫項目名稱。
+    // 營隊的項目文字照表單問法是「否（一般講師）」「是（5 日營負責人）」，離開題目就看不懂，只留括號內文字。
+    const grouped = category && category.key !== 'misc';
+    const type = grouped ? category.label : reportItemLabel(session.course_type);
+    const item = reportItemLabel(session.course_type).replace(/^[是否]（(.+)）$/, '$1');
+    return {
+        channel,
+        name: session.course_name || session.unit_name || '–',
+        type,
+        typeSub: grouped && category.types.length > 1 && item !== type ? item : '',
+    };
 };
 
 // 表單連結預設值(對應 supabase/2026-07-09_site_links.sql 的 seed)：
@@ -168,6 +206,14 @@ const MySalary = () => {
 
     const months = useMemo(() => [...new Set(sessions.map(s => s.month_label).filter(Boolean))].sort().reverse(), [sessions]);
     const filtered = useMemo(() => monthFilter ? sessions.filter(s => s.month_label === monthFilter) : sessions, [sessions, monthFilter]);
+    const confirmGroups = useMemo(() => {
+        const grouped = { b2b: [], b2c: [], other: [] };
+        for (const session of filtered) {
+            const row = { session, ...confirmRowOf(session) };
+            (grouped[row.channel] || grouped.other).push(row);
+        }
+        return grouped;
+    }, [filtered]);
     const needsReviewCount = sessions.filter(s => s.pricing_status === 'needs_review').length;
     const rejectedCount = sessions.filter(s => s.pricing_status === 'rejected').length;
 
@@ -194,7 +240,7 @@ const MySalary = () => {
             <div className="p-4 sm:p-8 max-w-3xl mx-auto">
                 <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
                     <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的報酬</h1>
-                    {pointsLink && <a href={pointsLink.url} target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline px-4 py-2.5"><ExternalLink className="w-4 h-4" />報酬／點數確認區</a>}
+                    {pointsLink && <a href={pointsLink.url} target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline px-4 py-2.5"><ExternalLink className="w-4 h-4" />報酬／點數試算表</a>}
                 </div>
                 {showSubmitSuccess && <SubmitSuccess onClose={() => setShowSubmitSuccess(false)} />}
                 <div role="alert" className="bh-card bg-bauhaus-red text-white p-5">
@@ -213,7 +259,7 @@ const MySalary = () => {
             <div className="p-4 sm:p-8 max-w-3xl mx-auto">
                 <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
                     <h1 className="text-2xl sm:text-3xl font-black text-bauhaus-black">我的報酬</h1>
-                    {pointsLink && <a href={pointsLink.url} target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline px-4 py-2.5"><ExternalLink className="w-4 h-4" />報酬／點數確認區</a>}
+                    {pointsLink && <a href={pointsLink.url} target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline px-4 py-2.5"><ExternalLink className="w-4 h-4" />報酬／點數試算表</a>}
                 </div>
                 {showSubmitSuccess && <SubmitSuccess onClose={() => setShowSubmitSuccess(false)} />}
                 <div className="bh-card py-16 px-6 text-center">
@@ -234,8 +280,10 @@ const MySalary = () => {
         );
     }
 
-    const fmt = (n) => `$${Math.round(Number(n || 0)).toLocaleString()}`;
     const fmtHr = (n) => `${Number(n || 0).toFixed(1)} 小時`;
+    const scrollToConfirm = () => {
+        document.getElementById('compensation-confirm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     return (
         <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -245,12 +293,10 @@ const MySalary = () => {
                     <p className="text-bauhaus-black/60 mt-1 text-sm font-medium">{summary.full_name}・每堂課只需回報一次</p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                    {pointsLink && (
-                        <a href={pointsLink.url} target="_blank" rel="noopener noreferrer"
-                            className="bh-btn bh-btn-outline px-4 py-2.5 w-full sm:w-auto">
-                            <ExternalLink className="w-4 h-4" />報酬／點數確認區
-                        </a>
-                    )}
+                    <button type="button" onClick={scrollToConfirm}
+                        className="bh-btn bh-btn-outline px-4 py-2.5 w-full sm:w-auto">
+                        <ClipboardCheck className="w-4 h-4" aria-hidden="true" />報酬確認區
+                    </button>
                     <Link to="/my/salary/new"
                         className="bh-btn bh-btn-blue px-4 py-2.5 w-full sm:w-auto">
                         <Plus className="w-4 h-4" />登記課程回報
@@ -316,17 +362,18 @@ const MySalary = () => {
                 <MiniStat label="已匯款" value={fmt(summary.paid_salary)} accent="blue" />
             </div>
 
-            {/* 月份明細 */}
-            <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-lg font-black text-bauhaus-black">月份明細</h2>
-                    <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
-                        className="text-sm px-3 py-2 border-2 border-bauhaus-black rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-bauhaus-blue">
+            {/* 報酬確認區（原「月份明細」）：照試算表「登記查詢表」分合作單位／直營課程列出自己的每筆課程 */}
+            <section id="compensation-confirm" aria-labelledby="compensation-confirm-title" className="mb-6 scroll-mt-24">
+                <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                    <h2 id="compensation-confirm-title" className="text-lg font-black text-bauhaus-black">報酬確認區</h2>
+                    <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)} aria-label="篩選月份"
+                        className="text-sm min-h-[44px] px-3 py-2 border-2 border-bauhaus-black rounded-xl bg-white font-bold outline-none focus:ring-2 focus:ring-bauhaus-blue">
                         <option value="">全部月份</option>
                         {months.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                 </div>
-                <p className="text-xs text-bauhaus-black/60 mb-3">目前只顯示 2026 年 1 月起的課程紀錄；更早的紀錄整理中，有疑問請洽課程派發窗口。</p>
+                <p className="text-sm text-bauhaus-black/70 mb-1 font-medium">核對你回報的每一堂課有沒有漏報、填錯；有問題請找各區標示的窗口。</p>
+                <p className="text-xs text-bauhaus-black/60 mb-4">目前只顯示 2026 年 1 月起的課程紀錄；更早的紀錄整理中，有疑問請洽課程派發窗口。</p>
 
                 {!monthFilter && monthlyStats.length > 0 && (
                     <div className="bh-card mb-6 overflow-hidden">
@@ -347,92 +394,141 @@ const MySalary = () => {
                     </div>
                 )}
 
-                {/* 課程紀錄列表 */}
-                <div className="bh-card overflow-hidden">
-                    {/* 手機版：卡片列表 */}
-                    <div className="md:hidden divide-y-2 divide-bauhaus-black/20">
-                        {filtered.slice(0, 100).map(s => (
-                            <div key={s.id} className="p-4">
-                                <div className="flex items-start justify-between gap-2">
-                                    <div>
-                                        <div className="text-sm font-bold text-bauhaus-black">{s.session_date}</div>
-                                        <div className="text-sm text-bauhaus-black/80 mt-0.5">{COURSE_LABELS[s.course_type] || s.course_type}</div>
-                                        {s.course_name && <div className="text-xs text-bauhaus-black/50 mt-0.5">{s.course_name}</div>}
-                                        {s.pricing_status === 'rejected' && s.pricing_message && <div className="text-xs text-bauhaus-red mt-1">{s.pricing_message}</div>}
-                                    </div>
-                                    <span className={`bh-chip shrink-0 ${s.pricing_status === 'rejected' ? 'bg-bauhaus-red text-white' : (STATUS_COLORS[s.status] || 'bg-bauhaus-muted text-bauhaus-black')}`}>
-                                        {s.pricing_status === 'rejected' ? '已退回' : (STATUS_LABELS[s.status] || s.status)}
-                                    </span>
-                                </div>
-                                <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-bauhaus-black/10">
-                                    <span className="text-xs text-bauhaus-black/50">
-                                        {s.duration_hours ? `${s.duration_hours}h` : '–'}
-                                        {s.student_count ? ` / ${s.student_count}人` : ''}
-                                    </span>
-                                    <span className="text-base font-bold text-bauhaus-black tabular-nums">
-                                        {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : fmt(s.total_salary))}
-                                    </span>
-                                </div>
-                            </div>
-                        ))}
-                        {filtered.length === 0 && (
-                            <div className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有報酬紀錄</div>
-                        )}
-                    </div>
-
-                    {/* 桌面版：表格 */}
-                    <div className="hidden md:block overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-bauhaus-black text-white text-xs uppercase tracking-wider">
-                                <tr>
-                                    <th className="px-4 py-3 text-left">日期</th>
-                                    <th className="px-4 py-3 text-left">課程</th>
-                                    <th className="px-4 py-3 text-right">時數/人</th>
-                                    <th className="px-4 py-3 text-right">報酬</th>
-                                    <th className="px-4 py-3 text-right">獎金</th>
-                                    <th className="px-4 py-3 text-right">總計</th>
-                                    <th className="px-4 py-3 text-left">狀態</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y-2 divide-bauhaus-black/20">
-                                {filtered.slice(0, 100).map(s => (
-                                    <tr key={s.id} className="hover:bg-bauhaus-cream transition-colors duration-200">
-                                        <td className="px-4 py-3 text-bauhaus-black/80">{s.session_date}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="text-bauhaus-black/80">{COURSE_LABELS[s.course_type] || s.course_type}</div>
-                                            {s.course_name && <div className="text-xs text-bauhaus-black/50">{s.course_name}</div>}
-                                            {s.pricing_status === 'rejected' && s.pricing_message && <div className="text-xs text-bauhaus-red">{s.pricing_message}</div>}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-bauhaus-black/60 text-xs">
-                                            {s.duration_hours ? `${s.duration_hours}h` : '–'}
-                                            {s.student_count ? ` / ${s.student_count}人` : ''}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-bauhaus-black/80">
-                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : (s.base_salary !== null ? fmt(s.base_salary) : '–'))}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-bauhaus-black/80">
-                                            {s.bonus > 0 ? fmt(s.bonus) : '–'}
-                                        </td>
-                                        <td className="px-4 py-3 text-right font-bold text-bauhaus-black tabular-nums">
-                                            {s.pricing_status === 'rejected' ? '已退回' : (s.pricing_status === 'needs_review' ? '待核准' : fmt(s.total_salary))}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className={`bh-chip ${s.pricing_status === 'rejected' ? 'bg-bauhaus-red text-white' : (STATUS_COLORS[s.status] || 'bg-bauhaus-muted text-bauhaus-black')}`}>
-                                                {s.pricing_status === 'rejected' ? '已退回' : (STATUS_LABELS[s.status] || s.status)}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {filtered.length === 0 && (
-                                    <tr><td colSpan={7} className="px-4 py-12 text-center text-bauhaus-black/40 font-medium">這個月還沒有報酬紀錄</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                <div className="space-y-6">
+                    {CONFIRM_GROUPS.map(group => {
+                        const rows = confirmGroups[group.key] || [];
+                        if (group.hideWhenEmpty && rows.length === 0) return null;
+                        return <ConfirmGroup key={`${group.key}-${monthFilter}`} group={group} rows={rows} />;
+                    })}
                 </div>
-            </div>
+
+                {pointsLink && (
+                    <p className="text-sm text-bauhaus-black/70 mt-4 font-medium">
+                        用舊 Google 表單回報的課，以及教學點數／非教學點數，請到
+                        <a href={pointsLink.url} target="_blank" rel="noopener noreferrer"
+                            className="font-black underline inline-flex items-center gap-1 min-h-[44px] px-1 text-bauhaus-black">
+                            報酬／點數試算表<ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                        </a>
+                        查詢。
+                    </p>
+                )}
+            </section>
 
             <LegacySalaryLinks links={salaryLinks} />
+        </div>
+    );
+};
+
+const isRejected = (session) => session.pricing_status === 'rejected';
+
+const StatusChip = ({ session }) => (
+    <span className={`bh-chip shrink-0 whitespace-nowrap ${isRejected(session) ? 'bg-bauhaus-red text-white' : (STATUS_COLORS[session.status] || 'bg-bauhaus-muted text-bauhaus-black')}`}>
+        {isRejected(session) ? '已退回' : (STATUS_LABELS[session.status] || session.status)}
+    </span>
+);
+
+const amountText = (session) => {
+    if (isRejected(session)) return '已退回';
+    if (session.pricing_status === 'needs_review') return '待核准';
+    return fmt(session.total_salary);
+};
+
+const ConfirmGroup = ({ group, rows }) => {
+    const [expanded, setExpanded] = useState(false);
+    const visible = expanded ? rows : rows.slice(0, CONFIRM_PAGE_SIZE);
+    const titleId = `confirm-${group.key}-title`;
+    const emptyText = `這段期間沒有${group.title}紀錄`;
+    return (
+        <div className="bh-card overflow-hidden" role="region" aria-labelledby={titleId}>
+            <div className="bg-bauhaus-black text-white px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                    <h3 id={titleId} className="font-black">
+                        {group.title}<span className="ml-2 text-sm font-bold text-white/70 tabular-nums">{rows.length} 筆</span>
+                    </h3>
+                    <p className="text-xs text-white/70 mt-0.5">{group.note}</p>
+                </div>
+                <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black whitespace-nowrap">
+                    {group.contact ? `有問題找 ${group.contact}` : '有問題請洽課程派發窗口'}
+                </span>
+            </div>
+
+            {/* 手機版：卡片 */}
+            <ul className="md:hidden divide-y-2 divide-bauhaus-black/20">
+                {visible.map(({ session, name, type, typeSub }) => (
+                    <li key={session.id} className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                                <div className="text-xs font-bold text-bauhaus-black/60 tabular-nums">{session.session_date}</div>
+                                <div className="text-sm font-bold text-bauhaus-black mt-0.5 break-words">{name}</div>
+                                <div className="text-xs text-bauhaus-black/60 mt-0.5">{typeSub ? `${type}・${typeSub}` : type}</div>
+                                {isRejected(session) && session.pricing_message && <div className="text-sm font-bold text-bauhaus-red mt-1">{session.pricing_message}</div>}
+                            </div>
+                            <StatusChip session={session} />
+                        </div>
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t-2 border-bauhaus-black/10">
+                            <span className="text-xs text-bauhaus-black/60">
+                                {[session.student_count ? `${session.student_count} 人` : '', session.duration_hours ? `${session.duration_hours} 小時` : '']
+                                    .filter(Boolean).join('・') || '–'}
+                            </span>
+                            <span className="text-base font-bold text-bauhaus-black tabular-nums">{amountText(session)}</span>
+                        </div>
+                    </li>
+                ))}
+                {rows.length === 0 && <li className="px-4 py-8 text-center text-sm text-bauhaus-black/40 font-medium">{emptyText}</li>}
+            </ul>
+
+            {/* 桌面版：表格（欄位順序對照試算表：日期、單位／課程名稱、課程類型、人數） */}
+            <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm lg:table-fixed">
+                    <thead className="bg-bauhaus-cream text-bauhaus-black text-xs font-black border-b-2 border-bauhaus-black">
+                        <tr>
+                            <th scope="col" className="px-4 py-2.5 text-left whitespace-nowrap lg:w-32">上課日期</th>
+                            <th scope="col" className="px-4 py-2.5 text-left">{group.nameHeader}</th>
+                            <th scope="col" className="px-4 py-2.5 text-left lg:w-56">課程類型</th>
+                            <th scope="col" className="px-4 py-2.5 text-right whitespace-nowrap lg:w-24">上課人數</th>
+                            <th scope="col" className="px-4 py-2.5 text-right whitespace-nowrap lg:w-20">時數</th>
+                            <th scope="col" className="px-4 py-2.5 text-right whitespace-nowrap lg:w-32">報酬</th>
+                            <th scope="col" className="px-4 py-2.5 text-left whitespace-nowrap lg:w-28">狀態</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y-2 divide-bauhaus-black/10">
+                        {visible.map(({ session, name, type, typeSub }) => (
+                            <tr key={session.id} className="hover:bg-bauhaus-cream transition-colors duration-200 align-top">
+                                <td className="px-4 py-3 text-bauhaus-black/80 whitespace-nowrap tabular-nums">{session.session_date}</td>
+                                <td className="px-4 py-3">
+                                    <div className="font-bold text-bauhaus-black break-words">{name}</div>
+                                    {isRejected(session) && session.pricing_message && <div className="text-sm font-bold text-bauhaus-red mt-0.5">{session.pricing_message}</div>}
+                                </td>
+                                <td className="px-4 py-3">
+                                    <div className="text-bauhaus-black/80">{type}</div>
+                                    {typeSub && <div className="text-xs text-bauhaus-black/50">{typeSub}</div>}
+                                </td>
+                                <td className="px-4 py-3 text-right text-bauhaus-black/80 tabular-nums whitespace-nowrap">{session.student_count ?? '–'}</td>
+                                <td className="px-4 py-3 text-right text-bauhaus-black/80 tabular-nums whitespace-nowrap">{session.duration_hours ?? '–'}</td>
+                                <td className="px-4 py-3 text-right font-bold text-bauhaus-black tabular-nums whitespace-nowrap">
+                                    {amountText(session)}
+                                    {!isRejected(session) && session.pricing_status !== 'needs_review' && Number(session.bonus) > 0 && (
+                                        <div className="text-xs font-medium text-bauhaus-black/50">含獎金 {fmt(session.bonus)}</div>
+                                    )}
+                                </td>
+                                <td className="px-4 py-3"><StatusChip session={session} /></td>
+                            </tr>
+                        ))}
+                        {rows.length === 0 && (
+                            <tr><td colSpan={7} className="px-4 py-8 text-center text-bauhaus-black/40 font-medium">{emptyText}</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {rows.length > CONFIRM_PAGE_SIZE && (
+                <div className="border-t-2 border-bauhaus-black/10 p-3 text-center">
+                    <button type="button" onClick={() => setExpanded(value => !value)}
+                        className="bh-btn bh-btn-outline min-h-[44px] px-4 py-2">
+                        {expanded ? `收合，只顯示最近 ${CONFIRM_PAGE_SIZE} 筆` : `顯示全部 ${rows.length} 筆`}
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

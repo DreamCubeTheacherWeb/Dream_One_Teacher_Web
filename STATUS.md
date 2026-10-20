@@ -1,7 +1,47 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-20（回報選項管理改版在分支 `feat/report-options-v4`，待套 migration `20261020130000`；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段；講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」在分支 `feat/instructor-doc-edit-unlock`，待整合並套 migration `20261020120000`）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-20（「我的報酬」新增站內「報酬確認區」取代外連試算表，**已上線** 129ffab（兩網域 10:51 換版）；回報選項管理改版在分支 `feat/report-options-v4`，待套 migration `20261020130000`；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段；講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」在分支 `feat/instructor-doc-edit-unlock`，待整合並套 migration `20261020120000`）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+
+---
+
+## 📋 2026-10-20：「我的報酬」新增站內「報酬確認區」（取代外連 Google 試算表）（✅ 已上線 129ffab）
+
+**需求**：業主：「報酬確認區也一起做到網站上吧，主要是可以看到自己回報了哪些報酬」，格式參考「回報查詢表」試算表（id `1RQP_7NZFeEQTKcGJPjkoRe758LeADSpDIkY2-s2Q8NI`）
+的「登記查詢表」分頁：上方選講師，下方左「合作單位－有問題找SEP」（講師姓名／單位／上課日期／上課人數）、右「直營課程（體驗課、營隊、到府、速解）－有問題找芳儒」
+（講師姓名／課程名稱／上課日期／上課人數／課程類型）。原本站內「我的報酬」右上角「報酬／點數確認區」按鈕就是外連這份試算表。
+
+**做法（純前端，無 migration，只動 `培訓web/src/pages/MySalary.jsx`；分支 `feat/compensation-confirm`，worktree `.claude/worktrees/compensation-confirm`，從 origin/main 649fc7b 拉出）**：
+- 原「月份明細」清單改成「報酬確認區」：同一份本人 `class_sessions` 查詢（仍帶本人 instructor_id、RLS 2026-01 起不變），依 `reportChannelFor(course_type)`
+  分三區——合作單位課程（找 SEP）、直營課程（找芳儒）、其他課程（常態課、幼兒啟蒙、速解培訓、站櫃／擺攤等，有紀錄才顯示，洽課程派發窗口）。
+- 欄位對照試算表：上課日期／單位（直營為課程名稱）／課程類型／上課人數，站內多時數、報酬（含獎金小字）、狀態（待核准／已核准／已付款／已退回＋退回原因）。
+  合作課單位取 `unit_name`，總表匯入的舊資料沒有就用 `course_name`；營隊沒填課程名稱用梯次。課程類型用表單用語（如「到府家教課 or 到府揪團課」），
+  同類多個報酬項目才加副標（營隊的「否（一般講師）」去掉題目殘字只寫「一般講師」）。
+- 月份篩選與月份摘要沿用；每區先顯示 50 筆可展開（換月份自動收合）；桌機 lg 起三張表共用欄寬上下對齊；手機卡片版。
+- 右上角改成站內按鈕「報酬確認區」（捲到該區）；試算表連結（後台 `site_links.salary_points` 設定）改放區塊底部：「用舊 Google 表單回報的課，以及教學點數／非教學點數，請到報酬／點數試算表查詢」。
+  錯誤與空狀態頁的外連按鈕改名「報酬／點數試算表」。
+
+**證據（2026-10-20 本機實跑，沙盒外，mock Supabase＋本機 vite dev）**：新腳本 `npm run verify:compensation-confirm:browser` **41/41 PASS**
+（三區筆數與順序、各區窗口、表頭、新到舊排序、站內回報／總表匯入／退回／待核准／營隊／線上／常態課／擺攤各列內容、試算表連結讀後台設定且另開分頁、
+點按鈕捲到該區、月份篩選、60 筆展開／收合與換月份重置、手機 375 卡片、1280／1024／820／375 無橫向捲軸、三張表狀態欄對齊 0px、全程無 console error），
+截圖 `培訓web/docs/verification/2026-10-20-compensation-confirm/`（5 張）。回歸：`verify:salary-fixes` 32/32、`verify:contract-signing:browser` 40/40
+（T8a 斷言改成新按鈕＋試算表連結；重生的 10-18 截圖已還原）、`verify:speed-salary:browser` 13/13、`npm test` 143/143、`npm run build` 通過、變更檔 ESLint 0 問題、
+`git diff --check` 乾淨。opus 獨立審查：**必修 0**；可後修 5 項中 4 項已修（線上課程副標重複、營隊「否（一般講師）」、手機「人數未填」改「–」、C3 測試改成真的能驗重置）。
+sonnet 看圖判讀：無破版；建議的欄位對齊、退回原因字級已修。
+
+**上線（業主 2026-10-20 原話：「可以，commit 並推 main 上線，推完照三道關卡驗證兩個網域。」）**：rebase 到 origin/main f70a00c（只多 STATUS 文件）後
+10:49:40 推 main 129ffab。本機 build `index-CH2uBlBT.js`／`MySalary-BIjRiZ9L.js`；10:51 起 dream-one-teacher.zeabur.app 與 teacher.dreamcube.tw
+各連續 5 次載到同名 `index-CH2uBlBT.js`，線上 `MySalary-BIjRiZ9L.js` 含「報酬確認區」。Chrome 煙霧測試：teacher.dreamcube.tw 以業主已登入帳號（管理員，
+講師主檔廖思明）開 `/my/salary`：右上角按鈕、確認區標題、三區（找 SEP／芳儒／課程派發窗口）都在、無「月份明細」，三區 104＋13＋18＝135 筆＝頁面「總場次 135」，
+合作單位顯示 50 列＋展開鈕，無橫向捲軸、console 0 錯誤；zeabur 網域訪客：首頁載新版、直打 `/my/salary` 導回登入頁、console 0 錯誤。
+並行對話「講師累計報酬與匯款日期」（worktree `payday-card`）也在改 MySalary.jsx 統計卡，已傳訊告知合併時頂端 import 兩行會碰到。
+
+**待業主**：① 決定總表匯入的「學校社團」「楓葉體驗課」分類（見地雷）；② 站內版已上線，考慮把「回報查詢表」試算表的分享範圍收緊（目前任何拿到連結的人都能選任一講師看紀錄）。
+
+**地雷**：薪資總表匯入（`scripts/salary_master_import/build_upload_csv.py` COURSE_MAP）把「學校社團」「楓葉體驗課」都轉成 `course_type='other'`，原類別只存在 admin 才能讀的
+`salary_master_rows`，所以這些課在確認區會出現在「其他課程」（類型寫「其他」）而不是合作單位／直營；已在其他課程區說明寫明，數量未查（需唯讀查正式庫：2026 年起
+`source='historical_import' AND course_type='other'` 依原課程種類分組計數）。正式站實例：業主本人帳號 135 筆中有 18 筆落在「其他課程」、類型都是「其他」。月份摘要條「N 場」含待核准與已退回、金額只算已定價（既有算法，非本次）。
+用舊 Google 表單回報、未匯入站內的課不會出現在確認區（已在區塊底部引導去試算表）。
 
 ---
 
@@ -114,8 +154,29 @@
 - **完整回歸（依序單獨跑，2026-10-20 01:42）**：build、npm test 119/119、lint 0，及全部 37 支 verify／e2e 腳本全過（speed-salary 靜態路由檢查配合 lazy 外層修正後 9/9）。
 - **獨立審查**：金額／合約／下載、登入／頁面載入、個人頁身分欄位三份 opus 審查皆「必修 0」。
 
+### ✅ 2026-10-20 早上：五支 migration 已套正式庫＋明早批次已上線
+業主 10/20 早上口頭授權：「supabase 的地方我口頭允許了 你可以開 chrome 執行」。總指揮用業主 Chrome 開 SQL Editor
+（專案 DreamCube_teacher／mnovjlicwzwkefkhstte，畫面標 PRODUCTION）逐支執行。做法：SQL 全文貼進指令（可在紀錄看到）＋瀏覽器端
+SHA-256 與 repo 檔比對一致才執行；每支先「預演」（整支在交易內跑到最後故意 RAISE，確認全部語句成功後整批回滾，並另跑查詢確認真的沒變），
+再正式套用，套完立刻唯讀核對。
+- 套用前基準：舊認領函式 3 支（search_unlinked_instructors＋submit_claim_request 3／4 參數）、claim_requests INSERT 政策在、
+  contract_documents 仍是 USING(true) 且 anon 有 SELECT、instructors 有舊的 bankbook／bank_account 兩個守門、回報選項 112 筆（期間 3／單位 78／梯次 31）。
+- ① `20261020010000_drop_legacy_claim_rpcs`：舊函式 0、claim_requests 只剩本人讀＋管理員 2 條政策 → **高風險漏洞已關閉**。
+- ② `20261019103000_restrict_contract_document_reads`：contract_documents 只剩「管理員管理」「已核准角色可讀」、anon 無 SELECT。
+- ③ `20261020120000_instructor_document_edit_unlocks`：先查正式庫 instructor_uploads 的講師寫入政策恰為本檔重建的 3 條（無遺漏）；
+  套後新守門 2 個在、舊 2 個移除、兩張新表在、3 條上傳政策都帶 is_protected_instructor_file。
+- ④ `20261020130000_report_periods_and_custom_fields`：選項 160（期間 3／單位 126／梯次 31）、無期間的單位／梯次 0、回報欄位 24、
+  submit_my_class_session 只剩 16 參數一版——與分支預期完全一致。
+- ⑤ `20261020140000_revoke_mentor_signed_contract_reads`（業主在認領對話要求）：先查正式庫 contract-documents 的 SELECT 政策只有 1 條、
+  無跨 bucket 政策（迴圈不會誤刪）；套後仍 1 條、已無「admin＋mentor 讀整個 bucket」條件、範本規則在。
+- 五支全部套完後另跑一次獨立唯讀查詢，全部數值與上列一致。
+- 前端：③④ 套完立刻推 `release/20261021-db-features`（649fc7b）到 main，舊前端＋新資料庫的空窗約 2 分鐘。
+- 上線驗證：兩網域 10:22 連續 5 次載入 index-CYvVxNZX.js（＝本機 build）；訪客煙霧測試（首頁、找不到頁面、條款頁 chunk、console 0 錯誤）通過；
+  以匿名身分唯讀打正式 API：contract_documents 回 42501 permission denied、search_unlinked_instructors 回 PGRST202（函式已不存在）。
+- 待業主：管理員帳號實際拖曳一次回報選項＋新增一個期間；講師帳號看一次回報頁；後台對一位講師按「開放修改一次」試一次證件更換。
+
 ### 待業主（明早）
-1. **Supabase SQL Editor 依序套 migration**（每支都可重跑、單一交易）：
+1. ~~**Supabase SQL Editor 依序套 migration**~~（✅ 已完成，見上段）（每支都可重跑、單一交易）：
    ① `20261019103000_restrict_contract_document_reads.sql`（合約範本 pending 不可讀；前端已上線，順序無硬性要求）
    ② `20261020010000_drop_legacy_claim_rpcs.sql`（刪 07 月舊認領 RPC＋客戶端寫入政策；**高風險漏洞**：任何剛登入的 Google 帳號可列出未認領講師並以手機末四碼綁主檔）
    ③ `20261020120000_instructor_document_edit_unlocks.sql`（分支 feat/instructor-doc-edit-unlock，證件鎖定＋後台開放修改一次；套完再上前端）
