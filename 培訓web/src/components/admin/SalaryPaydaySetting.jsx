@@ -70,7 +70,8 @@ const SalaryPaydaySetting = () => {
     const changeRegularDay = (value) => {
         const regularDay = Number(value);
         const sameTermPayday = currentPeriod ? regularPaydayFor(currentPeriod, regularDay) : null;
-        setForm({ nextPayday: sameTermPayday || form.nextPayday, regularDay });
+        // 帶出的日期已經過了（例：11/5 把 10 號改 1 號 → 11/1）就保留原本的日期，讓管理員自己選
+        setForm({ nextPayday: sameTermPayday && sameTermPayday >= today ? sameTermPayday : form.nextPayday, regularDay });
         setMessage(null);
     };
 
@@ -169,7 +170,7 @@ const SalaryPaydaySetting = () => {
                     {periodMismatch && (
                         <p role="alert" className="w-full text-sm font-bold text-bauhaus-red">
                             這樣設定會變成匯「{monthNameOf(formPeriod)}」，但目前這一期是「{monthNameOf(currentPeriod)}」。
-                            下次匯款日請選這一期的匯款日（固定日前後幾天內）；這期日期過了會自動換下一期。
+                            下次匯款日請選這一期的匯款日（固定日前後幾天內），或等這期匯款日過後再改；這期日期過了會自動換下一期。
                         </p>
                     )}
                     {changed && formValid && !periodMismatch && (
