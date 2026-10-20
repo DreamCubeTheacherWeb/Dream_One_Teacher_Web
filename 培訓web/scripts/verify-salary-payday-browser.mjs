@@ -459,7 +459,7 @@ async function run() {
         check('情境4：確實打了 salary_payout_schedule 且被回 404（不是沒讀）', scheduleGets().length >= 1);
         check('情境4：沒有紅色錯誤畫面、「我的報酬」其他區塊都在',
             (await page.getByRole('alert').count()) === 0 && !(await bodyText(page)).includes('暫時無法載入')
-            && (await page.getByText('月份明細', { exact: true }).isVisible()) && (await page.getByText('累計總報酬', { exact: true }).isVisible()));
+            && (await page.getByRole('heading', { name: '報酬確認區', exact: true }).isVisible()) && (await page.getByText('累計總報酬', { exact: true }).isVisible()));
         await page.screenshot({ path: shot('teacher-desktop-1280-schedule-table-missing.png'), fullPage: true });
         await context.close();
 

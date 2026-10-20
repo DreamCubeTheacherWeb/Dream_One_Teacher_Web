@@ -1,9 +1,49 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-20（「我的報酬」新增站內「報酬確認區」取代外連試算表，**已上線** 129ffab（兩網域 10:51 換版）；回報選項管理改版在分支 `feat/report-options-v4`，待套 migration `20261020130000`；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段；講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」在分支 `feat/instructor-doc-edit-unlock`，待整合並套 migration `20261020120000`）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-20（「我的報酬」黃卡改「X月累計報酬＋下次匯款日」、後台可改匯款日、總表匯入 9/30 前標成已付款：分支 `feat/salary-payday-card`，**待業主套 migration `20261020150000`＋資料修正 06，之後才推前端**；「我的報酬」新增站內「報酬確認區」取代外連試算表，**已上線** 129ffab（兩網域 10:51 換版）；回報選項管理改版在分支 `feat/report-options-v4`，待套 migration `20261020130000`；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段；講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」在分支 `feat/instructor-doc-edit-unlock`，待整合並套 migration `20261020120000`）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
+
+## 💸 2026-10-20：「我的報酬」黃卡改成「X月累計報酬＋下次匯款日」、後台可改匯款日、總表匯入標成已付款（🛠 本機實測完成；🟡 待業主套 SQL 再推前端）
+
+**需求（業主 10/20）**：「現在不會有『未領金額』，之後這裡也要叫做 XX月累計報酬，然後寫上下次的匯款日，這個日期在後台也要可以改」；
+「像是 12/10 匯款，然後前面就是 11月累計報酬」；「我給你的資料全部都是已經有領過的，沒有人未領，調整一下」。
+同日追問後業主決定：**總表裡 10 月那 6 筆（上課日 10/13～10/17）先不標已付款**（10 月的錢 11/10 才匯，匯完再標）。
+
+**完成（分支 `feat/salary-payday-card`，worktree `.claude/worktrees/payday-card`，已合併 origin/main 1fc3567；未推 main、未碰正式 Supabase）**：
+- 講師端 `MySalary.jsx`：黃卡標題＝「（下次匯款日那一期的上個月）累計報酬」，右上白色膠囊「M/D 匯款」；金額＝該月 class_sessions 合計（退回不算；待核准算進去並在副標寫「含待核准 $X」；待定價只算場次並寫「N 筆待確認金額」）。
+  第四張小卡「已核准未付」改「已匯款」（view 的 paid_salary）。匯款日設定跟著 load() 一起讀，「重新載入」會重讀；表還沒建／讀到 0 列時安靜改用每月 10 號，其他讀取錯誤也用 10 號但膠囊註明「（預估）」。
+- 規則 `src/lib/salaryPayday.js`（＋10 組單元測試）：後台設定的「下次匯款日」還沒過（含當天）就用它；過了自動跳下一期的「每月固定日」（1～28）。
+  提前／延後的日期歸屬「最接近它的固定日」那一期（固定 28 號、12/28 延到 1/4 仍是匯 11 月，1/4 過後接 1/28 匯 12 月；等距取較早那期）。日期全用字串運算，台北時間的「今天」用既有 `taipeiToday()`。
+- 後台 `/admin/salary`（只有 admin）：新區塊「講師端匯款日」（`components/admin/SalaryPaydaySetting.jsx`）——下次匯款日（不可選今天以前）、之後每月固定幾號、即時預覽「儲存後講師會看到…」、目前講師看到的文字；表還沒建時顯示「需先套用資料庫更新」。
+- migration `培訓web/supabase/migrations/20261020150000_salary_payout_schedule.sql`（可重跑，重跑不蓋掉後台改過的日期）：單列表 `salary_payout_schedule`（next_payday 種子 2026-11-10、regular_day 10）；
+  teacher／mentor／admin 可讀、pending 讀到 0 列、anon 被拒；只有 admin 能 UPDATE 且只限 next_payday／regular_day 兩欄；updated_at／updated_by 由 trigger 寫；不能新增第二列或刪除。
+- 資料修正 `scripts/salary_master_import/06_mark_imported_paid.sql`：`source='historical_import'` 且上課日 **< 2026-10-01** 的列改 status=paid、paid_amount=total_salary（paid_at 不動）；
+  原值先備份到 `class_sessions_paid_backfill_20261020`（網站讀不到）；暫停 `trg_session_anomaly` 只為這次更新（它會重算「同講師同日同課名」，把匯入時沒標到的那一半重複列也標成異常）；
+  交易內核對（範圍內還有未付、或 trigger 沒恢復 → 整批取消）；COMMIT 後才印核對表。還原 `96_rollback_mark_imported_paid.sql`。
+
+**證據（2026-10-20 本機實跑，沙盒外）**：
+- `npm run verify:salary-payout-schedule`（臨時 PostgreSQL）**113/113 PASS**，主對話親自重跑一次確認：migration 連套 3 次、各角色讀寫權限、欄位權限、CHECK；06 的 9/30／10/1 邊界、10/1 後與非匯入列整列不動、異常標記 23 列不變、trigger 恢復、備份＝被改列數、重跑零變動、96 逐列還原、還原後再跑、待定價擋下（只算 10/1 前）、5,535 筆規模演練 81ms；
+  另做 8＋11 份突變（拿掉日期上限、`<` 改 `<=`、漏改一列、忘了恢復 trigger、權限放寬…）全被抓到。
+- `npm run verify:salary-payday:browser`（mock Supabase＋真 Chrome＋固定時鐘）**101/101 PASS**（合併 origin/main 後重跑）：10/20、11/11、12/10（台北凌晨 00:30 時區邊界）、表不存在、伺服器 500 顯示「（預估）」、每月 15 號、390／320px 不溢出、
+  後台預覽／儲存只送兩欄且條件 id=eq.true／沒改不能按／過去日期不送出／表不存在提示／mentor 看不到。截圖 `培訓web/docs/verification/2026-10-20-salary-payday/`（17 張）。
+- 合併後既有腳本：`npm test` 153/153、`npm run lint` 0 問題、build 通過；verify:compensation-confirm:browser 42/42、verify:salary-fixes 33/33、verify:contract-feature-enabled 41/41、
+  salary-register-paging 39/39、speed-salary:browser 14/14、code-split 188/188（code-split 的 P1 換版重整測試偶發「Execution context was destroyed」，在未改動的 origin/main 上也重現過一次，非本次造成）。
+- 獨立審查（opus，fresh context）：程式無必修；業務必修 1 項（10 月那 6 筆）已由業主拍板改成不標；建議 2（跨月匯款日期別）、3（核對移到 COMMIT 後＋交易內防呆）、5（讀取失敗標預估）已修。
+
+**上線步驟（順序重要）**：
+① 業主在 Supabase SQL Editor 貼上 `培訓web/supabase/migrations/20261020150000_salary_payout_schedule.sql` 整檔執行。
+② 再貼 `scripts/salary_master_import/06_mark_imported_paid.sql` 整檔執行；畫面的核對表應看到 historical_import 兩列：**paid（未付金額 0、最晚上課日 2026-09-30 以前）**與 **approved（6 筆、上課日 2026-10-13～10-17）**，另有網站回報的其他來源列不受影響。
+③ 業主回報「套好了」後，再 fetch＋合併 origin/main、重跑上面兩支 verify，推 main 部署前端，兩網域確認新 `index-*.js`。
+（反過來先推前端也不會壞：黃卡用每月 10 號＝11/10，只是 06 沒跑前「已匯款」小卡幾乎都是 $0，看起來像沒領錢，所以照上面順序。）
+
+**下一步**：11/10 匯完 10 月後，要有人把 10 月的紀錄標成已付款（目前只能在後台逐筆改「已付款」）；建議做「本期匯款完成」一鍵標記（見地雷）。
+**地雷**：
+- 「已匯款」小卡與每列「已付款」標籤靠 class_sessions.status；之後每期匯完若沒人標，就會再累積成「已核准」。這次只把歷史資料一次補標。
+- 黃卡月份是「日曆月」（month_label＝上課日的年月），不是舊表單說明寫的「上月 26 日～本月 25 日」結算週期；舊表單區塊那段文字還在，待業主確認哪個才對。
+- 06 只暫停 `trg_session_anomaly`；正式庫若有 repo 以外手建的 class_sessions trigger 會照常觸發（本機驗不到）。
+- `本月報酬`（view 的 this_month_salary）用資料庫時間 now()（UTC）判斷月份，每月 1 號台北 00:00～08:00 會顯示上個月，既有行為未改。
 
 ## 📋 2026-10-20：「我的報酬」新增站內「報酬確認區」（取代外連 Google 試算表）（✅ 已上線 129ffab）
 
