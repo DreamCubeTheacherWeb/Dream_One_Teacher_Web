@@ -80,6 +80,13 @@ for (const [label, sql] of [['migration', migration], ['contracts_setup.sql', se
 }
 assert.doesNotMatch(setup, /ON public\.contract_documents FOR SELECT\s+TO authenticated\s+USING \(true\)/, 'contracts_setup.sql still has USING (true) on contract_documents');
 process.stdout.write('PASS: migration and contracts_setup.sql both define the approved-roles read policy, drop the USING (true) policy, revoke anon, and gate template files by role\n');
+// 2026-10-20 業主決定：輔導員不再能讀別人的已簽檔；新 migration 與新建庫路徑都不能再出現 admin／mentor 讀整個 bucket
+const revokeMigration = read('supabase/migrations/20261020140000_revoke_mentor_signed_contract_reads.sql');
+for (const [label, sql] of [['20261020140000 migration', revokeMigration], ['contracts_setup.sql', setup]]) {
+  assert.doesNotMatch(sql, /u\.role IN \('admin', 'mentor'\)/, `${label} still lets mentors read the whole contract-documents bucket`);
+}
+assert.match(revokeMigration, /CREATE POLICY "read contract documents scoped"/, 'revoke migration does not recreate the scoped read policy');
+process.stdout.write('PASS: 20261020140000 and contracts_setup.sql no longer let mentors read other instructors\' signed/ files\n');
 
 // pending 可到達的路由只有 allowPending 的 /profile；/contract、/contract/view 與所有 /admin 路由會把 pending 導走。
 const app = read('src/App.jsx');

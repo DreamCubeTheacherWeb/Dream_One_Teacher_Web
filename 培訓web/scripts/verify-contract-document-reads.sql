@@ -74,6 +74,11 @@ CREATE POLICY "read contract documents scoped"
       OR (storage.foldername(name))[1] IS DISTINCT FROM 'signed'
     )
   );
+-- 模擬後台手動加過的額外讀取政策：讓 mentor 也能讀全部 signed/（20261020140000 要把它收掉）
+CREATE POLICY "Mentors can read signed contracts"
+  ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'contract-documents'
+         AND EXISTS (SELECT 1 FROM public.users u WHERE u.id = (SELECT auth.uid()) AND u.role = 'mentor'));
 CREATE POLICY "Admins can upload contract documents"
   ON storage.objects FOR INSERT TO authenticated
   WITH CHECK (bucket_id = 'contract-documents' AND EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'));
@@ -227,7 +232,9 @@ RESET ROLE;
 -- ═══════════════════════════════════════════════════════════════════
 \ir ../supabase/migrations/20261019103000_restrict_contract_document_reads.sql
 \ir ../supabase/migrations/20261019103000_restrict_contract_document_reads.sql
-\echo PASS: migration applied twice without error
+\ir ../supabase/migrations/20261020140000_revoke_mentor_signed_contract_reads.sql
+\ir ../supabase/migrations/20261020140000_revoke_mentor_signed_contract_reads.sql
+\echo PASS: migrations 20261019103000 and 20261020140000 each applied twice without error
 
 -- 1. 政策盤點：contract_documents 只剩 1 條 SELECT 政策（新名）＋管理員 FOR ALL；storage 讀取政策只有一條且含 teacher
 SELECT t.assert(
@@ -244,8 +251,12 @@ SELECT t.assert(
      AND policyname = 'read contract documents scoped') = 1
   AND (SELECT qual FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'
          AND policyname = 'read contract documents scoped') LIKE '%''teacher''%'
-  AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND cmd = 'SELECT') = 1,
-  'storage read policy missing, duplicated, or lacks the teacher role check') \gset
+  AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND cmd = 'SELECT') = 1
+  AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'
+                   AND policyname = 'Mentors can read signed contracts')
+  AND (SELECT qual FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'
+         AND policyname = 'read contract documents scoped') NOT LIKE '%''admin''::text, ''mentor''%',
+  'storage read policy missing, duplicated, lacks the teacher role check, or still grants mentor the whole bucket') \gset
 SELECT t.assert(NOT has_table_privilege('anon', 'public.contract_documents', 'SELECT'), 'anon still has SELECT privilege on contract_documents') \gset
 SELECT t.assert(has_table_privilege('authenticated', 'public.contract_documents', 'SELECT'), 'authenticated lost SELECT privilege on contract_documents') \gset
 \echo PASS: exactly one SELECT policy on contract_documents (approved roles) plus admin FOR ALL; one storage read policy with teacher check; anon has no table privilege
@@ -301,16 +312,19 @@ SELECT t.assert(t.exec_count($q$ UPDATE public.contract_documents SET display_na
 RESET ROLE;
 \echo PASS: teacher sees the same rows as before (6 total; signing flow 3 in order; profile 3; contract view 4; form template v2), reads templates and own signed files only, cannot write
 
--- 5. mentor：文件全讀；bucket 全讀（含他人 signed/，既有規則，待業主決定）
+-- 5. mentor：文件全讀；bucket 只讀範本，讀不到任何人的 signed/（2026-10-20 業主決定收回）
 SELECT t.as_user('00000000-0000-4000-8000-000000000005') \gset
 SET ROLE authenticated;
 SELECT t.assert(t.count_rows(t.q_all_docs()) = 6, 'mentor should read all 6 rows') \gset
 SELECT t.assert(t.count_rows(t.q_instructor_list()) = 1, 'mentor instructor list should see 1 active form template') \gset
-SELECT t.assert(t.count_rows(t.q_bucket_all()) = 9, 'mentor bucket read changed (expected unchanged: all 9 files)') \gset
+SELECT t.assert(t.count_rows(t.q_bucket_all()) = 5, 'mentor should read only the 5 template files') \gset
+SELECT t.assert(
+  t.count_rows($q$ SELECT name FROM storage.objects WHERE bucket_id = 'contract-documents' AND name LIKE 'signed/%' $q$) = 0,
+  'mentor can still read signed/ contract files') \gset
 SELECT t.assert(t.exec_count($q$ UPDATE public.contract_documents SET display_name = 'x' WHERE doc_type = 'rules' $q$) = 0,
   'mentor could update contract_documents') \gset
 RESET ROLE;
-\echo PASS: mentor reads all 6 rows and all 9 bucket files (unchanged; signed/ visibility left for the owner to decide), cannot write
+\echo PASS: mentor reads all 6 rows and only the 5 template files (no signed/ of anyone), cannot write
 
 -- 6. admin：文件全讀、後台兩條查詢正常、增改刪照常
 SELECT t.as_user('00000000-0000-4000-8000-000000000003') \gset
@@ -370,6 +384,8 @@ SELECT (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablena
                 AND policyname = 'Approved roles can read contract documents' AND qual LIKE '%''teacher''%')
    AND (SELECT qual FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'
           AND policyname = 'read contract documents scoped') LIKE '%''teacher''%'
+   AND (SELECT qual FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'
+          AND policyname = 'read contract documents scoped') NOT LIKE '%''admin''::text, ''mentor''%'
    AND NOT has_table_privilege('anon', 'public.contract_documents', 'SELECT') AS ok \gset
 \if :ok
 \else
@@ -380,6 +396,7 @@ SELECT (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablena
 
 -- setup 之後再疊 migration 也不會重複或出錯
 \ir ../supabase/migrations/20261019103000_restrict_contract_document_reads.sql
+\ir ../supabase/migrations/20261020140000_revoke_mentor_signed_contract_reads.sql
 SELECT (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'contract_documents') = 2
    AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND cmd = 'SELECT') = 1 AS ok \gset
 \if :ok

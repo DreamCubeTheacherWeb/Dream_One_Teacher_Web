@@ -336,8 +336,8 @@ ON CONFLICT (id) DO NOTHING;
 
 DROP POLICY IF EXISTS "Authenticated can read contract documents storage" ON storage.objects;
 DROP POLICY IF EXISTS "read contract documents scoped" ON storage.objects;
--- 本人 signed/<uid>/、admin／mentor 整個 bucket、範本等非 signed/ 路徑只給已核准角色
--- （2026-10-19 收緊：pending 讀不到範本檔）。
+-- 本人 signed/<uid>/、admin 整個 bucket、範本等非 signed/ 路徑只給已核准角色
+-- （2026-10-19 收緊：pending 讀不到範本檔；2026-10-20 業主決定：輔導員不再能讀別人的已簽檔）。
 CREATE POLICY "read contract documents scoped"
   ON storage.objects FOR SELECT
   TO authenticated
@@ -350,7 +350,7 @@ CREATE POLICY "read contract documents scoped"
       )
       OR EXISTS (
         SELECT 1 FROM public.users u
-         WHERE u.id = (SELECT auth.uid()) AND u.role IN ('admin', 'mentor')
+         WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'
       )
       OR (
         (storage.foldername(name))[1] IS DISTINCT FROM 'signed'
