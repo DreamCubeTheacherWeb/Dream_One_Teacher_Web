@@ -262,7 +262,8 @@ async function run() {
         const otherRows = await rowTexts(other);
         const otherRow = (name) => otherRows.find(text => text.includes(name)) || '';
         check('C1 常態課歸到「其他課程」：常態課／實體常態-初階', otherRows.length === 2 && otherRow('六晚左營').includes('常態課') && otherRow('六晚左營').includes('實體常態-初階'), otherRows.join(' / '));
-        check('C1 其他課程說明寫出總表匯入的學校社團／楓葉體驗課暫列這區', (await other.innerText()).includes('學校社團') && (await other.innerText()).includes('楓葉體驗課'));
+        check('C1 其他課程說明寫出薪資總表登記為「其他」的課歸這區（總表沒有學校社團，不再提）',
+            (await other.innerText()).includes('薪資總表裡登記為「其他」的課') && !(await other.innerText()).includes('學校社團'));
         const statusLefts = await page.evaluate(() => [...document.querySelectorAll('#compensation-confirm table')]
             .map(table => Math.round(table.querySelector('thead th:nth-child(7)').getBoundingClientRect().left)));
         check('C1 桌機三張表「狀態」欄上下對齊（左緣差 ≤ 1px）', statusLefts.length === 3 && Math.max(...statusLefts) - Math.min(...statusLefts) <= 1, statusLefts.join(','));
