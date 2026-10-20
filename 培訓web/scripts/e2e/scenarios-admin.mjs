@@ -244,10 +244,11 @@ export async function scenarioAdminMentor(ctx) {
     r.check('ADM 輔導員用 REST 也讀不到簽約紀錄、簽署證據、同意紀錄', contracts.data?.length === 0 && evidence.data?.length === 0 && consent.data?.length === 0);
     const pdfPath = api.sql(`SELECT signed_pdf_paths->>'contract' FROM public.instructor_contracts WHERE id = :'id'`, { id: signer.contractId });
     const file = await api.request(mentor.token, 'GET', `/storage/v1/object/authenticated/contract-documents/${pdfPath}`);
-    if (file.status === 200) {
-      ctx.known('ADM 輔導員讀得到所有人的已簽契約檔', `ADM［待業主決定］storage 政策讓 mentor 讀整個 contract-documents（含所有人的 signed/）：supabase/migrations/20261019103000_restrict_contract_document_reads.sql:60 的「read contract documents scoped」，註解已寫「mentor 是否該讀待業主決定」。畫面上輔導員看不到簽約，但知道路徑就能下載已簽 PDF（身分證字號、地址都在上面）。`);
-    }
-    r.check('ADM 記錄：輔導員直接下載已簽契約檔的結果', [200, 400].includes(file.status), `HTTP ${file.status}`);
+    // 2026-10-20 業主決定收回（20261020140000）：已簽契約檔只留管理員與講師本人能讀。
+    r.check('ADM 輔導員直接下載別人的已簽契約檔被擋', Boolean(pdfPath) && pdfPath.startsWith('signed/') && file.status !== 200, `path=${pdfPath} HTTP ${file.status}`);
+    const templatePath = api.sql(`SELECT file_path FROM public.contract_documents WHERE is_active ORDER BY sort_order, doc_type LIMIT 1`);
+    const template = await api.request(mentor.token, 'GET', `/storage/v1/object/authenticated/contract-documents/${templatePath}`);
+    r.check('ADM 輔導員仍讀得到契約範本（表單預覽與下載要用）', template.status === 200, `path=${templatePath} HTTP ${template.status}`);
   } finally {
     ctx.consoleErrors.push(...s.consoleErrors.map((e) => `ADM-5: ${e}`));
     await s.context.close();

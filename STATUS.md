@@ -76,7 +76,7 @@
   - Y4 範本的「一式兩份」與公司方簽章欄。
   - Y5 保存期間（建議合作結束後 15 年）。
   - Y6 改紙本後的處理承諾。
-- 輔導員（mentor）目前讀得到所有人的已簽契約 PDF，PDF 上有身分證字號和地址（來自 `20261019103000` 的 storage 政策）。建議收回，要業主決定。
+- ✅ 輔導員讀已簽契約 PDF：業主 10/20 決定收回。新 migration `20261020140000_revoke_mentor_signed_contract_reads.sql`（分支 `fix/revoke-mentor-signed-contract-reads` `649fc7b`，以 release/20261021-db-features 為底；本分支 cherry-pick 為 `54e1d2a`）只留管理員與講師本人能讀 signed/，輔導員仍能讀範本。驗證：verify-contract-document-reads 11 SQL PASS＋靜態檢查（拿掉 migration 會 FAIL）；e2e 改成嚴格斷言（輔導員下載別人已簽檔 HTTP 400、範本 200）。要接在 `20261019103000` 之後套，可併入明早那批。
 
 **已知限制／地雷**：
 - 超級使用者可以停用 trigger 改資料；雜湊鏈抓得到，但「契約和證據兩筆一起刪掉」資料庫本身抓不到。
@@ -85,7 +85,6 @@
 - 重跑 `contracts_setup.sql` 會把 submit_my_contract 換回舊版，害簽約壞掉。
 - 主檔 Email 空白或錯誤的老師會卡在「待確認 Email」，行政要先補。
 - 簽約驗證碼驗證後關頁，60 秒內回來要等冷卻。
-- 輔導員權限見上一項。
 
 
 ## 🚀 2026-10-20 總指揮發版（業主授權統一整合上線＋上線後大檢查）
