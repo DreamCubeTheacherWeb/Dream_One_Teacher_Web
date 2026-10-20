@@ -8,12 +8,12 @@ import {
     payoutScheduleFromResponse,
     resolvePayout,
     shortDateOf,
-    summarizePayrollMonth,
+    summarizePayrollPeriod,
 } from './salaryPayday.js';
 
 const at = (schedule, today) => {
-    const { payday, payrollMonth } = resolvePayout(schedule, today);
-    return `${payday} ${payrollMonth}`;
+    const { payday, periodMonth } = resolvePayout(schedule, today);
+    return `${payday} ${periodMonth}`;
 };
 
 test('後台設定的日期還沒過（含當天）就照用，匯上個月', () => {
@@ -91,16 +91,31 @@ test('顯示用格式', () => {
     assert.equal(shortDateOf('2027-01-09'), '1/9');
 });
 
-test('月份累計：退回不算、待核准算進總額並另列、待定價只算場次', () => {
+test('每期結算區間＝上月 26 日～本月 25 日，跨年也對（業主 10/20 確認）', () => {
+    const period = (schedule, today) => {
+        const { periodMonth, periodStart, periodEnd } = resolvePayout(schedule, today);
+        return `${periodMonth} ${periodStart}~${periodEnd}`;
+    };
+    assert.equal(period({ nextPayday: '2026-11-10', regularDay: 10 }, '2026-10-20'), '2026/10 2026-09-26~2026-10-25');
+    assert.equal(period({ nextPayday: '2026-12-10', regularDay: 10 }, '2026-12-01'), '2026/11 2026-10-26~2026-11-25');
+    assert.equal(period({ nextPayday: '2027-01-10', regularDay: 10 }, '2026-12-11'), '2026/12 2026-11-26~2026-12-25');
+    assert.equal(period({}, '2026-01-20'), '2026/01 2025-12-26~2026-01-25');
+    assert.equal(period({}, '2026-03-05'), '2026/02 2026-01-26~2026-02-25');
+});
+
+test('該期累計：只算區間內（含頭尾）、退回不算、待核准算進總額並另列、待定價只算場次', () => {
+    const range = { periodStart: '2026-09-26', periodEnd: '2026-10-25' };
     const sessions = [
-        { month_label: '2026/10', status: 'paid', pricing_status: 'legacy', total_salary: 1000 },
-        { month_label: '2026/10', status: 'approved', pricing_status: 'quoted', total_salary: 800 },
-        { month_label: '2026/10', status: 'pending', pricing_status: 'quoted', total_salary: '600' },
-        { month_label: '2026/10', status: 'pending', pricing_status: 'needs_review', total_salary: null },
-        { month_label: '2026/10', status: 'pending', pricing_status: 'rejected', total_salary: 0 },
-        { month_label: '2026/09', status: 'approved', pricing_status: 'quoted', total_salary: 5000 },
+        { session_date: '2026-09-25', status: 'paid', pricing_status: 'legacy', total_salary: 9999 },  // 上一期
+        { session_date: '2026-09-26', status: 'approved', pricing_status: 'legacy', total_salary: 1000 },
+        { session_date: '2026-10-10', status: 'approved', pricing_status: 'quoted', total_salary: 800 },
+        { session_date: '2026-10-25', status: 'pending', pricing_status: 'quoted', total_salary: '600' },
+        { session_date: '2026-10-12', status: 'pending', pricing_status: 'needs_review', total_salary: null },
+        { session_date: '2026-10-13', status: 'pending', pricing_status: 'rejected', total_salary: 0 },
+        { session_date: '2026-10-26', status: 'pending', pricing_status: 'quoted', total_salary: 7777 },  // 下一期
     ];
-    assert.deepEqual(summarizePayrollMonth(sessions, '2026/10'), { total: 2400, count: 4, pendingTotal: 600, awaitingPriceCount: 1 });
-    assert.deepEqual(summarizePayrollMonth(sessions, '2026/11'), { total: 0, count: 0, pendingTotal: 0, awaitingPriceCount: 0 });
-    assert.deepEqual(summarizePayrollMonth(null, '2026/10'), { total: 0, count: 0, pendingTotal: 0, awaitingPriceCount: 0 });
+    assert.deepEqual(summarizePayrollPeriod(sessions, range), { total: 2400, count: 4, pendingTotal: 600, awaitingPriceCount: 1 });
+    assert.deepEqual(summarizePayrollPeriod(sessions, { periodStart: '2026-10-26', periodEnd: '2026-11-25' }),
+        { total: 7777, count: 1, pendingTotal: 7777, awaitingPriceCount: 0 });
+    assert.deepEqual(summarizePayrollPeriod(null, range), { total: 0, count: 0, pendingTotal: 0, awaitingPriceCount: 0 });
 });

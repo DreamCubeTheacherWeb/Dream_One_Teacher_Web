@@ -1,5 +1,7 @@
 // 「我的報酬」黃卡：X 月累計報酬＋下次匯款日（2026-10-20 業主需求）
-// 規則：每月固定一天（預設 10 號）匯上個月的報酬，例如 12/10 匯 11 月。
+// 規則：每月固定一天（預設 10 號）匯上一期的報酬，例如 12/10 匯「11 月」。
+// 一期＝結算週期「上月 26 日～本月 25 日」，以結束的月份命名：11 月＝10/26～11/25（業主 10/20 確認；
+// 同日業主也說「9/26 以後的才沒有付款」，與舊表單說明「每月 25 號結算（上月 26 日～本月 25 日）」一致）。
 // 後台可改「下次匯款日」（遇假日提前／延後）；日期過了自動跳到下一期的固定日，不必每月去改。
 // 提前／延後的日期屬於「最接近它的那個固定日」那一期：固定 28 號、12/28 延到 1/4，仍是匯 11 月。
 // 日期一律用 'YYYY-MM-DD' 字串運算，不經過 Date 物件的時區，避免日期被推前一天。
@@ -7,8 +9,9 @@
 export const DEFAULT_PAYDAY_DAY = 10;
 export const PAYDAY_DAY_MIN = 1;
 export const PAYDAY_DAY_MAX = 28;
+export const SETTLEMENT_CUTOFF_DAY = 25;  // 每期結算到這天（含），下一期從隔天開始
 
-// salary_payout_schedule 還沒建（migration 20261020150000 尚未套用）時 PostgREST 回的代碼
+// salary_payout_schedule 還沒建（migration 20261020160000 尚未套用）時 PostgREST 回的代碼
 export const MISSING_TABLE_CODES = new Set(['42P01', 'PGRST205']);
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -21,6 +24,16 @@ const shiftMonth = ({ year, month }, delta) => {
 };
 const paydayIn = (yearMonth, day) => ({ ...yearMonth, day: Math.min(day, daysInMonth(yearMonth.year, yearMonth.month)) });
 const monthLabelOf = ({ year, month }) => `${year}/${pad(month)}`;
+
+// 「YYYY 年 M 月」那一期的結算區間：上月 26 日～本月 25 日
+const settlementOf = (yearMonth) => {
+    const previous = shiftMonth(yearMonth, -1);
+    return {
+        periodMonth: monthLabelOf(yearMonth),
+        periodStart: toIso({ ...previous, day: SETTLEMENT_CUTOFF_DAY + 1 }),
+        periodEnd: toIso({ ...yearMonth, day: SETTLEMENT_CUTOFF_DAY }),
+    };
+};
 
 export const parseIsoDate = (value) => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
@@ -46,7 +59,7 @@ const periodOf = (date, day) => {
     return { year: best.candidate.year, month: best.candidate.month };
 };
 
-// 下次匯款日與它匯的月份：
+// 下次匯款日與它匯的那一期（periodMonth 'YYYY/MM'、periodStart／periodEnd 'YYYY-MM-DD'）：
 // 後台設定的日期還沒過（含當天）就用它；過了（或沒設定）就從它那一期的下一期起，找第一個不早於今天的固定日。
 export const resolvePayout = ({ nextPayday, regularDay } = {}, today) => {
     const todayParts = parseIsoDate(today);
@@ -54,13 +67,13 @@ export const resolvePayout = ({ nextPayday, regularDay } = {}, today) => {
     const day = normalizePaydayDay(regularDay);
     const stored = parseIsoDate(nextPayday);
     if (stored && toIso(stored) >= today) {
-        return { payday: toIso(stored), payrollMonth: monthLabelOf(shiftMonth(periodOf(stored, day), -1)) };
+        return { payday: toIso(stored), ...settlementOf(shiftMonth(periodOf(stored, day), -1)) };
     }
 
     let period = stored ? shiftMonth(periodOf(stored, day), 1) : { year: todayParts.year, month: todayParts.month };
     for (let guard = 0; guard < 1200; guard += 1) {
         const candidate = toIso(paydayIn(period, day));
-        if (candidate >= today) return { payday: candidate, payrollMonth: monthLabelOf(shiftMonth(period, -1)) };
+        if (candidate >= today) return { payday: candidate, ...settlementOf(shiftMonth(period, -1)) };
         period = shiftMonth(period, 1);
     }
     throw new Error('找不到下次匯款日');
@@ -85,14 +98,15 @@ export const shortDateOf = (iso) => {
     return parts ? `${parts.month}/${parts.day}` : '';
 };
 
-// 該月份的累計：退回的不算；待核准的算進總額，另外列出來
-export const summarizePayrollMonth = (sessions, monthLabel) => {
+// 該期（periodStart～periodEnd，含頭尾）的累計：退回的不算；待核准的算進總額，另外列出來
+export const summarizePayrollPeriod = (sessions, { periodStart, periodEnd }) => {
     let total = 0;
     let count = 0;
     let pendingTotal = 0;
     let awaitingPriceCount = 0;
     for (const session of sessions || []) {
-        if (session?.month_label !== monthLabel || session.pricing_status === 'rejected') continue;
+        const date = String(session?.session_date ?? '').slice(0, 10);
+        if (!date || date < periodStart || date > periodEnd || session.pricing_status === 'rejected') continue;
         count += 1;
         if (session.pricing_status === 'needs_review') {
             awaitingPriceCount += 1;

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // 講師「我的報酬」黃卡（X月累計報酬＋M/D 匯款）與後台「講師端匯款日」設定：mock Supabase 真瀏覽器驗證。
+// 2026-10-20 業主確認：黃卡金額用「結算週期」加總（上月 26 日～本月 25 日，以結束月份命名，依 session_date 含頭尾），不是日曆月。
 // 做法同 verify-salary-register-paging-browser.mjs：本機 vite dev＋本機 Chrome＋localStorage 塞假 session，
 // 所有 Supabase 網域請求都由 page.route 攔截回假資料；沒列在白名單的請求一律回 404 並讓腳本 FAIL，絕不放行到正式站。
 // 「今天」用 Playwright clock.setFixedTime 固定（台北時間），結果才是確定的。
@@ -33,7 +34,11 @@ const OTHER = '10000000-0000-4000-8000-000000000092'; // 別的講師（誤把�
 const now = new Date().toISOString();
 const COURSE_TYPE = Object.keys(COURSE_LABELS)[0];
 
-// ── 假資料：講師本人 2026/09～2026/12，另有別人的紀錄（金額 9,999，被算進來就會爆）
+// ── 假資料：講師本人。結算週期「上月 26 日～本月 25 日」，邊界日各放一筆（金額故意取不同，算錯一筆就對不上）：
+//   10月期 9/26～10/25：9/25 不算（5000）、9/26 算（1000）、10/25 算（300）、10/26 不算（4000，屬 11月期）
+//   11月期 10/26～11/25：10/26 算（4000）、11/25 算（150）、11/26 不算（2222，屬 12月期）
+//   12月期 11/26～12/25：11/26 算（2222）、12/25 算（111）、12/26 不算（3333，屬隔年 1月期）
+// 另有別的講師的紀錄（金額 9,999，被算進來就會爆）。
 let seq = 0;
 const makeSession = ({ instructor = OWN, name = '薪資測試講師', date, status, pricing = 'quoted', total }) => {
     seq += 1;
@@ -55,20 +60,27 @@ const makeSession = ({ instructor = OWN, name = '薪資測試講師', date, stat
     };
 };
 const SESSIONS = [
-    // 2026/10：已付款 1000、已核准 800、待核准 600、尚無金額 1 筆、退回 1 筆（450，不算）
-    makeSession({ date: '2026-10-03', status: 'paid', total: 1000 }),
+    // ── 10月期 9/26～10/25：已付款 1000、已核准 800、待核准 600、已核准 300（10/25）、尚無金額 1 筆；退回 1 筆（450）不算
+    makeSession({ date: '2026-09-25', status: 'approved', total: 5000 }),  // 邊界前一天：不算
+    makeSession({ date: '2026-09-26', status: 'paid', total: 1000 }),      // 起點：算
     makeSession({ date: '2026-10-07', status: 'approved', total: 800 }),
     makeSession({ date: '2026-10-12', status: 'pending', total: 600 }),
     makeSession({ date: '2026-10-15', status: 'pending', pricing: 'needs_review', total: null }),
     makeSession({ date: '2026-10-16', status: 'pending', pricing: 'rejected', total: 450 }),
-    // 2026/09
+    makeSession({ date: '2026-10-25', status: 'approved', total: 300 }),   // 終點：算
+    makeSession({ date: '2026-10-26', status: 'approved', total: 4000 }),  // 邊界後一天：不算（屬 11月期）
+    // 更早（9月期 8/26～9/25）
     makeSession({ date: '2026-09-05', status: 'paid', total: 500 }),
     makeSession({ date: '2026-09-12', status: 'paid', total: 700 }),
-    makeSession({ date: '2026-09-19', status: 'approved', total: 900 }),
-    // 2026/11、2026/12（讓「今天」被固定到之後時，換月的金額也能核對）
+    // ── 11月期 10/26～11/25
     makeSession({ date: '2026-11-02', status: 'approved', total: 1200 }),
     makeSession({ date: '2026-11-09', status: 'pending', total: 300 }),
+    makeSession({ date: '2026-11-25', status: 'approved', total: 150 }),   // 終點：算
+    makeSession({ date: '2026-11-26', status: 'approved', total: 2222 }),  // 起點（12月期）
+    // ── 12月期 11/26～12/25
     makeSession({ date: '2026-12-03', status: 'approved', total: 700 }),
+    makeSession({ date: '2026-12-25', status: 'approved', total: 111 }),   // 終點：算
+    makeSession({ date: '2026-12-26', status: 'approved', total: 3333 }),  // 邊界後一天：不算（屬隔年 1月期）
     // 別的講師
     makeSession({ instructor: OTHER, name: '其他講師', date: '2026-10-05', status: 'approved', total: 9999 }),
     makeSession({ instructor: OTHER, name: '其他講師', date: '2026-11-05', status: 'approved', total: 9999 }),
@@ -406,13 +418,16 @@ async function run() {
         browser = await chromium.launch(existsSync(chromeExecutable) ? { executablePath: chromeExecutable } : {});
 
         // ════════ 1. 講師桌機：今天 2026-10-20，匯款日 11/10 ════════
-        console.log('\n── 1. 講師端（今天 2026-10-20 台北、匯款日設定 2026-11-10／每月 10）');
-        const OCT = { title: '10月累計報酬', value: '$2,400', badge: '11/10 匯款', sub: '4 場・含待核准 $600・1 筆待確認金額' };
+        console.log('\n── 1. 講師端（今天 2026-10-20 台北、匯款日設定 2026-11-10／每月 10；10月期 = 9/26～10/25）');
+        const OCT = { title: '10月累計報酬', value: '$2,700', badge: '11/10 匯款', sub: '9/26～10/25・5 場・含待核准 $600・1 筆待確認金額' };  // 1000(9/26)+800+600+300(10/25)；9/25 的 5000 與 10/26 的 4000 不算
         let { context, page } = await teacherScenario(browser, base, {
             id: '情境1 桌機 10/20', now: TAIPEI_NOON('2026-10-20'), schedule: { next_payday: '2026-11-10', regular_day: 10 }, expected: OCT,
         });
-        check('情境1：副標含「4 場」「含待核准 $600」「1 筆待確認金額」',
-            (await readCard(page)).sub.includes('4 場') && (await readCard(page)).sub.includes('含待核准 $600') && (await readCard(page)).sub.includes('1 筆待確認金額'));
+        const sub1 = (await readCard(page)).sub;
+        check('情境1：副標以區間「9/26～10/25」開頭，含「5 場」「含待核准 $600」「1 筆待確認金額」',
+            sub1.startsWith('9/26～10/25・') && sub1.includes('5 場') && sub1.includes('含待核准 $600') && sub1.includes('1 筆待確認金額'), sub1);
+        check('情境1：邊界日——9/25 不算、9/26 算、10/25 算、10/26 不算 → 金額 $2,700（1000+800+600+300）、5 場（含 1 筆待確認）',
+            card0Value(await readCard(page)) === 2700 && sub1.includes('5 場'), JSON.stringify(await readCard(page)));
         check('情境1：有讀「匯款日設定」（GET salary_payout_schedule select=next_payday,regular_day）', scheduleGets().length >= 1);
         const text1 = await bodyText(page);
         check('情境1：頁面不再出現「未領金額」', !text1.includes('未領金額'));
@@ -424,15 +439,15 @@ async function run() {
         check('情境1：其他小卡沒被動到（累計總報酬 $31,000、待核准 $1,200）',
             (await miniStatValue(page, '累計總報酬'))?.trim() === '$31,000' && (await miniStatValue(page, '待核准'))?.trim() === '$1,200');
         check('情境1：講師端只抓本人紀錄（class_sessions 帶 instructor_id=eq.本人），別人的 $9,999 沒被算進來',
-            reqLog.some(r => r.path === '/rest/v1/class_sessions' && new URLSearchParams(r.search).get('instructor_id') === `eq.${OWN}`) && card0Value(await readCard(page)) === 2400);
+            reqLog.some(r => r.path === '/rest/v1/class_sessions' && new URLSearchParams(r.search).get('instructor_id') === `eq.${OWN}`) && card0Value(await readCard(page)) === 2700);
         check('情境1：沒有紅色錯誤畫面', (await page.getByRole('alert').count()) === 0 && !(await bodyText(page)).includes('暫時無法載入'));
         await page.screenshot({ path: shot('teacher-desktop-1280-2026-10-20.png'), fullPage: true });
         await yellowCard(page).screenshot({ path: shot('teacher-desktop-card-crop-2026-10-20.png') });
         await context.close();
 
         // ════════ 2. 今天 2026-11-11（台北凌晨 00:30，UTC 還是 11-10）════════
-        console.log('\n── 2. 今天 2026-11-11（同一份設定；台北 00:30，UTC 仍是 11-10，故意測時區邊界）');
-        const NOV = { title: '11月累計報酬', value: '$1,500', badge: '12/10 匯款', sub: '2 場・含待核准 $300' };
+        console.log('\n── 2. 今天 2026-11-11（同一份設定；台北 00:30，UTC 仍是 11-10，故意測時區邊界；11月期 = 10/26～11/25）');
+        const NOV = { title: '11月累計報酬', value: '$5,650', badge: '12/10 匯款', sub: '10/26～11/25・4 場・含待核准 $300' };  // 4000(10/26)+1200+300+150(11/25)；10/25 的 300 與 11/26 的 2222 不算
         ({ context, page } = await teacherScenario(browser, base, {
             id: '情境2 桌機 11/11', now: TAIPEI_AFTER_MIDNIGHT('2026-11-11'), schedule: { next_payday: '2026-11-10', regular_day: 10 }, expected: NOV,
         }));
@@ -440,12 +455,12 @@ async function run() {
         await context.close();
 
         // ════════ 3. 設定 12/09，今天 2026-12-10 ════════
-        console.log('\n── 3. 設定改成 2026-12-09、今天 2026-12-10（台北 00:30，UTC 仍是 12-09）');
-        const DEC = { title: '12月累計報酬', value: '$700', badge: '1/10 匯款', sub: '1 場' };
+        console.log('\n── 3. 設定改成 2026-12-09、今天 2026-12-10（台北 00:30，UTC 仍是 12-09；12月期 = 11/26～12/25）');
+        const DEC = { title: '12月累計報酬', value: '$3,033', badge: '1/10 匯款', sub: '11/26～12/25・3 場' };  // 2222(11/26)+700+111(12/25)；12/26 的 3333 不算
         ({ context, page } = await teacherScenario(browser, base, {
             id: '情境3 桌機 12/10', now: TAIPEI_AFTER_MIDNIGHT('2026-12-10'), schedule: { next_payday: '2026-12-09', regular_day: 10 }, expected: DEC,
         }));
-        check('情境3：沒有待核准、沒有待確認金額時副標只有場次（不出現「含待核准」「待確認金額」）',
+        check('情境3：沒有待核准、沒有待確認金額時副標只有區間與場次（不出現「含待核准」「待確認金額」）',
             !(await readCard(page)).sub.includes('含待核准') && !(await readCard(page)).sub.includes('待確認金額'));
         await page.screenshot({ path: shot('teacher-desktop-1280-2026-12-10.png'), fullPage: true });
         await context.close();
@@ -454,9 +469,10 @@ async function run() {
         console.log('\n── 4. 匯款日設定讀不到（表不存在 PGRST205 / 伺服器 500）：用每月 10 號，頁面照常');
         ({ context, page } = await teacherScenario(browser, base, {
             id: '情境4 表不存在 404', now: TAIPEI_NOON('2026-10-20'), schedule: { next_payday: '2026-11-10', regular_day: 10 }, mode: 'missing',
-            expected: { title: '10月累計報酬', value: '$2,400', badge: '11/10 匯款', sub: OCT.sub },
+            expected: OCT,
         }));
         check('情境4：確實打了 salary_payout_schedule 且被回 404（不是沒讀）', scheduleGets().length >= 1);
+        check('情境4：表還沒建（PGRST205）屬預期狀態，膠囊不加「（預估）」', !(await readCard(page)).badge.includes('預估'), (await readCard(page)).badge);
         check('情境4：沒有紅色錯誤畫面、「我的報酬」其他區塊都在',
             (await page.getByRole('alert').count()) === 0 && !(await bodyText(page)).includes('暫時無法載入')
             && (await page.getByRole('heading', { name: '報酬確認區', exact: true }).isVisible()) && (await page.getByText('累計總報酬', { exact: true }).isVisible()));
@@ -466,8 +482,9 @@ async function run() {
         ({ context, page } = await teacherScenario(browser, base, {
             // 2026-10-20 審查建議 5：讀取失敗（不是表還沒建）時註明「預估」，不默默當成確定日期
             id: '情境4b 後端 500', now: TAIPEI_NOON('2026-10-20'), mode: 'error',
-            expected: { title: '10月累計報酬', value: '$2,400', badge: '11/10 匯款（預估）', sub: OCT.sub },
+            expected: { ...OCT, badge: '11/10 匯款（預估）' },
         }));
+        check('情境4b：讀取失敗（非「表不存在」）時，膠囊註明「11/10 匯款（預估）」', (await readCard(page)).badge === '11/10 匯款（預估）', (await readCard(page)).badge);
         check('情境4b：後端 500 時同樣沒有紅色錯誤畫面', (await page.getByRole('alert').count()) === 0 && !(await bodyText(page)).includes('暫時無法載入'));
         await context.close();
 
@@ -475,7 +492,7 @@ async function run() {
         console.log('\n── 5. 設定 2026-10-14／每月 15，今天 2026-10-20 → 跳到 11/15（證明有讀 regular_day，不是靠預設 10）');
         ({ context, page } = await teacherScenario(browser, base, {
             id: '情境5 每月15號', now: TAIPEI_NOON('2026-10-20'), schedule: { next_payday: '2026-10-14', regular_day: 15 }, mode: 'ok',
-            expected: { title: '10月累計報酬', value: '$2,400', badge: '11/15 匯款', sub: OCT.sub },
+            expected: { ...OCT, badge: '11/15 匯款' },
         }));
         await context.close();
         setSchedule('2026-11-10', 10);
@@ -527,7 +544,9 @@ async function run() {
         await dateInput.waitFor({ timeout: 15000 });
 
         check('後台7：看得到「講師端匯款日」區塊', await section.getByRole('heading', { name: '講師端匯款日' }).isVisible());
-        check('後台7：顯示「講師目前看到：10月累計報酬・11/10 匯款」', (await current.innerText()).trim() === '講師目前看到：10月累計報酬・11/10 匯款', await current.innerText());
+        check('後台7：顯示「講師目前看到：10月累計報酬（9/26～10/25）・11/10 匯款」', (await current.innerText()).trim() === '講師目前看到：10月累計報酬（9/26～10/25）・11/10 匯款', await current.innerText());
+        check('後台7：說明文字是「講師「我的報酬」黃卡顯示上一期（上月 26 日～本月 25 日）的累計報酬與這個日期。」',
+            (await section.innerText()).includes('講師「我的報酬」黃卡顯示上一期（上月 26 日～本月 25 日）的累計報酬與這個日期。'));
         check('後台7：日期輸入框值 2026-11-10、每月固定 10', (await dateInput.inputValue()) === '2026-11-10' && (await daySelect.inputValue()) === '10',
             `${await dateInput.inputValue()} / ${await daySelect.inputValue()}`);
         check('後台9：沒改任何東西時「儲存」是 disabled', await saveButton.isDisabled());
@@ -553,10 +572,11 @@ async function run() {
         // 改回原值 → 又變回 disabled
         await dateInput.fill('2026-11-10');
         check('後台9：改回原本的日期後「儲存」又變回 disabled', await saveButton.isDisabled());
+        check('後台9：修改日期後，先前的「請選今天或之後的日期。」錯誤訊息自動消失', (await section.getByText('請選今天或之後的日期。').count()) === 0);
 
         // 8. 改成 2026-12-09
         await dateInput.fill('2026-12-09');
-        const previewText = '儲存後講師會看到「11月累計報酬・12/9 匯款」';
+        const previewText = '儲存後講師會看到「11月累計報酬（10/26～11/25）・12/9 匯款」';
         check(`後台8：改日期為 2026-12-09 → 出現預覽「${previewText}」`, (await section.getByText(previewText).count()) === 1,
             await section.innerText());
         check('後台8：改完「儲存」變成可按', await saveButton.isEnabled());
@@ -572,22 +592,22 @@ async function run() {
             JSON.stringify(Object.keys(patch?.body ?? {}).sort()) === JSON.stringify(['next_payday', 'regular_day'])
             && patch.body.next_payday === '2026-12-09' && patch.body.regular_day === 10, JSON.stringify(patch?.body));
         check('後台8：成功後顯示「已儲存」訊息與新的「講師目前看到」',
-            (await section.getByText('已儲存。講師現在看到「11月累計報酬・12/9 匯款」。').count()) === 1
-            && (await current.innerText()).trim() === '講師目前看到：11月累計報酬・12/9 匯款', await section.innerText());
+            (await section.getByText('已儲存。講師現在看到「11月累計報酬（10/26～11/25）・12/9 匯款」。').count()) === 1
+            && (await current.innerText()).trim() === '講師目前看到：11月累計報酬（10/26～11/25）・12/9 匯款', await section.innerText());
         check('後台8：儲存後「儲存」鈕回到 disabled、預覽消失', (await saveButton.isDisabled()) && (await section.getByText(/儲存後講師會看到/).count()) === 0);
         await section.screenshot({ path: shot('admin-desktop-1280-after-save.png') });
 
         // 重新整理仍是新日期（資料真的寫進 mock 資料庫）
         await page.reload({ waitUntil: 'networkidle' });
         await dateInput.waitFor({ timeout: 15000 });
-        check('後台8：重新整理後日期仍是 2026-12-09', (await dateInput.inputValue()) === '2026-12-09' && (await current.innerText()).trim() === '講師目前看到：11月累計報酬・12/9 匯款');
+        check('後台8：重新整理後日期仍是 2026-12-09', (await dateInput.inputValue()) === '2026-12-09' && (await current.innerText()).trim() === '講師目前看到：11月累計報酬（10/26～11/25）・12/9 匯款');
         await context.close();
 
         // 8 延伸：剛存的日期，講師端真的看到
         console.log('\n── 後台→講師端：admin 剛存的 12/9，講師開「我的報酬」');
         ({ context, page } = await teacherScenario(browser, base, {
             id: '後台存檔→講師端', now: TAIPEI_NOON('2026-10-20'), mode: 'ok',
-            expected: { title: '11月累計報酬', value: '$1,500', badge: '12/9 匯款', sub: '2 場・含待核准 $300' },
+            expected: { title: '11月累計報酬', value: '$5,650', badge: '12/9 匯款', sub: '10/26～11/25・4 場・含待核准 $300' },
         }));
         await context.close();
 
@@ -602,7 +622,8 @@ async function run() {
         await page.getByRole('heading', { name: '報酬登記中心' }).waitFor({ timeout: 15000 });
         const missingSection = page.locator('section[aria-labelledby="salary-payday-title"]');
         await missingSection.getByText(/需先套用資料庫更新/).waitFor({ timeout: 10000 });
-        check('後台10：表不存在時顯示「需先套用資料庫更新」', (await missingSection.getByText(/需先套用資料庫更新/).count()) === 1);
+        check('後台10：表不存在時顯示「需先套用資料庫更新（20261020160000_salary_payout_schedule.sql）」',
+            (await missingSection.getByText(/需先套用資料庫更新（20261020160000_salary_payout_schedule\.sql）/).count()) === 1, await missingSection.innerText());
         check('後台10：不顯示表單（沒有日期框、沒有儲存鈕、沒有「講師目前看到」）',
             (await missingSection.locator('input[type="date"]').count()) === 0 && (await missingSection.getByRole('button').count()) === 0
             && (await missingSection.getByText(/講師目前看到/).count()) === 0);
@@ -664,7 +685,7 @@ async function run() {
         await page.screenshot({ path: shot('admin-mobile-390-payday-section.png'), fullPage: false });
         await mDate.fill('2026-12-09');
         check('後台12：手機上改日期後出現預覽、「儲存」可按',
-            (await mSection.getByText('儲存後講師會看到「11月累計報酬・12/9 匯款」').count()) === 1 && await mButton.isEnabled());
+            (await mSection.getByText('儲存後講師會看到「11月累計報酬（10/26～11/25）・12/9 匯款」').count()) === 1 && await mButton.isEnabled());
         await mSection.scrollIntoViewIfNeeded();
         await page.waitForTimeout(500);  // 等按鈕的顏色轉場結束再截圖
         await page.screenshot({ path: shot('admin-mobile-390-preview.png'), fullPage: false });

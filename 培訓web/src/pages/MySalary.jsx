@@ -6,7 +6,7 @@ import { Wallet, TrendingUp, Calendar, AlertCircle, Plus, ExternalLink, ChevronD
 import { TERM_PERIOD_LABELS, courseCategoryConfig, courseCategoryFor, reportChannelFor, reportItemLabel } from '../lib/constants';
 import { isSafeHttpUrl } from '../lib/siteLinks';
 import { taipeiToday } from '../lib/salary';
-import { monthNameOf, payoutScheduleFromResponse, resolvePayout, shortDateOf, summarizePayrollMonth } from '../lib/salaryPayday';
+import { monthNameOf, payoutScheduleFromResponse, resolvePayout, shortDateOf, summarizePayrollPeriod } from '../lib/salaryPayday';
 
 const STATUS_LABELS = { pending: '待核准', approved: '已核准', paid: '已付款' };
 const STATUS_COLORS = {
@@ -151,9 +151,9 @@ const MySalary = () => {
     const [showSubmitSuccess, setShowSubmitSuccess] = useState(Boolean(location.state?.salaryReportSubmitted));
     const salaryLinks = useSalaryLinks();
     const pointsLink = salaryLinks.find(link => link.key === 'salary_points');
-    // 後台設定的匯款日（supabase/migrations/20261020150000_salary_payout_schedule.sql）；讀不到就用每月 10 號
+    // 後台設定的匯款日（supabase/migrations/20261020160000_salary_payout_schedule.sql）；讀不到就用每月 10 號
     const [payoutSchedule, setPayoutSchedule] = useState({ nextPayday: null, regularDay: null, failed: false });
-    const { payday: nextPayday, payrollMonth } = resolvePayout(payoutSchedule, taipeiToday());
+    const payout = resolvePayout(payoutSchedule, taipeiToday());
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -230,8 +230,8 @@ const MySalary = () => {
         return Object.entries(map).map(([m, v]) => ({ month: m, ...v })).sort((a, b) => b.month.localeCompare(a.month));
     }, [sessions]);
 
-    // 下次匯款日匯的那個月（例：12/10 匯 11 月）
-    const payroll = summarizePayrollMonth(sessions, payrollMonth);
+    // 下次匯款日匯的那一期（例：12/10 匯 11 月＝10/26～11/25）
+    const payroll = summarizePayrollPeriod(sessions, payout);
 
     if (loading) return <div className="p-12 text-center text-bauhaus-black/50 font-bold uppercase tracking-wide">載入中...</div>;
 
@@ -342,10 +342,11 @@ const MySalary = () => {
                 />
                 <BigStat
                     icon={Wallet}
-                    label={`${monthNameOf(payrollMonth)}累計報酬`}
+                    label={`${monthNameOf(payout.periodMonth)}累計報酬`}
                     value={fmt(payroll.total)}
-                    badge={`${shortDateOf(nextPayday)} 匯款${payoutSchedule.failed ? '（預估）' : ''}`}
+                    badge={`${shortDateOf(payout.payday)} 匯款${payoutSchedule.failed ? '（預估）' : ''}`}
                     sub={[
+                        `${shortDateOf(payout.periodStart)}～${shortDateOf(payout.periodEnd)}`,
                         `${payroll.count} 場`,
                         payroll.pendingTotal > 0 ? `含待核准 ${fmt(payroll.pendingTotal)}` : '',
                         payroll.awaitingPriceCount > 0 ? `${payroll.awaitingPriceCount} 筆待確認金額` : '',

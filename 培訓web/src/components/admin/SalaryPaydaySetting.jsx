@@ -16,8 +16,8 @@ import {
 const DAY_OPTIONS = Array.from({ length: PAYDAY_DAY_MAX - PAYDAY_DAY_MIN + 1 }, (_, i) => PAYDAY_DAY_MIN + i);
 
 const teacherSees = (schedule, today) => {
-    const { payday, payrollMonth } = resolvePayout(schedule, today);
-    return `${monthNameOf(payrollMonth)}累計報酬・${shortDateOf(payday)} 匯款`;
+    const { payday, periodMonth, periodStart, periodEnd } = resolvePayout(schedule, today);
+    return `${monthNameOf(periodMonth)}累計報酬（${shortDateOf(periodStart)}～${shortDateOf(periodEnd)}）・${shortDateOf(payday)} 匯款`;
 };
 const effectivePayday = (schedule, today) => resolvePayout(schedule, today).payday;
 
@@ -97,7 +97,7 @@ const SalaryPaydaySetting = () => {
                         <CalendarClock className="w-5 h-5" aria-hidden="true" /> 講師端匯款日
                     </h2>
                     <p className="text-xs text-bauhaus-black/60 font-medium mt-1">
-                        講師「我的報酬」黃卡顯示「上個月累計報酬」與這個日期。日期過了會自動跳到下個月的固定日；遇到假日要提前或延後，改「下次匯款日」就好。
+                        講師「我的報酬」黃卡顯示上一期（上月 26 日～本月 25 日）的累計報酬與這個日期。日期過了會自動跳到下個月的固定日；遇到假日要提前或延後，改「下次匯款日」就好。
                     </p>
                 </div>
                 {status === 'ready' && saved && (
@@ -111,7 +111,7 @@ const SalaryPaydaySetting = () => {
 
             {status === 'missing' && (
                 <p role="status" className="text-sm font-bold text-bauhaus-black mt-4 bg-bauhaus-yellow/30 border-2 border-bauhaus-black rounded-xl p-3">
-                    需先套用資料庫更新（20261020150000_salary_payout_schedule.sql）才能修改；目前講師端以每月 {DEFAULT_PAYDAY_DAY} 號計算。
+                    需先套用資料庫更新（20261020160000_salary_payout_schedule.sql）才能修改；目前講師端以每月 {DEFAULT_PAYDAY_DAY} 號計算。
                 </p>
             )}
 
