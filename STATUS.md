@@ -81,7 +81,7 @@ sonnet 看圖判讀：無破版；建議的欄位對齊、退回原因字級已�
 合作單位顯示 50 列＋展開鈕，無橫向捲軸、console 0 錯誤；zeabur 網域訪客：首頁載新版、直打 `/my/salary` 導回登入頁、console 0 錯誤。
 並行對話「講師累計報酬與匯款日期」（worktree `payday-card`）也在改 MySalary.jsx 統計卡，已傳訊告知合併時頂端 import 兩行會碰到。
 
-**說明文字更正（業主 2026-10-20「以上都同意」）**：分類盤點（分支 `data/reclassify-imported-other`）查出總表沒有「學校社團」，業主選方案 A＝只把楓葉體驗課改體驗課（`08_reclassify_maple_trial.sql`，待業主在 SQL Editor 執行，正式庫改 11 筆）；「其他課程」區說明改成「常態課、幼兒啟蒙、速解培訓、站櫃／擺攤，以及薪資總表裡登記為「其他」的課」（08 套用前後都正確），驗證 `verify:compensation-confirm:browser` 41/41、`verify:salary-fixes` 32/32、`verify:speed-salary:browser` 13/13、`npm test` 143/143。
+**說明文字更正（業主 2026-10-20「以上都同意」）**：分類盤點（分支 `data/reclassify-imported-other`）查出總表沒有「學校社團」，業主選方案 A＝只把楓葉體驗課改體驗課（`08_reclassify_maple_trial.sql`，待業主在 SQL Editor 執行，正式庫改 11 筆）；「其他課程」區說明改成「常態課、幼兒啟蒙、速解培訓、站櫃／擺攤，以及薪資總表裡登記為「其他」的課」（08 套用前後都正確），驗證 `verify:compensation-confirm:browser` 41/41、`verify:salary-fixes` 32/32、`verify:speed-salary:browser` 13/13、`npm test` 143/143。16:15:53 推 main f0dac3e；16:17 起兩網域各連續 5 次載到本機同名 `index-C6-AW5xv.js`，線上 `MySalary-BKstdgjw.js` 含新說明、舊句「也暫列在這裡」0 處（剩下的「學校社團」是合作單位區與舊表單的正確說明）；Chrome 開 teacher.dreamcube.tw `/my/salary`：三區正常、其他課程區顯示新說明、console 0 錯誤（業主帳號合作單位由 104 變 102 筆，時間上與同日 06 重複資料清理吻合，未逐筆核對）。
 
 **待業主**：① 在 SQL Editor 執行 `08_reclassify_maple_trial.sql`（預期結果摘要一列：trial 11 筆）；② 站內版已上線，考慮把「回報查詢表」試算表的分享範圍收緊（目前任何拿到連結的人都能選任一講師看紀錄）。
 
