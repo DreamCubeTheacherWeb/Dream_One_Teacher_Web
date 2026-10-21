@@ -539,14 +539,14 @@ async function run() {
         check('桌機 1280px 無水平溢出', (await overflowOf(page)) === 0);
         await context.close();
 
-        // ── mentor 權限照舊
+        // ── mentor：2026-10-22 起報酬登記中心只限 admin（輔導員只負責培訓，不碰錢與個資）
         appRole = 'mentor';
         context = await contextFor(browser, { width: 1280, height: 900 });
         page = await context.newPage();
-        await openPage(page, base);
-        await waitProgress(page, '已顯示全部 45 筆');
-        check('mentor 可進入且同樣預設 2026/10，看不到「回報選項管理」',
-            await page.getByLabel('月份').inputValue() === '2026-10' && await page.getByRole('link', { name: '回報選項管理' }).count() === 0);
+        await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
+        await page.waitForURL((url) => !url.pathname.startsWith('/admin'));
+        check('mentor 進 /admin/salary 被導離後台，報酬登記中心沒有渲染',
+            !new URL(page.url()).pathname.startsWith('/admin') && await page.getByRole('heading', { name: '報酬登記中心' }).count() === 0);
         await context.close();
         appRole = 'admin';
 

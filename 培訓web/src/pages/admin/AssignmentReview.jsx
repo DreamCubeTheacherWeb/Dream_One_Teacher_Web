@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { toYouTubeEmbedUrl as toEmbedUrl } from '../../lib/youtube';
 import { useAuth } from '../../context/AuthContext';
+import { fetchInstructorDirectory } from '../../lib/instructorDirectory';
 import { MessageSquare, User, Calendar, Play, Search, Filter, ChevronDown, Star, GraduationCap, Send, Clock, Trash2 } from 'lucide-react';
 
 const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習', '職員': '職員', '工讀生': '工讀生' };
@@ -26,6 +27,7 @@ const AssignmentReview = () => {
     const [feedbackAuthors, setFeedbackAuthors] = useState({});
 
     const isAdmin = profile?.role === 'admin';
+    const viewerRole = profile?.role;
 
     useEffect(() => {
         let cancelled = false;
@@ -59,10 +61,11 @@ const AssignmentReview = () => {
                 userData?.forEach((u) => { uMap[u.id] = u; });
                 setUsers(uMap);
 
-                const { data: instrData } = await supabase
-                    .from('instructors')
-                    .select('user_id, full_name, nickname, instructor_role')
-                    .in('user_id', uids);
+                const { data: instrData } = await fetchInstructorDirectory({
+                    role: viewerRole,
+                    columns: 'user_id, full_name, nickname, instructor_role',
+                    userIds: uids,
+                });
                 if (cancelled) return;
                 const iMap = {};
                 instrData?.forEach((i) => { iMap[i.user_id] = i; });
@@ -90,7 +93,7 @@ const AssignmentReview = () => {
                 if (authorUids.size > 0) {
                     const authorIds = [...authorUids];
                     const [{ data: authorInstr }, { data: authorUsers }] = await Promise.all([
-                        supabase.from('instructors').select('user_id, full_name, nickname').in('user_id', authorIds),
+                        fetchInstructorDirectory({ role: viewerRole, columns: 'user_id, full_name, nickname', userIds: authorIds }),
                         supabase.from('users').select('id, name, role').in('id', authorIds),
                     ]);
                     if (cancelled) return;
@@ -108,7 +111,7 @@ const AssignmentReview = () => {
             setLoading(false);
         })();
         return () => { cancelled = true; };
-    }, []);
+    }, [viewerRole]);
 
     const getFeedbackAuthorDisplay = (uid) => {
         const a = feedbackAuthors[uid];

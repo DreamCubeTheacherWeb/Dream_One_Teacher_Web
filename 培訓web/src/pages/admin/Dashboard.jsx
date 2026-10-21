@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
+import { fetchInstructorDirectory } from '../../lib/instructorDirectory';
 import {
     Plus, Edit2, Trash2, Eye, EyeOff, LayoutGrid, Users,
     ClipboardCheck, UserCog, BarChart3, Megaphone, ChevronRight,
@@ -24,6 +25,7 @@ const STATS_CONFIG = [
 const AdminDashboard = () => {
     const { profile } = useAuth();
     const isAdmin = profile?.role === 'admin';
+    const isMentor = profile?.role === 'mentor';
     const [courses, setCourses] = useState([]);
     const [stats, setStats] = useState({ teachers: 0, courses: 0, assignments: 0 });
     const [loading, setLoading] = useState(true);
@@ -36,7 +38,10 @@ const AdminDashboard = () => {
                 .order('order', { ascending: true });
             setCourses(coursesData || []);
 
-            const { count: instructorCount } = await supabase.from('instructors').select('*', { count: 'exact', head: true });
+            // 輔導員讀不到 instructors 表（個資），人數改由只回非敏感欄位的名冊函式計算
+            const instructorCount = isMentor
+                ? (await fetchInstructorDirectory({ role: 'mentor' })).data?.length
+                : (await supabase.from('instructors').select('*', { count: 'exact', head: true })).count;
             const { count: assignCount } = await supabase.from('assignments').select('*', { count: 'exact', head: true }).is('feedback', null);
 
             setStats({
@@ -48,7 +53,7 @@ const AdminDashboard = () => {
         };
 
         fetchData();
-    }, []);
+    }, [isMentor]);
 
     const toggleCourseStatus = async (course) => {
         const { error } = await supabase
@@ -122,12 +127,13 @@ const AdminDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <NavCard to="/admin/assignments" icon={ClipboardCheck} title="作業審核中心" desc="查看與回覆講師繳交的作業" color="amber" />
                     <NavCard to="/admin/progress" icon={BarChart3} title="培訓進度總覽" desc="檢視所有講師學習進度與狀態" color="emerald" />
-                    <NavCard to="/admin/instructors" icon={ContactRound} title="講師資料總覽" desc="查看所有講師個人資料與文件" color="purple" />
-                    <NavCard to="/admin/salary" icon={Wallet} title="報酬登記中心" desc="登記每月報酬、查看異常與付款狀態" color="rose" />
+                    <NavCard to="/admin/instructors" icon={ContactRound} title="講師資料總覽" desc={isAdmin ? '查看所有講師個人資料與文件' : '查看講師名冊（姓名、等級、狀態）'} color="purple" />
+                    {/* 報酬與表單（含身分證、銀行資料）只限管理員；輔導員只負責培訓（2026-10-22） */}
+                    {isAdmin && <NavCard to="/admin/salary" icon={Wallet} title="報酬登記中心" desc="登記每月報酬、查看異常與付款狀態" color="rose" />}
                     {isAdmin && <NavCard to="/admin/salary/export" icon={FileSpreadsheet} title="報酬供應商 CSV" desc="依老師、日期區間或等級匯出財務供應商格式" color="blue" />}
                     {isAdmin && <NavCard to="/admin/salary/payout" icon={Banknote} title="月結匯款" desc="把一期已核准的報酬匯出成銀行批次轉帳檔與四分頁 Excel" color="emerald" />}
                     {isAdmin && <NavCard to="/admin/salary/options" icon={ListChecks} title="回報選項管理" desc="設定講師課程回報的期間、合作單位、營隊梯次下拉選項" color="amber" />}
-                    <NavCard to="/admin/download-center" icon={Download} title="表單預覽與下載" desc="預覽講師匯款申請書與其他自動填表，並支援批次下載" color="emerald" />
+                    {isAdmin && <NavCard to="/admin/download-center" icon={Download} title="表單預覽與下載" desc="預覽講師匯款申請書與其他自動填表，並支援批次下載" color="emerald" />}
                 </div>
             </div>
 
