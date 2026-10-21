@@ -1,40 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { LogIn, LogOut, BookOpen, LayoutDashboard, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Trophy, Timer, LibraryBig } from 'lucide-react';
+import { LogIn, LogOut, BookOpen, LayoutDashboard, LayoutGrid, UserCircle, Bell, Check, CheckCheck, Megaphone, Star, ThumbsUp, Menu, X, FileSignature, Wallet, Timer, LibraryBig } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import ProfileCompleteGate from './ProfileCompleteGate';
+import OnboardingTour from './OnboardingTour';
+import ProfileAvatar from './ProfileAvatar';
 import { INSTRUCTOR_CONTRACTS_ENABLED } from '../lib/featureFlags';
 import { resolveHttpUrl, TEACHING_MATERIALS_LINK } from '../lib/siteLinks';
+import { hasSeenTour, markTourSeen, OPEN_TOUR_EVENT } from '../lib/onboarding';
+import { isApprovedUser } from '../lib/roles';
 
 const ROLE_LABELS = { admin: '管理員', mentor: '輔導員', teacher: '講師', pending: '待審核' };
-
-const PenguinAvatar = () => (
-    <svg viewBox="0 0 64 64" className="w-full h-full" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="32" cy="32" r="32" fill="#e2e8f0" />
-        <ellipse cx="32" cy="38" rx="16" ry="18" fill="#334155" />
-        <ellipse cx="32" cy="40" rx="10" ry="14" fill="#f1f5f9" />
-        <circle cx="26" cy="30" r="3" fill="white" />
-        <circle cx="38" cy="30" r="3" fill="white" />
-        <circle cx="27" cy="30" r="1.5" fill="#1e293b" />
-        <circle cx="39" cy="30" r="1.5" fill="#1e293b" />
-        <ellipse cx="32" cy="35" rx="3" ry="2" fill="#f59e0b" />
-    </svg>
-);
-
-const ProfileAvatar = ({ src, alt }) => {
-    const [failedSrc, setFailedSrc] = useState(null);
-    if (!src || failedSrc === src) return <PenguinAvatar />;
-    return (
-        <img
-            src={src}
-            alt={alt}
-            referrerPolicy="no-referrer"
-            onError={() => setFailedSrc(src)}
-            className="w-full h-full object-cover"
-        />
-    );
-};
 
 const Layout = ({ children }) => {
     const { user, profile, instructorProfile, avatarUrl, loading, signOut, accessError } = useAuth();
@@ -43,6 +20,7 @@ const Layout = ({ children }) => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [teachingMaterialsUrl, setTeachingMaterialsUrl] = useState(TEACHING_MATERIALS_LINK.url);
     const [profileComplete, setProfileComplete] = useState(null);
+    const [tourOpen, setTourOpen] = useState(false);
 
     useEffect(() => {
         if (loading || !user || !profile) return;
@@ -95,13 +73,37 @@ const Layout = ({ children }) => {
         return () => { active = false; };
     }, [loading, user, profile]);
 
-    // 路由切換時關閉手機選單
-    useEffect(() => { setMobileMenuOpen(false); }, [location.pathname]);
+    // 路由切換時關閉手機選單與新手導覽（導覽沒看完就換頁，不記「看過了」，下次進「關於我」會再跳）
+    useEffect(() => { setMobileMenuOpen(false); setTourOpen(false); }, [location.pathname]);
+
+    // 新手導覽：已核准帳號第一次進「關於我」、且個人資料已填齊（不然會被導去個人資料頁）時自動跳出；
+    // 「關於我」頁的「重看導覽」按鈕送 OPEN_TOUR_EVENT 再打開。只在 /me 自動跳，其他頁面不受影響。
+    const tourDismissedRef = useRef(false); // 裝置存不了紀錄時，同一次瀏覽關掉後也不再自動跳
+    const canShowTour = Boolean(user) && isApprovedUser(profile);
+    useEffect(() => {
+        if (!canShowTour || location.pathname !== '/me' || profileComplete !== true) return;
+        if (tourDismissedRef.current || hasSeenTour(user.id)) return;
+        setTourOpen(true);
+    }, [canShowTour, location.pathname, profileComplete, user]);
+    useEffect(() => {
+        if (!canShowTour) return undefined;
+        const openTour = () => setTourOpen(true);
+        window.addEventListener(OPEN_TOUR_EVENT, openTour);
+        return () => window.removeEventListener(OPEN_TOUR_EVENT, openTour);
+    }, [canShowTour]);
+    const closeTour = useCallback(() => {
+        tourDismissedRef.current = true;
+        if (user) markTourSeen(user.id);
+        setTourOpen(false);
+    }, [user]);
 
     const displayName = instructorProfile?.nickname || instructorProfile?.full_name || profile?.name || user?.email?.split('@')[0] || '';
 
     // Bauhaus：目前頁面色塊指示（選中＝黑底白字，未選＝hover 變灰底）
-    const isActivePath = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
+    // 排行榜從選單收進「關於我」（業主 2026-10-21），在排行榜頁時「關於我」維持選中
+    const NAV_ACTIVE_ALIASES = { '/me': ['/leaderboard'] };
+    const isActivePath = (path) => [path, ...(NAV_ACTIVE_ALIASES[path] || [])]
+        .some(p => location.pathname === p || location.pathname.startsWith(`${p}/`));
     const navLinkClass = (path) =>
         `flex items-center gap-1.5 px-3 py-2 text-sm font-bold uppercase tracking-wide whitespace-nowrap rounded-lg transition-colors duration-200 ${
             isActivePath(path) ? 'bg-bauhaus-black text-white' : 'text-bauhaus-black hover:bg-bauhaus-muted'
@@ -136,6 +138,13 @@ const Layout = ({ children }) => {
                     <nav className={`hidden ${user ? 'xl:flex' : 'md:flex'} items-center gap-1`}>
                         {user ? (
                             <>
+                                {/* 選單順序（業主 2026-10-21）：關於我、我的課程、我的報酬優先，方塊競速往後；排行榜從「關於我」進入 */}
+                                {profile && profile.role !== 'pending' && (
+                                    <Link to="/me" className={navLinkClass('/me')}>
+                                        <LayoutGrid className="w-4 h-4" />
+                                        關於我
+                                    </Link>
+                                )}
                                 {profile && profile.role !== 'pending' ? (
                                     <Link to="/courses" className={navLinkClass('/courses')}>
                                         <BookOpen className="w-4 h-4" />
@@ -149,6 +158,12 @@ const Layout = ({ children }) => {
                                         <BookOpen className="w-4 h-4" />
                                         我的課程
                                     </button>
+                                )}
+                                {profile && profile.role !== 'pending' && (
+                                    <Link to="/my/salary" className={navLinkClass('/my/salary')}>
+                                        <Wallet className="w-4 h-4" />
+                                        我的報酬
+                                    </Link>
                                 )}
                                 {profile && profile.role !== 'pending' && (
                                     profileComplete === true ? (
@@ -177,12 +192,6 @@ const Layout = ({ children }) => {
                                     )
                                 )}
                                 {profile && profile.role !== 'pending' && (
-                                    <Link to="/leaderboard" className={navLinkClass('/leaderboard')}>
-                                        <Trophy className="w-4 h-4" />
-                                        排行榜
-                                    </Link>
-                                )}
-                                {profile && profile.role !== 'pending' && (
                                     <Link to="/cube" className={navLinkClass('/cube')}>
                                         <Timer className="w-4 h-4" />
                                         方塊競速
@@ -192,12 +201,6 @@ const Layout = ({ children }) => {
                                     <UserCircle className="w-4 h-4" />
                                     個人資料
                                 </Link>
-                                {profile && profile.role !== 'pending' && (
-                                    <Link to="/my/salary" className={navLinkClass('/my/salary')}>
-                                        <Wallet className="w-4 h-4" />
-                                        我的報酬
-                                    </Link>
-                                )}
                                 {(profile?.role === 'admin' || profile?.role === 'mentor') && (
                                     <Link to="/admin" className={navLinkClass('/admin')}>
                                         <LayoutDashboard className="w-4 h-4" />
@@ -272,7 +275,13 @@ const Layout = ({ children }) => {
                                         </div>
                                     </Link>
 
-                                    {/* 導航連結 */}
+                                    {/* 導航連結（順序同桌面版） */}
+                                    {profile && profile.role !== 'pending' && (
+                                        <Link to="/me" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/me')}>
+                                            <LayoutGrid className="w-5 h-5" />
+                                            關於我
+                                        </Link>
+                                    )}
                                     {profile && profile.role !== 'pending' ? (
                                         <Link to="/courses" className={mobileNavLinkClass('/courses')}>
                                             <BookOpen className="w-5 h-5" />
@@ -286,6 +295,12 @@ const Layout = ({ children }) => {
                                             <BookOpen className="w-5 h-5" />
                                             我的課程
                                         </button>
+                                    )}
+                                    {profile && profile.role !== 'pending' && (
+                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/my/salary')}>
+                                            <Wallet className="w-5 h-5" />
+                                            我的報酬
+                                        </Link>
                                     )}
                                     {profile && profile.role !== 'pending' && (
                                         profileComplete === true ? (
@@ -315,12 +330,6 @@ const Layout = ({ children }) => {
                                         )
                                     )}
                                     {profile && profile.role !== 'pending' && (
-                                        <Link to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/leaderboard')}>
-                                            <Trophy className="w-5 h-5" />
-                                            排行榜
-                                        </Link>
-                                    )}
-                                    {profile && profile.role !== 'pending' && (
                                         <Link to="/cube" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/cube')}>
                                             <Timer className="w-5 h-5" />
                                             方塊競速
@@ -330,12 +339,6 @@ const Layout = ({ children }) => {
                                         <UserCircle className="w-5 h-5" />
                                         個人資料
                                     </Link>
-                                    {profile && profile.role !== 'pending' && (
-                                        <Link to="/my/salary" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/my/salary')}>
-                                            <Wallet className="w-5 h-5" />
-                                            我的報酬
-                                        </Link>
-                                    )}
                                     {(profile?.role === 'admin' || profile?.role === 'mentor') && (
                                         <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className={mobileNavLinkClass('/admin')}>
                                             <LayoutDashboard className="w-5 h-5" />
@@ -370,6 +373,7 @@ const Layout = ({ children }) => {
             )}
 
             <ProfileCompleteGate onCompletionChange={setProfileComplete} />
+            {tourOpen && canShowTour && <OnboardingTour onClose={closeTour} />}
 
             <main className="flex-1 max-w-7xl mx-auto w-full">
                 {children}
