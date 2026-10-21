@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, LayoutGrid, LibraryBig, Sparkles, Wallet, X } from 'lucide-react';
 
 // 新手導覽 5 格（業主 2026-10-21：「彈出式視窗引導大家，3～5 格，引導老師學習這個頁面」）。
-// 文案為初稿，待業主審；改內容後若要大家再看一次，把 lib/onboarding.js 的 TOUR_VERSION 加一。
+// 文案業主 2026-10-22 同意照此版上線；改內容後若要大家再看一次，把 lib/onboarding.js 的 TOUR_VERSION 加一。
 const TOUR_STEPS = [
     {
         icon: Sparkles,
