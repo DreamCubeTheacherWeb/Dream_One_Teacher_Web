@@ -1,23 +1,35 @@
 #!/usr/bin/env node
-// 認領啟用＋電子簽約線上線前的「正式庫實際套用順序」模擬（2026-10-21）。
+// 認領啟用＋電子簽約線上線前的「正式庫實際套用順序」模擬（2026-10-21；2026-10-22 加入 main 第三批兩支 migration）。
 //
 // 正式庫已依序套過：20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000
-//   → 20261020150000 → 20261020160000；這次要接著套 20261019233000 → 20261020100000。
-// 本腳本在隔離 PostgreSQL 依上述順序套用（E2E_MIGRATION_ORDER，見 scripts/e2e/lib/db.mjs），
+//   → 20261020150000 → 20261020160000；這次要接著套 20261019233000 → 20261020100000，
+//   另外還有 main 第三批尚未套的 20261022093700（partner_no）與 20261022010000（輔導員權限收緊）。
+// 總指揮會先套 20261022093700、20261022010000，再套 233000、100000（primary）；
+// 也要確認反過來（233000、100000 先，兩支 2026-10-22 後套）同樣全過（variant）。
+// 本腳本在隔離 PostgreSQL 依各順序套用（E2E_MIGRATION_ORDER，見 scripts/e2e/lib/db.mjs），
 // 確認 20261020100000 之後 20261020140000 的「輔導員不能讀別人已簽契約檔」仍成立，再重跑 140000 一次再確認一次。
 // verify-claim-activation-esign 與 e2e:onboarding 用同一個環境變數跑正式庫順序，見 STATUS.md。
 //
 // 用法：LC_ALL=en_US.UTF-8 node scripts/verify-esign-production-order.mjs
+//   預設兩種順序都跑；ESIGN_PROD_ORDER_ONLY=primary 或 variant 只跑其中一種。
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { TempPostgres, listMigrationFiles, orderMigrationFiles } from './e2e/lib/db.mjs';
 
-export const PRODUCTION_ORDER = [
+const ALREADY_APPLIED = [
   '20261020010000', '20261019103000', '20261020120000', '20261020130000', '20261020140000',
   '20261020150000', '20261020160000',
-  '20261019233000', '20261020100000',
-].join(',');
+];
+const ESIGN = ['20261019233000', '20261020100000'];
+const MAIN_THIRD = ['20261022093700', '20261022010000'];
+
+export const PRODUCTION_ORDERS = {
+  primary: [...ALREADY_APPLIED, ...MAIN_THIRD, ...ESIGN],
+  variant: [...ALREADY_APPLIED, ...ESIGN, ...MAIN_THIRD],
+};
+// 相容舊用法：單一順序（primary）的逗號字串
+export const PRODUCTION_ORDER = PRODUCTION_ORDERS.primary.join(',');
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REVOKE = path.join(appDir, 'supabase/migrations/20261020140000_revoke_mentor_signed_contract_reads.sql');
@@ -30,12 +42,14 @@ const check = (name, condition, detail = '') => {
 };
 const lit = (value) => `'${String(value).replace(/'/g, "''")}'`;
 
-const db = new TempPostgres({ label: 'esign-prod-order' });
+const runOrder = async (orderName, orderList) => {
+const db = new TempPostgres({ label: `esign-po-${orderName.slice(0, 3)}` });
+const tag = `[${orderName}] `;
 try {
-  process.env.E2E_MIGRATION_ORDER = PRODUCTION_ORDER;
+  process.env.E2E_MIGRATION_ORDER = orderList.join(',');
   const ordered = orderMigrationFiles(listMigrationFiles(appDir));
-  const tail = ordered.slice(-9).map((name) => name.slice(0, 14));
-  check('套用順序的最後 9 支＝正式庫已套 7 支＋本次 233000、100000', tail.join(',') === PRODUCTION_ORDER, tail.join(' → '));
+  const tail = ordered.slice(-orderList.length).map((name) => name.slice(0, 14));
+  check(`${tag}套用順序的最後 ${orderList.length} 支＝指定順序`, tail.join(',') === orderList.join(','), tail.join(' → '));
 
   await db.start();
   // after-chain 底座只補 users.role 的 mentor（正式庫在版控外已有），與 e2e:onboarding 相同
@@ -43,8 +57,8 @@ try {
     bootstrapFile: path.join(appDir, 'scripts/e2e/bootstrap.sql'),
     afterChainFile: path.join(appDir, 'scripts/e2e/bootstrap-after-chain.sql'),
   });
-  check(`依正式庫順序套用全部 SQL 成功（${chain.applied.length} 個檔）`,
-    chain.applied.at(-2) === 'supabase/migrations/20261020100000_claim_activation_esign_evidence.sql', chain.applied.slice(-4, -1).join(' → '));
+  check(`${tag}依正式庫順序套用全部 SQL 成功（${chain.applied.length} 個檔）`,
+    path.basename(chain.applied.at(-2)).startsWith(orderList.at(-1)), chain.applied.slice(-4, -1).join(' → '));
 
   const su = (sql) => db.psqlSync(sql).stdout;
   const users = {};
@@ -72,17 +86,17 @@ try {
     const policyText = policies();
     const policyCount = Number(su(`SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'
       AND cmd = 'SELECT' AND coalesce(qual, '') LIKE '%contract-documents%';`));
-    check(`${stage}：contract-documents 的 SELECT 政策只有 1 條「read contract documents scoped」`,
+    check(`${tag}${stage}：contract-documents 的 SELECT 政策只有 1 條「read contract documents scoped」`,
       policyCount === 1 && policyText.startsWith('read contract documents scoped ::'), policyText.slice(0, 160));
-    check(`${stage}：政策條件沒有「admin＋mentor 讀整個 bucket」`,
+    check(`${tag}${stage}：政策條件沒有「admin＋mentor 讀整個 bucket」`,
       !/role\s*=\s*ANY\s*\(ARRAY\['admin'::text,\s*'mentor'::text\]\)/.test(policyText) && !/IN \('admin', 'mentor'\)/.test(policyText));
     const mentor = visible('mentor');
-    check(`${stage}：輔導員讀不到任何人的 signed/、讀得到範本`, mentor === 'templates/contract/v3.pdf', `mentor 看到：${mentor}`);
+    check(`${tag}${stage}：輔導員讀不到任何人的 signed/、讀得到範本`, mentor === 'templates/contract/v3.pdf', `mentor 看到：${mentor}`);
     const teacher = visible('teacher');
-    check(`${stage}：講師只讀得到自己的 signed/＋範本`,
+    check(`${tag}${stage}：講師只讀得到自己的 signed/＋範本`,
       teacher === [`signed/${users.teacher}/contract_1.pdf`, 'templates/contract/v3.pdf'].sort().join(','), `teacher 看到：${teacher}`);
     const admin = visible('admin');
-    check(`${stage}：管理員讀得到全部（3 個檔）`, admin.split(',').length === 3, `admin 看到：${admin}`);
+    check(`${tag}${stage}：管理員讀得到全部（3 個檔）`, admin.split(',').length === 3, `admin 看到：${admin}`);
   };
 
   verifyPolicy('套完 100000 後（未重跑 140000）');
@@ -93,6 +107,13 @@ try {
   console.log(`FAIL  執行中斷：${error.message}`);
 } finally {
   await db.stop().catch(() => {});
+}
+};
+
+const only = process.env.ESIGN_PROD_ORDER_ONLY;
+for (const [orderName, orderList] of Object.entries(PRODUCTION_ORDERS)) {
+  if (only && only !== orderName) continue;
+  await runOrder(orderName, orderList);
 }
 console.log(`=== ${pass}/${pass + fail} PASS ===`);
 process.exit(fail ? 1 : 0);

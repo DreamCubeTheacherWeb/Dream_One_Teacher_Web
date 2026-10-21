@@ -6,7 +6,7 @@
  *   - 刪除空位（只限乾淨的空位）
  *   - /admin/teachers：待審核帳號旁的同名空位警示
  *   - /admin：老師資料追蹤卡
- *   - 輔導員：看不到簽約紀錄時改顯示「資料已完整」
+ *   - 輔導員（20261022010000 起只拿到名冊）：沒有追蹤卡、進度篩選與進度欄，也不查簽約／啟用紀錄
  * 用法：node scripts/verify-teacher-progress-ui.mjs（會先 npm run build，再自己起 preview）
  */
 import assert from 'node:assert/strict';
@@ -141,6 +141,10 @@ const routeHandler = (baseUrl, { user, session, profile }) => async (route) => {
     const name = url.pathname.split('/').pop();
     rpcCalls.push(name);
     if (name === 'claim_my_precreated_instructor') return respond(route, { status: 'staff' });
+    if (name === 'mentor_instructor_directory') {
+      const keys = ['id', 'user_id', 'full_name', 'nickname', 'instructor_role', 'employment_status', 'teaching_regions', 'speed_qualification'];
+      return respond(route, instructors.map((item) => Object.fromEntries(keys.map((key) => [key, item[key] ?? null]))));
+    }
     return respond(route, null);
   }
   if (!url.pathname.startsWith('/rest/v1/')) return respond(route, {}, 404);
@@ -180,7 +184,9 @@ const routeHandler = (baseUrl, { user, session, profile }) => async (route) => {
   } else if (table === 'instructors') {
     const idFilter = url.searchParams.get('id');
     const userFilter = url.searchParams.get('user_id');
-    if (idFilter) rows = instructors.filter((item) => idFilter === `eq.${item.id}`);
+    // 20261022010000 起輔導員讀不到講師主檔表（只能走名冊函式）
+    if (profile.role === 'mentor') rows = [];
+    else if (idFilter) rows = instructors.filter((item) => idFilter === `eq.${item.id}`);
     else if (userFilter) rows = instructors.filter((item) => userFilter === `eq.${item.user_id}`);
     else rows = instructors;
   } else if (table === 'instructor_contracts') {
@@ -508,36 +514,29 @@ async function main() {
       await context.close();
     }
 
-    // ═════════ 輔導員：讀不到簽約紀錄 ═════════
+    // ═════════ 輔導員：只拿到名冊 ═════════
     {
       contractReads = 0;
+      rpcCalls = [];
       const { context, page } = await newPage('mentor');
       await page.goto(`${baseUrl}/admin`, { waitUntil: 'networkidle' });
-      await step('輔導員的追蹤卡不含待簽約，並註明簽約狀態僅管理員可見', async () => {
-        const card = page.getByRole('link', { name: /老師資料追蹤，還沒完成 5 位/ });
-        await card.waitFor({ timeout: 5000 });
-        const text = await card.innerText();
-        // 啟用紀錄也只有管理員讀得到：輔導員看不到「待確認 Email」，「待信箱驗證」改用主檔的已確認 Email 判斷
-        assert.match(text, /未認領 3・待審核 1・待信箱驗證 0・資料未完整 1（簽約狀態僅管理員可見）/);
-        assert.doesNotMatch(text, /待簽約|待確認 Email/);
+      await step('輔導員的後台首頁沒有「老師資料追蹤」卡（要讀講師主檔與簽約／啟用紀錄）', async () => {
+        await page.getByText('後台管理總覽').waitFor({ timeout: 5000 });
+        assert.equal(await page.getByRole('link', { name: /老師資料追蹤/ }).count(), 0);
+        assert.equal(contractReads, 0);
       });
       await page.goto(`${baseUrl}/admin/instructors?progress=todo`, { waitUntil: 'networkidle' });
       await page.locator('tbody tr').first().waitFor();
-      await step('輔導員不查簽約紀錄；資料完整的人顯示「資料已完整」而不是待簽約／已完成', async () => {
+      await step('輔導員只看名冊：走名冊函式、不查簽約紀錄；沒有進度篩選／進度欄／新增講師／刪除空位', async () => {
         assert.equal(contractReads, 0);
-        await selectProgress(page, 'all');
-        assert.equal(await progressOf(page, '陳完整'), 'profile_ready');
-        assert.equal(await progressOf(page, '林已簽'), 'profile_ready');
-        assert.equal(await page.locator('[data-progress-filter="awaiting_contract"]').count(), 0);
-        assert.equal(await page.locator('[data-progress-filter="awaiting_email_confirm"]').count(), 0);
-        assert.equal(await chipText(page, 'awaiting_email_verify'), '待信箱驗證 0');
-        assert.equal(await chipText(page, 'profile_ready'), '資料已完整 2');
+        assert.ok(rpcCalls.includes('mentor_instructor_directory'), '應呼叫名冊函式');
+        await page.locator('tbody tr').filter({ hasText: '陳完整' }).first().waitFor({ timeout: 5000 });
+        assert.equal(await page.locator('[data-progress-filter]').count(), 0);
+        assert.equal(await page.locator('[data-progress]').count(), 0);
         assert.equal(await page.getByRole('button', { name: '新增講師' }).count(), 0);
         assert.equal(await page.getByRole('button', { name: '刪除空位' }).count(), 0);
-        // 網址指到看不到的階段時，不會變成空白清單
-        await page.goto(`${baseUrl}/admin/instructors?progress=awaiting_contract`, { waitUntil: 'networkidle' });
-        await page.locator('tbody tr').first().waitFor();
-        assert.equal(await page.locator('[data-progress-filter="all"]').getAttribute('aria-pressed'), 'true');
+        // 網址帶了進度篩選也不會把名冊篩成空白
+        assert.ok(await page.locator('tbody tr').count() >= 5);
       });
       await context.close();
     }

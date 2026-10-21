@@ -216,7 +216,7 @@ export async function scenarioAdminTeacherManager(ctx) {
   }
 }
 
-// ═══ ADM-5 輔導員視角：看得到資料進度，看不到簽約（合約管理頁、簽約紀錄、證據都讀不到）═══
+// ═══ ADM-5 輔導員視角：只看名冊（沒有資料進度、讀不到講師主檔），看不到簽約（合約管理頁、簽約紀錄、證據都讀不到）═══
 export async function scenarioAdminMentor(ctx) {
   const r = ctx.r;
   const { api } = ctx;
@@ -230,10 +230,20 @@ export async function scenarioAdminMentor(ctx) {
   const s = await openAs(ctx.browser, ctx.stack, mentor);
   try {
     await goto(ctx, s, '/admin/instructors');
-    const chips = await readProgressChips(s.page);
-    r.check('ADM 輔導員看得到資料進度篩選，但沒有「待簽約／已完成」，改為「資料已完整」',
-      Boolean(chips.profile_ready) && !chips.awaiting_contract && !chips.complete && Boolean(chips.unclaimed), Object.keys(chips).join(','));
-    r.check('ADM 輔導員畫面說明「簽約狀態只有管理員看得到」', await s.page.getByText('簽約狀態只有管理員看得到').isVisible());
+    await sleep(1500);
+    // 2026-10-22（migration 20261022010000）：輔導員讀不到 instructors 表，只能走名冊函式（非敏感欄位）；
+    // 資料進度要靠個資欄位才算得準，所以輔導員的畫面不顯示進度篩選、進度欄與進度標籤。
+    r.check('ADM 輔導員看不到資料進度篩選／進度欄（輔導員只拿到名冊）',
+      (await s.page.locator('[data-progress-filter]').count()) === 0
+      && (await s.page.locator('[data-progress]').count()) === 0
+      && !(await s.page.getByText('資料進度').first().isVisible().catch(() => false)));
+    const instructorsRest = await api.rest(mentor.token, 'GET', 'instructors?select=id');
+    r.check('ADM 輔導員用 REST 直接讀講師主檔拿不到任何列', Array.isArray(instructorsRest.data) && instructorsRest.data.length === 0, JSON.stringify(instructorsRest.data)?.slice(0, 80));
+    const directory = await api.rpc(mentor.token, 'mentor_instructor_directory', {});
+    const dirKeys = Array.isArray(directory.data) && directory.data[0] ? Object.keys(directory.data[0]).sort().join(',') : '';
+    r.check('ADM 輔導員走名冊函式拿得到講師，且只有非敏感欄位',
+      Array.isArray(directory.data) && directory.data.length > 0
+      && dirKeys === 'employment_status,full_name,id,instructor_role,nickname,speed_qualification,teaching_regions,user_id', dirKeys);
     await dualShot(ctx, s, 'ADM-07-mentor-progress');
     await goto(ctx, s, '/admin/contracts');
     await sleep(1500);

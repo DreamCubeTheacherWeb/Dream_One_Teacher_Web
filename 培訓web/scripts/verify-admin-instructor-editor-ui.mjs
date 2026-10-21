@@ -199,11 +199,9 @@ try {
     const mentorPage = await mentorContext.newPage();
     await mentorPage.goto(`${baseUrl}/admin/instructors`, { waitUntil: 'networkidle' });
     assert.equal(await mentorPage.getByRole('link', { name: '編輯資料' }).count(), 0);
-    // 輔導員讀不到簽約紀錄：進度篩選改成「資料已完整」，不顯示待簽約／已完成，也沒有新增講師按鈕
+    // 2026-10-22（20261022010000）：輔導員只拿到名冊，進度要靠個資欄位才算得準，所以不顯示資料進度篩選；也沒有新增講師按鈕
     const mentorProgress = mentorPage.getByRole('group', { name: '資料進度篩選' });
-    assert.equal(await mentorProgress.getByRole('button', { name: '資料已完整' }).count(), 1);
-    assert.equal(await mentorProgress.getByRole('button', { name: '待簽約' }).count(), 0);
-    assert.equal(await mentorProgress.getByRole('button', { name: '已完成' }).count(), 0);
+    assert.equal(await mentorProgress.count(), 0);
     assert.equal(await mentorPage.getByRole('button', { name: '新增講師' }).count(), 0);
     await mentorPage.goto(`${baseUrl}/admin/instructors/${instructorId}/edit`, { waitUntil: 'networkidle' });
     await mentorPage.waitForURL(`${baseUrl}/`);

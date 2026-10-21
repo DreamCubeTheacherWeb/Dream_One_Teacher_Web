@@ -14,7 +14,7 @@
  *   B1 進度新增「待確認 Email」「待信箱驗證」，數字與列標籤正確；追蹤卡同步
  *   B2 admin 每列有「確認 Email」：必填檢查、送出 admin_confirm_instructor_email 的參數、錯誤訊息、成功提示
  *   B3 展開列顯示已確認 Email、確認時間與方式、管道註記
- *   B4 輔導員讀不到啟用紀錄：沒有確認按鈕、沒有「待確認 Email」，仍可用已確認 Email 判出「待信箱驗證」
+ *   B4 輔導員只拿到名冊（migration 20261022010000）：不查啟用紀錄、沒有確認按鈕、沒有進度篩選／進度欄，也不能展開看 Email
  *   B5 手機 390px：確認 Email 視窗在視窗內且無水平溢出
  * 用法：node scripts/verify-activation-esign-ui.mjs（會先 npm run build，再自己起 preview）
  */
@@ -237,6 +237,10 @@ const adminRoutes = (baseUrl, role) => async (route) => {
       if (target) Object.assign(target, { confirmed_email: body.p_email, confirmed_email_at: now, confirmed_email_method: 'admin_trusted_channel', confirmed_email_note: body.p_note });
       return respond(route, { status: 'confirmed' });
     }
+    if (name === 'mentor_instructor_directory') {
+      const keys = ['id', 'user_id', 'full_name', 'nickname', 'instructor_role', 'employment_status', 'teaching_regions', 'speed_qualification'];
+      return respond(route, adminInstructors.map((item) => Object.fromEntries(keys.map((key) => [key, item[key] ?? null]))));
+    }
     return respond(route, null);
   }
   if (!url.pathname.startsWith('/rest/v1/')) return respond(route, {}, 404);
@@ -255,7 +259,9 @@ const adminRoutes = (baseUrl, role) => async (route) => {
   } else if (table === 'instructors') {
     const idFilter = url.searchParams.get('id');
     const userFilter = url.searchParams.get('user_id');
-    if (idFilter) rows = adminInstructors.filter((item) => idFilter === `eq.${item.id}`);
+    // 20261022010000 起輔導員讀不到講師主檔表（只能走名冊函式）
+    if (role === 'mentor') rows = [];
+    else if (idFilter) rows = adminInstructors.filter((item) => idFilter === `eq.${item.id}`);
     else if (userFilter) rows = adminInstructors.filter((item) => userFilter === `eq.${item.user_id}`);
     else rows = adminInstructors;
   } else if (table === 'instructor_contracts') {
@@ -552,25 +558,22 @@ async function main() {
 
     adminInstructors = makeAdminInstructors();
     activationReads = 0;
+    adminRpcCalls = [];
     {
       const { context, page } = await adminPage('mentor');
       await page.goto(`${baseUrl}/admin/instructors`, { waitUntil: 'networkidle' });
       await page.locator('tbody tr').first().waitFor();
-      await step('B4 輔導員：不查啟用紀錄、沒有確認按鈕與「待確認 Email」；仍用已確認 Email 判出「待信箱驗證」', async () => {
+      await step('B4 輔導員只拿到名冊：走名冊函式、不查啟用紀錄；沒有確認按鈕、進度篩選、進度欄，也不能展開看 Email', async () => {
         assert.equal(activationReads, 0);
+        assert.ok(adminRpcCalls.some((call) => call.name === 'mentor_instructor_directory'), '應呼叫名冊函式');
+        await rowOf(page, '周待驗證').first().waitFor({ timeout: 5000 });
         assert.equal(await page.getByRole('button', { name: '確認 Email' }).count(), 0);
-        assert.equal(await page.locator('[data-progress-filter="awaiting_email_confirm"]').count(), 0);
-        assert.equal(await chipText(page, 'awaiting_email_verify'), '待信箱驗證 1');
-        const stageOf = (name) => rowOf(page, name).first().locator('[data-progress]').getAttribute('data-progress');
-        assert.equal(await stageOf('周待驗證'), 'awaiting_email_verify');
-        // 沒有已確認 Email 的 pending 帳號無法與新建帳號區分，維持「待審核」
-        assert.equal(await stageOf('黃待確認'), 'pending_review');
-        // 展開後唯讀顯示已確認 Email，但沒有登錄按鈕
+        assert.equal(await page.locator('[data-progress-filter]').count(), 0);
+        assert.equal(await page.locator('[data-progress]').count(), 0);
+        // 輔導員不能展開列：沒有任何已確認 Email 區塊
         await rowOf(page, '周待驗證').locator('td').first().click();
-        const info = page.locator('tbody').getByTestId('email-confirmation').first();
-        await info.waitFor({ timeout: 5000 });
-        assert.ok((await info.innerText()).includes('zhou@example.com'));
-        assert.equal(await info.getByRole('button').count(), 0);
+        assert.equal(await page.getByTestId('email-confirmation').count(), 0);
+        assert.equal(await page.getByText('zhou@example.com').count(), 0);
       });
       await context.close();
     }
