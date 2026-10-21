@@ -16,7 +16,7 @@ export const XLSX_STYLE = { default: 0, text: 1, integer: 2, amount: 3, header: 
 // XML 1.0 不允許的控制字元直接拿掉；& < > " 轉義
 const escapeXml = (value) => String(value)
     // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

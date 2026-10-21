@@ -29,6 +29,7 @@ const ContractView = lazy(() => import('./pages/ContractView'));
 const ContractAdmin = lazy(() => import('./pages/admin/ContractAdmin'));
 const SalaryRegister = lazy(() => import('./pages/admin/SalaryRegister'));
 const SalaryVendorExport = lazy(() => import('./pages/admin/SalaryVendorExport'));
+const SalaryPayoutExport = lazy(() => import('./pages/admin/SalaryPayoutExport'));
 const SalaryReportOptionsManager = lazy(() => import('./pages/admin/SalaryReportOptionsManager'));
 const MySalary = lazy(() => import('./pages/MySalary'));
 const MySalaryNew = lazy(() => import('./pages/MySalaryNew'));
@@ -296,6 +297,14 @@ function App() {
             element={
               <ProtectedRoute adminOnly={true}>
                 <PageLayout><SalaryVendorExport /></PageLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/salary/payout"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <PageLayout><SalaryPayoutExport /></PageLayout>
               </ProtectedRoute>
             }
           />

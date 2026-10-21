@@ -1,0 +1,780 @@
+// 後台「月結匯款」（2026-10-22 第一版，admin 限定）：把某一期已核准、未付款的講師報酬匯出成財務部的銀行批次轉帳檔。
+// 計算與檢查全部在 src/lib/payoutBankExport.js（有單元測試）；這頁只負責讀資料、收集調整、顯示與下載。
+// 本頁不寫任何報酬資料（不標記已付款，那是另一個功能）；唯一的寫入是 admin 匯入／修改講師的夥伴號碼。
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+    AlertTriangle,
+    ArrowLeft,
+    ChevronDown,
+    ChevronRight,
+    Download,
+    FileSpreadsheet,
+    RefreshCw,
+    Upload,
+} from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
+import { taipeiToday } from '../../lib/salary';
+import { payoutScheduleFromResponse, MISSING_TABLE_CODES } from '../../lib/salaryPayday';
+import { COURSE_LABELS } from '../../lib/constants';
+import { XLSX_MIME } from '../../lib/simpleXlsx';
+import {
+    COST_CENTERS,
+    DEFAULT_FEE_BEARER,
+    DEFAULT_MEMO_TEMPLATE,
+    DEFAULT_NOTICE_METHOD,
+    PARTNER_NO_PATTERN,
+    buildPayoutWorkbook,
+    buildTransferCsv,
+    computePayoutPeople,
+    decodeCsvBytes,
+    defaultPaydayForPeriod,
+    defaultPayoutPlan,
+    formatMoney,
+    isMissingPartnerNoError,
+    maskAccount,
+    maskIdNumber,
+    memoLength,
+    payoutFilename,
+    periodRange,
+    planPartnerImport,
+    recentPeriods,
+    renderMemo,
+    sessionPayableCents,
+    validatePayoutExport,
+} from '../../lib/payoutBankExport';
+
+const PAGE_SIZE = 1000;
+const BASE_INSTRUCTOR_COLUMNS = 'id,full_name,bank_code,bank_account_number,bank_account_name,id_number,email_primary,household_address,address,phone_mobile';
+const SESSION_COLUMNS = 'id,instructor_id,instructor_name,session_date,course_type,course_name,base_salary,bonus,total_salary,paid_amount,status,pricing_status';
+const STORAGE_KEYS = { payerAccount: 'dreamone.payout.payerAccount', payerBranch: 'dreamone.payout.payerBranch' };
+const PRICING_LABELS = { needs_review: '待確認報價', rejected: '已退回', manual_override: '手動改價', quoted: '已報價', legacy: '舊資料' };
+const IMPORT_STATUS_LABELS = { change: '會變更', same: '不變', unmatched: '對不到', conflict: '衝突', invalid: '格式不符' };
+const EMPTY_EDITS = { excludedSessionIds: new Set(), excludedInstructorIds: new Set(), adjustments: {}, memoOverrides: {}, costCenters: {} };
+
+const readStored = (key) => {
+    try { return window.localStorage.getItem(key) || ''; } catch { return ''; }
+};
+const writeStored = (key, value) => {
+    try { window.localStorage.setItem(key, value); } catch { /* 無痕模式等情況存不了就算了 */ }
+};
+
+// 分頁抓滿；build(query) 加篩選條件
+const fetchAll = async (table, columns, build = (q) => q) => {
+    const rows = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await build(supabase.from(table).select(columns))
+            .order('id', { ascending: true })
+            .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if ((data || []).length < PAGE_SIZE) break;
+    }
+    return rows;
+};
+const countRows = async (build) => {
+    const { count, error } = await build(supabase.from('class_sessions').select('id', { count: 'exact', head: true }));
+    if (error) throw error;
+    return count ?? 0;
+};
+// partner_no 還沒建（migration 未套）時改用不含它的查詢
+const fetchInstructors = async () => {
+    try {
+        return { rows: await fetchAll('instructors', `${BASE_INSTRUCTOR_COLUMNS},partner_no`), partnerNoMissing: false };
+    } catch (error) {
+        if (!isMissingPartnerNoError(error)) throw error;
+        return { rows: await fetchAll('instructors', BASE_INSTRUCTOR_COLUMNS), partnerNoMissing: true };
+    }
+};
+
+const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+const periodLabel = (periodMonth) => {
+    const range = periodRange(periodMonth);
+    if (!range) return periodMonth;
+    const short = (iso) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+    return `${range.year} 年 ${range.month} 月期（${short(range.periodStart)}～${short(range.periodEnd)}）`;
+};
+
+const Chip = ({ tone, children }) => {
+    const tones = {
+        block: 'bg-bauhaus-red text-white',
+        warn: 'bg-bauhaus-yellow text-bauhaus-black',
+        info: 'bg-bauhaus-muted text-bauhaus-black',
+        ok: 'bg-bauhaus-blue text-white',
+    };
+    return <span className={`inline-block text-[11px] font-black px-2 py-0.5 rounded-full border border-bauhaus-black mr-1 mb-1 ${tones[tone]}`}>{children}</span>;
+};
+
+const SalaryPayoutExport = () => {
+    const [today] = useState(() => taipeiToday());
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [scheduleNote, setScheduleNote] = useState('');
+    const [plan, setPlan] = useState(null);
+    const [regularDay, setRegularDay] = useState(null);
+    const [periodMonth, setPeriodMonth] = useState('');
+    const [sessions, setSessions] = useState([]);
+    const [stats, setStats] = useState(null);
+    const [instructors, setInstructors] = useState([]);
+    const [partnerNoMissing, setPartnerNoMissing] = useState(false);
+    const [settings, setSettings] = useState(() => ({
+        payDate: '',
+        payerAccount: readStored(STORAGE_KEYS.payerAccount),
+        payerBranch: readStored(STORAGE_KEYS.payerBranch),
+        noticeMethod: DEFAULT_NOTICE_METHOD,
+        feeBearer: DEFAULT_FEE_BEARER,
+        memoTemplate: DEFAULT_MEMO_TEMPLATE,
+    }));
+    const [edits, setEdits] = useState(EMPTY_EDITS);
+    const [editsVersion, setEditsVersion] = useState(0);
+    const [exportedVersion, setExportedVersion] = useState(0);
+    const [expanded, setExpanded] = useState(() => new Set());
+    const [downloadErrors, setDownloadErrors] = useState({ csv: [], xlsx: [] });
+    const [downloadMessage, setDownloadMessage] = useState('');
+    const [importState, setImportState] = useState({ fileName: '', plan: null, applying: false, result: null, error: '' });
+    const [partnerDrafts, setPartnerDrafts] = useState({});
+    const [partnerSaving, setPartnerSaving] = useState({});
+    const [partnerMessages, setPartnerMessages] = useState({});
+
+    const loadInstructors = useCallback(async () => {
+        const result = await fetchInstructors();
+        setInstructors(result.rows);
+        setPartnerNoMissing(result.partnerNoMissing);
+    }, []);
+
+    // 第一次載入：講師主檔 → 匯款日設定 → 預設期別與付款日（期別一設定就會去抓本期報酬）。
+    // 講師主檔一定要先到：本期報酬若比主檔早到，所有人會暫時被判成「找不到講師主檔」而不納入。
+    useEffect(() => {
+        const timer = window.setTimeout(async () => {
+            try {
+                await loadInstructors();
+                const scheduleRes = await supabase.from('salary_payout_schedule').select('next_payday, regular_day').maybeSingle();
+                const schedule = payoutScheduleFromResponse(scheduleRes);
+                const nextPlan = defaultPayoutPlan(schedule, today);
+                if (schedule.failed) setScheduleNote('匯款日設定讀取失敗，期別先以今天所在的期、付款日以每月 10 號預估，請確認。');
+                else if (scheduleRes.error && MISSING_TABLE_CODES.has(scheduleRes.error.code)) setScheduleNote('尚未套用匯款日設定，付款日以每月 10 號推算。');
+                setPlan(nextPlan);
+                setRegularDay(schedule.regularDay);
+                setPeriodMonth(nextPlan.periodMonth);
+                setSettings((current) => ({ ...current, payDate: nextPlan.payday || '' }));
+            } catch (error) {
+                console.error('讀取月結匯款資料失敗：', error);
+                setLoadError(`資料讀取失敗：${error.message || '請稍後再試'}`);
+                setLoading(false);
+            }
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [loadInstructors, today]);
+
+    const loadPeriod = useCallback(async (targetPeriod) => {
+        const range = periodRange(targetPeriod);
+        if (!range) return;
+        setLoading(true);
+        setLoadError('');
+        try {
+            const inPeriod = (q) => q.gte('session_date', range.periodStart).lte('session_date', range.periodEnd);
+            const [approved, pendingCount, paidCount, earlier] = await Promise.all([
+                fetchAll('class_sessions', SESSION_COLUMNS, (q) => inPeriod(q).eq('status', 'approved')),
+                countRows((q) => inPeriod(q).eq('status', 'pending')),
+                countRows((q) => inPeriod(q).eq('status', 'paid')),
+                fetchAll('class_sessions', 'id,total_salary,paid_amount', (q) => q.eq('status', 'approved').lt('session_date', range.periodStart)),
+            ]);
+            setSessions(approved);
+            setStats({
+                pendingCount,
+                paidCount,
+                earlierCount: earlier.length,
+                earlierCents: earlier.reduce((sum, row) => sum + sessionPayableCents(row), 0),
+            });
+        } catch (error) {
+            console.error('讀取本期報酬失敗：', error);
+            setLoadError(`本期報酬讀取失敗：${error.message || '請稍後再試'}`);
+            setSessions([]);
+            setStats(null);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!periodMonth) return undefined;
+        const timer = window.setTimeout(() => loadPeriod(periodMonth), 0);
+        return () => window.clearTimeout(timer);
+    }, [loadPeriod, periodMonth]);
+
+    const computed = useMemo(() => computePayoutPeople({
+        sessions, instructors, periodMonth, memoTemplate: settings.memoTemplate, edits,
+    }), [edits, instructors, periodMonth, sessions, settings.memoTemplate]);
+
+    const hasEdits = edits.excludedSessionIds.size > 0
+        || edits.excludedInstructorIds.size > 0
+        || Object.values(edits.adjustments).some((a) => String(a?.amount ?? '').trim() || String(a?.reason ?? '').trim() || a?.costCenter)
+        || Object.values(edits.memoOverrides).some((m) => String(m ?? '').trim())
+        || Object.keys(edits.costCenters).length > 0;
+    const dirty = hasEdits && editsVersion !== exportedVersion;
+
+    useEffect(() => {
+        if (!dirty) return undefined;
+        const onBeforeUnload = (event) => {
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [dirty]);
+
+    const updateEdits = (updater) => {
+        setEdits((current) => updater(current));
+        setEditsVersion((v) => v + 1);
+        setDownloadMessage('');
+    };
+    const updateSetting = (key, value) => {
+        setSettings((current) => ({ ...current, [key]: value }));
+        if (STORAGE_KEYS[key]) writeStored(STORAGE_KEYS[key], value);
+        setDownloadMessage('');
+    };
+    const toggleSet = (key, id) => updateEdits((current) => {
+        const next = new Set(current[key]);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return { ...current, [key]: next };
+    });
+    const setAdjustment = (instructorId, field, value) => updateEdits((current) => ({
+        ...current,
+        adjustments: { ...current.adjustments, [instructorId]: { ...current.adjustments[instructorId], [field]: value } },
+    }));
+    const setMemoOverride = (instructorId, value) => updateEdits((current) => ({
+        ...current, memoOverrides: { ...current.memoOverrides, [instructorId]: value },
+    }));
+    const setCostCenter = (sessionId, value) => updateEdits((current) => {
+        const costCenters = { ...current.costCenters };
+        if (value) costCenters[sessionId] = value; else delete costCenters[sessionId];
+        return { ...current, costCenters };
+    });
+    const setPersonCostCenter = (person, value) => updateEdits((current) => {
+        const costCenters = { ...current.costCenters };
+        for (const row of person.sessions) {
+            if (value) costCenters[row.session.id] = value; else delete costCenters[row.session.id];
+        }
+        return {
+            ...current,
+            costCenters,
+            adjustments: { ...current.adjustments, [person.instructorId]: { ...current.adjustments[person.instructorId], costCenter: value } },
+        };
+    });
+    const toggleExpanded = (instructorId) => setExpanded((current) => {
+        const next = new Set(current);
+        if (next.has(instructorId)) next.delete(instructorId); else next.add(instructorId);
+        return next;
+    });
+
+    const changePeriod = (nextPeriod) => {
+        if (nextPeriod === periodMonth) return;
+        if (hasEdits && !window.confirm('切換期別會清除目前的調整、排除與成本中心設定，確定要切換嗎？')) return;
+        setEdits(EMPTY_EDITS);
+        setEditsVersion(0);
+        setExportedVersion(0);
+        setExpanded(new Set());
+        setDownloadErrors({ csv: [], xlsx: [] });
+        setDownloadMessage('');
+        setPeriodMonth(nextPeriod);
+        setSettings((current) => ({ ...current, payDate: defaultPaydayForPeriod(nextPeriod, plan, regularDay) || '' }));
+    };
+
+    const exportErrors = () => {
+        if (loading) return ['資料還在讀取中，請稍候'];
+        if (loadError) return ['資料讀取失敗，請先重新整理'];
+        return validatePayoutExport({ settings, people: computed.people });
+    };
+    const onDownloadCsv = () => {
+        const errors = exportErrors();
+        setDownloadErrors({ csv: errors, xlsx: [] });
+        if (errors.length) return;
+        try {
+            const csv = buildTransferCsv({ people: computed.people, settings });
+            downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'csv' }));
+            setExportedVersion(editsVersion);
+            setDownloadMessage(`已下載轉帳檔 CSV：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
+        } catch (error) {
+            setDownloadErrors({ csv: [error.message], xlsx: [] });
+        }
+    };
+    const onDownloadXlsx = async () => {
+        const errors = exportErrors();
+        setDownloadErrors({ csv: [], xlsx: errors });
+        if (errors.length) return;
+        try {
+            const bytes = await buildPayoutWorkbook({ people: computed.people, settings });
+            downloadBlob(new Blob([bytes], { type: XLSX_MIME }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'xlsx' }));
+            setExportedVersion(editsVersion);
+            setDownloadMessage(`已下載完整 Excel：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
+        } catch (error) {
+            setDownloadErrors({ csv: [], xlsx: [error.message] });
+        }
+    };
+
+    // ── 夥伴號碼匯入
+    const onImportFile = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        try {
+            const { text } = decodeCsvBytes(new Uint8Array(await file.arrayBuffer()));
+            const nextPlan = planPartnerImport({ csvText: text, instructors });
+            setImportState({ fileName: file.name, plan: nextPlan, applying: false, result: null, error: nextPlan.error });
+        } catch (error) {
+            setImportState({ fileName: file.name, plan: null, applying: false, result: null, error: `讀檔失敗：${error.message}` });
+        }
+    };
+    const applyImport = async () => {
+        const changes = (importState.plan?.entries || []).filter((entry) => entry.status === 'change');
+        if (!changes.length) return;
+        setImportState((current) => ({ ...current, applying: true }));
+        const failures = [];
+        let success = 0;
+        for (const entry of changes) {
+            const { data, error } = await supabase.from('instructors')
+                .update({ partner_no: entry.partnerNo })
+                .eq('id', entry.instructorId)
+                .select('id, partner_no');
+            if (error || (data || []).length !== 1) failures.push(`${entry.name || entry.maskedId}：${error?.message || '沒有更新到（權限或資料已變動）'}`);
+            else success += 1;
+        }
+        try { await loadInstructors(); } catch (error) { failures.push(`重新讀取講師資料失敗：${error.message}`); }
+        setImportState((current) => ({ ...current, applying: false, result: { success, failures } }));
+    };
+
+    const savePartnerNo = async (person) => {
+        const value = String(partnerDrafts[person.instructorId] ?? '').replace(/\s/g, '').toUpperCase();
+        if (value && !PARTNER_NO_PATTERN.test(value)) {
+            setPartnerMessages((current) => ({ ...current, [person.instructorId]: '只能是英數 1～20 碼' }));
+            return;
+        }
+        setPartnerSaving((current) => ({ ...current, [person.instructorId]: true }));
+        const { data, error } = await supabase.from('instructors')
+            .update({ partner_no: value || null })
+            .eq('id', person.instructorId)
+            .select('id, partner_no');
+        let message = '';
+        if (error) message = isMissingPartnerNoError(error) ? '需先套資料庫更新' : `儲存失敗：${error.message}`;
+        else if ((data || []).length !== 1) message = '沒有更新到（權限或資料已變動）';
+        else {
+            message = '已儲存';
+            try { await loadInstructors(); } catch (loadErr) { message = `已儲存，但重新讀取失敗：${loadErr.message}`; }
+            setPartnerDrafts((current) => {
+                const next = { ...current };
+                delete next[person.instructorId];
+                return next;
+            });
+        }
+        setPartnerSaving((current) => ({ ...current, [person.instructorId]: false }));
+        setPartnerMessages((current) => ({ ...current, [person.instructorId]: message }));
+    };
+
+    const periodOptions = plan ? recentPeriods(plan.periodMonth, 12) : [];
+    const memoPreview = renderMemo(settings.memoTemplate, periodMonth);
+    const importCounts = importState.plan?.counts;
+
+    return (
+        <main className="p-4 sm:p-8 max-w-7xl mx-auto">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5 mb-6">
+                <div className="max-w-3xl min-w-0">
+                    <Link
+                        to="/admin"
+                        onClick={(event) => { if (dirty && !window.confirm('有調整或排除尚未匯出，確定要離開嗎？')) event.preventDefault(); }}
+                        className="inline-flex items-center gap-1 min-h-[44px] text-sm font-black text-bauhaus-black/60 hover:text-bauhaus-blue mb-2"
+                    >
+                        <ArrowLeft className="w-4 h-4" /> 回後台管理
+                    </Link>
+                    <h1 className="text-2xl lg:text-4xl font-black text-bauhaus-black tracking-tight">月結匯款</h1>
+                    <p className="mt-2 text-sm sm:text-base font-medium text-bauhaus-black/65 leading-relaxed">
+                        把某一期「已核准、未付款」的講師報酬，匯出成財務部的銀行批次轉帳檔。付款日期、金額調整與附言都可以在這裡改。
+                    </p>
+                </div>
+                <button type="button" onClick={() => loadPeriod(periodMonth)} disabled={loading || !periodMonth} className="bh-btn bh-btn-outline px-4 py-2.5 min-h-[44px] shrink-0 self-start disabled:opacity-50">
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    {loading ? '讀取中' : '重新整理'}
+                </button>
+            </div>
+
+            <div role="note" data-testid="payout-first-version-warning" className="mb-6 bg-bauhaus-red text-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard p-4 sm:p-5 flex items-start gap-3">
+                <AlertTriangle className="w-6 h-6 shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="text-sm sm:text-base font-medium leading-relaxed min-w-0">
+                    <p className="font-black text-base sm:text-lg">第一版：格式待財務確認。正式匯款前，請財務先用小額或試算核對。</p>
+                    <p className="mt-1">檔案含身分證字號與銀行帳號，只能提供財務作業使用。匯款完成後，請在<Link to="/admin/salary" className="underline font-black">報酬登記中心</Link>把本期標為已付款（本頁不會改任何報酬資料）。</p>
+                </div>
+            </div>
+
+            {loadError && (
+                <div role="alert" className="mb-6 bg-bauhaus-red text-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard p-4 font-bold">{loadError}</div>
+            )}
+
+            {/* ── 期別與整批設定 */}
+            <section className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard overflow-hidden mb-6" aria-labelledby="payout-settings-heading">
+                <div className="bg-bauhaus-black text-white px-4 sm:px-6 py-4">
+                    <h2 id="payout-settings-heading" className="text-lg sm:text-xl font-black">期別與整批設定</h2>
+                </div>
+                <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <label className="block md:col-span-2 xl:col-span-1">
+                        <span className="bh-label block mb-1.5">期別</span>
+                        <select aria-label="期別" value={periodMonth} onChange={(event) => changePeriod(event.target.value)} className="bh-input min-h-[44px]" disabled={!plan}>
+                            {periodOptions.map((option) => (
+                                <option key={option} value={option}>{periodLabel(option)}{option === plan?.periodMonth ? '・下次匯款' : ''}</option>
+                            ))}
+                        </select>
+                        {scheduleNote && <span className="block mt-1 text-xs font-bold text-bauhaus-red">{scheduleNote}</span>}
+                    </label>
+                    <label className="block">
+                        <span className="bh-label block mb-1.5">付款日期</span>
+                        <input aria-label="付款日期" type="date" value={settings.payDate} onChange={(event) => updateSetting('payDate', event.target.value)} className="bh-input min-h-[44px]" />
+                    </label>
+                    <label className="block">
+                        <span className="bh-label block mb-1.5">付款帳號（公司帳號）</span>
+                        <input aria-label="付款帳號" type="text" inputMode="numeric" autoComplete="off" value={settings.payerAccount} onChange={(event) => updateSetting('payerAccount', event.target.value)} placeholder="必填，只能數字" className="bh-input min-h-[44px] font-mono" />
+                    </label>
+                    <label className="block">
+                        <span className="bh-label block mb-1.5">付款分行（4 碼）</span>
+                        <input aria-label="付款分行" type="text" inputMode="numeric" autoComplete="off" value={settings.payerBranch} onChange={(event) => updateSetting('payerBranch', event.target.value)} placeholder="必填，例：0123" className="bh-input min-h-[44px] font-mono" />
+                    </label>
+                    <label className="block">
+                        <span className="bh-label block mb-1.5">匯款通知方式</span>
+                        <input aria-label="匯款通知方式" type="text" inputMode="numeric" value={settings.noticeMethod} onChange={(event) => updateSetting('noticeMethod', event.target.value)} className="bh-input min-h-[44px] font-mono" />
+                    </label>
+                    <label className="block">
+                        <span className="bh-label block mb-1.5">手續費負擔方式</span>
+                        <input aria-label="手續費負擔方式" type="text" inputMode="numeric" value={settings.feeBearer} onChange={(event) => updateSetting('feeBearer', event.target.value)} className="bh-input min-h-[44px] font-mono" />
+                    </label>
+                    <label className="block md:col-span-2 xl:col-span-3">
+                        <span className="bh-label block mb-1.5">付款相關附言範本（{'{YYYY}'} 年、{'{YY}'} 年末兩碼、{'{MM}'} 月）</span>
+                        <input aria-label="附言範本" type="text" value={settings.memoTemplate} onChange={(event) => updateSetting('memoTemplate', event.target.value)} className="bh-input min-h-[44px]" />
+                        <span className="block mt-1 text-xs font-bold text-bauhaus-black/60">
+                            預覽：<span data-testid="payout-memo-preview" className="font-black text-bauhaus-black">{memoPreview}</span>
+                            <span data-testid="payout-memo-length" className="ml-2">（{memoLength(memoPreview)} 字）</span>
+                        </span>
+                    </label>
+                    <p className="md:col-span-2 xl:col-span-3 text-xs font-bold text-bauhaus-black/55">付款帳號與分行只存在這台電腦的瀏覽器裡（不寫進程式、不上傳），換電腦要重填。</p>
+                </div>
+            </section>
+
+            {/* ── 本期概況 */}
+            <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6" aria-label="本期概況">
+                <div className="bh-card p-4">
+                    <div className="text-xs font-black text-bauhaus-black/55">納入人數</div>
+                    <div data-testid="payout-included-count" className="text-2xl font-black text-bauhaus-black">{computed.includedPeople.length}</div>
+                    <div className="text-[11px] font-bold text-bauhaus-black/50">共 {computed.people.length} 人，阻擋 {computed.blockedCount} 人</div>
+                </div>
+                <div className="bh-card p-4">
+                    <div className="text-xs font-black text-bauhaus-black/55">匯款總額</div>
+                    <div data-testid="payout-total" className="text-2xl font-black text-bauhaus-blue">{formatMoney(computed.totalCents)}</div>
+                    <div className="text-[11px] font-bold text-bauhaus-black/50">有警告 {computed.warningCount} 人</div>
+                </div>
+                <div className="bh-card p-4">
+                    <div className="text-xs font-black text-bauhaus-black/55">本期不會匯</div>
+                    <div data-testid="payout-stats-period" className="text-sm font-black text-bauhaus-black">待核准 {stats?.pendingCount ?? '—'} 筆・已付 {stats?.paidCount ?? '—'} 筆</div>
+                </div>
+                <div className="bh-card p-4">
+                    <div className="text-xs font-black text-bauhaus-black/55">本期以前仍未付（已核准）</div>
+                    <div data-testid="payout-stats-earlier" className={`text-sm font-black ${stats?.earlierCount ? 'text-bauhaus-red' : 'text-bauhaus-black'}`}>
+                        {stats ? `${stats.earlierCount} 筆・${formatMoney(stats.earlierCents)}` : '—'}
+                    </div>
+                    <div className="text-[11px] font-bold text-bauhaus-black/50">不在本期，請人工處理</div>
+                </div>
+            </section>
+
+            {/* ── 每人一列 */}
+            <section className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard overflow-hidden mb-6" aria-labelledby="payout-people-heading">
+                <div className="px-4 sm:px-6 py-4 border-b-2 border-bauhaus-black">
+                    <h2 id="payout-people-heading" className="text-lg sm:text-xl font-black text-bauhaus-black">每位講師</h2>
+                    <p className="text-xs font-bold text-bauhaus-black/55 mt-1">
+                        紅色標籤＝阻擋（不能匯，要先修講師資料）；黃色＝警告（可以匯，請核對）。預覽只顯示帳號末 4 碼、身分證遮罩，檔案內是完整資料。
+                    </p>
+                </div>
+                {loading ? (
+                    <div className="p-12 text-center font-bold text-bauhaus-black/50">正在讀取本期報酬…</div>
+                ) : computed.people.length === 0 ? (
+                    <div className="p-10 text-center">
+                        <FileSpreadsheet className="w-12 h-12 mx-auto text-bauhaus-black/30" aria-hidden="true" />
+                        <p className="mt-3 font-black text-bauhaus-black">這一期沒有已核准、未付款的報酬</p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto" data-testid="payout-people-scroll">
+                        <table className="w-full min-w-[1120px] text-sm">
+                            <thead className="bg-bauhaus-black text-white text-xs">
+                                <tr>
+                                    <th className="px-3 py-3 text-left w-14">納入</th>
+                                    <th className="px-3 py-3 text-left">姓名</th>
+                                    <th className="px-3 py-3 text-right">筆數</th>
+                                    <th className="px-3 py-3 text-right">系統金額</th>
+                                    <th className="px-3 py-3 text-left">調整金額＋原因</th>
+                                    <th className="px-3 py-3 text-right">實付</th>
+                                    <th className="px-3 py-3 text-left">附言（可覆寫）</th>
+                                    <th className="px-3 py-3 text-left">狀態</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y-2 divide-bauhaus-black/15">
+                                {computed.people.map((person) => {
+                                    const isOpen = expanded.has(person.instructorId);
+                                    const adjustment = edits.adjustments[person.instructorId] || {};
+                                    return (
+                                        <Fragment key={person.instructorId}>
+                                        <tr data-testid={`payout-row-${person.instructorId}`} className={person.blocked ? 'bg-bauhaus-red/5' : person.included ? 'bg-white' : 'bg-bauhaus-muted/60'}>
+                                            <td className="px-3 py-3 align-top">
+                                                <input
+                                                    type="checkbox"
+                                                    aria-label={`${person.name} 納入匯款`}
+                                                    checked={person.included}
+                                                    disabled={person.blocked}
+                                                    onChange={() => toggleSet('excludedInstructorIds', person.instructorId)}
+                                                    className="w-5 h-5 accent-bauhaus-blue"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-3 align-top">
+                                                <button type="button" onClick={() => toggleExpanded(person.instructorId)} aria-expanded={isOpen} aria-label={`${person.name} 展開明細`} className="inline-flex items-center gap-1 font-black text-bauhaus-black hover:text-bauhaus-blue min-h-[32px] text-left">
+                                                    {isOpen ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+                                                    {person.name || '（未填姓名）'}
+                                                </button>
+                                                <div className="text-[11px] font-bold text-bauhaus-black/50 font-mono pl-5">{person.partnerLabel || '—'}</div>
+                                            </td>
+                                            <td className="px-3 py-3 text-right align-top font-mono">{person.sessionCount}{person.excludedSessionCount ? <span className="block text-[11px] text-bauhaus-black/50">排除 {person.excludedSessionCount}</span> : null}</td>
+                                            <td className="px-3 py-3 text-right align-top font-mono">{formatMoney(person.systemCents)}</td>
+                                            <td className="px-3 py-3 align-top">
+                                                <div className="flex gap-2">
+                                                    <input type="text" aria-label={`${person.name} 調整金額`} value={adjustment.amount ?? ''} onChange={(event) => setAdjustment(person.instructorId, 'amount', event.target.value)} placeholder="例：-500" className={`bh-input w-24 py-1.5 font-mono ${person.adjustmentValid ? '' : 'border-bauhaus-red'}`} />
+                                                    <input type="text" aria-label={`${person.name} 調整原因`} value={adjustment.reason ?? ''} onChange={(event) => setAdjustment(person.instructorId, 'reason', event.target.value)} placeholder={person.hasAdjustment ? '必填：原因' : '原因'} className={`bh-input w-40 py-1.5 ${person.adjustmentCents !== 0 && !person.adjustmentReason ? 'border-bauhaus-red' : ''}`} />
+                                                </div>
+                                            </td>
+                                            <td data-testid={`payout-pay-${person.instructorId}`} className="px-3 py-3 text-right align-top font-mono font-black">{formatMoney(person.payCents)}</td>
+                                            <td className="px-3 py-3 align-top">
+                                                <input type="text" aria-label={`${person.name} 附言`} value={edits.memoOverrides[person.instructorId] ?? ''} onChange={(event) => setMemoOverride(person.instructorId, event.target.value)} placeholder={memoPreview} className="bh-input w-56 py-1.5 text-xs" />
+                                            </td>
+                                            <td className="px-3 py-3 align-top max-w-[260px]">
+                                                {person.blockers.map((text) => <Chip key={text} tone="block">{text}</Chip>)}
+                                                {person.warnings.map((text) => <Chip key={text} tone="warn">{text}</Chip>)}
+                                                {person.adjustmentCents !== 0 && <Chip tone="info">有人工調整</Chip>}
+                                                {!person.blocked && !person.included && <Chip tone="info">未勾選</Chip>}
+                                                {!person.blockers.length && !person.warnings.length && person.included && <Chip tone="ok">可匯</Chip>}
+                                            </td>
+                                        </tr>
+                                        {isOpen && (
+                                            <tr className="bg-bauhaus-cream">
+                                                <td colSpan={8} className="px-3 sm:px-6 py-4">
+                                                    <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 text-xs font-bold text-bauhaus-black/70 mb-3">
+                                                        <div>解款行<div className="font-mono text-sm text-bauhaus-black">{person.bankCode || '—'}</div></div>
+                                                        <div>收款帳號<div className="font-mono text-sm text-bauhaus-black">{maskAccount(person.accountNumber) || '—'}</div></div>
+                                                        <div>戶名<div className="text-sm text-bauhaus-black">{person.accountName || '—'}</div></div>
+                                                        <div>身分證<div className="font-mono text-sm text-bauhaus-black">{maskIdNumber(person.idNumber) || '—'}</div></div>
+                                                        <div className="col-span-2">Email<div className="text-sm text-bauhaus-black break-all">{person.email || '—'}</div></div>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-end gap-3 mb-3">
+                                                        <label className="block">
+                                                            <span className="bh-label block mb-1">這位全部設為…</span>
+                                                            <select aria-label={`${person.name} 全部成本中心`} value="" onChange={(event) => setPersonCostCenter(person, event.target.value === '__blank' ? '' : event.target.value)} className="bh-input py-1.5 min-h-[40px]">
+                                                                <option value="">選擇成本中心</option>
+                                                                <option value="__blank">（空白）</option>
+                                                                {COST_CENTERS.map((code) => <option key={code} value={code}>{code}</option>)}
+                                                            </select>
+                                                        </label>
+                                                        {person.adjustmentCents !== 0 && (
+                                                            <label className="block">
+                                                                <span className="bh-label block mb-1">調整的成本中心</span>
+                                                                <select aria-label={`${person.name} 調整成本中心`} value={adjustment.costCenter || ''} onChange={(event) => setAdjustment(person.instructorId, 'costCenter', event.target.value)} className="bh-input py-1.5 min-h-[40px]">
+                                                                    <option value="">（空白）</option>
+                                                                    {COST_CENTERS.map((code) => <option key={code} value={code}>{code}</option>)}
+                                                                </select>
+                                                            </label>
+                                                        )}
+                                                        <div className="block">
+                                                            <span className="bh-label block mb-1">夥伴號碼</span>
+                                                            {partnerNoMissing ? (
+                                                                <span className="text-xs font-black text-bauhaus-red">需先套資料庫更新</span>
+                                                            ) : (
+                                                                <span className="flex items-center gap-2">
+                                                                    <input type="text" aria-label={`${person.name} 夥伴號碼`} value={partnerDrafts[person.instructorId] ?? person.partnerNo} onChange={(event) => setPartnerDrafts((current) => ({ ...current, [person.instructorId]: event.target.value }))} placeholder="例：A036872" className="bh-input w-32 py-1.5 font-mono" disabled={!person.instructor} />
+                                                                    <button type="button" onClick={() => savePartnerNo(person)} disabled={!person.instructor || partnerSaving[person.instructorId] || partnerDrafts[person.instructorId] === undefined} className="bh-btn bh-btn-outline px-3 py-1.5 text-xs min-h-[40px] disabled:opacity-40">
+                                                                        {partnerSaving[person.instructorId] ? '儲存中' : '儲存號碼'}
+                                                                    </button>
+                                                                    {partnerMessages[person.instructorId] && <span role="status" className="text-xs font-black">{partnerMessages[person.instructorId]}</span>}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="overflow-x-auto">
+                                                        <table className="w-full min-w-[760px] text-xs bg-white border-2 border-bauhaus-black">
+                                                            <thead className="bg-bauhaus-muted">
+                                                                <tr>
+                                                                    <th className="px-2 py-2 text-left">排除</th>
+                                                                    <th className="px-2 py-2 text-left">日期</th>
+                                                                    <th className="px-2 py-2 text-left">課程種類</th>
+                                                                    <th className="px-2 py-2 text-left">課程名稱</th>
+                                                                    <th className="px-2 py-2 text-right">本次應付</th>
+                                                                    <th className="px-2 py-2 text-right">已付</th>
+                                                                    <th className="px-2 py-2 text-left">報價</th>
+                                                                    <th className="px-2 py-2 text-left">成本中心</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-bauhaus-black/15">
+                                                                {person.sessions.map((row) => {
+                                                                    const label = `${row.session.session_date} ${row.session.course_name || COURSE_LABELS[row.session.course_type] || ''}`;
+                                                                    return (
+                                                                        <tr key={row.session.id} className={row.excluded ? 'opacity-50 line-through' : ''}>
+                                                                            <td className="px-2 py-1.5"><input type="checkbox" aria-label={`${label} 排除`} checked={row.excluded} onChange={() => toggleSet('excludedSessionIds', row.session.id)} className="w-4 h-4 accent-bauhaus-red" /></td>
+                                                                            <td className="px-2 py-1.5 font-mono">{row.session.session_date}</td>
+                                                                            <td className="px-2 py-1.5">{COURSE_LABELS[row.session.course_type] || row.session.course_type}</td>
+                                                                            <td className="px-2 py-1.5">{row.session.course_name || '—'}</td>
+                                                                            <td className="px-2 py-1.5 text-right font-mono">{formatMoney(row.payableCents)}</td>
+                                                                            <td className="px-2 py-1.5 text-right font-mono">{Number(row.session.paid_amount || 0) ? formatMoney(Math.round(Number(row.session.paid_amount) * 100)) : '—'}</td>
+                                                                            <td className="px-2 py-1.5">{PRICING_LABELS[row.session.pricing_status] || row.session.pricing_status || '—'}</td>
+                                                                            <td className="px-2 py-1.5">
+                                                                                <select aria-label={`${label} 成本中心`} value={row.costCenter} onChange={(event) => setCostCenter(row.session.id, event.target.value)} className="border-2 border-bauhaus-black rounded-lg px-2 py-1 bg-white">
+                                                                                    <option value="">（空白）</option>
+                                                                                    {COST_CENTERS.map((code) => <option key={code} value={code}>{code}</option>)}
+                                                                                </select>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        </Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+                {computed.unmatchedSessions.length > 0 && (
+                    <div data-testid="payout-unmatched" className="px-4 sm:px-6 py-4 border-t-2 border-bauhaus-black bg-bauhaus-yellow/30 text-sm">
+                        <p className="font-black text-bauhaus-black">對不到講師 {computed.unmatchedSessions.length} 筆（沒有連到講師主檔，不會匯，請到報酬登記中心處理）：</p>
+                        <ul className="mt-1 text-xs font-bold text-bauhaus-black/70 list-disc pl-5">
+                            {computed.unmatchedSessions.slice(0, 20).map((session) => (
+                                <li key={session.id}>{session.instructor_name || '（無姓名）'}・{session.session_date}・{session.course_name || COURSE_LABELS[session.course_type] || ''}・{formatMoney(session.payableCents)}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </section>
+
+            {/* ── 下載 */}
+            <section className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard p-4 sm:p-6 mb-6" aria-labelledby="payout-download-heading">
+                <h2 id="payout-download-heading" className="text-lg sm:text-xl font-black text-bauhaus-black mb-1">下載</h2>
+                <p className="text-sm font-bold text-bauhaus-black/70 mb-4">
+                    本次納入 <span className="font-black text-bauhaus-black">{computed.includedPeople.length}</span> 人，匯款總額 <span className="font-black text-bauhaus-blue">{formatMoney(computed.totalCents)}</span>。
+                    Excel 的二代健保欄第一版<span className="font-black text-bauhaus-red">未計算（填 0）</span>，行政薪資填 0、成本中心沒選的在總計顯示「未填」。
+                </p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="border-2 border-bauhaus-black rounded-xl p-4">
+                        <button type="button" onClick={onDownloadCsv} className="bh-btn bh-btn-blue px-5 py-3 min-h-[44px] w-full sm:w-auto">
+                            <Download className="w-5 h-5" /> 轉帳檔 CSV
+                        </button>
+                        <p className="mt-3 text-xs font-bold text-bauhaus-black/70 leading-relaxed">
+                            CSV 請直接上傳網銀；若要用 Excel 看，請用『資料→從文字/CSV』匯入並把帳號欄設為文字，不要直接雙擊開啟，否則開頭的 0 會不見。要用 Excel 看請下載 Excel 版。
+                        </p>
+                        {downloadErrors.csv.length > 0 && (
+                            <ul role="alert" data-testid="payout-csv-errors" className="mt-3 text-sm font-black text-bauhaus-red list-disc pl-5">
+                                {downloadErrors.csv.map((text) => <li key={text}>{text}</li>)}
+                            </ul>
+                        )}
+                    </div>
+                    <div className="border-2 border-bauhaus-black rounded-xl p-4">
+                        <button type="button" onClick={onDownloadXlsx} className="bh-btn bh-btn-outline px-5 py-3 min-h-[44px] w-full sm:w-auto">
+                            <FileSpreadsheet className="w-5 h-5" /> 完整 Excel（四分頁）
+                        </button>
+                        <p className="mt-3 text-xs font-bold text-bauhaus-black/70 leading-relaxed">
+                            分頁：轉帳檔案、薪資明細、薪資總計、供應商。代碼與帳號都存成文字，開頭的 0 不會不見。
+                        </p>
+                        {downloadErrors.xlsx.length > 0 && (
+                            <ul role="alert" data-testid="payout-xlsx-errors" className="mt-3 text-sm font-black text-bauhaus-red list-disc pl-5">
+                                {downloadErrors.xlsx.map((text) => <li key={text}>{text}</li>)}
+                            </ul>
+                        )}
+                    </div>
+                </div>
+                {downloadMessage && <p role="status" data-testid="payout-download-message" className="mt-4 text-sm font-black text-bauhaus-blue">{downloadMessage}</p>}
+                {dirty && <p className="mt-2 text-xs font-bold text-bauhaus-red">有調整或排除尚未匯出；離開頁面前會提醒。</p>}
+            </section>
+
+            {/* ── 夥伴號碼匯入 */}
+            <section className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard p-4 sm:p-6" aria-labelledby="payout-partner-heading">
+                <h2 id="payout-partner-heading" className="text-lg sm:text-xl font-black text-bauhaus-black mb-1">夥伴號碼匯入</h2>
+                <p className="text-sm font-medium text-bauhaus-black/70 mb-4">
+                    上傳財務「供應商」分頁匯出的 CSV，用身分證比對講師，把夥伴號碼存進講師主檔。空白與「需新增…」會略過；先預覽，按確認才會寫入。
+                </p>
+                {partnerNoMissing ? (
+                    <p role="status" data-testid="payout-partner-missing" className="text-sm font-black text-bauhaus-red">
+                        需先套資料庫更新（20261022093700_instructor_partner_no.sql）才能匯入夥伴號碼；目前轉帳檔的夥伴號碼一律寫「需新增」。
+                    </p>
+                ) : (
+                    <>
+                        <label className="bh-btn bh-btn-outline px-4 py-2.5 min-h-[44px] cursor-pointer inline-flex">
+                            <Upload className="w-4 h-4" /> 選擇 CSV
+                            <input type="file" accept=".csv,text/csv" aria-label="上傳夥伴號碼 CSV" onChange={onImportFile} className="sr-only" />
+                        </label>
+                        {importState.fileName && <span className="ml-3 text-xs font-bold text-bauhaus-black/60 break-all">{importState.fileName}</span>}
+                        {importState.error && <p role="alert" className="mt-3 text-sm font-black text-bauhaus-red">{importState.error}</p>}
+                        {importState.plan && !importState.plan.error && (
+                            <div className="mt-4">
+                                <p data-testid="payout-import-counts" className="text-sm font-black text-bauhaus-black">
+                                    符合 {importCounts.matched}（會變更 {importCounts.change}、不變 {importCounts.same}）・對不到 {importCounts.unmatched}・衝突 {importCounts.conflict}・格式不符 {importCounts.invalid}・略過 {importCounts.skipped}
+                                </p>
+                                <div className="mt-3 max-h-72 overflow-auto border-2 border-bauhaus-black rounded-xl">
+                                    <table className="w-full min-w-[640px] text-xs">
+                                        <thead className="bg-bauhaus-muted sticky top-0">
+                                            <tr>
+                                                <th className="px-2 py-2 text-left">結果</th>
+                                                <th className="px-2 py-2 text-left">CSV 列</th>
+                                                <th className="px-2 py-2 text-left">身分證</th>
+                                                <th className="px-2 py-2 text-left">講師</th>
+                                                <th className="px-2 py-2 text-left">原號碼 → 新號碼</th>
+                                                <th className="px-2 py-2 text-left">說明</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-bauhaus-black/15">
+                                            {importState.plan.entries.map((entry) => (
+                                                <tr key={`${entry.line}-${entry.partnerNo}`} data-testid={`payout-import-${entry.status}`}>
+                                                    <td className="px-2 py-1.5 font-black">{IMPORT_STATUS_LABELS[entry.status]}</td>
+                                                    <td className="px-2 py-1.5 font-mono">{entry.line}</td>
+                                                    <td className="px-2 py-1.5 font-mono">{entry.maskedId}</td>
+                                                    <td className="px-2 py-1.5">{entry.name || '—'}</td>
+                                                    <td className="px-2 py-1.5 font-mono">{entry.status === 'change' || entry.status === 'same' ? `${entry.oldPartnerNo || '（空白）'} → ${entry.partnerNo}` : entry.partnerNo}</td>
+                                                    <td className="px-2 py-1.5">{[entry.reason, entry.warning].filter(Boolean).join('；') || '—'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <button type="button" onClick={applyImport} disabled={importState.applying || importCounts.change === 0 || Boolean(importState.result)} className="mt-3 bh-btn bh-btn-blue px-4 py-2.5 min-h-[44px] disabled:opacity-40">
+                                    {importState.applying ? '更新中…' : `確認更新 ${importCounts.change} 位講師的夥伴號碼`}
+                                </button>
+                                {importState.result && (
+                                    <div role="status" data-testid="payout-import-result" className="mt-3 text-sm font-black">
+                                        <p className="text-bauhaus-blue">已更新 {importState.result.success} 位</p>
+                                        {importState.result.failures.length > 0 && (
+                                            <ul className="text-bauhaus-red list-disc pl-5">
+                                                {importState.result.failures.map((text) => <li key={text}>{text}</li>)}
+                                            </ul>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </>
+                )}
+            </section>
+        </main>
+    );
+};
+
+export default SalaryPayoutExport;

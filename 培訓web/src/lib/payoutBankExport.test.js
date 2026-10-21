@@ -415,6 +415,8 @@ test('正式庫還沒套 migration：辨認 partner_no 欄位不存在的錯誤'
     assert.equal(isMissingPartnerNoError(null), false);
 });
 
+const hexBytes = (hex) => Uint8Array.from(hex.match(/../g), (byte) => parseInt(byte, 16));
+
 const PARTNER_CSV = [
     ',,,,',
     '＊群組Z004/Z007個人/Z008公司,夥伴號碼,＊名稱 1,國籍,TW2 身份證字號',
@@ -471,7 +473,7 @@ test('夥伴號碼匯入：身分證對到多位講師算衝突；匯入後與�
 
 test('夥伴號碼匯入：找不到表頭就回錯誤；Big5 編碼的 Excel CSV 也讀得懂', () => {
     assert.match(planPartnerImport({ csvText: '名稱,電話\n測試,0900\n', instructors: [] }).error, /找不到/);
-    const big5 = Uint8Array.from(Buffer.from('2cb9d9a6f1b8b9bd582ca657bad92c54573220a8ada5f7c3d2a672b8b90d0a2c413033363837322cb4fab8d5a5d22c5a3130303030303030310d0a', 'hex'));
+    const big5 = hexBytes('2cb9d9a6f1b8b9bd582ca657bad92c54573220a8ada5f7c3d2a672b8b90d0a2c413033363837322cb4fab8d5a5d22c5a3130303030303030310d0a');
     const decoded = decodeCsvBytes(big5);
     assert.equal(decoded.encoding, 'big5');
     assert.ok(decoded.text.includes('夥伴號碼'));

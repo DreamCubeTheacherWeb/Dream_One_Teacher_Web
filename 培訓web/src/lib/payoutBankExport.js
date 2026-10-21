@@ -28,14 +28,8 @@ export const DEFAULT_FEE_BEARER = '2';
 export const PARTNER_NO_PATTERN = /^[A-Z0-9]{1,20}$/;
 export const NEW_PARTNER_PREFIX = '需新增';
 
-// 正式庫還沒套 20261022093700_instructor_partner_no.sql 時，查詢帶 partner_no 會回這兩種代碼：
-// 42703＝SELECT 的欄位不存在；PGRST204＝PATCH／INSERT 的欄位不在 schema cache
-export const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204']);
-export const isMissingPartnerNoError = (error) => Boolean(
-    error
-    && MISSING_COLUMN_CODES.has(String(error.code))
-    && (!error.message || /partner_no/.test(error.message)),
-);
+// partner_no 欄位不存在的判斷放在 vendorCsvExport.js（供應商頁也要用，避免它為此載入 jszip）
+export { MISSING_COLUMN_CODES, isMissingPartnerNoError } from './vendorCsvExport.js';
 
 // ───────────────────────── 期別 ─────────────────────────
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -406,7 +400,7 @@ export const buildTransferCsv = ({ people = [], settings = {} }) => {
             if (problem) throw new Error(`轉帳檔欄位${problem}：${cell}`);
         }
     }
-    return `﻿${rows.map((row) => row.join(',')).join('\r\n')}\r\n`;
+    return `\uFEFF${rows.map((row) => row.join(',')).join('\r\n')}\r\n`;
 };
 
 // ───────────────────────── 薪資明細（一課一列） ─────────────────────────
@@ -560,11 +554,11 @@ export const decodeCsvBytes = (bytes) => {
         } catch {
             continue;
         }
-        text = text.replace(/^﻿/, '');
+        text = text.replace(/^\uFEFF/, '');
         if (!fallback) fallback = { text, encoding };
         if (findPartnerHeader(parseCsv(text))) return { text, encoding };
     }
-    return fallback || { text: new TextDecoder('utf-8').decode(bytes).replace(/^﻿/, ''), encoding: 'utf-8' };
+    return fallback || { text: new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, ''), encoding: 'utf-8' };
 };
 
 // RFC 4180：逗號分隔、雙引號包起來的欄位可含逗號／換行，"" 代表一個雙引號
@@ -573,7 +567,7 @@ export const parseCsv = (text) => {
     let row = [];
     let cell = '';
     let quoted = false;
-    const source = String(text ?? '').replace(/^﻿/, '');
+    const source = String(text ?? '').replace(/^\uFEFF/, '');
     for (let i = 0; i < source.length; i += 1) {
         const ch = source[i];
         if (quoted) {

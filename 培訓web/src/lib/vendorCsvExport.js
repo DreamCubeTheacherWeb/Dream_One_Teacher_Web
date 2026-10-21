@@ -17,6 +17,15 @@ export const VENDOR_CSV_HEADERS = [
     '',
 ];
 
+// 正式庫還沒套 20261022093700_instructor_partner_no.sql 時，查詢帶 partner_no 會回這兩種代碼：
+// 42703＝SELECT 的欄位不存在；PGRST204＝PATCH／INSERT 的欄位不在 schema cache
+export const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204']);
+export const isMissingPartnerNoError = (error) => Boolean(
+    error
+    && MISSING_COLUMN_CODES.has(String(error.code))
+    && (!error.message || /partner_no/.test(error.message)),
+);
+
 const REQUIRED_EXPORT_FIELDS = [
     ['full_name', '姓名'],
     ['id_number', '身分證字號'],
