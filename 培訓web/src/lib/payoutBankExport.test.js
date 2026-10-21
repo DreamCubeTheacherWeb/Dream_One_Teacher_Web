@@ -219,6 +219,7 @@ test('阻擋項自動不納入；警告項照樣納入但標出來', () => {
     const rows = buildTransferRows({ people: result.people, settings: SETTINGS });
     assert.deepEqual(rows.map((r) => r[6]), ['丁測一的媽媽', '王測二', '林測三'], '阻擋的人不在轉帳檔裡');
     assert.equal(result.blockedCount, 2);
+    assert.equal(result.warningCount, 3, '有警告的只算沒被擋的人（丁、王、林）');
 });
 
 test('其他阻擋：帳號含非數字、缺戶名、缺身分證、金額小數、實付 ≤ 0', () => {

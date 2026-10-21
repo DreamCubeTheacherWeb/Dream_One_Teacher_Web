@@ -333,7 +333,7 @@ export const computePayoutPeople = ({ sessions = [], instructors = [], periodMon
         unmatchedSessions,
         totalCents: includedPeople.reduce((sum, person) => sum + person.payCents, 0),
         blockedCount: people.filter((person) => person.blocked).length,
-        warningCount: people.filter((person) => person.warnings.length > 0).length,
+        warningCount: people.filter((person) => !person.blocked && person.warnings.length > 0).length,  // 被擋的人另算在 blockedCount
     };
 };
 

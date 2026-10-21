@@ -599,7 +599,7 @@ const SalaryPayoutExport = () => {
                                                             ) : (
                                                                 <span className="flex items-center gap-2">
                                                                     <input type="text" aria-label={`${person.name} 夥伴號碼`} value={partnerDrafts[person.instructorId] ?? person.partnerNo} onChange={(event) => setPartnerDrafts((current) => ({ ...current, [person.instructorId]: event.target.value }))} placeholder="例：A036872" className="bh-input w-32 py-1.5 font-mono" disabled={!person.instructor} />
-                                                                    <button type="button" onClick={() => savePartnerNo(person)} disabled={!person.instructor || partnerSaving[person.instructorId] || partnerDrafts[person.instructorId] === undefined} className="bh-btn bh-btn-outline px-3 py-1.5 text-xs min-h-[40px] disabled:opacity-40">
+                                                                    <button type="button" aria-label={`${person.name} 儲存夥伴號碼`} onClick={() => savePartnerNo(person)} disabled={!person.instructor || partnerSaving[person.instructorId] || partnerDrafts[person.instructorId] === undefined} className="bh-btn bh-btn-outline px-3 py-1.5 text-xs min-h-[40px] disabled:opacity-40">
                                                                         {partnerSaving[person.instructorId] ? '儲存中' : '儲存號碼'}
                                                                     </button>
                                                                     {partnerMessages[person.instructorId] && <span role="status" className="text-xs font-black">{partnerMessages[person.instructorId]}</span>}
