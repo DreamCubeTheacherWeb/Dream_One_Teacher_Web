@@ -10,6 +10,7 @@ import { isApprovedUser } from './lib/roles';
 
 // 路由頁面依需求才下載：首頁、登入後導向的待審頁、Layout 與守衛留在入口 chunk，
 // 其餘（含 pdf-lib／react-pdf／quill／jszip 等大型套件）各自成 chunk，講師手機首次開啟不必下載全站。
+const AboutMe = lazy(() => import('./pages/AboutMe'));
 const CourseList = lazy(() => import('./pages/CourseList'));
 const LessonView = lazy(() => import('./pages/LessonView'));
 const LessonDetail = lazy(() => import('./pages/LessonDetail'));
@@ -136,6 +137,14 @@ function App() {
             element={
               <ProtectedRoute allowPending>
                 <PageLayout><ProfilePage /></PageLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/me"
+            element={
+              <ProtectedRoute>
+                <PageLayout><AboutMe /></PageLayout>
               </ProtectedRoute>
             }
           />

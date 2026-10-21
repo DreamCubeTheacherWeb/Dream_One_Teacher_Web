@@ -7,7 +7,7 @@ import { isApprovedUser } from '../lib/roles';
 import {
     BookOpen, Target, Heart, Sparkles, ChevronRight,
     Megaphone, Pin, Calendar, Users, Star, ArrowRight,
-    MapPin, History, ExternalLink, Play
+    MapPin, History, ExternalLink, Play, LayoutGrid
 } from 'lucide-react';
 
 const VISION_ITEMS = [
@@ -153,14 +153,25 @@ const HomePage = () => {
                             </p>
                             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
                                 {user ? (
-                                    <Link
-                                        to="/courses"
-                                        className="bh-btn bh-btn-yellow group px-8 py-4 text-lg"
-                                    >
-                                        <BookOpen className="w-5 h-5" />
-                                        開始學習
-                                        <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                                    </Link>
+                                    <>
+                                        <Link
+                                            to="/courses"
+                                            className="bh-btn bh-btn-yellow group px-8 py-4 text-lg"
+                                        >
+                                            <BookOpen className="w-5 h-5" />
+                                            開始學習
+                                            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                                        </Link>
+                                        {canViewAnnouncements && (
+                                            <Link
+                                                to="/me"
+                                                className="bh-btn bg-white text-bauhaus-black group px-8 py-4 text-lg"
+                                            >
+                                                <LayoutGrid className="w-5 h-5" />
+                                                關於我
+                                            </Link>
+                                        )}
+                                    </>
                                 ) : (
                                     <div className="text-white/70 text-sm font-bold bg-white/10 border-2 border-white/30 rounded-xl px-6 py-4">
                                         請先登入以開始您的培訓課程
