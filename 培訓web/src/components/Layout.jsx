@@ -132,7 +132,8 @@ const Layout = ({ children }) => {
                     </Link>
 
                     {/* 桌面版導航 */}
-                    <nav className="hidden xl:flex items-center gap-1">
+                    {/* 登入後選單項目多，1280px 才切桌機版；未登入只有登入鈕，平板（768px）起就直接顯示 */}
+                    <nav className={`hidden ${user ? 'xl:flex' : 'md:flex'} items-center gap-1`}>
                         {user ? (
                             <>
                                 {profile && profile.role !== 'pending' ? (
@@ -237,7 +238,7 @@ const Layout = ({ children }) => {
                     </nav>
 
                     {/* 手機版：通知 + 漢堡按鈕 */}
-                    <div className="flex xl:hidden items-center gap-2">
+                    <div className={`flex ${user ? 'xl:hidden' : 'md:hidden'} items-center gap-2`}>
                         {user && profile && profile.role !== 'pending' && (
                             <NotificationBell userId={user.id} />
                         )}
@@ -254,7 +255,7 @@ const Layout = ({ children }) => {
 
                 {/* 手機版展開選單 */}
                 {mobileMenuOpen && (
-                    <div className="xl:hidden bg-white border-t-4 border-bauhaus-black rounded-b-2xl overflow-hidden">
+                    <div className={`${user ? 'xl:hidden' : 'md:hidden'} bg-white border-t-4 border-bauhaus-black rounded-b-2xl overflow-hidden`}>
                         <div className="px-4 py-4 space-y-1">
                             {user ? (
                                 <>
