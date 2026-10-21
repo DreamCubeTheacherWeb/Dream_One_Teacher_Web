@@ -167,7 +167,8 @@ try {
     await adminPage.getByRole('heading', { name: '編輯講師資料' }).waitFor();
     assert.match(adminPage.url(), new RegExp(`/admin/instructors/${instructorId}/edit$`));
     assert.equal(await adminPage.getByText('僅管理員可編輯', { exact: true }).count(), 1);
-    assert.equal(await adminPage.getByText(/尚未認領帳號/).count(), 1);
+    // 標題列的認領狀態；2026-10-20 起「講師自行修改權限」區塊也會對未認領講師說明，所以只比對標題那句。
+    assert.equal(await adminPage.getByText(/・尚未認領帳號/).count(), 1);
     await adminPage.screenshot({ path: '/tmp/dream-one-admin-instructor-editor-desktop.png', fullPage: true });
 
     const nameField = adminPage.getByLabel('姓名 *');

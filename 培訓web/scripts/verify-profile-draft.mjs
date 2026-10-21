@@ -62,6 +62,8 @@ let signMode = 'success';
 let draftRow = null;
 // 模擬正式庫 guard_instructor_file_paths：upsert 會先做 INSERT 檢查，非本人資料夾的路徑一律 42501
 let pathGuard = false;
+// 2026-10-20 起已提交的身分證／存摺鎖定，要管理員開放一次才可更換；測試要換檔時在這裡放有效開放。
+let unlockRows = [];
 // 模擬正式庫 trg_guard_instructor_identity_email：SET 清單只要有 user_id／email_primary 就觸發（值沒變也一樣），
 // mentor 一律被擋；主要 Email 改成不是登入信箱也被擋。
 let identityGuard = false;
@@ -188,6 +190,7 @@ async function handleRoute(route) {
             }
             case 'instructors': data = wantsObject ? instructorRow : (instructorRow ? [instructorRow] : []); break;
             case 'instructor_profile_drafts': data = wantsObject ? draftRow : (draftRow ? [draftRow] : []); break;
+            case 'instructor_edit_unlocks': data = unlockRows; break;
             default: data = wantsObject ? null : [];
         }
         return jsonRes(route, data);
@@ -420,7 +423,9 @@ async function main() {
         signMode = 'fail'; instructorRow = completeRow;
         ctx = await newCtx(browser); page = await ctx.newPage();
         await gotoProfile(page);
-        const failedPreviewStaysLocked = await page.getByText('檔案已儲存，預覽目前無法載入', { exact: true }).count() === 1
+        // 2026-10-20 起身分證正反面也會鎖定，同一句說明會出現在三張卡；這裡只看存摺那張。
+        const failedPreviewStaysLocked = await page.getByTestId('document-upload-bankbook')
+            .getByText('檔案已儲存，預覽目前無法載入', { exact: true }).count() === 1
             && await page.getByTestId('bankbook-locked-notice').count() === 1
             && await page.getByTestId('bankbook-file-input').count() === 0;
         assert('T9d 存摺預覽失敗時仍維持鎖定並說明狀態', failedPreviewStaysLocked);
@@ -522,7 +527,9 @@ async function main() {
             `paths=${documentPathFields(lastInstructorSaveBody).join(',') || '(none)'}`);
         await page.close(); await ctx.close();
 
+        // 身分證已提交即鎖定：模擬管理員開放一次後才能換。
         requestEvents = []; dialogs = [];
+        unlockRows = [{ id: 'unlock-id-card', scope: 'id_card', granted_at: NOW, granted_by: 'admin', expires_at: '2099-12-31T00:00:00Z' }];
         ctx = await newCtx(browser); page = await ctx.newPage();
         page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
         await gotoProfile(page);
@@ -536,11 +543,13 @@ async function main() {
             && String(lastInstructorSaveBody?.id_back_path).startsWith(`instructors/${UID}/id_back/`)
             && Number(lastInstructorSaveBody?.id_back_size) > 0,
             `paths=${sentPaths.join(',') || '(none)'}, id_back=${lastInstructorSaveBody?.id_back_path}`);
-        assert('T11d 替換後儲存成功，舊檔清理排在 DB 儲存之後', requestEvents.join(' > ') === 'upload-new > db-save > delete-old'
+        // 身分證／存摺換新後舊檔保留（修改紀錄要能回看），所以不會有 delete-old。
+        assert('T11d 替換後儲存成功，舊身分證檔保留不刪', requestEvents.join(' > ') === 'upload-new > db-save'
             && dialogs.some((message) => message.includes('個人資料已儲存')),
             `events=${requestEvents.join(' > ')}, dialogs=${dialogs.join(' | ')}`);
         await page.close(); await ctx.close();
         pathGuard = false;
+        unlockRows = [];
         // ── T12：認領後待啟用的人存檔，留在 /profile 並重新讀取啟用狀態 ──
         currentRole = 'pending';
         activationMock = { status: 'pending', claim_method: 'name_slot', has_confirmed_email: true, masked_email: 'ex***@test.local', profile_complete: true };

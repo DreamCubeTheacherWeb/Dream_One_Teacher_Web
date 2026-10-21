@@ -1,10 +1,14 @@
-import { createElement, useEffect, useRef, useState } from 'react';
+import { createElement, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-    ArrowLeft, CheckCircle2, ExternalLink, FileImage, GraduationCap,
-    Landmark, Loader2, Save, ShieldCheck, Trash2, Upload, UserRound,
+    ArrowLeft, CheckCircle2, ExternalLink, FileImage, GraduationCap, History,
+    KeyRound, Landmark, Loader2, Save, ShieldCheck, Trash2, Upload, UserRound,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import {
+    DOCUMENT_CHANGE_ITEM_LABELS, LOCKABLE_DOCUMENT_KEYS, UNLOCK_SCOPES, UNLOCK_SCOPE_LABELS,
+    describeBankAccountChange, hasSubmittedBankAccount, hasSubmittedDocument,
+} from '../../lib/instructorDocumentLocks';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -96,6 +100,34 @@ const documentPathFields = (key) => [
     `${key}_path`, `${key}_mime`, `${key}_size`, `${key}_uploaded_at`,
 ];
 
+// 身分證／存摺的舊檔一律保留：DB 修改紀錄（instructor_document_changes）的 old_value.path 要能點開看，
+// 刪掉就無法追查；大頭照不在鎖定與紀錄範圍，維持換檔後清掉舊檔。
+const shouldKeepReplacedFile = (key) => LOCKABLE_DOCUMENT_KEYS.includes(key);
+
+// 新功能的資料表若尚未套到該環境，頁面照常載入，只在新區塊提示先套用資料庫更新。
+const MISSING_TABLE_CODES = new Set(['42P01', 'PGRST205']);
+const isMissingTableResult = ({ error, status }) => Boolean(error) && (status === 404 || MISSING_TABLE_CODES.has(error.code));
+const MIGRATION_NOTICE = '此功能需先套用資料庫更新（20261020120000）';
+
+const pad2 = (value) => String(value).padStart(2, '0');
+const formatDateTime = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+};
+
+const hasKeys = (value) => Boolean(value) && Object.keys(value).length > 0;
+
+const describeChanger = (change, names) => {
+    if (change.changed_by_role === 'instructor') return '講師本人';
+    if (change.changed_by_role === 'admin') {
+        const name = names[change.changed_by];
+        return name ? `管理員 ${name}` : '管理員';
+    }
+    return '系統匯入';
+};
+
 const AdminInstructorEdit = () => {
     const { instructorId } = useParams();
     const navigate = useNavigate();
@@ -109,6 +141,79 @@ const AdminInstructorEdit = () => {
     const [pendingFiles, setPendingFiles] = useState({});
     const [obsoletePaths, setObsoletePaths] = useState([]);
     const blobUrls = useRef(new Set());
+    const [unlockState, setUnlockState] = useState({ status: 'loading', rows: [], message: '' });
+    const [changeState, setChangeState] = useState({ status: 'loading', rows: [], names: {}, message: '' });
+    const [busyScope, setBusyScope] = useState('');
+    const busyRef = useRef(false);
+    const openingFileRef = useRef(false);
+    const governanceSeq = useRef(0);
+
+    // 載入「開放修改」狀態與「修改紀錄」。自己處理所有錯誤、不丟例外，所以存檔成功後可直接呼叫。
+    const loadGovernance = useCallback(async (id) => {
+        if (!id) return;
+        const seq = ++governanceSeq.current;
+        try {
+            const [unlockResult, changeResult] = await Promise.all([
+                supabase
+                    .from('instructor_edit_unlocks')
+                    .select('id, scope, granted_at, expires_at')
+                    .eq('instructor_id', id)
+                    .is('consumed_at', null)
+                    .is('revoked_at', null)
+                    .gt('expires_at', new Date().toISOString()),
+                supabase
+                    .from('instructor_document_changes')
+                    .select('id, item, changed_at, changed_by, changed_by_role, unlock_id, old_value, new_value')
+                    .eq('instructor_id', id)
+                    .order('changed_at', { ascending: false })
+                    .limit(50),
+            ]);
+
+            let names = {};
+            const changeRows = changeResult.error ? [] : (changeResult.data || []);
+            const adminIds = [...new Set(changeRows
+                .filter((row) => row.changed_by_role === 'admin' && row.changed_by)
+                .map((row) => row.changed_by))];
+            if (adminIds.length) {
+                const { data: users } = await supabase.from('users').select('id, name').in('id', adminIds);
+                names = Object.fromEntries((users || []).map((user) => [user.id, user.name]));
+            }
+            if (seq !== governanceSeq.current) return;
+
+            if (unlockResult.error) {
+                setUnlockState({
+                    status: isMissingTableResult(unlockResult) ? 'missing' : 'error',
+                    rows: [],
+                    message: unlockResult.error.message || '',
+                });
+            } else {
+                setUnlockState({ status: 'ready', rows: unlockResult.data || [], message: '' });
+            }
+
+            if (changeResult.error) {
+                setChangeState({
+                    status: isMissingTableResult(changeResult) ? 'missing' : 'error',
+                    rows: [],
+                    names: {},
+                    message: changeResult.error.message || '',
+                });
+            } else {
+                setChangeState({ status: 'ready', rows: changeRows, names, message: '' });
+            }
+        } catch (loadGovernanceError) {
+            if (seq !== governanceSeq.current) return;
+            const message = loadGovernanceError?.message || '';
+            setUnlockState({ status: 'error', rows: [], message });
+            setChangeState({ status: 'error', rows: [], names: {}, message });
+        }
+    }, []);
+
+    useEffect(() => {
+        setUnlockState({ status: 'loading', rows: [], message: '' });
+        setChangeState({ status: 'loading', rows: [], names: {}, message: '' });
+        loadGovernance(instructorId);
+        return () => { governanceSeq.current += 1; };
+    }, [instructorId, loadGovernance]);
 
     useEffect(() => {
         let active = true;
@@ -201,7 +306,7 @@ const AdminInstructorEdit = () => {
 
     const removeDocument = (key) => {
         const currentPath = form[`${key}_path`];
-        if (currentPath) setObsoletePaths((current) => [...new Set([...current, currentPath])]);
+        if (currentPath && !shouldKeepReplacedFile(key)) setObsoletePaths((current) => [...new Set([...current, currentPath])]);
         const currentPreview = previews[key];
         if (currentPreview?.startsWith('blob:')) {
             URL.revokeObjectURL(currentPreview);
@@ -271,7 +376,7 @@ const AdminInstructorEdit = () => {
                     .upload(path, file);
                 if (uploadError) throw uploadError;
                 uploadedPaths.push(path);
-                if (next[`${key}_path`]) pathsToRemove.add(next[`${key}_path`]);
+                if (next[`${key}_path`] && !shouldKeepReplacedFile(key)) pathsToRemove.add(next[`${key}_path`]);
                 next[`${key}_path`] = path;
                 next[`${key}_mime`] = file.type;
                 next[`${key}_size`] = file.size;
@@ -319,6 +424,8 @@ const AdminInstructorEdit = () => {
             }));
             setPreviews(refreshedPreviews);
             setSuccess('講師資料已更新。');
+            // 管理員的修改也會被記錄（DB trigger 寫入），存檔後重新載入。
+            loadGovernance(data.id);
         } catch (saveError) {
             if (uploadedPaths.length) {
                 const { error: rollbackError } = await supabase.storage
@@ -329,6 +436,68 @@ const AdminInstructorEdit = () => {
             setError(`儲存失敗：${saveError.message}`);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const grantUnlock = async (scope) => {
+        if (busyRef.current || !instructor) return;
+        if (!window.confirm(`開放「${UNLOCK_SCOPE_LABELS[scope]}」讓講師自行修改一次？講師存檔後會自動鎖回。`)) return;
+        busyRef.current = true;
+        setBusyScope(scope);
+        try {
+            const { error: rpcError } = await supabase.rpc('admin_grant_instructor_edit_unlock', {
+                p_instructor_id: instructor.id,
+                p_scope: scope,
+            });
+            if (rpcError) throw rpcError;
+            await loadGovernance(instructor.id);
+        } catch (grantError) {
+            window.alert(`開放修改失敗：${grantError.message || '請稍後再試'}`);
+        } finally {
+            busyRef.current = false;
+            setBusyScope('');
+        }
+    };
+
+    const revokeUnlock = async (scope, unlockId) => {
+        if (busyRef.current || !instructor || !unlockId) return;
+        busyRef.current = true;
+        setBusyScope(scope);
+        try {
+            const { error: rpcError } = await supabase.rpc('admin_revoke_instructor_edit_unlock', {
+                p_unlock_id: unlockId,
+            });
+            if (rpcError) throw rpcError;
+            await loadGovernance(instructor.id);
+        } catch (revokeError) {
+            window.alert(`收回開放失敗：${revokeError.message || '請稍後再試'}`);
+        } finally {
+            busyRef.current = false;
+            setBusyScope('');
+        }
+    };
+
+    // 舊檔／新檔按了才簽 5 分鐘連結。先同步開空白分頁再導向，避免 Safari 把 await 之後的 window.open 當成彈出視窗擋掉。
+    const openStoredFile = async (path) => {
+        if (!path || openingFileRef.current) return;
+        openingFileRef.current = true;
+        const win = window.open('', '_blank');
+        try {
+            const { data, error: signError } = await supabase.storage
+                .from('instructor_uploads')
+                .createSignedUrl(path, 300);
+            if (signError || !data?.signedUrl) throw signError || new Error('無法產生檔案連結');
+            if (win) {
+                win.opener = null;
+                win.location.href = data.signedUrl;
+            } else {
+                window.open(data.signedUrl, '_blank', 'noopener');
+            }
+        } catch (openError) {
+            win?.close();
+            window.alert(`開啟檔案失敗：${openError.message || '請稍後再試'}`);
+        } finally {
+            openingFileRef.current = false;
         }
     };
 
@@ -460,11 +629,12 @@ const AdminInstructorEdit = () => {
                 </Section>
 
                 <Section icon={FileImage} title="講師文件">
-                    <p className="text-sm text-bauhaus-black/60 font-medium mb-4">可替換或移除 Storage 文件，也可維護歷史 Google Drive 連結。新檔會在儲存整份資料時一併上傳。</p>
+                    <p className="text-sm text-bauhaus-black/60 font-medium mb-4">可替換或移除 Storage 文件，也可維護歷史 Google Drive 連結。新檔會在儲存整份資料時一併上傳。身分證與存摺的舊檔會保留並記入下方修改紀錄。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {DOCUMENT_TYPES.map(({ key, label }) => (
                             <DocumentEditor
                                 key={key}
+                                docKey={key}
                                 label={label}
                                 preview={previews[key]}
                                 externalUrl={form[`${key}_external_url`]}
@@ -475,6 +645,70 @@ const AdminInstructorEdit = () => {
                             />
                         ))}
                     </div>
+                </Section>
+
+                <Section icon={KeyRound} title="講師自行修改權限">
+                    <p className="text-sm text-bauhaus-black/60 font-medium mb-4">
+                        {'講師的身分證、存摺封面與匯款資料一旦送出就會鎖定。按「開放修改一次」後講師可自行修改一次，存檔後自動鎖回；按下立即生效，不需要按下方的儲存。'}
+                    </p>
+                    {unlockState.status === 'loading' && (
+                        <div className="flex items-center gap-2 text-sm font-bold text-bauhaus-black/60"><Loader2 className="w-4 h-4 animate-spin" />讀取開放狀態中⋯</div>
+                    )}
+                    {unlockState.status === 'missing' && <MigrationNotice testId="unlock-migration-notice" />}
+                    {unlockState.status === 'error' && (
+                        <div role="alert" className="border-2 border-bauhaus-black rounded-xl bg-bauhaus-red text-white px-4 py-3 mb-4 text-sm font-bold flex flex-wrap items-center gap-3">
+                            <span className="break-words min-w-0">讀取開放狀態失敗：{unlockState.message || '請稍後再試'}</span>
+                            <button type="button" onClick={() => loadGovernance(instructor.id)} className="bh-btn bh-btn-outline px-3 py-2 text-sm min-h-[44px]">重新載入</button>
+                        </div>
+                    )}
+                    {unlockState.status !== 'loading' && (
+                        <ul className="space-y-3">
+                            {UNLOCK_SCOPES.map((scope) => {
+                                const hasData = scope === 'id_card'
+                                    ? (hasSubmittedDocument(instructor, 'id_front') || hasSubmittedDocument(instructor, 'id_back'))
+                                    : scope === 'bankbook'
+                                        ? hasSubmittedDocument(instructor, 'bankbook')
+                                        : hasSubmittedBankAccount(instructor);
+                                return (
+                                    <UnlockRow
+                                        key={scope}
+                                        scope={scope}
+                                        hasData={hasData}
+                                        openUnlock={unlockState.rows.find((row) => row.scope === scope) || null}
+                                        claimed={Boolean(instructor.user_id)}
+                                        ready={unlockState.status === 'ready'}
+                                        busy={busyScope === scope}
+                                        anyBusy={Boolean(busyScope)}
+                                        onGrant={() => grantUnlock(scope)}
+                                        onRevoke={(unlockId) => revokeUnlock(scope, unlockId)}
+                                    />
+                                );
+                            })}
+                        </ul>
+                    )}
+                </Section>
+
+                <Section icon={History} title="修改紀錄">
+                    <p className="text-sm text-bauhaus-black/60 font-medium mb-4">
+                        身分證、存摺封面與匯款資料的每次修改（講師、管理員、系統匯入）都會留下紀錄，舊檔保留可查看。只顯示最近 50 筆。
+                    </p>
+                    {changeState.status === 'loading' && (
+                        <div className="flex items-center gap-2 text-sm font-bold text-bauhaus-black/60"><Loader2 className="w-4 h-4 animate-spin" />讀取修改紀錄中⋯</div>
+                    )}
+                    {changeState.status === 'missing' && <MigrationNotice testId="change-migration-notice" />}
+                    {changeState.status === 'error' && (
+                        <div role="alert" className="border-2 border-bauhaus-black rounded-xl bg-bauhaus-red text-white px-4 py-3 text-sm font-bold break-words">讀取修改紀錄失敗：{changeState.message || '請稍後再試'}</div>
+                    )}
+                    {changeState.status === 'ready' && changeState.rows.length === 0 && (
+                        <div className="border-2 border-dashed border-bauhaus-black/30 rounded-xl bg-bauhaus-muted px-4 py-6 text-center text-sm font-bold text-bauhaus-black/50">尚無修改紀錄</div>
+                    )}
+                    {changeState.status === 'ready' && changeState.rows.length > 0 && (
+                        <ul className="space-y-3" data-testid="change-list">
+                            {changeState.rows.map((change) => (
+                                <ChangeRow key={change.id} change={change} names={changeState.names} onOpenFile={openStoredFile} />
+                            ))}
+                        </ul>
+                    )}
                 </Section>
             </div>
 
@@ -534,8 +768,116 @@ const ReadOnly = ({ label, value }) => (
     </div>
 );
 
-const DocumentEditor = ({ label, preview, externalUrl, pending, onFile, onRemove, onExternalUrl }) => (
-    <div className="border-2 border-bauhaus-black rounded-2xl p-4 bg-white">
+const MigrationNotice = ({ testId }) => (
+    <div data-testid={testId} role="status" className="border-2 border-bauhaus-black rounded-xl bg-bauhaus-yellow px-4 py-3 mb-4 text-sm font-bold text-bauhaus-black break-words">
+        {MIGRATION_NOTICE}
+    </div>
+);
+
+const UnlockRow = ({ scope, hasData, openUnlock, claimed, ready, busy, anyBusy, onGrant, onRevoke }) => {
+    const label = UNLOCK_SCOPE_LABELS[scope];
+    let chip = { text: '尚未提交', className: 'bg-bauhaus-muted text-bauhaus-black' };
+    let description = '講師尚未提交，可自行填寫';
+    let action = null;
+
+    if (hasData && openUnlock) {
+        chip = { text: '已開放修改一次', className: 'bg-bauhaus-yellow text-bauhaus-black' };
+        const expiry = openUnlock.expires_at ? `${formatDateTime(openUnlock.expires_at)} 前有效，` : '';
+        description = `開放時間 ${formatDateTime(openUnlock.granted_at)}，${expiry}講師存檔後自動鎖回`;
+        action = (
+            <button type="button" onClick={() => onRevoke(openUnlock.id)} disabled={!ready || anyBusy} className="bh-btn bh-btn-outline px-4 py-2.5 text-sm min-h-[44px] w-full sm:w-auto shrink-0">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}{busy ? '處理中⋯' : '收回開放'}
+            </button>
+        );
+    } else if (hasData) {
+        chip = { text: '鎖定中', className: 'bg-bauhaus-black text-white' };
+        description = claimed
+            ? '講師目前無法自行修改；按右側按鈕可開放講師修改一次。'
+            : '講師尚未認領帳號，無法自行修改；請直接在上方替講師更新。';
+        action = (
+            <button type="button" onClick={onGrant} disabled={!ready || !claimed || anyBusy} className="bh-btn bh-btn-yellow px-4 py-2.5 text-sm min-h-[44px] w-full sm:w-auto shrink-0">
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}{busy ? '處理中⋯' : '開放修改一次'}
+            </button>
+        );
+    }
+
+    return (
+        <li data-testid={`unlock-row-${scope}`} className="border-2 border-bauhaus-black rounded-2xl p-4 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-black text-bauhaus-black">{label}</h3>
+                    <span data-testid={`unlock-status-${scope}`} className={`bh-chip ${chip.className}`}>{chip.text}</span>
+                </div>
+                <p data-testid={`unlock-desc-${scope}`} className="mt-1 text-sm font-medium text-bauhaus-black/70 break-words">{description}</p>
+            </div>
+            {action}
+        </li>
+    );
+};
+
+const FileActions = ({ value, side, onOpenFile }) => {
+    const externalUrl = typeof value?.external_url === 'string' ? value.external_url.trim() : '';
+    const actions = [];
+    if (value?.path) {
+        actions.push(
+            <button key="file" type="button" onClick={() => onOpenFile(value.path)} className="bh-btn bh-btn-outline px-3 py-2 text-sm min-h-[44px]">
+                <FileImage className="w-4 h-4" />{side}檔
+            </button>,
+        );
+    }
+    if (externalUrl) {
+        actions.push(
+            <a key="external" href={externalUrl} target="_blank" rel="noopener noreferrer" className="bh-btn bh-btn-outline px-3 py-2 text-sm min-h-[44px]">
+                <ExternalLink className="w-4 h-4" />{side}雲端連結
+            </a>,
+        );
+    }
+    if (!actions.length) return <span className="text-sm font-bold text-bauhaus-black/50">{side}檔：無</span>;
+    return <>{actions}</>;
+};
+
+const ChangeRow = ({ change, names, onOpenFile }) => {
+    const isBank = change.item === 'bank_account';
+    const firstSubmission = !hasKeys(change.old_value);
+    const removed = !isBank && !hasKeys(change.new_value);
+    const bankDiff = isBank ? describeBankAccountChange(change.old_value || {}, change.new_value || {}) : [];
+
+    return (
+        <li data-testid="change-row" className="border-2 border-bauhaus-black rounded-xl p-3 sm:p-4 bg-white">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-black text-bauhaus-black">{DOCUMENT_CHANGE_ITEM_LABELS[change.item] || change.item}</span>
+                <span className="text-xs font-bold text-bauhaus-black/60">{formatDateTime(change.changed_at)}</span>
+                <span className="text-sm font-bold text-bauhaus-black">{describeChanger(change, names)}</span>
+                {change.unlock_id && <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">使用開放權限</span>}
+            </div>
+            {isBank ? (
+                <div className="mt-2 text-sm font-medium text-bauhaus-black/80">
+                    {firstSubmission && <div className="font-bold mb-1">首次提交</div>}
+                    {bankDiff.length ? (
+                        <ul className="space-y-0.5">
+                            {bankDiff.map((entry) => (
+                                <li key={entry.field} className="break-all">{entry.label}：{entry.from} → {entry.to}</li>
+                            ))}
+                        </ul>
+                    ) : <span className="text-bauhaus-black/50">沒有欄位差異</span>}
+                </div>
+            ) : (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {firstSubmission
+                        ? <span className="text-sm font-bold text-bauhaus-black">首次提交</span>
+                        : <FileActions value={change.old_value} side="舊" onOpenFile={onOpenFile} />}
+                    <span aria-hidden="true" className="text-bauhaus-black/40 font-black">→</span>
+                    {removed
+                        ? <span className="text-sm font-bold text-bauhaus-black">已移除</span>
+                        : <FileActions value={change.new_value} side="新" onOpenFile={onOpenFile} />}
+                </div>
+            )}
+        </li>
+    );
+};
+
+const DocumentEditor = ({ docKey, label, preview, externalUrl, pending, onFile, onRemove, onExternalUrl }) => (
+    <div className="border-2 border-bauhaus-black rounded-2xl p-4 bg-white" data-testid={`document-editor-${docKey}`}>
         <div className="flex items-center justify-between gap-2 mb-3">
             <h3 className="font-black text-bauhaus-black">{label}</h3>
             {pending && <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">待上傳</span>}

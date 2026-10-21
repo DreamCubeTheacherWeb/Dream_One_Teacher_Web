@@ -10,7 +10,8 @@
  * P1 新講師第一次填表（沒有主檔、Email＝Google）
  * P2 姓名＋手機＋末四碼認領的舊講師，主要 Email ≠ Google；只改暱稱
  * P3 form-import 講師（四份證件在 form-import/），Email 自動對應認領；只改文字欄位
- * P4 form-import 講師以姓名＋手機＋末四碼認領（Email ≠ Google），換一張身分證正面
+ * P4 form-import 講師以姓名＋手機＋末四碼認領（Email ≠ Google），管理員開放一次後換一張身分證正面
+ *    （2026-10-20 起已提交的身分證即鎖定；驗開放被用掉、修改紀錄寫入、舊檔保留）
  * P5 已有主檔的講師連續存兩次（電話、地址）
  * P6 反向對照：ProfilePage.jsx 暫時換成 1f5c350（upsert 版）重新 build，P2、P3 應被 42501／403 擋下；
  *    build 完立刻寫回原檔，並以 git diff --quiet -- src 確認乾淨。
@@ -534,6 +535,9 @@ async function scenarioP4(ctx) {
   const phoneDigits = `0955${digits(6)}`;
   const idNumber = `D12345${digits(4)}`;
   const { row: seeded, files } = await seedFormImport(ctx, { fullName, email: legacyEmail, idNumber, phone: phoneDigits, tag: `p4-${seq}` });
+  // 已提交的身分證即鎖定：先模擬管理員在後台按「開放修改一次」，講師才換得了。
+  const unlockId = ctx.api.sql(`INSERT INTO public.instructor_edit_unlocks (instructor_id, scope, granted_by)
+    VALUES (:'iid', 'id_card', :'aid') RETURNING id`, { iid: seeded.id, aid: ctx.admin.id }).trim();
   const user = await newUser(ctx, 'p4-google', 'Wang Google');
   const s = await openSession(ctx, user);
   try {
@@ -573,6 +577,19 @@ async function scenarioP4(ctx) {
       d.lost.length ? describeChanges(d.changed, d.lost) : `變動欄位：${Object.keys(d.changed).join(', ')}`);
     if (d.normalized.length) r.note(`P4 原本空值被存成空字串（無資料遺失）：${describeChanges(d.changed, d.normalized)}`);
     r.check('P4 被換掉的 form-import 舊檔仍在 storage（講師刪不到管理員匯入檔）', Boolean(ctx.objectOf(files.id_front.path)), files.id_front.path);
+    const unlockState = ctx.api.json(`SELECT json_build_object('consumed_by', consumed_by, 'consumed', consumed_at IS NOT NULL)
+      FROM public.instructor_edit_unlocks WHERE id = :'uid'`, { uid: unlockId });
+    r.check('P4 開放修改一次已被這次存檔用掉（存檔後自動鎖回）', unlockState?.consumed === true && unlockState?.consumed_by === user.id,
+      JSON.stringify(unlockState));
+    const changeRow = ctx.api.json(`SELECT json_build_object('role', changed_by_role, 'by', changed_by, 'unlock', unlock_id,
+        'old_path', old_value->>'path', 'new_path', new_value->>'path')
+      FROM public.instructor_document_changes WHERE instructor_id = :'iid' AND item = 'id_front' ORDER BY id DESC LIMIT 1`, { iid: seeded.id });
+    r.check('P4 修改紀錄寫入：講師本人、用了開放權限、舊檔＝form-import 原檔、新檔＝新路徑',
+      changeRow?.role === 'instructor' && changeRow?.by === user.id && changeRow?.unlock === unlockId
+      && changeRow?.old_path === files.id_front.path && changeRow?.new_path === after?.id_front_path, JSON.stringify(changeRow));
+    const relocked = await s.page.getByTestId('id_front-locked-notice').waitFor({ state: 'visible', timeout: 10000 })
+      .then(() => true).catch(() => false);
+    r.check('P4 存檔後身分證正面回到鎖定（畫面）', relocked);
   } finally {
     ctx.consoleErrors.push(...s.consoleErrors.map((e) => `P4: ${e}`));
     await s.context.close();
@@ -815,8 +832,10 @@ async function runPhase(phase, scenarios, { afterStart, shotPrefix = 'A' } = {})
     const api = makeApi(activeStack);
     const triggers = api.sql(`SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger WHERE tgrelid = 'public.instructors'::regclass AND NOT tgisinternal`);
     r.check(`${phase} 套用 repo 全部 SQL（${chainReport.applied.length - 1} 個檔），instructors 上的 guard trigger 都在`,
-      ['trg_guard_instructor_admin_fields', 'trg_guard_instructor_bank_account', 'trg_guard_instructor_bankbook',
-        'trg_guard_instructor_file_paths', 'trg_guard_instructor_identity_email'].every((t) => triggers.split(',').includes(t)),
+      // 20261020120000 起舊的存摺／匯款 trigger 由 trg_guard_instructor_locked_documents 取代，必須已移除。
+      ['trg_guard_instructor_admin_fields', 'trg_guard_instructor_locked_documents', 'trg_log_instructor_document_changes',
+        'trg_guard_instructor_file_paths', 'trg_guard_instructor_identity_email'].every((t) => triggers.split(',').includes(t))
+      && !['trg_guard_instructor_bank_account', 'trg_guard_instructor_bankbook'].some((t) => triggers.split(',').includes(t)),
       triggers);
     const admin = await seedAdmin(activeStack, api);
     activeBrowser = await launchBrowser(appDir);

@@ -1,29 +1,32 @@
-// 後台「回報選項管理」的純函式：排序、驗證、下一個排序值、上移／下移。
+// 後台「回報選項管理」的純函式：期間與各期間清單、排序、驗證、拖曳後的新順序、複製清單。
 // 不碰網路與畫面，方便 node --test 直接驗證。
-
-import { TERM_PERIOD_LABELS, TERM_SCOPE_LABELS, termScopeFor } from './constants.js';
+//
+// 資料結構（migration 20261020130000）：
+//   期間 kind='term_period'（period_id 為 NULL，value 是講師回報存下的代碼）
+//   上課單位 kind='partner_unit'、營隊梯次 kind='camp_batch'，各自以 period_id 掛在某個期間底下
 
 export const OPTION_LABEL_MAX = 200;
 export const SORT_STEP = 10;
 
-// 三個分頁；term_period 的 value 是固定代碼，只允許改名與啟用，不可新增
-export const OPTION_KINDS = [
-    {
-        kind: 'term_period',
-        title: '教學課程期間',
-        canAdd: false,
-        hint: '這裡的文字會原樣出現在講師回報頁的下拉；每學期開始前改成當期名稱，例如「115學年度下學期」「2027年寒假」。寒假與暑假會帶出寒暑假清單，學期間帶出學期間清單。',
-    },
+// 每個期間底下的兩份清單
+export const PERIOD_SECTIONS = [
     {
         kind: 'partner_unit',
-        title: '合作單位',
-        canAdd: true,
-        hint: '合作課講師回報時的「本次上課單位」下拉選項。講師選了寒假或暑假會看到「寒暑假清單」，選了學期間會看到「學期間清單」。',
+        title: '上課單位',
+        noun: '單位',
+        placeholder: '例如：【新竹】愛丁堡 週二班',
+        hint: 'B2B 合作課講師選了這個期間後，「本次上課單位」下拉會列出這裡的單位。',
     },
-    { kind: 'camp_batch', title: '營隊梯次', canAdd: true, hint: '營隊課講師回報時的「營隊梯次」下拉選項。' },
+    {
+        kind: 'camp_batch',
+        title: '營隊梯次',
+        noun: '梯次',
+        placeholder: '例如：【臺北A】中山 | 7/1~7/3 三日營',
+        hint: '營隊講師回報時，「營隊梯次」下拉會列出所有啟用中期間的梯次。',
+    },
 ];
 
-export const kindConfig = (kind) => OPTION_KINDS.find((item) => item.kind === kind) || null;
+export const sectionConfig = (kind) => PERIOD_SECTIONS.find((item) => item.kind === kind) || null;
 
 const sortValue = (option) => Number(option?.sort_order) || 0;
 
@@ -32,34 +35,22 @@ export const sortOptions = (options) => [...(Array.isArray(options) ? options : 
     sortValue(a) - sortValue(b) || String(a?.label ?? '').localeCompare(String(b?.label ?? ''), 'zh-Hant')
 ));
 
-export const optionsOfKind = (options, kind) => sortOptions(
-    (Array.isArray(options) ? options : []).filter((option) => option?.kind === kind),
+export const periodsOf = (options) => sortOptions(
+    (Array.isArray(options) ? options : []).filter((option) => option?.kind === 'term_period'),
 );
 
-// 合作單位的兩組清單（salary_report_options.term_scope）
-export const TERM_SCOPES = ['vacation', 'semester'];
-export const scopeLabel = (scope) => TERM_SCOPE_LABELS[scope] || scope;
-export const otherScope = (scope) => (scope === 'semester' ? 'vacation' : 'semester');
-
-// 該分頁裡屬於某一組清單的列（只對 partner_unit 有意義）
-export const optionsOfScope = (options, kind, scope) => sortOptions(
-    (Array.isArray(options) ? options : []).filter((option) => option?.kind === kind && option?.term_scope === scope),
+// 某個期間底下某一種清單（上課單位／營隊梯次）
+export const itemsOfPeriod = (options, periodId, kind) => sortOptions(
+    (Array.isArray(options) ? options : []).filter((option) => (
+        option?.kind === kind && periodId && option?.period_id === periodId
+    )),
 );
 
-// 把單位移到另一組：回傳要送出的 patch；排序接在目標組最後（目標組最大值＋10）
-export const planScopeChange = (kindOptions, id, targetScope) => {
-    const list = Array.isArray(kindOptions) ? kindOptions : [];
-    const row = list.find((option) => option.id === id);
-    if (!row || !TERM_SCOPES.includes(targetScope) || row.term_scope === targetScope) return null;
-    const target = list.filter((option) => option.term_scope === targetScope);
-    return { term_scope: targetScope, sort_order: nextSortOrder(target) };
-};
-
-// 教學課程期間三列：用途（寒假／學期間／暑假）與它會帶出哪一組清單
-export const termPeriodInfo = (value) => ({
-    usage: TERM_PERIOD_LABELS[value] || String(value ?? ''),
-    scopeLabel: TERM_SCOPE_LABELS[termScopeFor(value)] || '',
-});
+// 期間卡片上的筆數摘要：{ partner_unit: { total, active }, camp_batch: { total, active } }
+export const periodCounts = (options, periodId) => Object.fromEntries(PERIOD_SECTIONS.map(({ kind }) => {
+    const items = itemsOfPeriod(options, periodId, kind);
+    return [kind, { total: items.length, active: items.filter((item) => item.is_active !== false).length }];
+}));
 
 // 新增時的排序預設：目前最大值＋10（沒有任何選項時為 10）
 export const nextSortOrder = (options) => {
@@ -68,58 +59,85 @@ export const nextSortOrder = (options) => {
     return Math.max(...list.map(sortValue)) + SORT_STEP;
 };
 
-// 回傳 { ok:true, label } 或 { ok:false, message }
-export const validateOptionLabel = (rawLabel, siblings = [], { ignoreId = null } = {}) => {
+// 回傳 { ok:true, label } 或 { ok:false, message }；siblings＝同一份清單（同期間同種類，或全部期間）
+export const validateOptionLabel = (rawLabel, siblings = [], { ignoreId = null, noun = '選項' } = {}) => {
     const label = typeof rawLabel === 'string' ? rawLabel.trim() : '';
-    if (!label) return { ok: false, message: '請輸入選項文字。' };
-    if (label.length > OPTION_LABEL_MAX) return { ok: false, message: `選項文字不得超過 ${OPTION_LABEL_MAX} 字。` };
+    if (!label) return { ok: false, message: `請輸入${noun}名稱。` };
+    if (label.length > OPTION_LABEL_MAX) return { ok: false, message: `${noun}名稱不得超過 ${OPTION_LABEL_MAX} 字。` };
     const duplicate = (Array.isArray(siblings) ? siblings : []).some((option) => (
         option.id !== ignoreId && (option.value === label || option.label === label)
     ));
-    if (duplicate) return { ok: false, message: '這個分頁已經有相同的選項。' };
+    if (duplicate) return { ok: false, message: `這份清單已經有相同的${noun}。` };
     return { ok: true, label };
 };
 
-// 上移／下移：回傳需要更新的 [{ id, sort_order }]；到頂／到底回傳 []
-// 相鄰兩筆排序值不同 → 只交換這兩筆；相同（資料有重複值）→ 整組重編成 10、20、30…，只回傳有變的
-export const planMove = (kindOptions, id, direction) => {
-    const list = sortOptions(kindOptions);
-    const index = list.findIndex((option) => option.id === id);
-    const target = direction === 'up' ? index - 1 : index + 1;
-    if (index < 0 || target < 0 || target >= list.length) return [];
-
-    const current = list[index];
-    const neighbor = list[target];
-    if (sortValue(current) !== sortValue(neighbor)) {
-        return [
-            { id: current.id, sort_order: sortValue(neighbor) },
-            { id: neighbor.id, sort_order: sortValue(current) },
-        ];
-    }
-    const reordered = [...list];
-    reordered[index] = neighbor;
-    reordered[target] = current;
-    return reordered
-        .map((option, position) => ({ id: option.id, sort_order: (position + 1) * SORT_STEP }))
-        .filter((update) => sortValue(list.find((option) => option.id === update.id)) !== update.sort_order);
+// 新期間的代碼：講師回報存的是代碼，名稱之後改了舊紀錄仍對得到同一個期間
+export const newPeriodValue = (random = Math.random) => {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let suffix = '';
+    for (let i = 0; i < 10; i += 1) suffix += alphabet[Math.floor(random() * alphabet.length)];
+    return `term_${suffix}`;
 };
 
-// 畫面用：到頂不能再上移、到底不能再下移
-export const canMove = (kindOptions, id, direction) => {
-    const list = sortOptions(kindOptions);
-    const index = list.findIndex((option) => option.id === id);
-    if (index < 0) return false;
-    return direction === 'up' ? index > 0 : index < list.length - 1;
+// 新增期間時「從某期複製清單」：回傳要 insert 的列（名稱、順序、啟用狀態照抄，掛到新期間）。
+// 預設只複製上課單位：營隊梯次帶日期（7/1~7/3…），每期不同；複製過去又沒停用舊期間時，
+// 講師的梯次下拉會出現兩組同名梯次，容易選到錯的期間。
+export const COPY_KINDS = ['partner_unit'];
+export const planCopyItems = (options, sourcePeriodId, newPeriodId, kinds = COPY_KINDS) => {
+    if (!sourcePeriodId || !newPeriodId) return [];
+    return PERIOD_SECTIONS.filter(({ kind }) => kinds.includes(kind)).flatMap(({ kind }) => itemsOfPeriod(options, sourcePeriodId, kind).map((item) => ({
+        kind,
+        value: item.value,
+        label: item.label,
+        sort_order: sortValue(item),
+        is_active: item.is_active !== false,
+        period_id: newPeriodId,
+    })));
 };
 
-// Postgres 唯一鍵衝突（kind＋value 重複）
+// 拖曳放開後的新順序（id 陣列）；沒有移動或找不到時回傳 null
+export const reorderIds = (list, activeId, overId) => {
+    const ids = (Array.isArray(list) ? list : []).map((item) => item.id);
+    const from = ids.indexOf(activeId);
+    const to = ids.indexOf(overId);
+    if (from < 0 || to < 0 || from === to) return null;
+    const next = [...ids];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return next;
+};
+
+// 依新順序把清單的 sort_order 改成 10、20、30…（樂觀更新畫面用，與 reorder RPC 寫入的值相同）
+export const applyOrder = (options, orderedIds) => {
+    const position = new Map((orderedIds || []).map((id, index) => [id, (index + 1) * SORT_STEP]));
+    return (Array.isArray(options) ? options : []).map((option) => (
+        position.has(option.id) ? { ...option, sort_order: position.get(option.id) } : option
+    ));
+};
+
+// 目前該選哪個期間：原本選的還在就沿用，否則選第一個；沒有任何期間回傳 null
+export const pickPeriodId = (periods, currentId) => {
+    const list = Array.isArray(periods) ? periods : [];
+    if (currentId && list.some((period) => period.id === currentId)) return currentId;
+    return list[0]?.id ?? null;
+};
+
+// Postgres 唯一鍵衝突（同一份清單同名）
 export const isDuplicateError = (error) => error?.code === '23505';
 
 export const optionErrorMessage = (error, fallback = '操作失敗，請稍後再試。') => {
     if (!error) return fallback;
-    if (isDuplicateError(error)) return '這個分頁已經有相同的選項。';
+    if (isDuplicateError(error)) return '這份清單已經有相同的名稱。';
     if (error.code === '42501' || /row-level security|permission denied/i.test(error.message || '')) {
         return '沒有權限執行這個操作，請確認是否以管理員登入。';
     }
     return `${fallback}${error.message ? `（${error.message}）` : ''}`;
+};
+
+// 讀取選項失敗：欄位不存在（42703）通常代表資料庫還沒套用 2026-10-20 的更新
+export const optionsLoadErrorMessage = (error) => {
+    if (error?.code === '42703' || /period_id/i.test(error?.message || '')) {
+        return '讀取選項失敗，資料庫可能還沒套用 2026-10-20 的更新。';
+    }
+    return optionErrorMessage(error, '讀取選項失敗');
 };

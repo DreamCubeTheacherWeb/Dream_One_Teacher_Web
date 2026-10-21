@@ -54,12 +54,17 @@ const ProfileCompleteGate = ({ onCompletionChange }) => {
     let cancelled = false;
     const checkedPath = location.pathname;
     (async () => {
-      const { data: inst } = await supabase
+      const { data: inst, error } = await supabase
         .from('instructors')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
       if (cancelled) return;
+      // 查詢失敗時不判定完成度：當成「全缺」會把已完成的老師導回個人資料頁。
+      if (error) {
+        console.warn('Failed to check profile completion:', error.message);
+        return;
+      }
       const nextCompletion = getInstructorProfileCompletion(inst);
       setCompletion({
         userId: user.id,

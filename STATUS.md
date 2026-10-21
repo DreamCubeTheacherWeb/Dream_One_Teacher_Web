@@ -1,7 +1,7 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-20（講師姓名空位＋Email 驗證碼啟用＋電子簽約證據已在分支 feat/teacher-name-placeholder 本機全測通過、未上線，見「講師姓名空位」段；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-21（認領啟用＋電子簽約線：分支 release/esign-20261021 合併 origin/main 467579d，待上線）；2026-10-20（講師姓名空位＋Email 驗證碼啟用＋電子簽約證據已在分支 feat/teacher-name-placeholder 本機全測通過、未上線，見「講師姓名空位」段；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。；2026-10-20（「我的報酬」黃卡改「X月累計報酬（上月 26 日～本月 25 日）＋下次匯款日」、後台可改匯款日：**已上線** cc24c88（兩網域 16:37 換版），migration `20261020160000` 已套正式庫；薪資登記中心整理已在正式庫完成：完全相同重複列 91 筆搬隔離區、9/26 前標已付款、異常規則只抓內容完全相同，後台異常 481→2、未付款→7,586；「我的報酬」新增站內「報酬確認區」取代外連試算表，**已上線** 129ffab（兩網域 10:51 換版）；回報選項管理改版在分支 `feat/report-options-v4`，待套 migration `20261020130000`；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段；講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」在分支 `feat/instructor-doc-edit-unlock`，待整合並套 migration `20261020120000`）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
 
 ---
 
@@ -86,6 +86,223 @@
 - 主檔 Email 空白或錯誤的老師會卡在「待確認 Email」，行政要先補。
 - 簽約驗證碼驗證後關頁，60 秒內回來要等冷卻。
 
+---
+
+## 💳 2026-10-20：「我的報酬」黃卡改成「X月累計報酬＋下次匯款日」、後台可改匯款日（✅ 正式環境已上線 cc24c88，migration 已套正式庫）
+
+**需求（業主 10/20）**：「現在不會有『未領金額』，之後這裡也要叫做 XX月累計報酬，然後寫上下次的匯款日，這個日期在後台也要可以改」；
+「像是 12/10 匯款，然後前面就是 11月累計報酬」；「我給你的資料全部都是已經有領過的，沒有人未領，調整一下」。
+同日兩次追問後業主拍板：①總表 10 月那 6 筆（上課日 10/13～10/17）**先不標已付款**；②黃卡金額照**結算週期**「上月 26 日～本月 25 日」加總，
+以結束月份命名（11/10 匯「10月」＝9/26～10/25），不是日曆月。
+「全部已領」的資料修正由「💸 薪資登記中心整理」那條工作線上午在正式庫完成（9/26 前 5,435 筆標已付款），本分支原本的 06／96 已刪除、**沒有在正式庫執行**。
+
+**完成（分支 `feat/salary-payday-card`，worktree `.claude/worktrees/payday-card`）**：
+- 講師端 `MySalary.jsx`：黃卡標題「（下一期）累計報酬」，右上白色膠囊「M/D 匯款」，副標「9/26～10/25・N 場・含待核准 $X・N 筆待確認金額」；
+  金額＝該期 session_date 區間內合計（退回不算；待核准算進並另列；待定價只算場次）。第四張小卡「已核准未付」改「已匯款」（view 的 paid_salary）。
+  匯款日設定跟著 load() 一起讀（「重新載入」會重讀）；表還沒建／讀到 0 列時用每月 10 號，其他讀取錯誤也用 10 號但膠囊註明「（預估）」。
+- 規則 `src/lib/salaryPayday.js`（11 組單元測試）：後台設定的「下次匯款日」還沒過（含當天）就用；過了自動跳下一期的「每月固定日」（1～28）；
+  提前／延後的日期歸屬最接近它的固定日那一期（固定 28 號、12/28 延到 1/4 仍匯 11 月，之後接 1/28 匯 12 月；等距取較早）。
+- 後台 `/admin/salary`（只有 admin）新區塊「講師端匯款日」（`components/admin/SalaryPaydaySetting.jsx`）：下次匯款日（不可選今天以前）、之後每月固定幾號、
+  預覽「儲存後講師會看到「11月累計報酬（10/26～11/25）・12/9 匯款」」、目前講師看到的文字；表還沒建時顯示「需先套用資料庫更新」。
+- migration `培訓web/supabase/migrations/20261020160000_salary_payout_schedule.sql`（原 150000，與 `20261020150000_salary_anomaly_exact_duplicates.sql` 撞號改名）：
+  單列表 `salary_payout_schedule`（種子 2026-11-10／10 號）；teacher／mentor／admin 可讀、pending 0 列、anon 拒絕；只有 admin 能改 next_payday／regular_day 兩欄；
+  updated_at／updated_by 由 trigger 寫；不能新增第二列或刪除；可重跑且不蓋掉後台改過的日期。
+
+**正式庫（2026-10-20 約 16:20 台北，業主口頭授權「我口頭授權你用 Chrome 開 Supabase 套 migration 20261020160000 和 06_mark_imported_paid.sql，套好核對後推 main 上線並驗證」；06 因上述原因未執行）**：
+業主 Chrome 的 SQL Editor（DreamCube_teacher，畫面標 PRODUCTION）；SQL 全文寫進指令、瀏覽器端 SHA-256 與 repo 檔一致（`43e01d51…819d`）才執行。
+套用前：表不存在、函式不存在、historical_import 未付 6 筆。預演（整支＋最後故意 RAISE）回 `DRYRUN_PAYDAY_OK`，再查表／函式仍不存在。
+正式套用（Supabase 對 DROP … IF EXISTS 跳「destructive operations」警告，按 Run query）後核對：1 列（2026-11-10、10）、RLS 開、政策 2 條（SELECT／UPDATE）、
+anon 無權限、authenticated 只有 SELECT＋next_payday／regular_day 欄位 UPDATE、trigger `trg_stamp_salary_payout_schedule` 啟用、historical_import 未付仍 6 筆（沒被動到）。
+
+- 後台防呆（結算週期版 opus 審查必修 1 項，已修並經同一審查者覆核「必修 0」）：只能改「目前這一期」的匯款日——改每月固定日時下次匯款日自動換成同一期的新固定日（已過今天就保留原日期）；
+  日期若會讓講師看到別的期別（例：固定 28＋日期 11/10 會變成匯 9 月；或 10/20 就設 12/9 跳過 10 月那期）就擋下、儲存停用、紅字說明；這期日期過了才自動換下一期。
+
+**證據（本機實跑，沙盒外；推送前最後一輪在合併 origin/main 4361721 後）**：`npm test` 155/155、`npm run lint` 0、build 通過；
+`npm run verify:salary-payout-schedule`（臨時 PostgreSQL）43/43；`npm run verify:salary-payday:browser`（mock Supabase＋真 Chrome＋固定時鐘）114/114
+（9/25 不算、9/26 算、10/25 算、10/26 屬下一期；11/11、12/10 換期；台北凌晨時區邊界；表不存在／500 預估；每月 15 號；390／320px；後台預覽、只送兩欄 PATCH、期別防呆 8a／8b、mentor 看不到；
+拿掉防呆的突變版 7 項 FAIL）；既有 compensation-confirm 42/42、salary-fixes 33/33、contract-feature-enabled 41/41、salary-register-paging 39/39、speed-salary:browser 14/14、code-split 188/188
+（code-split 的 P1 換版重整測試偶發「Execution context was destroyed」，未改動的 origin/main 上也重現，重跑即過）。
+截圖 `培訓web/docs/verification/2026-10-20-salary-payday/`（17 張，agent 判讀可交付）。
+
+**上線（業主授權原話同上；`USER_APPROVED_DEPLOY=1 git push origin HEAD:main`，4361721→cc24c88，16:35:52 推送）**：推送前確認 origin/main 是候選的祖先。
+兩網域 16:37 起連續 5 次（至 16:41）載入 `index-CZdNQt8m.js`（推送前 `index-C6-AW5xv.js`）；`index-CZdNQt8m.js`、`MySalary-Dx3J-tJr.js`、`SalaryRegister-DTG_W7TO.js` 三檔 SHA-256 與本機 build 一致，
+MySalary 檔含「累計報酬」「已匯款」「salary_payout_schedule」。業主 Chrome（已登入）唯讀檢查：`/my/salary` 黃卡「10月累計報酬・11/10 匯款・$0・9/26～10/25・0 場」、
+「已匯款 $604,304」＝「累計總報酬」、無「未領金額／已核准未付」、沒有「（預估）」（＝正式庫設定讀取成功）；`/admin/salary`「講師目前看到：10月累計報酬（9/26～10/25）・11/10 匯款」、日期 2026-11-10、固定 10 號、儲存停用；
+兩頁 console 0 錯誤。訪客：首頁 200；anon 讀／改 salary_payout_schedule 都回 42501 permission denied。
+
+**地雷**：
+- 「已匯款」小卡與每列「已付款」靠 class_sessions.status；每期匯完要有人標已付款，否則會再累積成「已核准」（目前只能後台逐筆改；10 月那 6 筆 11/10 後要標）。
+  已提一張「後台『本期匯款完成』一鍵標已付款」任務卡給業主（未開工）。
+- 後台只能改「目前這一期」：要在匯款日當天就預設下一期的日期會被擋，要等隔天（審查者確認是刻意設計）。少數改法（例：匯款日當天把固定日改到月初）當下找不到可存的日期，紅字已提示「或等這期匯款日過後再改」。
+- 舊表單區塊仍寫「每月 25 號結算（上月 26 日～本月 25 日）」，與黃卡一致；「報酬確認區」是依日曆月份分組，兩者區間不同屬預期。
+- 「本月報酬」（view 的 this_month_salary）用資料庫 now()（UTC）判斷月份，每月 1 號台北 00:00～08:00 會顯示上個月，既有行為未改。
+
+## 💸 2026-10-20：薪資登記中心整理——重複列只留一筆、9/26 前標已付款、異常規則收斂（✅ 正式庫已完成）
+
+**需求（業主 10/20）**：後台「異常 481」太多、「我給你的都是正確的資料」；「如果有兩筆一模一樣的資料選其中一筆就好」；
+「9/26以後的才沒有付款，那之前都已經付款完了」。授權原話：「正式庫都可以直接執行」。
+
+**成因**：① `detect_session_anomaly` 規則 1 只比「同講師同日同課名」，同日同校上兩堂（時數／人數／金額不同）也被標，427 筆；
+規則 4「有時數但薪資 0」標了 58 筆業主核對過的總表資料（嘉義民族國小魔方社 12、格致中學 10 等）。② 10/19 匯入只有「已領金額」>0 的 3 筆設為已付款，
+其餘 5,532 筆是已核准未付，所以未付款顯示 10,718,608。
+
+**做法（分支 `fix/salary-dedupe-mark-paid-20261020`，worktree `.claude/worktrees/salary-dedupe-paid`）**：
+- migration `20261020150000_salary_anomaly_exact_duplicates.sql`：規則 1 改為同講師同日且課程種類、課名、地點、合作單位、期間、教材、交通補助、角色、時數、人數、
+  薪資、獎金、備註、自評、進度、特殊狀況都相同才標；規則 4 對 `source='historical_import'` 不檢查（網站回報照舊）。
+- `scripts/salary_master_import/06_dedupe_and_mark_paid.sql`（單一交易、前後核對不符即整批取消、預演模式）：備份付款狀態與異常標記到
+  `salary_cleanup_20261020_backup`（RLS 開、anon／authenticated 無權限）；總表 16 欄原文完全相同的 81 組多出 91 筆（74,621 元，曾瑀希 27、林冠宇 13…）
+  每組留列號最小者，其餘搬 `class_sessions_quarantine` 批次「2026-10-20 完全相同重複列（業主指示只留一筆）」（matched_master_row_no＝留下那列）；
+  historical_import 中 9/26 前已核准的 5,435 筆 → 已付款、已領＝總計、paid_at＝執行時間；遇版控外 trigger 或外鍵指向 class_sessions 就停。
+- 還原：`96_rollback_dedupe_and_mark_paid.sql`（只還原 06 改過且之後沒人再改的列；有被改過預設停下，`skip-changed` 模式略過）＋`97_restore_old_anomaly_rule.sql`（舊規則，可單獨跑）。
+
+**證據**：
+- 本機演練 `python3 -I scripts/salary_master_import/rehearse_dedupe_paid.py` 59/59 PASS（兩種上傳情境；含沒套 migration 被擋、版控外 trigger／外鍵被擋、預演不動資料、
+  重跑被擋、新規則行為、權限、06 後改一筆再跑 96、96＋97 逐欄還原、還原後可再執行）：`培訓web/docs/verification/2026-10-20-salary-dedupe-paid/local-rehearsal.txt`。
+- 獨立審查（opus，fresh context）：首審必修 1（96 會把 06 之後的後台修改打回）＋建議 3，全部修正；複審「未發現新問題，06＋migration 可上正式庫」。
+- 正式庫（2026-10-20 約 11:05 台北，業主 Chrome 的 Supabase SQL Editor；每份 SQL 先在瀏覽器比對 SHA-256 與 repo 檔一致）：
+  唯讀預檢 5,535 筆／10,724,608／已付 3 筆 6,000／異常 481／只有 3 個預期 trigger／無外鍵指向／執行者 postgres＝表擁有者 → 套 migration（新規則生效、search_path 保留）
+  → 預演回 `DRY_RUN_OK 總表 5444 筆、總計 10649987；已付款 5438 筆 10642401 元；未付款 6 筆 7586 元；異常 2 筆（應 2）；隔離區本批 91 筆`，事後確認資料未變、無殘留鎖
+  → 正式執行成功 → 唯讀核對：5,444 筆、總計 10,649,987、已付 5,438 筆 10,642,401（已領≠總計 0 筆）、未付 6 筆 7,586（10/13 四筆、10/17 兩筆）、
+  最晚已付款 9/22、異常 2、隔離區本批 91 筆 81 組 74,621、備份 5,535 筆（改到 5,444）、無殘留鎖。（Supabase 跳「刪除動作＋暫存表 `_dup` 未開 RLS」提醒，
+  `_dup` 為交易內暫存表、結束即刪，選照原樣執行。）
+- 正式站 `teacher.dreamcube.tw/admin/salary` 全部月份：共 5,444 筆、異常 2、總報酬 $10,649,987、已付款 $10,642,401、未付款 $7,586
+  （截圖 `培訓web/docs/verification/2026-10-20-salary-dedupe-paid/production-admin-salary-all-months.jpg`）。
+
+**上線**：業主同意（「可以，把這次的異常規則、整理與還原腳本、STATUS 紀錄推上 main。」）後推 main `486876c`（合併 origin/main 1fc3567，只有 STATUS.md 衝突、兩邊保留）。這次不含前端變動（1fc3567→486876c 前端 0 檔），兩網域 16:12–16:14 各查兩次皆 200、`index-CH2uBlBT.js` 不變。
+**並行提醒（已發訊息給兩個對話）**：分支 `feat/salary-payday-card` 有 `06_mark_imported_paid.sql`（10/01 前標已付款，結果與本段相同，正式庫不必再跑；若要跑須連 updated_at trigger 一起停，否則 96 無法乾淨撤回）與撞號的 `20261020150000_salary_payout_schedule.sql`（請改時間戳）。
+
+**半成品**：無。
+
+**待業主**：① 剩下 2 筆異常：曾瑀希 2026/3/27【週五】114下 南瓜田幼兒園 大班 960 兩筆（總表第 3222、3622 列，只差登記人一筆空白一筆 SEP），是否重複由業主決定；
+② 會計確認被移除的 91 筆當時是否實際付了兩次（曾瑀希 2025/11/26–12/24 一段約 32,080 最集中）——若是，網站總額會比實際付出少 74,621；
+③ 58 筆「有時數但薪資 0」已視為正確不再標異常，業主可再看一眼（例如嘉義民族國小魔方社 12 筆）。
+
+**地雷**：沙盒內外 `$TMPDIR` 不同（本次演練紀錄寫到沙盒外暫存而沙盒內讀不到，重跑一次），跨沙盒一律用專案內絕對路徑。
+本機 initdb 需共享記憶體，演練要在沙盒外跑。Supabase SQL Editor 結果用 fetch 攔截讀回時，回應內容含查詢字串會被 Chrome 擴充擋，要只取 message 片段。
+
+---
+
+## 📋 2026-10-20：「我的報酬」新增站內「報酬確認區」（取代外連 Google 試算表）（✅ 已上線 129ffab）
+
+**需求**：業主：「報酬確認區也一起做到網站上吧，主要是可以看到自己回報了哪些報酬」，格式參考「回報查詢表」試算表（id `1RQP_7NZFeEQTKcGJPjkoRe758LeADSpDIkY2-s2Q8NI`）
+的「登記查詢表」分頁：上方選講師，下方左「合作單位－有問題找SEP」（講師姓名／單位／上課日期／上課人數）、右「直營課程（體驗課、營隊、到府、速解）－有問題找芳儒」
+（講師姓名／課程名稱／上課日期／上課人數／課程類型）。原本站內「我的報酬」右上角「報酬／點數確認區」按鈕就是外連這份試算表。
+
+**做法（純前端，無 migration，只動 `培訓web/src/pages/MySalary.jsx`；分支 `feat/compensation-confirm`，worktree `.claude/worktrees/compensation-confirm`，從 origin/main 649fc7b 拉出）**：
+- 原「月份明細」清單改成「報酬確認區」：同一份本人 `class_sessions` 查詢（仍帶本人 instructor_id、RLS 2026-01 起不變），依 `reportChannelFor(course_type)`
+  分三區——合作單位課程（找 SEP）、直營課程（找芳儒）、其他課程（常態課、幼兒啟蒙、速解培訓、站櫃／擺攤等，有紀錄才顯示，洽課程派發窗口）。
+- 欄位對照試算表：上課日期／單位（直營為課程名稱）／課程類型／上課人數，站內多時數、報酬（含獎金小字）、狀態（待核准／已核准／已付款／已退回＋退回原因）。
+  合作課單位取 `unit_name`，總表匯入的舊資料沒有就用 `course_name`；營隊沒填課程名稱用梯次。課程類型用表單用語（如「到府家教課 or 到府揪團課」），
+  同類多個報酬項目才加副標（營隊的「否（一般講師）」去掉題目殘字只寫「一般講師」）。
+- 月份篩選與月份摘要沿用；每區先顯示 50 筆可展開（換月份自動收合）；桌機 lg 起三張表共用欄寬上下對齊；手機卡片版。
+- 右上角改成站內按鈕「報酬確認區」（捲到該區）；試算表連結（後台 `site_links.salary_points` 設定）改放區塊底部：「用舊 Google 表單回報的課，以及教學點數／非教學點數，請到報酬／點數試算表查詢」。
+  錯誤與空狀態頁的外連按鈕改名「報酬／點數試算表」。
+
+**證據（2026-10-20 本機實跑，沙盒外，mock Supabase＋本機 vite dev）**：新腳本 `npm run verify:compensation-confirm:browser` **41/41 PASS**
+（三區筆數與順序、各區窗口、表頭、新到舊排序、站內回報／總表匯入／退回／待核准／營隊／線上／常態課／擺攤各列內容、試算表連結讀後台設定且另開分頁、
+點按鈕捲到該區、月份篩選、60 筆展開／收合與換月份重置、手機 375 卡片、1280／1024／820／375 無橫向捲軸、三張表狀態欄對齊 0px、全程無 console error），
+截圖 `培訓web/docs/verification/2026-10-20-compensation-confirm/`（5 張）。回歸：`verify:salary-fixes` 32/32、`verify:contract-signing:browser` 40/40
+（T8a 斷言改成新按鈕＋試算表連結；重生的 10-18 截圖已還原）、`verify:speed-salary:browser` 13/13、`npm test` 143/143、`npm run build` 通過、變更檔 ESLint 0 問題、
+`git diff --check` 乾淨。opus 獨立審查：**必修 0**；可後修 5 項中 4 項已修（線上課程副標重複、營隊「否（一般講師）」、手機「人數未填」改「–」、C3 測試改成真的能驗重置）。
+sonnet 看圖判讀：無破版；建議的欄位對齊、退回原因字級已修。
+
+**上線（業主 2026-10-20 原話：「可以，commit 並推 main 上線，推完照三道關卡驗證兩個網域。」）**：rebase 到 origin/main f70a00c（只多 STATUS 文件）後
+10:49:40 推 main 129ffab。本機 build `index-CH2uBlBT.js`／`MySalary-BIjRiZ9L.js`；10:51 起 dream-one-teacher.zeabur.app 與 teacher.dreamcube.tw
+各連續 5 次載到同名 `index-CH2uBlBT.js`，線上 `MySalary-BIjRiZ9L.js` 含「報酬確認區」。Chrome 煙霧測試：teacher.dreamcube.tw 以業主已登入帳號（管理員，
+講師主檔廖思明）開 `/my/salary`：右上角按鈕、確認區標題、三區（找 SEP／芳儒／課程派發窗口）都在、無「月份明細」，三區 104＋13＋18＝135 筆＝頁面「總場次 135」，
+合作單位顯示 50 列＋展開鈕，無橫向捲軸、console 0 錯誤；zeabur 網域訪客：首頁載新版、直打 `/my/salary` 導回登入頁、console 0 錯誤。
+並行對話「講師累計報酬與匯款日期」（worktree `payday-card`）也在改 MySalary.jsx 統計卡，已傳訊告知合併時頂端 import 兩行會碰到。
+
+**說明文字更正（業主 2026-10-20「以上都同意」）**：分類盤點（分支 `data/reclassify-imported-other`）查出總表沒有「學校社團」，業主選方案 A＝只把楓葉體驗課改體驗課（`08_reclassify_maple_trial.sql`，待業主在 SQL Editor 執行，正式庫改 11 筆）；「其他課程」區說明改成「常態課、幼兒啟蒙、速解培訓、站櫃／擺攤，以及薪資總表裡登記為「其他」的課」（08 套用前後都正確），驗證 `verify:compensation-confirm:browser` 41/41、`verify:salary-fixes` 32/32、`verify:speed-salary:browser` 13/13、`npm test` 143/143。16:15:53 推 main f0dac3e；16:17 起兩網域各連續 5 次載到本機同名 `index-C6-AW5xv.js`，線上 `MySalary-BKstdgjw.js` 含新說明、舊句「也暫列在這裡」0 處（剩下的「學校社團」是合作單位區與舊表單的正確說明）；Chrome 開 teacher.dreamcube.tw `/my/salary`：三區正常、其他課程區顯示新說明、console 0 錯誤（業主帳號合作單位由 104 變 102 筆，時間上與同日 06 重複資料清理吻合，未逐筆核對）。
+
+**待業主**：① 在 SQL Editor 執行 `08_reclassify_maple_trial.sql`（預期結果摘要一列：trial 11 筆）；② 站內版已上線，考慮把「回報查詢表」試算表的分享範圍收緊（目前任何拿到連結的人都能選任一講師看紀錄）。
+
+**地雷**：薪資總表匯入（`scripts/salary_master_import/build_upload_csv.py` COURSE_MAP）把原類別「其他」「徵稿」「楓葉體驗課」（及 COURSE_MAP 的「學校社團」，但總表實際沒有）都轉成 `course_type='other'`，原類別只存在 admin 才能讀的
+`salary_master_rows`，所以這些課在確認區會出現在「其他課程」（類型寫「其他」）而不是合作單位／直營；已在其他課程區說明寫明，數量未查（需唯讀查正式庫：2026 年起
+`source='historical_import' AND course_type='other'` 依原課程種類分組計數）。正式站實例：業主本人帳號 135 筆中有 18 筆落在「其他課程」、類型都是「其他」。月份摘要條「N 場」含待核准與已退回、金額只算已定價（既有算法，非本次）。
+用舊 Google 表單回報、未匯入站內的課不會出現在確認區（已在區塊底部引導去試算表）。
+
+---
+
+## 🔐 2026-10-20：講師身分證／存摺／匯款「已有就鎖定，後台開放修改一次」＋修改紀錄（🛠 本機實測完成，待整合上線＋套 migration）
+
+**需求（業主 10/20）**：存摺或身分證照片只要已上傳（或已有匯入的舊資料）講師就不能自己改；要改由後台按「開放修改一次」，
+按一次給一次、講師存檔後自動鎖回，要再改就再按；避免大家自己改來改去沒人知道。業主同意的範圍：身分證正反面比照存摺鎖定、
+後台三顆按鈕（身分證正反面／存摺封面／匯款銀行資訊）、修改紀錄並保留舊檔、補「匯入雲端連結的存摺」漏洞。
+
+**完成（分支 `feat/instructor-doc-edit-unlock`，worktree `.claude/worktrees/doc-edit-unlock`，未推 main、未碰正式 Supabase）**：
+- 新 migration `supabase/migrations/20261020120000_instructor_document_edit_unlocks.sql`（可重複執行、單一交易）：
+  新表 `instructor_edit_unlocks`（一次性開放權限；同講師同項目最多一筆有效）與 `instructor_document_changes`（修改紀錄，只有 admin 可讀）；
+  新 trigger `trg_guard_instructor_locked_documents`（取代並刪除舊的 `trg_guard_instructor_bankbook`、`trg_guard_instructor_bank_account`）
+  ——非 admin 改到「原本已有資料」的身分證（正或反任一）／存摺／匯款時，必須用掉一筆對應開放，否則 42501；路徑或 `*_external_url` 任一非空就算已有資料（補漏洞）；
+  比對前一律 `NULLIF(BTRIM(...),'')`，修掉舊匯款 trigger 把 NULL 與空字串當成不同、會誤擋存檔的問題；
+  AFTER trigger `trg_log_instructor_document_changes` 記下每次變更（講師／管理員／系統、是否用了開放、新舊值，文件類含舊檔路徑）；
+  admin RPC `admin_grant_instructor_edit_unlock`（按兩次仍只有一筆）、`admin_revoke_instructor_edit_unlock`；
+  storage 講師更新／刪除政策改用 `is_protected_instructor_file()`：現行與曾經提交過的身分證／存摺檔講師都不能刪或覆寫（大頭照不受影響）。
+- 前端：`ProfilePage.jsx` 三張文件卡與匯款欄依 DB 正本＋開放狀態鎖定；開放時顯示藍色「管理員已開放修改一次，存檔後會自動鎖回。」與「更換檔案」，
+  選了新檔可「取消更換」；存檔後重讀開放狀態自動鎖回；身分證／存摺換新後不刪舊檔。`AdminInstructorEdit.jsx` 新增「講師自行修改權限」
+  （鎖定中／已開放＋收回／尚未提交；未認領講師停用）與「修改紀錄」（舊檔／新檔按需簽 300 秒連結、帳號遮罩），管理員代換文件也不刪舊檔。
+  共用規則 `src/lib/instructorDocumentLocks.js`；新資料表尚未套用時兩頁都照常運作（講師端照舊鎖定、後台顯示需先套 migration）。
+- 總指揮同場交辦一併修：`ProfilePage` 讀 instructors 失敗時顯示「重新載入」，不再當成首次填表（原本會顯示空白表單、刪伺服器草稿，送出時用空白覆蓋）；
+  `ProfileCompleteGate` 查詢失敗時不判定完成度（原本把已完成的老師導回 /profile）。存檔「先 UPDATE 再 INSERT」與「不重送未變動證件」由總指揮在
+  `c8842e7`／`01b9884` 上線，本分支已 merge origin/main 沿用，未重做。
+- 資安審查（fresh-context security-auditor）：必修 0。採納建議：開放權限 **72 小時**後過期（`expires_at`；過期後管理員可再按，舊那筆標為自然過期）、
+  講師**上傳**政策也排除受保護檔名（防「先把路徑指到不存在的檔名、鎖定後再上傳任意圖」）；並補測搬移／同名上傳。未採納：mentor 可讀整個證件 bucket（既有設計，待業主決定）。
+
+**證據（2026-10-20 本機實跑，沙盒外）**：
+- `npm run verify:doc-edit-unlock`（臨時 PostgreSQL，先套 20260818／20260825／20260826130000 再連套兩次新 migration）18/18 PASS；
+  另把「匯入連結也算已有資料」條件故意拿掉，確認第 12 項會 FAIL（測試有效）。
+- `npm run verify:doc-edit-unlock:profile-browser` 36/36（鎖定、匯入連結鎖定、開放→取消更換→更換存檔→不刪舊檔→自動鎖回、匯款開放、首次填寫、缺表照常、讀取失敗不清草稿、390px）。
+- `npm run verify:doc-edit-unlock:admin-browser` 35/35（過期的開放顯示鎖定中、開放／收回 RPC 參數、連點只送一次、未認領停用、修改紀錄四種、管理員換檔不刪舊身分證但照刪舊大頭照、缺表照常、390px）。
+- 既有 `node scripts/verify-profile-draft.mjs` 31/31（merge origin/main 後；T9d 改為只看存摺卡；T11c/d 改為先模擬管理員開放、且換身分證後不刪舊檔）、
+  `npm run verify:admin-instructor-editor` 全過（標題列「尚未認領帳號」斷言收窄）、`node scripts/verify-complete-gate.mjs` 37/37。
+- 2026-10-20 深夜再 merge origin/main（5a89fda：UPDATE 不送 user_id、Email 守門中文化、頁面 lazy 載入）後重跑：`npm run e2e:profile-save`（真 PostgreSQL＋PostgREST，套 repo 全部 SQL 含本 migration）81/81
+  （P4 改為先由管理員開放一次再換身分證，並新增 3 項：開放被用掉、修改紀錄寫入、畫面鎖回；A／P6／P10 的 trigger 清單改為新規則，且確認舊的存摺／匯款 trigger 已不存在）、
+  `verify:code-split` 187/187、`verify-profile-draft` 34/34、`verify-complete-gate` 37/37、`verify:admin-instructor-editor` 全過、本功能三支 18／36／35 全過、`npm run lint` 全專案 0 問題。
+- `npm test` 129/129（含新增 10 項）；production build 通過；變更檔 ESLint 0 問題；截圖 `培訓web/docs/verification/2026-10-20-doc-edit-unlock/`（admin-desktop／admin-mobile／teacher-locked-desktop／teacher-unlocked-desktop／teacher-unlocked-mobile），
+  另派 agent 逐張判讀：可交付。
+
+**上線步驟（交總指揮）**：① Supabase SQL Editor 套 `20261020120000_instructor_document_edit_unlocks.sql`；套完檢查
+`SELECT tgname FROM pg_trigger WHERE tgname LIKE 'trg_%instructor%' ORDER BY 1;` 應有 `trg_guard_instructor_locked_documents`、`trg_log_instructor_document_changes`，
+且**不再有** `trg_guard_instructor_bankbook`／`trg_guard_instructor_bank_account`。② 合併分支推前端。順序無硬性要求：先推前端時開放按鈕顯示「需先套用資料庫更新」、講師端照舊鎖定；
+先套 migration 時舊前端的存摺／匯款鎖定行為不變，只是身分證在 DB 也開始擋（舊前端會顯示「儲存失敗：身分證照片已鎖定…」）。③ 上線後用一個講師帳號確認身分證卡顯示鎖定，
+後台按開放→講師更換存檔→後台修改紀錄出現一筆且可點舊檔。
+
+**地雷**：
+- 上方「證件搬進系統」段的還原方法要更新：上線後管理員在後台「移除」身分證／存摺只會清掉 `*_path`，**Storage 檔會保留**（修改紀錄要能回看）；真要刪檔改由 SQL Editor／Storage 後台處理。
+- 正式庫若有 repo 以外手動加的 storage 寬鬆政策，舊檔保護會失效；上線後建議跑 `SELECT policyname, cmd, qual FROM pg_policies WHERE schemaname='storage' AND tablename='objects';` 核對。
+- 舊的 `verify:bankbook-lock`、`scripts/verify-bank-account-lock.mjs` 只驗被取代的舊 migration 檔，套新 migration 後正式庫已不存在那兩個 trigger；以 `verify:doc-edit-unlock` 為準。
+- 開放權限 72 小時後自動失效；講師若開著頁面超過期限才存檔，會看到「已鎖定」訊息，請管理員再按一次即可。修改紀錄含完整帳號，只有 admin 讀得到。
+- 鎖定判準是「DB 已有資料」：管理員替講師清空某項後，講師可再自行填一次（預期行為，且會留紀錄）。
+
+---
+
+## 🗂️ 2026-10-20：回報選項管理改版——拖曳排序、每個期間各一份清單、回報表單欄位可設定（✅ 本機驗證完成；🟡 分支 `feat/report-options-v4`，待總指揮套 migration＋部署）
+
+**需求（業主 2026-10-20）**：回報選項管理「要變成是拖曳的，一列太多東西太厚、不直覺」；「上面會有多個不同期間，像是2026寒假，然後下面就會出現對應的選單內容」；「整個報酬登記的地方也要可以設定欄位，新增或是刪除都要可以做到」。
+業主三選一皆選建議方案：①每個期間各一份單位清單（新增期間可從某期複製）；②營隊梯次也掛在期間底下；③講師回報表單可加自訂欄位、可隱藏非計酬欄位，算報酬用的欄位（期間、單位、梯次、時數、人數、角色、學習進度）鎖住不給刪。
+
+**做法**：
+- **migration `培訓web/supabase/migrations/20261020130000_report_periods_and_custom_fields.sql`**（可重跑、不刪資料）：`salary_report_options` 加 `period_id`（單位／梯次掛期間）；UNIQUE (kind, value) 換成「期間代碼唯一」＋「同一期間內同名唯一」；回填學期間 30 筆→115學年度上學期、寒暑假 48 筆→2026年寒假並**複製一份 48 筆給 2026年暑假**（複本 term_scope=NULL，舊前端看不到，不會重複）、營隊梯次 31 筆→2026年暑假；`term_scope` 停用但保留；`class_sessions` 拿掉期間三選一 CHECK（新期間有自己的代碼）、加 `extra_fields jsonb`（自訂欄位答案，存「當時欄位名稱＋內容」快照）；新表 `salary_report_fields`（24 筆種子＝目前回報頁欄位與順序；system/builtin/custom；trigger 擋刪內建、隱藏或改必填算報酬欄位、後台只能新增 custom；RLS：講師只讀顯示中的、管理員全權）；拖曳排序 RPC `reorder_salary_report_options`／`reorder_salary_report_fields`（SECURITY INVOKER＋管理員檢查，單一交易寫 10、20、30…，只能排同一份清單）；`submit_my_class_session` 改 16 參數（期間改查選項表、須啟用；`p_extra_fields` 只收顯示中的自訂欄位、名稱以資料庫為準）；檔尾 `NOTIFY pgrst`。
+- **後台 `/admin/salary/options`**（sonnet agent 實作、主對話覆核）：兩個分頁「下拉選單內容」「回報表單欄位」。期間 chip 列可拖曳、可新增（預設從目前期間**只複製上課單位**；營隊梯次帶日期不複製，避免講師下拉出現兩組同名梯次）、改名、停用；選中期間下方是上課單位與營隊梯次兩區，每列單行約 52px：拖曳把手＋名稱＋改名＋啟用開關。欄位分頁四個版面（B2C 直營／B2B 合作／營隊／其他），系統欄位鎖頭、內建欄位顯示／必填開關、自訂欄位新增／編輯／刪除（行內確認）。拖曳用 @dnd-kit（core 6.3.1、sortable 10.0.0、utilities 3.2.2，新增依賴），滑鼠、觸控長按、鍵盤皆可。
+- **講師回報頁 `MySalaryNew.jsx`**：回報類別、日期、課程種類、報酬項目固定在最上面，其後欄位照後台設定的順序畫；隱藏的內建欄位不顯示、不驗證、不送出；自訂欄位（單行／多行文字、數字、下拉、是否）；合作單位跟著選到的期間、營隊梯次依期間分組並送出梯次所屬期間；設定或選項讀不到時退回預設欄位與自由輸入；填寫途中管理員改了欄位 → 送出被擋時自動重新載入欄位、已填內容保留。B2B「教材數量」原本標 * 卻沒擋，現在照標示必填（後台可改）。另修總指揮提的「今天」日期只在載入時算一次的問題。
+- **後台報酬登記中心**：期間名稱改讀資料庫（新期間正常顯示）；審核視窗加顯示期間／單位／教材／交通補助與自訂欄位答案；列表顯示「自訂欄位 N 項」。
+
+**驗證（主對話 2026-10-20 親跑；再併入 origin/main `5a89fda`（頁面 lazy 載入、試算作廢等）後全部重跑：npm test 133/133、build、全專案 lint 0、verify:salary-report-form 36 項 PASS、report-form 瀏覽器 63/63、report-options 99/99、register-paging 38/38、speed-salary 9/9＋瀏覽器 13/13、salary-fixes 32/32、code-split 187/187）**；併 `c8842e7` 時的紀錄：`npm test` 128/128；`npm run build` 通過；改動檔 ESLint 0（全站剩 5 個舊問題在 ContractView／AssignmentReview／ProgressOverview／FieldPositionEditor，非本次）；
+`npm run verify:salary-report-form`（臨時 PostgreSQL，含新段落 (i) 7 組：連跑兩次、回填 48／30／48／31、舊前端 term_scope 視角仍 48／30、唯一性與 CHECK、管理員新增期間複製清單、欄位守門、排序 RPC 權限、RPC 新期間／停用期間／自訂欄位快照／未知或隱藏欄位擋、改名刪除後快照不變、新建庫路徑）全 PASS；
+`verify:salary-report-form:browser` 63/63、`verify:salary-report-options:browser` 99/99、`verify:salary-register-paging:browser` 38/38、`verify:speed-salary:browser` 13/13、`verify:salary-visibility` 全 PASS（需 `LC_ALL=en_US.UTF-8`，否則臨時資料庫起不來）。
+截圖 18 張：`培訓web/docs/verification/2026-10-20-report-options-v4/`（7）、`培訓web/docs/verification/2026-10-20-report-form-fields/`（11），由另一個 sonnet agent 判讀 8 項驗收全過（列高約 54px、期間 chip＋下方兩區、欄位分頁鎖頭／開關、390px 無溢出、B2B 欄位順序、審核視窗顯示自訂欄位答案）。opus 審查：無高嚴重度；中低 5 項已修 4 項（NOTIFY、只複製單位、期間名稱讀取失敗的顯示、欄位更新後自動重載），第 5 項見地雷。
+
+**上線步驟（給總指揮）**：⓪ 檔名原為 20261020120000，因與證件鎖定分支撞號改為 130000；明早順序 `20261020120000_instructor_document_edit_unlocks.sql` → 本檔，兩支無共用要修改的物件（本檔對 instructors／users 只讀），先後不互相影響。空窗期相容性已實測：舊前端 c8842e7 實際送出的 15 鍵 JSON（合作／營隊／直營＋交通補助）照 PostgREST 的 json_to_record＋具名參數方式打新版 16 參數函式，三筆皆成功且存值正確（verify-salary-report-form.sql (i) gap window）。① 正式庫 SQL Editor 套 `20261020130000_report_periods_and_custom_fields.sql`（以無登入身分執行；套完核對：選項 160 筆＝期間 3＋單位 126＋梯次 31、無期間的單位／梯次 0、`salary_report_fields` 24 筆、`submit_my_class_session` 只有 1 個 16 參數版本）；② 再部署前端。順序反了，新前端讀 `period_id`／`salary_report_fields` 會失敗 → 退回預設欄位與自由輸入（仍可回報，但沒有單位下拉）。
+**半成品**：無（程式完成，未上線）。
+**下一步**：上線後業主用管理員帳號實際拖曳一次、新增一個「115學年度下學期」（從 115學年度上學期複製）確認正式庫寫入；講師真帳號看一次回報頁。
+**地雷**：
+- 套 migration 到部署前端之間的空窗，**不要用後台回報選項管理頁**：舊版新增單位會被新約束擋、「移到另一組」改的是已停用的 term_scope（上線後等於沒做）。
+- 換新學期請「新增期間」不要改名：講師回報存的是期間代碼，改名會讓這個期間的舊紀錄一起換名字。
+- 自訂欄位的「必填」只在前端擋（與既有表單必填一致），直接打 RPC 可略過；不影響金額。
+- 到府課（總指揮轉來，**待業主決定**）：報酬表的到府規則只有剛好 1.5 與 2 小時兩種，表單的 1、2.5、3 小時會落到「待核准」由管理員人工填金額（不會算 0 元）；要不要比照某條規則計算是金額決策，本次未改。
+
+---
 
 ## 🚀 2026-10-20 總指揮發版（業主授權統一整合上線＋上線後大檢查）
 
@@ -116,14 +333,43 @@
 - **完整回歸（依序單獨跑，2026-10-20 01:42）**：build、npm test 119/119、lint 0，及全部 37 支 verify／e2e 腳本全過（speed-salary 靜態路由檢查配合 lazy 外層修正後 9/9）。
 - **獨立審查**：金額／合約／下載、登入／頁面載入、個人頁身分欄位三份 opus 審查皆「必修 0」。
 
+### ✅ 2026-10-20 早上：五支 migration 已套正式庫＋明早批次已上線
+業主 10/20 早上口頭授權：「supabase 的地方我口頭允許了 你可以開 chrome 執行」。總指揮用業主 Chrome 開 SQL Editor
+（專案 DreamCube_teacher／mnovjlicwzwkefkhstte，畫面標 PRODUCTION）逐支執行。做法：SQL 全文貼進指令（可在紀錄看到）＋瀏覽器端
+SHA-256 與 repo 檔比對一致才執行；每支先「預演」（整支在交易內跑到最後故意 RAISE，確認全部語句成功後整批回滾，並另跑查詢確認真的沒變），
+再正式套用，套完立刻唯讀核對。
+- 套用前基準：舊認領函式 3 支（search_unlinked_instructors＋submit_claim_request 3／4 參數）、claim_requests INSERT 政策在、
+  contract_documents 仍是 USING(true) 且 anon 有 SELECT、instructors 有舊的 bankbook／bank_account 兩個守門、回報選項 112 筆（期間 3／單位 78／梯次 31）。
+- ① `20261020010000_drop_legacy_claim_rpcs`：舊函式 0、claim_requests 只剩本人讀＋管理員 2 條政策 → **高風險漏洞已關閉**。
+- ② `20261019103000_restrict_contract_document_reads`：contract_documents 只剩「管理員管理」「已核准角色可讀」、anon 無 SELECT。
+- ③ `20261020120000_instructor_document_edit_unlocks`：先查正式庫 instructor_uploads 的講師寫入政策恰為本檔重建的 3 條（無遺漏）；
+  套後新守門 2 個在、舊 2 個移除、兩張新表在、3 條上傳政策都帶 is_protected_instructor_file。
+- ④ `20261020130000_report_periods_and_custom_fields`：選項 160（期間 3／單位 126／梯次 31）、無期間的單位／梯次 0、回報欄位 24、
+  submit_my_class_session 只剩 16 參數一版——與分支預期完全一致。
+- ⑤ `20261020140000_revoke_mentor_signed_contract_reads`（業主在認領對話要求）：先查正式庫 contract-documents 的 SELECT 政策只有 1 條、
+  無跨 bucket 政策（迴圈不會誤刪）；套後仍 1 條、已無「admin＋mentor 讀整個 bucket」條件、範本規則在。
+- 五支全部套完後另跑一次獨立唯讀查詢，全部數值與上列一致。
+- 前端：③④ 套完立刻推 `release/20261021-db-features`（649fc7b）到 main，舊前端＋新資料庫的空窗約 2 分鐘。
+- 上線驗證：兩網域 10:22 連續 5 次載入 index-CYvVxNZX.js（＝本機 build）；訪客煙霧測試（首頁、找不到頁面、條款頁 chunk、console 0 錯誤）通過；
+  以匿名身分唯讀打正式 API：contract_documents 回 42501 permission denied、search_unlinked_instructors 回 PGRST202（函式已不存在）。
+- 待業主：管理員帳號實際拖曳一次回報選項＋新增一個期間；講師帳號看一次回報頁；後台對一位講師按「開放修改一次」試一次證件更換。
+
 ### 待業主（明早）
-1. **Supabase SQL Editor 依序套 migration**（每支都可重跑、單一交易）：
+1. ~~**Supabase SQL Editor 依序套 migration**~~（✅ 已完成，見上段）（每支都可重跑、單一交易）：
    ① `20261019103000_restrict_contract_document_reads.sql`（合約範本 pending 不可讀；前端已上線，順序無硬性要求）
    ② `20261020010000_drop_legacy_claim_rpcs.sql`（刪 07 月舊認領 RPC＋客戶端寫入政策；**高風險漏洞**：任何剛登入的 Google 帳號可列出未認領講師並以手機末四碼綁主檔）
    ③ `20261020120000_instructor_document_edit_unlocks.sql`（分支 feat/instructor-doc-edit-unlock，證件鎖定＋後台開放修改一次；套完再上前端）
    ④ `20261020130000_report_periods_and_custom_fields.sql`（分支 feat/report-options-v4，回報選項拖曳排序＋期間清單＋自訂欄位；套完再上前端；套用到前端上線之間不要操作後台回報選項頁）
-   套完各自的核對查詢寫在該分支 STATUS 段。③④ 套完告訴 Claude「已套用」即可上前端（兩支分支目前 merge 到 c8842e7、各自測試全過；上線前要再 merge 一次最新 main 並重跑它們的驗證）。
-2. 認領＋電子簽約（分支 feat/teacher-name-placeholder）：業主新規格（OTP 啟用、Resend 寄信、簽署證據）仍在做，需要 Resend API key、已驗證寄件網域、正式庫 pg_net＋Vault。
+   套完各自的核對查詢寫在該分支 STATUS 段。③④ 套完告訴 Claude「已套用」即可上前端。**明早發版分支已備妥**：`release/20261021-db-features`（＝main 5a89fda＋證件鎖定＋回報選項，
+   只有 STATUS.md 衝突、兩邊保留；已推 GitHub 備份），2026-10-20 02:25 依序單獨跑 43 項驗證全過（含 doc-edit-unlock 三支、
+   e2e:profile-save 81/81、report-options 99/99——偶發的提示訊息時間差已修，重跑 3 次皆 99/99）。上線步驟：①②③④ 套完 → 確認
+   origin/main 仍是 5a89fda（若前進就先 merge 再重跑）→ 推此分支到 main → 兩網域換版確認＋訪客煙霧測試。
+2. 認領＋電子簽約（分支 feat/teacher-name-placeholder，HEAD a9d3ec3，可交付）：**不併入明早那批，單獨上線**。前提：業主在 Resend 驗證寄件網域＋建 API key；
+   Supabase 確認 pg_net、pg_cron 已啟用，Vault 新增 resend_api_key、resend_from。之後依序套 `20261019233000_instructor_name_slots` →
+   `20261020100000_claim_activation_esign_evidence`，**套完立刻推前端**（新舊前後端兩個方向都不相容）。已確認：明早先套 010000／120000／130000
+   不影響這兩支（照正式庫實際順序模擬：verify-claim-activation-esign 219/219、e2e:onboarding 251/251）；與本批分支試合併只有 4 處新增型衝突，
+   合併後 npm test 218/218、e2e:onboarding 251/251、e2e:profile-save 81/81 全過。上線後用測試講師實收驗證碼並查 email_delivery_log。
+   法規待業主：R2 隱私權政策補「記錄 IP」與寄信服務商、R3 未成年講師電子簽署。
 3. 業務決定：到府課時數 1／2.5／3 小時對不到報酬表規則（全部進「待核准」）；排行榜／徽章是否計入待審與被退回時數；mentor 是否該讀整個 instructor_uploads 與所有已簽合約。
 4. 上線後找一位 form-import 講師實測個人頁存檔（真資料庫 e2e 已過，但正式庫可能有版控外的 trigger 改動）。
 

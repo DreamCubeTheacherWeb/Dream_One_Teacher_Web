@@ -32,12 +32,21 @@
     "verify:code-split": "node scripts/verify-code-split.mjs",
     "verify:misc-fixes": "node scripts/verify-misc-fixes-20261020.mjs",
     "verify:salary-fixes": "node scripts/verify-salary-fixes-20261020.mjs",
+    "verify:compensation-confirm:browser": "node scripts/verify-compensation-confirm-browser.mjs",
     "verify:contract-download-fixes": "node scripts/verify-contract-download-fixes-20261020.mjs",
     "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs",
     "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs",
-    "e2e:onboarding": "node scripts/e2e/run-onboarding.mjs"
+    "e2e:onboarding": "node scripts/e2e/run-onboarding.mjs",
+    "verify:salary-payday:browser": "node scripts/verify-salary-payday-browser.mjs",
+    "verify:salary-payout-schedule": "node scripts/verify-salary-payout-schedule.mjs",
+    "verify:doc-edit-unlock": "node scripts/verify-doc-edit-unlock.mjs",
+    "verify:doc-edit-unlock:admin-browser": "node scripts/verify-doc-edit-unlock-admin-browser.mjs",
+    "verify:doc-edit-unlock:profile-browser": "node scripts/verify-doc-edit-unlock-profile-browser.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@supabase/supabase-js": "^2.48.1",
     "dompurify": "3.4.14",
     "jszip": "^3.10.1",
