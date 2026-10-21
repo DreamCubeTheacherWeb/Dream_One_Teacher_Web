@@ -23,7 +23,7 @@ import {
     PROFILE_SAVED_EVENT,
     toFetchableExternalImageUrl,
 } from '../lib/profileCompletion';
-import { speedQualificationLabel } from '../lib/constants';
+import { PERSONNEL_TYPE_LABELS, isInstructorPersonnel, normalizePersonnelTypes, speedQualificationLabel } from '../lib/constants';
 import {
     LOCKABLE_DOCUMENT_KEYS,
     LOCK_NOTICE,
@@ -50,8 +50,6 @@ const ROLE_OPTIONS = [
     { value: 'A', label: 'A 級' },
     { value: 'B', label: 'B 級' },
     { value: '實習', label: '實習' },
-    { value: '職員', label: '職員' },
-    { value: '工讀生', label: '工讀生' },
 ];
 
 const DOC_TYPES = [
@@ -69,6 +67,8 @@ const INITIAL_FORM = {
     full_name: '', nickname: '', gender: '', birth_date: '', id_number: '',
     phone_mobile: '', phone_home: '', line_id: '', address: '', household_address: '',
     email_primary: '', email_secondary: '',
+    // 人員類別由管理員設定（不隨個人資料送出、不進草稿），這裡只用來決定哪些欄位要填
+    personnel_types: ['instructor'],
     instructor_role: '', speed_qualification: '', teaching_freq_semester: '', teaching_freq_vacation: '',
     teaching_regions: [],
     bio_notes: '',
@@ -635,6 +635,7 @@ const ProfilePage = () => {
         );
     }
 
+    const isInstructor = isInstructorPersonnel(form.personnel_types);
     const inputCls = 'bh-input';
     const isBankLocked = bankLockState.locked;
     const bankInputCls = inputCls + (isBankLocked ? ' disabled:bg-bauhaus-muted disabled:text-bauhaus-black/60 disabled:border-bauhaus-black/50 disabled:cursor-not-allowed' : '');
@@ -811,74 +812,85 @@ const ProfilePage = () => {
             </Section>
 
             {/* ── 教學資訊 ── */}
-            <Section icon={GraduationCap} title="教學資訊">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Field label="講師等級">
-                        {/* 等級一律由系統/管理員決定,老師不可自選:認領者沿用名冊原等級,
-                            全新老師預設「實習」(伺服器端 guard_instructor_role 也會強制) */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="bh-chip bg-bauhaus-blue text-white text-sm px-4 py-2.5">
-                                {ROLE_OPTIONS.find(r => r.value === form.instructor_role)?.label
-                                    || (form.instructor_role || '實習')}
-                            </span>
-                            <span className="text-xs text-bauhaus-black/50">
-                                {form.instructor_role ? '（如需變更請聯繫管理員）' : '（首次註冊預設,管理員可調整）'}
-                            </span>
-                        </div>
-                    </Field>
-                    <Field label="速解專業資格">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`bh-chip text-sm px-4 py-2.5 ${form.speed_qualification ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/60'}`}>
-                                {speedQualificationLabel(form.speed_qualification)}
-                            </span>
-                            <span className="text-xs text-bauhaus-black/50">（由管理員認定）</span>
-                        </div>
-                    </Field>
-                    <Field label="接課頻率（學期間）" required>
-                        <input type="text" value={form.teaching_freq_semester} onChange={e => handleChange('teaching_freq_semester', e.target.value)} className={inputCls} placeholder="例：每週 2-3 次" />
-                    </Field>
-                    <Field label="接課頻率（寒暑假）" required>
-                        <input type="text" value={form.teaching_freq_vacation} onChange={e => handleChange('teaching_freq_vacation', e.target.value)} className={inputCls} placeholder="例：每週 5 次" />
-                    </Field>
-                </div>
-
-                <div className="mt-6">
-                    <label className="bh-label block mb-3">
-                        可接課地區 <span className="text-bauhaus-red">*</span>
-                        <span className="ml-2 text-xs text-bauhaus-black/50 normal-case tracking-normal font-medium">（已選 {form.teaching_regions.length} 個縣市）</span>
-                    </label>
-                    <div className="space-y-4">
-                        {Object.entries(TW_REGIONS).map(([area, counties]) => {
-                            const allSelected = counties.every(c => form.teaching_regions.includes(c));
-                            return (
-                                <div key={area} className="bg-bauhaus-muted p-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => selectAllInArea(counties)}
-                                            className={`inline-flex items-center gap-1 border-2 border-bauhaus-black rounded-lg px-2 py-0.5 text-xs font-bold uppercase tracking-wide transition-colors ${allSelected ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
-                                        >
-                                            {allSelected ? '✓ 全選' : '全選'}
-                                        </button>
-                                        <span className="text-sm font-black text-bauhaus-black uppercase tracking-wide">{area}</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {counties.map(county => (
-                                            <label key={county}
-                                                className={`bh-chip cursor-pointer transition-colors ${form.teaching_regions.includes(county) ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
-                                            >
-                                                <input type="checkbox" className="sr-only"
-                                                    checked={form.teaching_regions.includes(county)}
-                                                    onChange={() => toggleRegion(county)} />
-                                                {county}
-                                            </label>
-                                        ))}
-                                    </div>
+            <Section icon={GraduationCap} title={isInstructor ? '教學資訊' : '人員類別'}>
+                {isInstructor ? (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <Field label="講師等級">
+                                {/* 等級一律由系統/管理員決定,老師不可自選:認領者沿用名冊原等級,
+                                    全新老師預設「實習」(伺服器端 guard_instructor_role 也會強制) */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="bh-chip bg-bauhaus-blue text-white text-sm px-4 py-2.5">
+                                        {ROLE_OPTIONS.find(r => r.value === form.instructor_role)?.label
+                                            || (form.instructor_role || '實習')}
+                                    </span>
+                                    <span className="text-xs text-bauhaus-black/50">
+                                        {form.instructor_role ? '（如需變更請聯繫管理員）' : '（首次註冊預設,管理員可調整）'}
+                                    </span>
                                 </div>
-                            );
-                        })}
+                            </Field>
+                            <Field label="速解專業資格">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`bh-chip text-sm px-4 py-2.5 ${form.speed_qualification ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/60'}`}>
+                                        {speedQualificationLabel(form.speed_qualification)}
+                                    </span>
+                                    <span className="text-xs text-bauhaus-black/50">（由管理員認定）</span>
+                                </div>
+                            </Field>
+                            <Field label="接課頻率（學期間）" required>
+                                <input type="text" value={form.teaching_freq_semester} onChange={e => handleChange('teaching_freq_semester', e.target.value)} className={inputCls} placeholder="例：每週 2-3 次" />
+                            </Field>
+                            <Field label="接課頻率（寒暑假）" required>
+                                <input type="text" value={form.teaching_freq_vacation} onChange={e => handleChange('teaching_freq_vacation', e.target.value)} className={inputCls} placeholder="例：每週 5 次" />
+                            </Field>
+                        </div>
+
+                        <div className="mt-6">
+                            <label className="bh-label block mb-3">
+                                可接課地區 <span className="text-bauhaus-red">*</span>
+                                <span className="ml-2 text-xs text-bauhaus-black/50 normal-case tracking-normal font-medium">（已選 {form.teaching_regions.length} 個縣市）</span>
+                            </label>
+                            <div className="space-y-4">
+                                {Object.entries(TW_REGIONS).map(([area, counties]) => {
+                                    const allSelected = counties.every(c => form.teaching_regions.includes(c));
+                                    return (
+                                        <div key={area} className="bg-bauhaus-muted p-4">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => selectAllInArea(counties)}
+                                                    className={`inline-flex items-center gap-1 border-2 border-bauhaus-black rounded-lg px-2 py-0.5 text-xs font-bold uppercase tracking-wide transition-colors ${allSelected ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
+                                                >
+                                                    {allSelected ? '✓ 全選' : '全選'}
+                                                </button>
+                                                <span className="text-sm font-black text-bauhaus-black uppercase tracking-wide">{area}</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {counties.map(county => (
+                                                    <label key={county}
+                                                        className={`bh-chip cursor-pointer transition-colors ${form.teaching_regions.includes(county) ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black hover:bg-bauhaus-muted'}`}
+                                                    >
+                                                        <input type="checkbox" className="sr-only"
+                                                            checked={form.teaching_regions.includes(county)}
+                                                            onChange={() => toggleRegion(county)} />
+                                                        {county}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <div data-testid="personnel-types-readonly" className="flex items-center gap-2 flex-wrap">
+                        {normalizePersonnelTypes(form.personnel_types).map(type => (
+                            <span key={type} className="bh-chip bg-bauhaus-blue text-white text-sm px-4 py-2.5">{PERSONNEL_TYPE_LABELS[type] || type}</span>
+                        ))}
+                        <span className="text-xs text-bauhaus-black/50">（由管理員設定；講師等級、速解資格與接課資料不適用於你）</span>
                     </div>
-                </div>
+                )}
             </Section>
 
             {/* ── 匯款銀行資訊 ── */}
@@ -958,17 +970,19 @@ const ProfilePage = () => {
             </Section>
 
             {/* ── 經歷與自我介紹 ── */}
-            <Section icon={FileText} title="經歷與自我介紹">
-                <Field label="教學經歷 / 教學理念 / 想說的話" required>
-                    <textarea
-                        value={form.bio_notes}
-                        onChange={e => handleChange('bio_notes', e.target.value)}
-                        rows={6}
-                        className={inputCls + ' resize-y'}
-                        placeholder="請分享您的教學經歷、理念，或任何想說的話⋯⋯"
-                    />
-                </Field>
-            </Section>
+            {isInstructor && (
+                <Section icon={FileText} title="經歷與自我介紹">
+                    <Field label="教學經歷 / 教學理念 / 想說的話" required>
+                        <textarea
+                            value={form.bio_notes}
+                            onChange={e => handleChange('bio_notes', e.target.value)}
+                            rows={6}
+                            className={inputCls + ' resize-y'}
+                            placeholder="請分享您的教學經歷、理念，或任何想說的話⋯⋯"
+                        />
+                    </Field>
+                </Section>
+            )}
 
             {/* ── 文件上傳 ── */}
             <Section icon={Upload} title="文件上傳">

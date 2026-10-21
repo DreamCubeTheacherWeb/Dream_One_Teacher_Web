@@ -197,3 +197,39 @@ test('匯款資料缺項會精確列出缺少的分行與存摺封面', () => {
   assert.equal(isInstructorRemittanceComplete(instructor), false);
   assert.deepEqual(getMissingRemittanceItems(instructor), ['分行別', '存摺封面']);
 });
+
+const INSTRUCTOR_ONLY_LABELS = ['接課頻率（學期間）', '接課頻率（寒暑假）', '經歷 / 理念', '主要接課地區'];
+const staffWithoutTeachingData = () => ({
+  ...completeInstructor,
+  personnel_types: ['staff'],
+  teaching_freq_semester: '',
+  teaching_freq_vacation: '',
+  bio_notes: '',
+  teaching_regions: [],
+});
+
+test('純職員不要求接課頻率、經歷／理念與接課地區，其他必填不變', () => {
+  const completion = getInstructorProfileCompletion(staffWithoutTeachingData());
+  assert.equal(completion.complete, true);
+  assert.deepEqual(completion.missingItems, []);
+  assert.equal(completion.percent, 100);
+
+  const missingName = getInstructorProfileCompletion({ ...staffWithoutTeachingData(), full_name: '' });
+  assert.deepEqual(missingName.missingItems, ['姓名']);
+});
+
+test('同一份資料在人員類別含講師（或沒有人員類別欄位）時仍要求這四項', () => {
+  for (const personnel_types of [undefined, [], ['instructor'], ['staff', 'instructor']]) {
+    const completion = getInstructorProfileCompletion({ ...staffWithoutTeachingData(), personnel_types });
+    assert.deepEqual(completion.missingItems, INSTRUCTOR_ONLY_LABELS, JSON.stringify(personnel_types));
+  }
+});
+
+test('非講師的匯入舊資料不會被提示可帶入經歷／接課地區', () => {
+  const legacy = { teaching_regions: [], teaching_regions_raw: '臺北市', bio_notes: '', bio_teaching_experience: '教過' };
+  assert.deepEqual(getInstructorLegacyRecoverableItems({ ...legacy, personnel_types: ['staff'] }), []);
+  assert.deepEqual(
+    getInstructorLegacyRecoverableItems({ ...legacy, personnel_types: ['instructor'] }).filter((item) => item !== '講師暱稱'),
+    ['經歷 / 理念', '主要接課地區'],
+  );
+});

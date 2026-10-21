@@ -1,3 +1,5 @@
+import { isInstructorPersonnel } from './constants.js';
+
 export const REQUIRED_PROFILE_FIELDS = [
   { key: 'full_name', label: '姓名' },
   { key: 'nickname', label: '講師暱稱' },
@@ -17,6 +19,13 @@ export const REQUIRED_PROFILE_FIELDS = [
   { key: 'bank_branch', label: '分行別' },
   { key: 'bank_account_number', label: '銀行帳號' },
   { key: 'bank_code', label: '銀行代碼' },
+];
+
+// 人員類別不含「講師」的人（純職員／工讀計時）不要求這幾欄與接課地區，規則和資料庫的完整度判斷一致。
+export const INSTRUCTOR_ONLY_PROFILE_FIELD_KEYS = [
+  'teaching_freq_semester',
+  'teaching_freq_vacation',
+  'bio_notes',
 ];
 
 export const REQUIRED_PROFILE_PATHS = [
@@ -110,8 +119,10 @@ export const getInstructorLegacyRecoverableItems = (instructor) => {
   if (!hasValue(instructor?.gender) && deriveGenderFromTaiwanId(instructor?.id_number)) {
     recoverable.push('性別');
   }
+  const isInstructor = isInstructorPersonnel(instructor?.personnel_types);
   if (
-    (!hasValue(instructor?.bio_notes) || isLegacyMailingAddressNote(instructor?.bio_notes))
+    isInstructor
+    && (!hasValue(instructor?.bio_notes) || isLegacyMailingAddressNote(instructor?.bio_notes))
     && [
       instructor?.bio_personal_experience,
       instructor?.bio_teaching_experience,
@@ -120,7 +131,7 @@ export const getInstructorLegacyRecoverableItems = (instructor) => {
   ) {
     recoverable.push('經歷 / 理念');
   }
-  if (!instructor?.teaching_regions?.length && hasValue(instructor?.teaching_regions_raw)) {
+  if (isInstructor && !instructor?.teaching_regions?.length && hasValue(instructor?.teaching_regions_raw)) {
     recoverable.push('主要接課地區');
   }
   const bankFieldsMissing = [
@@ -198,21 +209,25 @@ export const isInstructorRemittanceComplete = (instructor) => (
 
 export const getInstructorProfileCompletion = (instructor) => {
   const missingItems = [];
+  const isInstructor = isInstructorPersonnel(instructor?.personnel_types);
+  const requiredFields = isInstructor
+    ? REQUIRED_PROFILE_FIELDS
+    : REQUIRED_PROFILE_FIELDS.filter(({ key }) => !INSTRUCTOR_ONLY_PROFILE_FIELD_KEYS.includes(key));
 
-  REQUIRED_PROFILE_FIELDS.forEach(({ key, label }) => {
+  requiredFields.forEach(({ key, label }) => {
     if (
       !hasValue(instructor?.[key])
       || (key === 'bio_notes' && isLegacyMailingAddressNote(instructor?.[key]))
     ) missingItems.push(label);
   });
 
-  if (!instructor?.teaching_regions?.length) missingItems.push('主要接課地區');
+  if (isInstructor && !instructor?.teaching_regions?.length) missingItems.push('主要接課地區');
 
   REQUIRED_PROFILE_DOCUMENTS.forEach(({ key, label }) => {
     if (!hasInstructorDocument(instructor, key)) missingItems.push(label);
   });
 
-  const totalItems = REQUIRED_PROFILE_FIELDS.length + REQUIRED_PROFILE_DOCUMENTS.length + 1;
+  const totalItems = requiredFields.length + REQUIRED_PROFILE_DOCUMENTS.length + (isInstructor ? 1 : 0);
   return {
     complete: missingItems.length === 0,
     missingItems,

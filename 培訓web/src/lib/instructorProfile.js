@@ -2,7 +2,7 @@
 // 資料庫 trigger 仍是最終防線；這裡避免講師端草稿或請求夾帶管理員專屬欄位。
 const ADMIN_MANAGED_FIELDS = [
     'id', 'user_id', 'created_at', 'updated_at', 'form_submitted_at',
-    'employment_status', 'instructor_role', 'speed_qualification',
+    'employment_status', 'personnel_types', 'instructor_role', 'speed_qualification',
     'note_internal', 'teaching_regions_raw', 'bank_info_raw',
     'id_front_external_url', 'id_back_external_url',
     'photo_external_url', 'bankbook_external_url',

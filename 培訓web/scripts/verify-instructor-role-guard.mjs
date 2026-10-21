@@ -69,7 +69,8 @@ const instructorList = read('src/pages/admin/InstructorList.jsx');
 
 check('管理端等級選單由 isAdmin 條件包住', () => {
     assert.match(instructorList, /const isAdmin = profile\?\.role === 'admin'/);
-    assert.match(instructorList, /\{isAdmin \? \(\s*<select[\s\S]*?onRoleChange/);
+    // 2026-10-22：純職員／工讀計時顯示「不適用」，所以三元式變成「非講師 ? 不適用 : isAdmin ? (<select…」；管理員才有下拉的條件不變
+    assert.match(instructorList, /isAdmin \? \(\s*<select[\s\S]*?onRoleChange/);
     assert.match(instructorList, /\{isAdmin && \([\s\S]*?新增講師/);
 });
 
