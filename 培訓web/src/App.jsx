@@ -286,7 +286,7 @@ function App() {
           <Route
             path="/admin/salary"
             element={
-              <ProtectedRoute staffOnly={true}>
+              <ProtectedRoute adminOnly={true}>
                 <PageLayout><SalaryRegister /></PageLayout>
               </ProtectedRoute>
             }
@@ -310,7 +310,7 @@ function App() {
           <Route
             path="/admin/download-center"
             element={
-              <ProtectedRoute staffOnly={true}>
+              <ProtectedRoute adminOnly={true}>
                 <PageLayout><DownloadCenter /></PageLayout>
               </ProtectedRoute>
             }

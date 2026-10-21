@@ -3,14 +3,15 @@
 \pset tuples_only on
 
 -- ═══════════════════════════════════════════════════════════════════
--- migration 20261022010000（課程受眾＋輔導員講師主檔權限）的隔離驗證
---   第一段：照 2026-10-22 正式庫唯讀盤點的政策組合建庫，先重現兩個問題：
+-- migration 20261022010000（課程受眾＋輔導員權限）的隔離驗證
+--   第一段：照 2026-10-22 正式庫唯讀盤點的政策組合建庫（含 20260826130000 的三條 restrictive），先重現：
 --           A. 資料完整的講師讀得到不屬於自己受眾（限正式／限實習）與大分類未發佈的課程、章節、內容
---           B. mentor 能 UPDATE／DELETE／INSERT 別人的講師主檔，能讀身分證字號與銀行帳號
---   第二段：套 migration 兩次，逐角色驗證受眾生效、合法講師不受影響、admin 全權、mentor 不能寫、
---           mentor 可經 public.mentor_instructor_directory() 讀非敏感欄位。
---   第三段（交易內預演，結束即 ROLLBACK）：若業主同意移除 mentor 兩條全表 SELECT 政策，
---           mentor 直接讀表 0 列、名冊函式照常可用、admin／講師本人不受影響。
+--           B. mentor 讀得到全部講師的身分證字號、銀行帳號、證件影像，能讀寫刪任何人的報酬紀錄；
+--              mentor 改／刪別人主檔在正式庫已被 restrictive 擋住，但拿掉 restrictive 就會開
+--              （"Staff can manage instructors" 是潛在漏洞）
+--   第二段：套 migration 兩次，逐角色驗證受眾生效、合法講師不受影響、admin 全權、
+--           mentor 不能寫主檔（即使 restrictive 不在）、讀不到主檔／敏感欄位／證件檔／報酬紀錄、
+--           可經 public.mentor_instructor_directory() 讀非敏感欄位；講師本人的主檔、證件檔、報酬紀錄照舊。
 -- 模擬 Supabase：auth.uid() 讀 request.jwt.claims；public 表權限預設發給 anon／authenticated，
 -- public 新函式的 EXECUTE 也預設發給 anon／authenticated（所以 migration 必須明寫 REVOKE anon）。
 -- private.* 與 is_my_instructor_profile_complete() 照 repo 最新定義建立（本 migration 不改它們）。
@@ -63,6 +64,7 @@ CREATE TABLE public.instructors (
   id_front_path text, id_front_external_url text,
   id_back_path text, id_back_external_url text,
   bankbook_path text, bankbook_external_url text,
+  photo_path text,
   employment_status public.employment_status_enum,
   instructor_role public.instructor_role_enum,
   speed_qualification text,
@@ -251,6 +253,47 @@ CREATE POLICY "Mentors can view all instructors" ON public.instructors FOR SELEC
 CREATE POLICY "Mentors and admins can view all instructor profiles" ON public.instructors FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('admin', 'mentor')));
 
+-- 20260826130000 的三條 restrictive（正式庫 2026-10-22 確認存在）
+CREATE POLICY "Instructor updates limited to admins or owners" ON public.instructors AS RESTRICTIVE FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = user_id OR EXISTS (SELECT 1 FROM public.users u WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'))
+  WITH CHECK ((SELECT auth.uid()) = user_id OR EXISTS (SELECT 1 FROM public.users u WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'));
+CREATE POLICY "Instructor inserts limited to admins or owners" ON public.instructors AS RESTRICTIVE FOR INSERT TO authenticated
+  WITH CHECK ((SELECT auth.uid()) = user_id OR EXISTS (SELECT 1 FROM public.users u WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'));
+CREATE POLICY "Only admins can delete instructor rows" ON public.instructors AS RESTRICTIVE FOR DELETE TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.users u WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'));
+
+-- storage：instructor_uploads 的讀取政策（admin 全部、本人看主檔引用的檔、mentor 全部）
+CREATE SCHEMA storage;
+CREATE TABLE storage.objects (id uuid DEFAULT gen_random_uuid() PRIMARY KEY, bucket_id text NOT NULL, name text NOT NULL, owner uuid);
+GRANT USAGE ON SCHEMA storage TO authenticated, anon;
+GRANT ALL ON storage.objects TO authenticated, anon;
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Admins can view all instructor files" ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'instructor_uploads' AND EXISTS (SELECT 1 FROM public.users u WHERE u.id = (SELECT auth.uid()) AND u.role = 'admin'));
+CREATE POLICY "Users can view files referenced by own instructor profile" ON storage.objects FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'instructor_uploads'
+    AND EXISTS (SELECT 1 FROM public.instructors i WHERE i.user_id = (SELECT auth.uid())
+                  AND name IN (i.photo_path, i.id_front_path, i.id_back_path, i.bankbook_path))
+  );
+CREATE POLICY "Mentors can view all instructor files" ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'instructor_uploads' AND EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'mentor'));
+
+-- class_sessions：報酬紀錄（2025_salary_system 的 admin＋mentor FOR ALL、20261018150000 的本人讀取）
+CREATE TABLE public.class_sessions (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  instructor_id uuid NOT NULL REFERENCES public.instructors(id),
+  session_date date NOT NULL,
+  amount numeric NOT NULL DEFAULT 0
+);
+ALTER TABLE public.class_sessions ENABLE ROW LEVEL SECURITY;
+CREATE FUNCTION public.instructor_salary_visible_from() RETURNS date LANGUAGE sql STABLE AS $$ SELECT DATE '2026-01-01' $$;
+CREATE POLICY "Admins manage all sessions" ON public.class_sessions FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('admin', 'mentor')));
+CREATE POLICY "Instructors view own sessions" ON public.class_sessions FOR SELECT TO authenticated
+  USING (session_date >= public.instructor_salary_visible_from()
+         AND instructor_id IN (SELECT id FROM public.instructors WHERE user_id = (SELECT auth.uid())));
+
 -- ── 測試資料 ──
 -- 01 正式講師(B)、02 實習講師、03 資料不完整講師、04 已凍結講師(A)、05 pending（主檔完整）、06 admin、07 mentor、08 尚無主檔的新帳號
 INSERT INTO auth.users (id, email)
@@ -275,12 +318,23 @@ SELECT
   ('00000000-0000-4000-8000-00000000000' || n)::uuid,
   '講師' || n, '暱稱' || n, '女', DATE '1999-01-01', 'A12345678' || n, '091234567' || n, 'line' || n, '地址' || n, '戶籍' || n,
   '每週', '每週', '備註', '戶名' || n, '銀行', '分行', '0000111122' || n, '812',
-  'instructors/x/id_front.jpg', 'instructors/x/id_back.jpg', 'instructors/x/bankbook.jpg',
+  'instructors/u' || n || '/id_front.jpg', 'instructors/u' || n || '/id_back.jpg', 'instructors/u' || n || '/bankbook.jpg',
   (CASE WHEN n = 4 THEN 'frozen' ELSE 'active' END)::public.employment_status_enum,
   (CASE n WHEN 2 THEN '實習' WHEN 4 THEN 'A' ELSE 'B' END)::public.instructor_role_enum,
   CASE WHEN n = 1 THEN '3x3' END
 FROM generate_series(1, 5) n;
 UPDATE public.instructors SET bank_code = NULL WHERE id = '10000000-0000-4000-8000-000000000003';
+-- 5 位講師各 3 個證件檔＝15 個 instructor_uploads 物件，另 1 個別的 bucket 的檔
+INSERT INTO storage.objects (bucket_id, name)
+SELECT 'instructor_uploads', 'instructors/u' || n || '/' || f FROM generate_series(1, 5) n, unnest(ARRAY['id_front.jpg', 'id_back.jpg', 'bankbook.jpg']) f;
+INSERT INTO storage.objects (bucket_id, name) VALUES ('other-bucket', 'x.pdf');
+-- 報酬紀錄：講師 1 兩筆、講師 2 兩筆、講師 4 一筆（講師 3 無紀錄，刪主檔測試才不會撞外鍵）
+INSERT INTO public.class_sessions (instructor_id, session_date, amount) VALUES
+  ('10000000-0000-4000-8000-000000000001', DATE '2026-10-01', 1000),
+  ('10000000-0000-4000-8000-000000000001', DATE '2026-10-08', 1200),
+  ('10000000-0000-4000-8000-000000000002', DATE '2026-10-02', 800),
+  ('10000000-0000-4000-8000-000000000002', DATE '2026-10-09', 800),
+  ('10000000-0000-4000-8000-000000000004', DATE '2026-10-03', 900);
 
 INSERT INTO public.course_categories (id, title, visibility, is_published, "order") VALUES
   ('c0000000-0000-4000-8000-000000000001', '全體分類', 'all', true, 0),
@@ -365,6 +419,10 @@ CREATE FUNCTION t.q_contents_of(p_lesson text) RETURNS text LANGUAGE sql AS $$
 CREATE FUNCTION t.q_sensitive() RETURNS text LANGUAGE sql AS $$
   SELECT $q$ SELECT id_number, bank_account_number FROM public.instructors
              WHERE id_number IS NOT NULL AND bank_account_number IS NOT NULL $q$ $$;
+CREATE FUNCTION t.q_files() RETURNS text LANGUAGE sql AS $$
+  SELECT $q$ SELECT name FROM storage.objects WHERE bucket_id = 'instructor_uploads' $q$ $$;
+CREATE FUNCTION t.q_sessions() RETURNS text LANGUAGE sql AS $$
+  SELECT $q$ SELECT * FROM public.class_sessions $q$ $$;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA t TO authenticated, anon;
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -383,22 +441,50 @@ SELECT t.assert(t.count_rows(t.q_course('d0000000-0000-4000-8000-000000000003'))
 RESET ROLE;
 \echo PASS: bootstrap reproduces A (intern teacher reads the formal-only course + its lesson + content and the unpublished-category course; formal teacher reads the intern-only course)
 
--- B. mentor 能改、刪、新增別人的講師主檔，能讀身分證字號與銀行帳號
+-- B. mentor 讀得到全部講師的敏感欄位與證件檔，能讀寫刪任何人的報酬紀錄
+SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
+SET ROLE authenticated;
+SELECT t.assert(t.count_rows(t.q_sensitive()) = 5, 'bootstrap: mentor should read id_number and bank_account_number of all 5 instructors') \gset
+SELECT t.assert(t.count_rows(t.q_files()) = 15, 'bootstrap: mentor should read all 15 instructor ID/bankbook files') \gset
+SELECT t.assert(t.count_rows(t.q_sessions()) = 5, 'bootstrap: mentor should read all 5 class_sessions') \gset
+RESET ROLE;
+BEGIN;
+SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
+SET ROLE authenticated;
+SELECT t.assert(t.exec_count($q$ UPDATE public.class_sessions SET amount = amount + 1 $q$) = 5, 'bootstrap: mentor should UPDATE all class_sessions') \gset
+SELECT t.assert(t.exec_count($q$ INSERT INTO public.class_sessions (instructor_id, session_date, amount)
+                                 VALUES ('10000000-0000-4000-8000-000000000001', DATE '2026-10-15', 99999) $q$) = 1,
+  'bootstrap: mentor should INSERT a class_session for another instructor') \gset
+SELECT t.assert(t.exec_count($q$ DELETE FROM public.class_sessions WHERE instructor_id = '10000000-0000-4000-8000-000000000002' $q$) = 2,
+  'bootstrap: mentor should DELETE class_sessions of another instructor') \gset
+RESET ROLE;
+ROLLBACK;
+\echo PASS: bootstrap reproduces B-read (mentor reads id_number/bank_account_number of 5 instructors, 15 ID/bankbook files, all 5 class_sessions and can UPDATE 5 / INSERT 1 / DELETE 2 of them)
+
+-- 主檔寫入：正式庫的 restrictive 已擋住 mentor；拿掉 restrictive 後 "Staff can manage instructors" 會放行
 BEGIN;
 SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
 SET ROLE authenticated;
 SELECT t.assert(t.exec_count($q$ UPDATE public.instructors SET note_internal = 'mentor wrote this'
+                                 WHERE id = '10000000-0000-4000-8000-000000000001' $q$) = 0,
+  'bootstrap: restrictive policy should already block mentor UPDATE in production') \gset
+SELECT t.assert(t.exec_count($q$ DELETE FROM public.instructors WHERE id = '10000000-0000-4000-8000-000000000003' $q$) = 0,
+  'bootstrap: restrictive policy should already block mentor DELETE in production') \gset
+SELECT t.expect_sqlstate('bootstrap mentor insert for another user under restrictive',
+  $q$ INSERT INTO public.instructors (user_id, full_name) VALUES ('00000000-0000-4000-8000-000000000008', 'mentor 代建') $q$, '42501') \gset
+RESET ROLE;
+DROP POLICY "Instructor updates limited to admins or owners" ON public.instructors;
+DROP POLICY "Instructor inserts limited to admins or owners" ON public.instructors;
+DROP POLICY "Only admins can delete instructor rows" ON public.instructors;
+SET ROLE authenticated;
+SELECT t.assert(t.exec_count($q$ UPDATE public.instructors SET note_internal = 'mentor wrote this'
                                  WHERE id = '10000000-0000-4000-8000-000000000001' $q$) = 1,
-  'bootstrap: mentor should be able to UPDATE another instructor before migration') \gset
+  'bootstrap: without restrictive, Staff can manage instructors should let mentor UPDATE') \gset
 SELECT t.assert(t.exec_count($q$ DELETE FROM public.instructors WHERE id = '10000000-0000-4000-8000-000000000003' $q$) = 1,
-  'bootstrap: mentor should be able to DELETE another instructor before migration') \gset
-SELECT t.assert(t.exec_count($q$ INSERT INTO public.instructors (user_id, full_name)
-                                 VALUES ('00000000-0000-4000-8000-000000000008', 'mentor 代建') $q$) = 1,
-  'bootstrap: mentor should be able to INSERT a row for another user before migration') \gset
-SELECT t.assert(t.count_rows(t.q_sensitive()) >= 4, 'bootstrap: mentor should read id_number and bank_account_number before migration') \gset
+  'bootstrap: without restrictive, mentor should DELETE') \gset
 RESET ROLE;
 ROLLBACK;
-\echo PASS: bootstrap reproduces B (mentor UPDATEs, DELETEs and INSERTs rows of other instructors and reads id_number/bank_account_number)
+\echo PASS: bootstrap B-write as in production: restrictive policies already block mentor UPDATE/DELETE/INSERT on other rows (0/0/42501); with them removed, "Staff can manage instructors" lets mentor UPDATE 1 and DELETE 1 (latent hole)
 
 -- ═══════════════════════════════════════════════════════════════════
 -- 第二段：套用 migration 兩次
@@ -428,6 +514,19 @@ SELECT t.assert(
                 AND cmd = 'ALL' AND qual LIKE '%''admin''%' AND with_check LIKE '%''admin''%'),
   'instructors still has a write policy mentioning mentor, or the admin FOR ALL policy is missing') \gset
 SELECT t.assert(
+  NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('instructors', 'class_sessions')
+                AND (COALESCE(qual, '') || COALESCE(with_check, '')) LIKE '%mentor%')
+  AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects'
+                    AND qual LIKE '%instructor_uploads%' AND qual LIKE '%mentor%')
+  AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'class_sessions' AND policyname = 'Admins manage all sessions'
+                AND cmd = 'ALL' AND qual LIKE '%''admin''%' AND with_check LIKE '%''admin''%')
+  AND EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'class_sessions' AND policyname = 'Instructors view own sessions')
+  AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'storage' AND policyname IN
+         ('Admins can view all instructor files', 'Users can view files referenced by own instructor profile')) = 2
+  AND (SELECT count(*) FROM pg_policies WHERE tablename = 'instructors' AND permissive = 'RESTRICTIVE') = 3
+  AND (SELECT count(*) FROM pg_policies WHERE tablename = 'instructors' AND cmd = 'SELECT') = 1,
+  'a policy on instructors/class_sessions/instructor_uploads still mentions mentor, or admin/own/restrictive policies changed') \gset
+SELECT t.assert(
   (SELECT p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
      FROM pg_proc p WHERE p.oid = 'public.mentor_instructor_directory(uuid[])'::regprocedure)
   AND NOT has_function_privilege('anon', 'public.mentor_instructor_directory(uuid[])', 'EXECUTE')
@@ -435,7 +534,7 @@ SELECT t.assert(
   AND (SELECT array_to_string(p.proargnames, ',') FROM pg_proc p WHERE p.oid = 'public.mentor_instructor_directory(uuid[])'::regprocedure)
       = 'p_user_ids,id,user_id,full_name,nickname,instructor_role,employment_status,teaching_regions,speed_qualification',
   'mentor_instructor_directory is not SECURITY DEFINER with empty search_path, anon can execute it, or its columns changed') \gset
-\echo PASS: no Complete-teachers policies left; courses/lessons/contents each have one Approved SELECT (courses checks audience twice) plus Staff FOR ALL; instructors has no mentor write policy and keeps admin FOR ALL; directory function is SECURITY DEFINER with empty search_path, anon cannot execute, returns only 8 non-sensitive columns
+\echo PASS: no Complete-teachers policies left; courses/lessons/contents each have one Approved SELECT (courses checks audience twice) plus Staff FOR ALL; no policy on instructors, class_sessions or instructor_uploads mentions mentor (instructors keeps admin FOR ALL, own SELECT and the 3 restrictive policies; class_sessions admin-only FOR ALL plus own read; storage keeps admin and own read); directory function is SECURITY DEFINER with empty search_path, anon cannot execute, returns only 8 non-sensitive columns
 
 -- 2. 受眾生效：正式講師 d01、d02、d04；實習講師 d01、d03
 SELECT t.as_user('00000000-0000-4000-8000-000000000001') \gset
@@ -493,7 +592,9 @@ SELECT t.as_user('00000000-0000-4000-8000-000000000006') \gset
 SET ROLE authenticated;
 SELECT t.assert(t.count_rows('SELECT * FROM public.courses') = 6 AND t.count_rows(t.q_lessons()) = 7 AND t.count_rows(t.q_contents()) = 8,
   'admin should read all 6 courses, 7 lessons, 8 contents') \gset
-SELECT t.assert(t.count_rows('SELECT * FROM public.instructors') = 5 AND t.count_rows(t.q_sensitive()) >= 4, 'admin should read all instructors with sensitive fields') \gset
+SELECT t.assert(t.count_rows('SELECT * FROM public.instructors') = 5 AND t.count_rows(t.q_sensitive()) = 5, 'admin should read all instructors with sensitive fields') \gset
+SELECT t.assert(t.count_rows(t.q_files()) = 15, 'admin should read all 15 instructor files') \gset
+SELECT t.assert(t.count_rows(t.q_sessions()) = 5, 'admin should read all 5 class_sessions') \gset
 RESET ROLE;
 BEGIN;
 SELECT t.as_user('00000000-0000-4000-8000-000000000006') \gset
@@ -501,14 +602,38 @@ SET ROLE authenticated;
 SELECT t.assert(t.exec_count($q$ UPDATE public.courses SET title = 'admin edit' WHERE id = 'd0000000-0000-4000-8000-000000000002' $q$) = 1, 'admin cannot edit a course') \gset
 SELECT t.assert(t.exec_count($q$ UPDATE public.instructors SET note_internal = 'admin' WHERE id = '10000000-0000-4000-8000-000000000001' $q$) = 1, 'admin cannot UPDATE an instructor') \gset
 SELECT t.assert(t.exec_count($q$ INSERT INTO public.instructors (user_id, full_name) VALUES ('00000000-0000-4000-8000-000000000008', 'admin 建檔') $q$) = 1, 'admin cannot INSERT an instructor') \gset
+SELECT t.assert(t.exec_count($q$ UPDATE public.class_sessions SET amount = amount + 1 $q$) = 5, 'admin cannot UPDATE class_sessions') \gset
+SELECT t.assert(t.exec_count($q$ INSERT INTO public.class_sessions (instructor_id, session_date, amount)
+                                 VALUES ('10000000-0000-4000-8000-000000000002', DATE '2026-10-16', 500) $q$) = 1, 'admin cannot INSERT a class_session') \gset
+SELECT t.assert(t.exec_count($q$ DELETE FROM public.class_sessions WHERE instructor_id = '10000000-0000-4000-8000-000000000004' $q$) = 1, 'admin cannot DELETE a class_session') \gset
 SELECT t.assert(t.exec_count($q$ DELETE FROM public.instructors WHERE id = '10000000-0000-4000-8000-000000000003' $q$) = 1, 'admin cannot DELETE an instructor') \gset
 RESET ROLE;
 ROLLBACK;
-\echo PASS: admin keeps full access (reads 6 courses / 7 lessons / 8 contents and all instructors; edits a course; UPDATE, INSERT, DELETE instructors each affect 1 row)
+\echo PASS: admin keeps full access (reads 6 courses / 7 lessons / 8 contents, 5 instructors with sensitive fields, 15 instructor files, 5 class_sessions; edits a course; UPDATE/INSERT/DELETE instructors 1/1/1; class_sessions UPDATE 5, INSERT 1, DELETE 1)
 
--- 6. mentor：不能寫別人的講師主檔；課程後台（Staff can manage）照舊
+-- 6. mentor：不能寫主檔（restrictive 在或不在都一樣）、讀不到主檔／敏感欄位／證件檔、報酬紀錄不能讀寫；課程後台照舊
+SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
+SET ROLE authenticated;
+SELECT t.assert(t.count_rows('SELECT * FROM public.instructors') = 0, 'mentor still reads instructor rows directly') \gset
+SELECT t.assert(t.count_rows(t.q_sensitive()) = 0, 'mentor still reads id_number/bank_account_number') \gset
+SELECT t.assert(t.count_rows(t.q_files()) = 0, 'mentor still reads instructor ID/bankbook files') \gset
+SELECT t.assert(t.count_rows(t.q_sessions()) = 0, 'mentor still reads class_sessions') \gset
+SELECT t.assert(t.count_rows('SELECT * FROM public.courses') = 6, 'mentor lost the course CMS read access') \gset
+RESET ROLE;
+\echo PASS: mentor reads 0 instructor rows, 0 sensitive values, 0 instructor files, 0 class_sessions; course CMS access unchanged (6 courses)
+
 BEGIN;
 SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
+SET ROLE authenticated;
+SELECT t.assert(t.exec_count($q$ UPDATE public.class_sessions SET amount = amount + 1 $q$) = 0, 'mentor can still UPDATE class_sessions') \gset
+SELECT t.assert(t.exec_count($q$ DELETE FROM public.class_sessions $q$) = 0, 'mentor can still DELETE class_sessions') \gset
+SELECT t.expect_sqlstate('mentor insert class_session',
+  $q$ INSERT INTO public.class_sessions (instructor_id, session_date, amount) VALUES ('10000000-0000-4000-8000-000000000001', DATE '2026-10-15', 99999) $q$, '42501') \gset
+RESET ROLE;
+-- 拿掉三條 restrictive，證明 mentor 不能寫主檔不再依賴它們
+DROP POLICY "Instructor updates limited to admins or owners" ON public.instructors;
+DROP POLICY "Instructor inserts limited to admins or owners" ON public.instructors;
+DROP POLICY "Only admins can delete instructor rows" ON public.instructors;
 SET ROLE authenticated;
 SELECT t.assert(t.exec_count($q$ UPDATE public.instructors SET note_internal = 'mentor wrote this' WHERE id = '10000000-0000-4000-8000-000000000001' $q$) = 0,
   'mentor can still UPDATE another instructor') \gset
@@ -517,24 +642,27 @@ SELECT t.assert(t.exec_count($q$ DELETE FROM public.instructors WHERE id = '1000
   'mentor can still DELETE another instructor') \gset
 SELECT t.expect_sqlstate('mentor insert for another user',
   $q$ INSERT INTO public.instructors (user_id, full_name) VALUES ('00000000-0000-4000-8000-000000000008', 'mentor 代建') $q$, '42501') \gset
-SELECT t.assert(t.count_rows('SELECT * FROM public.courses') = 6, 'mentor lost the course CMS read access') \gset
 RESET ROLE;
-SELECT t.assert((SELECT note_internal FROM public.instructors WHERE id = '10000000-0000-4000-8000-000000000001') IS NULL
+SELECT t.assert((SELECT count(*) FROM public.class_sessions) = 5 AND (SELECT sum(amount) FROM public.class_sessions) = 4700
+  AND (SELECT note_internal FROM public.instructors WHERE id = '10000000-0000-4000-8000-000000000001') IS NULL
   AND (SELECT count(*) FROM public.instructors) = 5 AND (SELECT count(*) FROM public.instructors WHERE instructor_role = 'S') = 0,
   'mentor write attempts changed data') \gset
 ROLLBACK;
-\echo PASS: mentor UPDATE (single and bulk) and DELETE affect 0 rows, INSERT for another user gets 42501, data unchanged; mentor course CMS access unchanged (6 courses)
+\echo PASS: mentor class_sessions UPDATE 0 / DELETE 0 / INSERT 42501; with the 3 restrictive policies removed, mentor instructor UPDATE (single and bulk) 0, DELETE 0, INSERT 42501; data unchanged
 
 -- 7. 講師本人：仍可讀、改自己的主檔，改不到別人
 BEGIN;
 SELECT t.as_user('00000000-0000-4000-8000-000000000001') \gset
 SET ROLE authenticated;
 SELECT t.assert(t.count_rows('SELECT * FROM public.instructors') = 1, 'teacher should read only own instructor row') \gset
+SELECT t.assert(t.count_rows(t.q_files()) = 3, 'teacher should read only own 3 files') \gset
+SELECT t.assert(t.count_rows(t.q_sessions()) = 2, 'teacher should read only own 2 class_sessions') \gset
+SELECT t.assert(t.exec_count($q$ UPDATE public.class_sessions SET amount = 0 $q$) = 0, 'teacher can UPDATE class_sessions') \gset
 SELECT t.assert(t.exec_count($q$ UPDATE public.instructors SET nickname = '新暱稱' WHERE user_id = '00000000-0000-4000-8000-000000000001' $q$) = 1, 'teacher cannot update own row') \gset
 SELECT t.assert(t.exec_count($q$ UPDATE public.instructors SET nickname = 'x' WHERE id = '10000000-0000-4000-8000-000000000002' $q$) = 0, 'teacher can update another row') \gset
 RESET ROLE;
 ROLLBACK;
-\echo PASS: teacher reads only own instructor row, updates own row (1), cannot update another (0)
+\echo PASS: teacher reads only own instructor row, 3 own files and 2 own class_sessions; updates own row (1), cannot update another (0) or any class_session (0)
 
 -- 8. 名冊函式：admin、mentor 讀得到 5 列非敏感欄位、可依 user_id 篩；講師、pending、未登入、anon 被擋
 SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
@@ -565,36 +693,5 @@ SET ROLE anon;
 SELECT t.expect_sqlstate('anon calls directory', 'SELECT * FROM public.mentor_instructor_directory()', '42501') \gset
 RESET ROLE;
 \echo PASS: directory gives admin and mentor 5 rows with only non-sensitive columns (values correct, user_id filter works); teacher, pending, missing uid and anon get 42501
-
--- 9. 現況紀錄（不是目標）：mentor 兩條全表 SELECT 政策本 migration 刻意保留，mentor 仍讀得到敏感欄位
-SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
-SET ROLE authenticated;
-SELECT (t.count_rows(t.q_sensitive()) >= 4) AS mentor_still_reads_sensitive \gset
-RESET ROLE;
-\if :mentor_still_reads_sensitive
-  \echo NOTE: mentor can still read id_number/bank_account_number through "Mentors can view all instructors" / "Mentors and admins can view all instructor profiles" (kept on purpose; DownloadCenter and InstructorList need an owner decision first)
-\else
-  \echo FAIL: mentor full-table read changed unexpectedly; update this check
-  SELECT 1/0;
-\endif
-
--- ═══════════════════════════════════════════════════════════════════
--- 第三段（預演，ROLLBACK）：業主同意後移除 mentor 兩條全表 SELECT 政策的效果
--- ═══════════════════════════════════════════════════════════════════
-BEGIN;
-DROP POLICY IF EXISTS "Mentors can view all instructors" ON public.instructors;
-DROP POLICY IF EXISTS "Mentors and admins can view all instructor profiles" ON public.instructors;
-SELECT t.as_user('00000000-0000-4000-8000-000000000007') \gset
-SET ROLE authenticated;
-SELECT t.assert(t.count_rows('SELECT * FROM public.instructors') = 0, 'preview: mentor still reads instructors after dropping the two policies') \gset
-SELECT t.assert(t.count_rows(t.q_sensitive()) = 0, 'preview: mentor still reads sensitive columns') \gset
-SELECT t.assert(t.count_rows('SELECT * FROM public.mentor_instructor_directory()') = 5, 'preview: directory stops working for mentor') \gset
-SELECT t.as_user('00000000-0000-4000-8000-000000000006') \gset
-SELECT t.assert(t.count_rows('SELECT * FROM public.instructors') = 5, 'preview: admin loses instructor reads') \gset
-SELECT t.as_user('00000000-0000-4000-8000-000000000001') \gset
-SELECT t.assert(t.count_rows('SELECT * FROM public.instructors') = 1, 'preview: teacher loses own instructor row') \gset
-RESET ROLE;
-ROLLBACK;
-\echo PASS: preview (rolled back) of dropping the two mentor read policies: mentor reads 0 instructor rows and 0 sensitive values, directory still returns 5; admin 5, teacher own 1
 
 \echo rls audience/mentor SQL verification passed
