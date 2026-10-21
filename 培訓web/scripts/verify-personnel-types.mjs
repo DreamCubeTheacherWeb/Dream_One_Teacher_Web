@@ -140,10 +140,10 @@ compareDefinition('S03', 'ensure_my_contract_reminder 只多「有主檔但不�
 const migrationText = read(migrationPath);
 const forbidden = ['DROP ', 'TRUNCATE', 'DELETE FROM', 'ALTER TYPE', 'DISABLE TRIGGER'];
 const touchedFunctions = [...migrationText.matchAll(/CREATE OR REPLACE FUNCTION ([\w.]+)\(/g)].map((match) => match[1]);
-record('S04', touchedFunctions.length === 3 && touchedFunctions.every((name) => Object.values(functionNames).includes(name))
+record('S04', /^BEGIN;\n\n.*\nSET LOCAL lock_timeout = '5s';$/m.test(migrationText) && touchedFunctions.length === 3 && touchedFunctions.every((name) => Object.values(functionNames).includes(name))
   && !forbidden.some((word) => migrationText.toUpperCase().includes(word))
   && /^BEGIN;$/m.test(migrationText) && /^COMMIT;$/m.test(migrationText),
-'migration 只重定義三個函式、沒有 DROP／DELETE／ALTER TYPE，包在 BEGIN／COMMIT 內', touchedFunctions.join(', '));
+'migration 只重定義三個函式、沒有 DROP／DELETE／ALTER TYPE，包在 BEGIN／COMMIT 內，BEGIN 後先設 lock_timeout', touchedFunctions.join(', '));
 
 // ── 2. 暫時 PostgreSQL ───────────────────────────────────────────────
 const run = (command, args, options = {}) => spawnSync(command, args, { encoding: 'utf8', env: pgEnv, ...options });
@@ -179,7 +179,8 @@ const withCluster = async (label, fn) => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!ready) throw new Error(`temporary PostgreSQL (${label}) did not become ready`);
-    return fn((args, options) => run('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '-h', dataDir, '-p', String(port), '-U', 'postgres', '-d', 'postgres', ...args], options));
+    const connArgs = ['-X', '-h', dataDir, '-p', String(port), '-U', 'postgres', '-d', 'postgres'];
+    return await fn((args, options) => run('psql', [...connArgs, '-v', 'ON_ERROR_STOP=1', ...args], options), connArgs);
   } finally {
     if (postgres && postgres.exitCode === null) run('pg_ctl', ['-D', dataDir, '-m', 'fast', 'stop']);
     rmSync(dataDir, { recursive: true, force: true });
@@ -209,19 +210,73 @@ const parseRun = (stdout) => ({
   })),
 });
 
-const runScenario = (label, applyMigration) => withCluster(label, (psql) => {
+// 8/19 版 is_my_instructor_profile_complete()（接課四欄寫死）：負向對照用，preflight 第 7 段必須判 false。
+const legacyWrapper = extractFunction(sources.reminder, 'public.is_my_instructor_profile_complete');
+const legacyWrapperSql = path.join(workDir, 'legacy-is-my-instructor-profile-complete.sql');
+writeFileSync(legacyWrapperSql, [`-- ${path.basename(sources.reminder)} L${legacyWrapper.from}-${legacyWrapper.to}`, ...legacyWrapper.lines, ''].join('\n'));
+
+// 同一個資料庫跑 preflight：唯讀 session（任何寫入都會報錯），輸出逐列 a|b|c 供判讀。
+const runPreflight = (psql) => {
+  const result = psql(['-A', '-t', '-F', '|', '-f', path.join(appDir, 'scripts/preflight-personnel-types.sql')],
+    { cwd: appDir, env: { ...pgEnv, PGOPTIONS: '-c default_transaction_read_only=on' } });
+  return { ok: result.status === 0, stdout: result.stdout, stderr: result.stderr };
+};
+
+// 另一個連線先拿著 instructors 的 ACCESS SHARE 鎖（模擬長交易），migration 必須在 lock_timeout 內放棄且資料不變。
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const checkLockTimeout = async (psql, connArgs) => {
+  const blocker = spawn('psql', [...connArgs, '-c',
+    "SET application_name = 'pt-blocker'; BEGIN; LOCK TABLE public.instructors IN ACCESS SHARE MODE; SELECT pg_sleep(60);"],
+  { env: pgEnv, stdio: 'ignore' });
+  try {
+    let held = false;
+    for (let attempt = 0; attempt < 100 && !held; attempt += 1) {
+      const probe = psql(['-At', '-c', "SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid WHERE a.application_name = 'pt-blocker' AND l.relation = 'public.instructors'::regclass AND l.granted"]);
+      held = probe.stdout.trim() === '1';
+      if (!held) await sleep(100);
+    }
+    if (!held) return { ok: false, detail: 'blocker did not acquire the table lock' };
+    const started = Date.now();
+    const attempt = psql(['-v', 'VERBOSITY=verbose', '-f', migrationPath], { cwd: appDir });
+    const seconds = (Date.now() - started) / 1000;
+    const state = psql(['-At', '-c', "SELECT (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'instructors' AND column_name = 'personnel_types') || '|' || (SELECT count(*) FROM public.instructors WHERE employment_status IS NULL) || '|' || (SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.instructors'::regclass AND conname IN ('instructors_personnel_types_valid', 'instructors_employment_status_cooperation_only'))"]).stdout.trim();
+    const error = `${attempt.stderr}`.split('\n').find((line) => /ERROR/.test(line)) || '';
+    return {
+      ok: attempt.status !== 0 && /55P03/.test(error) && seconds >= 4 && seconds < 15 && state === '0|3|0',
+      detail: `exit ${attempt.status} after ${seconds.toFixed(1)}s; ${error.trim()}; column|NULL rows|new constraints = ${state}`,
+    };
+  } finally {
+    psql(['-c', "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'pt-blocker'"]);
+    blocker.kill();
+  }
+};
+
+const runScenario = (label, applyMigration) => withCluster(label, async (psql, connArgs) => {
   const result = psql(['-v', `apply_migration=${applyMigration ? 'on' : 'off'}`, '-v', `baseline_sql=${baselineSql}`,
     '-f', path.join(appDir, 'scripts/verify-personnel-types.sql')], { cwd: appDir });
   if (result.status !== 0) throw new Error(`verify-personnel-types.sql (${label}) aborted\n${result.stdout}${result.stderr}`);
-  // 同一個資料庫再跑 preflight：唯讀 session（任何寫入都會報錯），輸出逐列 a|b|c 供判讀。
-  const preflight = psql(['-A', '-t', '-F', '|', '-f', path.join(appDir, 'scripts/preflight-personnel-types.sql')],
-    { cwd: appDir, env: { ...pgEnv, PGOPTIONS: '-c default_transaction_read_only=on' } });
-  return { ...parseRun(result.stdout), preflight: { ok: preflight.status === 0, stdout: preflight.stdout, stderr: preflight.stderr } };
+  const scenario = { ...parseRun(result.stdout), preflight: runPreflight(psql) };
+  if (!applyMigration) {
+    scenario.lockTimeout = await checkLockTimeout(psql, connArgs);
+    const swap = psql(['-f', legacyWrapperSql], { cwd: appDir });
+    if (swap.status !== 0) throw new Error(`could not install the 8/19 wrapper\n${swap.stderr}`);
+    scenario.legacyPreflight = runPreflight(psql);
+  }
+  return scenario;
 });
-const preflightVerdicts = (output) => output.stdout.split('\n')
+const preflightRows = (output) => output.stdout.split('\n')
   .filter((line) => /^(public|private)\.[a-z_]+\(/.test(line))
-  .map((line) => line.split('|'))
+  .map((line) => line.split('|'));
+// 第 5 段：fn|current|before|after|verdict
+const preflightVerdicts = (output) => preflightRows(output)
+  .filter((fields) => fields.length === 5)
   .map(([fn, current, before, after, verdict]) => ({ fn, current, before, after, verdict }));
+// 第 7 段：fn|delegates|verdict
+const wrapperRows = (output) => Object.fromEntries(preflightRows(output)
+  .filter((fields) => fields.length === 3)
+  .map(([fn, delegates, verdict]) => [fn, { delegates: delegates === 't', verdict }]));
+const wrapperFns = ['public.approve_new_instructor_account(uuid)', 'public.is_my_instructor_profile_complete()'];
+const describeWrappers = (rows) => wrapperFns.map((fn) => `${fn}=${rows[fn] ? `${rows[fn].delegates}/${rows[fn].verdict}` : 'missing'}`).join('; ');
 
 // 把既有 SQL 驗證在指定 migration 之後插入新 migration，並把 \ir 改成絕對路徑。
 const runStacked = (code, script, anchor) => withCluster(code, (psql) => {
@@ -276,20 +331,33 @@ try {
 
   const beforeVerdicts = preflightVerdicts(reverse.preflight);
   const reverseLines = reverse.preflight.stdout.split('\n');
+  const reverseWrappers = wrapperRows(reverse.preflight);
   record('X05', reverse.preflight.ok && beforeVerdicts.length === 3 && beforeVerdicts.every((v) => v.verdict.startsWith('OK'))
-    && reverseLines.includes('0|3|10') && reverseLines.includes('f|f|f'),
-  'preflight 在「未套用」庫（唯讀 session）：三個函式都判 OK、會違反約束 0 筆、NULL 3 筆、新欄位／約束都不存在',
-  reverse.preflight.ok ? beforeVerdicts.map((v) => `${v.fn}=${v.verdict}`).join('; ') : reverse.preflight.stderr.trim());
+    && reverseLines.includes('0|3|10') && reverseLines.includes('f|f|f')
+    && wrapperFns.every((fn) => reverseWrappers[fn]?.delegates && reverseWrappers[fn].verdict.startsWith('OK')),
+  'preflight 在「未套用」庫（唯讀 session）：三個函式判 OK、違反約束 0 筆、NULL 3 筆、新欄位／約束不存在、第 7 段兩列 true',
+  reverse.preflight.ok ? `${beforeVerdicts.map((v) => `${v.fn}=${v.verdict}`).join('; ')}; ${describeWrappers(reverseWrappers)}` : reverse.preflight.stderr.trim());
   const afterVerdicts = preflightVerdicts(applied.preflight);
+  const appliedWrappers = wrapperRows(applied.preflight);
   record('X06', applied.preflight.ok && afterVerdicts.length === 3 && afterVerdicts.every((v) => v.verdict.startsWith('已套用'))
-    && applied.preflight.stdout.split('\n').includes('t|t|t'),
-  'preflight 在「已套用」庫：三個函式都判「已套用」、新欄位與約束都存在',
-  applied.preflight.ok ? afterVerdicts.map((v) => `${v.fn}=${v.verdict}`).join('; ') : applied.preflight.stderr.trim());
+    && applied.preflight.stdout.split('\n').includes('t|t|t')
+    && wrapperFns.every((fn) => appliedWrappers[fn]?.delegates && appliedWrappers[fn].verdict.startsWith('OK')),
+  'preflight 在「已套用」庫：三個函式判「已套用」、新欄位與約束都存在、第 7 段兩列 true',
+  applied.preflight.ok ? `${afterVerdicts.map((v) => `${v.fn}=${v.verdict}`).join('; ')}; ${describeWrappers(appliedWrappers)}` : applied.preflight.stderr.trim());
+  const legacyWrappers = wrapperRows(reverse.legacyPreflight);
+  record('X07', reverse.legacyPreflight.ok
+    && legacyWrappers['public.is_my_instructor_profile_complete()']?.delegates === false
+    && legacyWrappers['public.is_my_instructor_profile_complete()'].verdict.includes('不要套用')
+    && legacyWrappers['public.approve_new_instructor_account(uuid)']?.delegates === true,
+  `負向對照：換成 8/19 版 is_my_instructor_profile_complete()（${path.basename(sources.reminder)} L${legacyWrapper.from}-${legacyWrapper.to}）後，preflight 第 7 段判 false／不要套用`,
+  reverse.legacyPreflight.ok ? describeWrappers(legacyWrappers) : reverse.legacyPreflight.stderr.trim());
+  record('X08', reverse.lockTimeout.ok, 'lock_timeout：另一連線拿著表鎖時，migration 約 5 秒後以 55P03 放棄、整批回滾（欄位／約束沒建、NULL 仍 3 筆）',
+    reverse.lockTimeout.detail);
   const preflightStatements = read(path.join(appDir, 'scripts/preflight-personnel-types.sql'))
     .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')
     .split(';').map((statement) => statement.trim()).filter(Boolean);
-  record('S05', preflightStatements.length === 6 && preflightStatements.every((statement) => /^(SELECT|WITH)\b/i.test(statement)),
-    'preflight 只含 SELECT（6 段查詢）', `${preflightStatements.length} statements`);
+  record('S05', preflightStatements.length === 7 && preflightStatements.every((statement) => /^(SELECT|WITH)\b/i.test(statement)),
+    'preflight 只含 SELECT（7 段查詢）', `${preflightStatements.length} statements`);
 
   console.log('\n── 回歸：既有 SQL 驗證疊上新 migration');
   const claimFlow = await runStacked('STACK1', 'verify-instructor-claim-flow.sql', '20260826140000_recover_existing_instructor_identity_claim.sql');

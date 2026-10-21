@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- 唯讀 preflight：正式庫套用 supabase/migrations/20261022100000_personnel_types.sql 之前執行。
--- 只有 SELECT，不改任何資料。共 6 段查詢；Supabase SQL Editor 一次只顯示最後一段的結果，
+-- 只有 SELECT，不改任何資料。共 7 段查詢；Supabase SQL Editor 一次只顯示最後一段的結果，
 -- 請逐段選取後執行（或用 psql 整檔執行）。
 --
 -- 判讀（任何一項不符就「不要套用」，先回報）：
@@ -13,6 +13,11 @@
 --      expected_md5_after 用來在套用後重跑本檔確認（verdict 會變成「已套用」）。
 --   6. instructors 上的 trigger：known_locally＝false 的 trigger 沒有在本機驗證過「補 NULL→active」的副作用，
 --      有的話先看它的定義再決定。（trg_sync_instructor_name 只在改 full_name 時觸發，本次不會觸發。）
+--   7. 完整度的兩個入口：delegates_to_private_check 兩列都必須是 true（verdict「OK」）。
+--      課程／章節／內容／作業 RLS 呼叫 is_my_instructor_profile_complete()，後台核准新講師呼叫
+--      approve_new_instructor_account()；本 migration 只改它們委派的 private.instructor_profile_is_complete。
+--      若正式庫還是 8/19 版 is_my_instructor_profile_complete()（接課四欄寫死在函式裡），純職員會被前端判
+--      「完成」卻被 RLS 擋（看到空課程）。任一列 false 就不要套用，先補 2026-08-24 的定義。
 -- 預期 md5 由 scripts/verify-personnel-types.mjs 在本機暫時 PostgreSQL 套用 repo 定義後實算（X04 會比對本檔）。
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -89,3 +94,28 @@ FROM pg_trigger t
 WHERE t.tgrelid = 'public.instructors'::regclass
   AND NOT t.tgisinternal
 ORDER BY t.tgname;
+
+-- 7. 完整度入口是否都委派給 private.instructor_profile_is_complete（且不再自己比對接課欄位）
+WITH targets(fn) AS (
+  VALUES
+    ('public.is_my_instructor_profile_complete()'),
+    ('public.approve_new_instructor_account(uuid)')
+)
+SELECT
+  t.fn,
+  c.delegates AS delegates_to_private_check,
+  CASE
+    WHEN p.oid IS NULL THEN '找不到函式：不要套用'
+    WHEN c.delegates THEN 'OK：委派給 private.instructor_profile_is_complete，可以套用'
+    ELSE '舊版（自己比對接課欄位或沒有委派）：不要套用，先補 2026-08-24 的定義'
+  END AS verdict
+FROM targets t
+LEFT JOIN pg_proc p ON p.oid = to_regprocedure(t.fn)
+CROSS JOIN LATERAL (
+  SELECT COALESCE(
+    p.prosrc LIKE '%private.instructor_profile_is_complete(%'
+    AND p.prosrc !~ '(teaching_freq_semester|teaching_freq_vacation|teaching_regions|bio_notes)',
+    false
+  ) AS delegates
+) c
+ORDER BY t.fn;

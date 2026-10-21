@@ -11,7 +11,7 @@
  *    1024／1280 表格版面與 900 卡片版面、新增人員表單
  *  C 個人資料頁：純職員看不到接課欄位且沒填也能存檔（請求不帶管理員專屬欄位）；講師（含舊資料）沒填仍被擋
  *  D 課程列表：純職員看到新提示；講師維持原提示；資料庫還沒有 personnel_types 欄位時退回舊查詢
- *  E 合約管理：非講師不計入未簽約，列表標「非講師，不需簽約」
+ *  E 合約管理：非講師不計入未簽約，列表標「非講師，不需簽約」；上傳新版文件的通知不寄給非講師
  *  F 已移除的死選項（職員／工讀生等級、助教）不再出現在原始碼
  *
  * 用法（在 培訓web/ 下）：node scripts/verify-personnel-types-ui.mjs
@@ -113,8 +113,8 @@ const withoutTeaching = { teaching_freq_semester: '', teaching_freq_vacation: ''
 
 const adminRows = () => [
     completeInstructor(1, { full_name: '林講師', personnel_types: ['instructor'], instructor_role: 'A', speed_qualification: 'speed_master', user_id: ids.instr }),
-    completeInstructor(2, { full_name: '王職員', personnel_types: ['staff'], ...withoutTeaching, user_id: ids.staff }),
-    completeInstructor(3, { full_name: '陳工讀', personnel_types: ['part_time'], ...withoutTeaching, employment_status: 'frozen' }),
+    completeInstructor(2, { full_name: '王職員', personnel_types: ['staff'], ...withoutTeaching, instructor_role: 'A', user_id: ids.staff }), // 已存的等級不清除，用來驗證等級篩選不會撈出職員
+    completeInstructor(3, { full_name: '陳工讀', personnel_types: ['part_time'], ...withoutTeaching, instructor_role: 'B', speed_qualification: 'speed_master', employment_status: 'frozen' }), // 已存的等級／速解不清除
     completeInstructor(4, { full_name: '舊資料老師', instructor_role: 'B', employment_status: null, user_id: ids.legacy }), // 沒有 personnel_types 欄位
     completeInstructor(5, { full_name: '雙身分', personnel_types: ['instructor', 'staff'], instructor_role: 'S' }),
     completeInstructor(6, { full_name: WORST_CASE_NAME, personnel_types: ['staff', 'part_time'], ...withoutTeaching, employment_status: 'cancelled', email_primary: LONG_EMAIL }),
@@ -122,7 +122,7 @@ const adminRows = () => [
 ];
 
 // ───────────────────────── 假後端 ─────────────────────────
-const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], legacyDb = false }) => {
+const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], contractDocs = [], legacyDb = false }) => {
     const user = {
         id: persona.id, aud: 'authenticated', role: 'authenticated', email: persona.email,
         app_metadata: { provider: 'google', providers: ['google'] },
@@ -133,7 +133,7 @@ const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], legacyDb 
         expires_in: 31536000, expires_at: Math.floor(Date.now() / 1000) + 31536000, user,
     };
     const profile = { id: persona.id, name: persona.name, email: persona.email, role: persona.role, created_at: NOW };
-    const state = { rows, writes: [], legacyDb, selects: [] };
+    const state = { rows, writes: [], other: [], legacyDb, selects: [] };
 
     const json = (route, data, status = 200) => route.fulfill({
         status,
@@ -152,7 +152,11 @@ const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], legacyDb 
             return json(route, {});
         }
         if (url.pathname.startsWith('/rest/v1/rpc/')) return json(route, null);
-        if (url.pathname.startsWith('/storage/v1/')) return json(route, {}, 404);
+        if (url.pathname.startsWith('/storage/v1/')) {
+            // 只放行合約文件的上傳；其餘（含簽名網址）維持 404，和其他測項一致
+            if (request.method() === 'POST' && url.pathname.startsWith('/storage/v1/object/contract-documents/')) return json(route, { Key: 'contract-documents/mock.pdf', Id: 'mock' });
+            return json(route, {}, 404);
+        }
         if (!url.pathname.startsWith('/rest/v1/')) return json(route, {}, 404);
 
         const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
@@ -171,7 +175,10 @@ const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], legacyDb 
             Object.assign(target, payload, { updated_at: new Date().toISOString() });
             return reply([target]);
         }
-        if (method !== 'GET') return route.fulfill({ status: 204, body: '' });
+        if (method !== 'GET') {
+            state.other.push({ method, table, payload: request.postDataJSON(), search: url.search });
+            return route.fulfill({ status: 204, body: '' });
+        }
 
         if (table === 'users') {
             const idEq = url.searchParams.get('id');
@@ -194,6 +201,7 @@ const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], legacyDb 
             return reply(list);
         }
         if (table === 'instructor_contracts') return reply(contracts);
+        if (table === 'contract_documents') return reply(contractDocs);
         return reply([]);
     };
     return { handler, session, state, persona };
@@ -396,6 +404,38 @@ async function run() {
             equal(await visibleNames(), ['陳工讀'], '冷凍的人');
             await list.page.getByRole('button', { name: '冷凍 1' }).click();
         });
+        const roleSelect = list.page.locator('select:has(option:text-is("全部等級"))');
+        const speedSelect = list.page.locator('select:has(option:text-is("全部速解資格"))');
+        // 篩選條件要在斷言失敗時也清掉，否則一項失敗會連累後面的測項
+        const withFilters = async (fn) => {
+            try { await fn(); } finally {
+                await roleSelect.selectOption('');
+                await speedSelect.selectOption('');
+            }
+        };
+        await check('B14 等級篩選「A 級」：講師照常出現，已存了 A 級的職員不在結果中；「S 級」只剩雙身分（也是講師）', () => withFilters(async () => {
+            await roleSelect.selectOption('A');
+            const names = (await visibleNames()).sort();
+            equal(names, ['林講師', '簽約講師'].sort(), 'A 級的人');
+            ok(!names.includes('王職員'), '王職員（職員，已存 A 級）不該出現');
+            await roleSelect.selectOption('S');
+            equal(await visibleNames(), ['雙身分'], 'S 級的人');
+        }));
+        await check('B15 速解篩選「未取得」：只有沒速解資格的講師，職員／工讀（含已存速解的陳工讀）都不在結果中', () => withFilters(async () => {
+            await speedSelect.selectOption('none');
+            const names = (await visibleNames()).sort();
+            equal(names, ['舊資料老師', '簽約講師', '雙身分'].sort(), '未取得的人');
+            ok(!names.includes('王職員') && !names.includes('歐陽長名字職員') && !names.includes('陳工讀'), '非講師不該出現');
+        }));
+        await check('B16 速解篩選「速解大師」：只剩林講師（已存速解大師的工讀不出現）；等級＋速解同時篩選照樣排除非講師', () => withFilters(async () => {
+            await speedSelect.selectOption('speed_master');
+            equal(await visibleNames(), ['林講師'], '速解大師的人');
+            await roleSelect.selectOption('B');
+            equal(await visibleNames(), [], '等級 B＋速解大師（陳工讀是 B 級＋速解大師但非講師）');
+            await roleSelect.selectOption('');
+            await speedSelect.selectOption('');
+            equal((await visibleNames()).length, 7, '清掉篩選後 7 列都回來');
+        }));
 
         const measureLayout = (page) => page.evaluate(() => {
             const lineCount = (el) => {
@@ -527,6 +567,10 @@ async function run() {
             equal((await types.innerText()).includes('職員'), true, '人員類別顯示職員');
             await shot(staffProfile.page, 'profile-staff.png');
         });
+        await check('C6 純職員的個人資料頁沒有「合約簽署」區塊（尚未簽約／前往簽約）', async () => {
+            const body = await staffProfile.page.locator('body').innerText();
+            for (const text of ['合約簽署', '尚未簽約', '前往簽約']) ok(!body.includes(text), `不該出現「${text}」`);
+        });
         await check('C2 純職員沒填接課資料也能存檔：沒有「請先補齊」、有送出請求，且請求不帶管理員專屬欄位', async () => {
             await staffProfile.page.getByRole('button', { name: '儲存個人資料' }).click();
             await waitUntil(() => staffDialogs.some((m) => m.includes('個人資料已儲存')), '儲存成功訊息');
@@ -594,6 +638,11 @@ async function run() {
                 for (const text of ['講師等級', '速解專業資格', '接課頻率（學期間）', '可接課地區', '教學經歷 / 教學理念']) {
                     ok(body.includes(text), `講師應看到「${text}」`);
                 }
+                await check(`C7 ${persona.key === 'incompleteInstr' ? '講師' : '舊資料講師'}的個人資料頁仍有「合約簽署」區塊（尚未簽約、前往簽約）`, async () => {
+                    await opened.page.getByText('合約簽署', { exact: true }).waitFor({ timeout: 8000 });
+                    const text = await opened.page.locator('body').innerText();
+                    ok(text.includes('尚未簽約') && text.includes('前往簽約'), '缺少簽約入口');
+                });
                 await opened.page.getByRole('button', { name: '儲存個人資料' }).click();
                 await waitUntil(() => dialogs.some((m) => m.includes('請先補齊以下資料')), '補齊提示');
                 const message = dialogs.find((m) => m.includes('請先補齊以下資料'));
@@ -650,6 +699,33 @@ async function run() {
             ok((await contractLegacyPage.page.locator('table tbody tr').filter({ hasText: '王職員' }).first().innerText()).includes('未簽約'), '舊庫時職員當講師');
         });
         await contractLegacyPage.context.close();
+
+        const uploadDoc = {
+            id: 'doc-1', doc_type: 'rules', version: 1, display_name: '工作規則', doc_mode: 'view_only', sort_order: 1,
+            is_active: true, doc_category: 'contract', file_path: 'templates/rules/v1.pdf', file_name: 'rules.pdf',
+        };
+        const uploadBackend = makeBackend({ persona: personas.admin, rows: adminRows(), extraUsers: contractUsers, contracts: [signedContract], contractDocs: [uploadDoc] });
+        const uploadDialogs = [];
+        const uploadPage = await openPage(uploadBackend, { dialogs: uploadDialogs });
+        await uploadPage.page.goto(`${base}/admin/contracts`, { waitUntil: 'networkidle' });
+        await uploadPage.page.getByRole('heading', { name: '合約文件管理' }).waitFor();
+        await check('E4 上傳新版合約文件：「合約文件已更新」通知只寄給需簽約的人，職員不在收件人裡', async () => {
+            await uploadPage.page.locator('input[type=file][accept="application/pdf"]').first().setInputFiles({
+                name: 'rules-v2.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%mock\n'),
+            });
+            await waitUntil(() => uploadDialogs.some((m) => m.includes('上傳成功')), '上傳成功訊息');
+            ok(uploadBackend.state.other.some((w) => w.table === 'contract_documents' && w.method === 'POST'), '新版文件沒有寫入');
+            const notifications = uploadBackend.state.other
+                .filter((w) => w.table === 'notifications' && w.method === 'POST')
+                .flatMap((w) => w.payload);
+            ok(notifications.length > 0, '沒有送出任何通知');
+            const recipients = notifications.map((n) => n.user_id).sort();
+            ok(!recipients.includes(ids.staff), '職員不該收到合約更新通知');
+            equal(recipients, [ids.admin, ids.instr, ids.legacy, ids.signed].sort(), '通知收件人（管理員、林講師、舊資料老師、簽約講師）');
+            ok(notifications.every((n) => n.title === '合約文件已更新' && n.type === 'contract'), '通知內容');
+        });
+        ok(uploadPage.pageErrors.length === 0, `上傳頁有未捕捉錯誤：${uploadPage.pageErrors.join('；')}`);
+        await uploadPage.context.close();
 
         // ═════════ F 死選項 ═════════
         await check('F1 個人資料頁、待審作業頁、編輯頁的原始碼不再有「職員／工讀生」等級與「助教」業務狀態', async () => {

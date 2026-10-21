@@ -141,6 +141,8 @@ const InstructorList = () => {
     const filtered = instructors.filter(i => {
         if (statusFilter && normalizeCooperationStatus(i.employment_status) !== statusFilter) return false;
         if (personnelFilter && !normalizePersonnelTypes(i.personnel_types).includes(personnelFilter)) return false;
+        // 等級／速解只對講師有意義：非講師畫面顯示「不適用」，也不出現在等級或速解的篩選結果
+        if ((roleFilter || speedFilter) && !isInstructorPersonnel(i.personnel_types)) return false;
         if (roleFilter && i.instructor_role !== roleFilter) return false;
         if (speedFilter === 'none' && i.speed_qualification) return false;
         if (speedFilter && speedFilter !== 'none' && i.speed_qualification !== speedFilter) return false;

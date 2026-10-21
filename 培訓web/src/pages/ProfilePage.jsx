@@ -1164,8 +1164,8 @@ const ProfilePage = () => {
                 </button>
             </div>
 
-            {/* ── 簽約狀態 ── */}
-            {canUseContracts && !isFirstTime && (
+            {/* ── 簽約狀態（純職員／工讀計時不需簽講師合約） ── */}
+            {canUseContracts && isInstructor && !isFirstTime && (
                 <Section icon={FileSignature} title="合約簽署">
                     {contractInfo ? (
                         <div>

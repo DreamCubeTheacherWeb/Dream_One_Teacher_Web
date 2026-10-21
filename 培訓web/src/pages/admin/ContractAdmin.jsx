@@ -205,8 +205,11 @@ const ContractAdmin = () => {
           .select('id')
           .neq('role', 'pending');
 
-        if (nonPendingUsers?.length) {
-          const notifications = nonPendingUsers.map(u => ({
+        // 純職員／工讀計時不需簽講師合約，不發「合約文件已更新」通知
+        const skipIds = new Set(allUsers.filter(u => u.needsContract === false).map(u => u.id));
+        const recipients = (nonPendingUsers || []).filter(u => !skipIds.has(u.id));
+        if (recipients.length) {
+          const notifications = recipients.map(u => ({
             user_id: u.id,
             type: 'contract',
             title: '合約文件已更新',
