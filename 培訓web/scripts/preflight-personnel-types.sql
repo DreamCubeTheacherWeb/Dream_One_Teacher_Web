@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- 唯讀 preflight：正式庫套用 supabase/migrations/20261022100000_personnel_types.sql 之前執行。
--- 只有 SELECT，不改任何資料。共 7 段查詢；Supabase SQL Editor 一次只顯示最後一段的結果，
+-- 只有 SELECT，不改任何資料。共 8 段查詢；Supabase SQL Editor 一次只顯示最後一段的結果，
 -- 請逐段選取後執行（或用 psql 整檔執行）。
 --
 -- 判讀（任何一項不符就「不要套用」，先回報）：
@@ -18,6 +18,11 @@
 --      approve_new_instructor_account()；本 migration 只改它們委派的 private.instructor_profile_is_complete。
 --      若正式庫還是 8/19 版 is_my_instructor_profile_complete()（接課四欄寫死在函式裡），純職員會被前端判
 --      「完成」卻被 RLS 擋（看到空課程）。任一列 false 就不要套用，先補 2026-08-24 的定義。
+--      第三列檢查課程／章節／內容／大分類的 RLS：courses 的 SELECT 政策要呼叫 is_my_instructor_profile_complete()，
+--      而且沒有任何政策自己比對接課四欄（20261022010000 重建政策前後都成立）。
+--   8. 只提示、不影響「可以套用」：檔名排在本檔前面的 20261022010000（課程受眾＋輔導員權限）與
+--      20261022093700（夥伴號碼）在正式庫是否已生效。依檔名順序 010000 → 093700 → 本檔套用；
+--      本 migration 不依賴這兩支（本機兩種順序都驗過），但先套它們，第 7 段第三列檢查的就是最終政策。
 -- 預期 md5 由 scripts/verify-personnel-types.mjs 在本機暫時 PostgreSQL 套用 repo 定義後實算（X04 會比對本檔）。
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -88,7 +93,7 @@ SELECT
     'set_instructors_updated_at', 'trg_guard_instructor_role', 'trg_guard_instructor_admin_fields',
     'trg_guard_instructor_file_paths', 'trg_guard_instructor_identity_email',
     'trg_guard_instructor_locked_documents', 'trg_log_instructor_document_changes',
-    'trg_sync_instructor_portal_access', 'trg_sync_instructor_name'
+    'trg_sync_instructor_portal_access', 'trg_sync_instructor_name', 'trg_guard_instructor_partner_no'
   ) AS known_locally
 FROM pg_trigger t
 WHERE t.tgrelid = 'public.instructors'::regclass
@@ -100,22 +105,67 @@ WITH targets(fn) AS (
   VALUES
     ('public.is_my_instructor_profile_complete()'),
     ('public.approve_new_instructor_account(uuid)')
+),
+function_checks AS (
+  SELECT
+    t.fn,
+    c.delegates,
+    CASE
+      WHEN p.oid IS NULL THEN '找不到函式：不要套用'
+      WHEN c.delegates THEN 'OK：委派給 private.instructor_profile_is_complete，可以套用'
+      ELSE '舊版（自己比對接課欄位或沒有委派）：不要套用，先補 2026-08-24 的定義'
+    END AS verdict
+  FROM targets t
+  LEFT JOIN pg_proc p ON p.oid = to_regprocedure(t.fn)
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(
+      p.prosrc LIKE '%private.instructor_profile_is_complete(%'
+      AND p.prosrc !~ '(teaching_freq_semester|teaching_freq_vacation|teaching_regions|bio_notes)',
+      false
+    ) AS delegates
+  ) c
+),
+policy_check AS (
+  SELECT
+    EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'courses' AND cmd = 'SELECT'
+        AND qual LIKE '%is_my_instructor_profile_complete()%'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname = 'public' AND tablename IN ('courses', 'lessons', 'contents', 'course_categories')
+        AND COALESCE(qual, '') || ' ' || COALESCE(with_check, '')
+            ~ '(teaching_freq_semester|teaching_freq_vacation|teaching_regions|bio_notes)'
+    ) AS delegates
 )
+SELECT fn, delegates AS delegates_to_private_check, verdict FROM function_checks
+UNION ALL
 SELECT
-  t.fn,
-  c.delegates AS delegates_to_private_check,
-  CASE
-    WHEN p.oid IS NULL THEN '找不到函式：不要套用'
-    WHEN c.delegates THEN 'OK：委派給 private.instructor_profile_is_complete，可以套用'
-    ELSE '舊版（自己比對接課欄位或沒有委派）：不要套用，先補 2026-08-24 的定義'
-  END AS verdict
-FROM targets t
-LEFT JOIN pg_proc p ON p.oid = to_regprocedure(t.fn)
-CROSS JOIN LATERAL (
-  SELECT COALESCE(
-    p.prosrc LIKE '%private.instructor_profile_is_complete(%'
-    AND p.prosrc !~ '(teaching_freq_semester|teaching_freq_vacation|teaching_regions|bio_notes)',
-    false
-  ) AS delegates
-) c
-ORDER BY t.fn;
+  'rls:courses/lessons/contents/course_categories',
+  delegates,
+  CASE WHEN delegates THEN 'OK：課程 RLS 經 is_my_instructor_profile_complete() 判斷完整度，可以套用'
+       ELSE '課程 RLS 沒有呼叫 is_my_instructor_profile_complete() 或自己比對接課欄位：不要套用' END
+FROM policy_check
+ORDER BY 1;
+
+-- 8. 只提示：前兩支 migration 在正式庫是否已生效（true＝已生效；不影響「可以套用」）
+SELECT '20261022010000' AS migration, 'public.mentor_instructor_directory(uuid[]) 存在' AS item,
+       to_regprocedure('public.mentor_instructor_directory(uuid[])') IS NOT NULL AS in_effect,
+       'false＝010000 尚未套用，依檔名順序應先套' AS note
+UNION ALL
+SELECT '20261022010000', '"Complete teachers can view published …" 三條舊政策已移除',
+       NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE 'Complete teachers can view published %'),
+       'false＝010000 尚未套用（純職員仍可經舊政策讀到不屬於其受眾的課程）'
+UNION ALL
+SELECT '20261022010000', '"Staff can manage instructors" 已移除',
+       NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'instructors' AND policyname = 'Staff can manage instructors'),
+       'false＝010000 尚未套用'
+UNION ALL
+SELECT '20261022093700', 'instructors.partner_no 欄位存在',
+       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'instructors' AND column_name = 'partner_no'),
+       'false＝093700 尚未套用，依檔名順序應先套'
+UNION ALL
+SELECT '20261022093700', 'trg_guard_instructor_partner_no 存在',
+       EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.instructors'::regclass AND tgname = 'trg_guard_instructor_partner_no'),
+       'false＝093700 尚未套用';

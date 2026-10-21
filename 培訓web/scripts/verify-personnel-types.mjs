@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // 驗證 20261022100000_personnel_types.sql（人員類別／合作狀態拆欄）。只用本機暫時 PostgreSQL，不連任何遠端資料庫。
 //   1. 靜態：三個函式除指定改動外與 repo 最新定義逐行相同；repo 內沒有更晚的重定義；preflight 的預期 md5 與實算相符。
-//   2. 套用（apply_migration=on）：verify-personnel-types.sql 每項都要 PASS。
-//   3. 反向對照（apply_migration=off）：tag new 的檢查必須全部 FAIL、tag old 的必須全部 PASS。
-//   4. 回歸：把既有 verify-instructor-claim-flow.sql、verify-security-hardening.sql 疊上新 migration 後重跑，必須通過。
+//   2. 套用：先套檔名排在前面的 20261022010000＋20261022093700，再套本 migration；每項都要 PASS（含課程可見性整合檢查）。
+//      另一輪不套那兩支、只套本 migration，也要全部 PASS（本 migration 不依賴它們）。
+//   3. 反向對照（套那兩支、不套本 migration）：tag new 的檢查必須全部 FAIL、tag old 的必須全部 PASS。
+//   4. preflight 在各庫實跑（唯讀 session）；負向對照：換成 8/19 版完整度包裝函式後第 7 段要判 false；lock_timeout 實測。
+//   5. 回歸：把既有 verify-instructor-claim-flow.sql、verify-security-hardening.sql、verify-rls-audience-mentor.sql
+//      疊上本 migration 後重跑，必須通過。
 // macOS 上 postgres 需要 LC_ALL，否則會報 postmaster became multithreaded；未設定時自動補 en_US.UTF-8。
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -251,9 +254,9 @@ const checkLockTimeout = async (psql, connArgs) => {
   }
 };
 
-const runScenario = (label, applyMigration) => withCluster(label, async (psql, connArgs) => {
-  const result = psql(['-v', `apply_migration=${applyMigration ? 'on' : 'off'}`, '-v', `baseline_sql=${baselineSql}`,
-    '-f', path.join(appDir, 'scripts/verify-personnel-types.sql')], { cwd: appDir });
+const runScenario = (label, { applyMigration, priorMigrations }) => withCluster(label, async (psql, connArgs) => {
+  const result = psql(['-v', `apply_migration=${applyMigration ? 'on' : 'off'}`, '-v', `prior_migrations=${priorMigrations ? 'on' : 'off'}`,
+    '-v', `baseline_sql=${baselineSql}`, '-f', path.join(appDir, 'scripts/verify-personnel-types.sql')], { cwd: appDir });
   if (result.status !== 0) throw new Error(`verify-personnel-types.sql (${label}) aborted\n${result.stdout}${result.stderr}`);
   const scenario = { ...parseRun(result.stdout), preflight: runPreflight(psql) };
   if (!applyMigration) {
@@ -271,11 +274,16 @@ const preflightRows = (output) => output.stdout.split('\n')
 const preflightVerdicts = (output) => preflightRows(output)
   .filter((fields) => fields.length === 5)
   .map(([fn, current, before, after, verdict]) => ({ fn, current, before, after, verdict }));
-// 第 7 段：fn|delegates|verdict
-const wrapperRows = (output) => Object.fromEntries(preflightRows(output)
-  .filter((fields) => fields.length === 3)
+// 第 7 段：fn|delegates|verdict（兩個函式＋課程 RLS 一列）
+const wrapperFns = ['public.approve_new_instructor_account(uuid)', 'public.is_my_instructor_profile_complete()',
+  'rls:courses/lessons/contents/course_categories'];
+const wrapperRows = (output) => Object.fromEntries(output.stdout.split('\n').map((line) => line.split('|'))
+  .filter((fields) => fields.length === 3 && wrapperFns.includes(fields[0]))
   .map(([fn, delegates, verdict]) => [fn, { delegates: delegates === 't', verdict }]));
-const wrapperFns = ['public.approve_new_instructor_account(uuid)', 'public.is_my_instructor_profile_complete()'];
+// 第 8 段：migration|item|in_effect|note（只提示）
+const priorRows = (output) => output.stdout.split('\n').map((line) => line.split('|'))
+  .filter((fields) => fields.length === 4 && /^20261022(010000|093700)$/.test(fields[0]))
+  .map(([migration, item, inEffect]) => ({ migration, item, inEffect: inEffect === 't' }));
 const describeWrappers = (rows) => wrapperFns.map((fn) => `${fn}=${rows[fn] ? `${rows[fn].delegates}/${rows[fn].verdict}` : 'missing'}`).join('; ');
 
 // 把既有 SQL 驗證在指定 migration 之後插入新 migration，並把 \ir 改成絕對路徑。
@@ -283,8 +291,8 @@ const runStacked = (code, script, anchor) => withCluster(code, (psql) => {
   const source = read(path.join(appDir, 'scripts', script));
   const anchorLine = `\\ir ../supabase/migrations/${anchor}`;
   if (!source.includes(anchorLine)) return { ok: false, detail: `anchor not found: ${anchorLine}` };
-  const stacked = source
-    .replace(anchorLine, `${anchorLine}\n\\i ${migrationPath}`)
+  const insertAt = source.lastIndexOf(anchorLine) + anchorLine.length;
+  const stacked = `${source.slice(0, insertAt)}\n\\i ${migrationPath}${source.slice(insertAt)}`
     .replaceAll('\\ir ../supabase/', `\\i ${path.join(appDir, 'supabase')}/`);
   const stackedPath = path.join(workDir, `stacked-${script}`);
   writeFileSync(stackedPath, stacked);
@@ -294,14 +302,21 @@ const runStacked = (code, script, anchor) => withCluster(code, (psql) => {
 });
 
 try {
-  console.log('\n── 套用 migration（連跑兩次）');
-  const applied = await runScenario('applied', true);
+  console.log('\n── 先套 20261022010000＋20261022093700，再套本 migration（連跑兩次）');
+  const applied = await runScenario('applied', { applyMigration: true, priorMigrations: true });
   for (const check of applied.checks) record(check.code, check.ok, `[${check.tag}] ${check.descr}`, check.ok ? '' : check.detail);
-  const expectedCount = 68;
-  record('X01', applied.checks.length === expectedCount, `SQL 檢查項數＝${expectedCount}`, `got ${applied.checks.length}`);
+  const expectedCount = 76;
+  record('X01', applied.checks.length === expectedCount, `SQL 檢查項數＝${expectedCount}（含 I00-I06 課程整合）`, `got ${applied.checks.length}`);
 
-  console.log('\n── 反向對照（同一組斷言、不套 migration）');
-  const reverse = await runScenario('reverse', false);
+  console.log('\n── 不套那兩支、只套本 migration');
+  const standalone = await runScenario('standalone', { applyMigration: true, priorMigrations: false });
+  const standaloneFailed = standalone.checks.filter((check) => !check.ok);
+  record('X10', standalone.checks.length === expectedCount - 7 && standaloneFailed.length === 0,
+    '只套本 migration（沒有 010000／093700）：其餘 69 項全部 PASS',
+    `${standalone.checks.length - standaloneFailed.length}/${standalone.checks.length}${standaloneFailed.length ? `; FAIL ${standaloneFailed.map((c) => `${c.code}: ${c.detail}`).join('; ')}` : ''}`);
+
+  console.log('\n── 反向對照（套那兩支、同一組斷言、不套本 migration）');
+  const reverse = await runScenario('reverse', { applyMigration: false, priorMigrations: true });
   const reverseNewPassed = reverse.checks.filter((check) => check.tag === 'new' && check.ok);
   const reverseOldFailed = reverse.checks.filter((check) => check.tag === 'old' && !check.ok);
   const reverseFailed = reverse.checks.filter((check) => !check.ok);
@@ -348,22 +363,35 @@ try {
   record('X07', reverse.legacyPreflight.ok
     && legacyWrappers['public.is_my_instructor_profile_complete()']?.delegates === false
     && legacyWrappers['public.is_my_instructor_profile_complete()'].verdict.includes('不要套用')
-    && legacyWrappers['public.approve_new_instructor_account(uuid)']?.delegates === true,
+    && legacyWrappers['public.approve_new_instructor_account(uuid)']?.delegates === true
+    && legacyWrappers['rls:courses/lessons/contents/course_categories']?.delegates === true,
   `負向對照：換成 8/19 版 is_my_instructor_profile_complete()（${path.basename(sources.reminder)} L${legacyWrapper.from}-${legacyWrapper.to}）後，preflight 第 7 段判 false／不要套用`,
   reverse.legacyPreflight.ok ? describeWrappers(legacyWrappers) : reverse.legacyPreflight.stderr.trim());
+  const appliedPrior = priorRows(applied.preflight);
+  const standalonePrior = priorRows(standalone.preflight);
+  const standaloneWrappers = wrapperRows(standalone.preflight);
+  record('X09', appliedPrior.length === 5 && appliedPrior.every((row) => row.inEffect)
+    && standalonePrior.length === 5
+    && standalonePrior.every((row) => row.inEffect === row.item.includes('Staff can manage instructors'))
+    && preflightVerdicts(standalone.preflight).every((v) => v.verdict.startsWith('已套用'))
+    && wrapperFns.every((fn) => standaloneWrappers[fn]?.delegates),
+  'preflight 第 8 段（只提示）：先套兩支的庫 5 項都已生效；沒套的庫 010000／093700 項目判未生效，且第 5、7 段判定不受影響',
+  `applied: ${appliedPrior.map((row) => `${row.migration} ${row.inEffect}`).join(', ')}; standalone: ${standalonePrior.map((row) => `${row.migration} ${row.inEffect}`).join(', ')}`);
   record('X08', reverse.lockTimeout.ok, 'lock_timeout：另一連線拿著表鎖時，migration 約 5 秒後以 55P03 放棄、整批回滾（欄位／約束沒建、NULL 仍 3 筆）',
     reverse.lockTimeout.detail);
   const preflightStatements = read(path.join(appDir, 'scripts/preflight-personnel-types.sql'))
     .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')
     .split(';').map((statement) => statement.trim()).filter(Boolean);
-  record('S05', preflightStatements.length === 7 && preflightStatements.every((statement) => /^(SELECT|WITH)\b/i.test(statement)),
-    'preflight 只含 SELECT（7 段查詢）', `${preflightStatements.length} statements`);
+  record('S05', preflightStatements.length === 8 && preflightStatements.every((statement) => /^(SELECT|WITH)\b/i.test(statement)),
+    'preflight 只含 SELECT（8 段查詢）', `${preflightStatements.length} statements`);
 
   console.log('\n── 回歸：既有 SQL 驗證疊上新 migration');
   const claimFlow = await runStacked('STACK1', 'verify-instructor-claim-flow.sql', '20260826140000_recover_existing_instructor_identity_claim.sql');
   record('STACK1', claimFlow.ok, 'verify-instructor-claim-flow.sql 疊上新 migration 後全部斷言仍通過', claimFlow.detail);
   const security = await runStacked('STACK2', 'verify-security-hardening.sql', '20260823193000_repair_instructor_guard_dependency.sql');
   record('STACK2', security.ok, 'verify-security-hardening.sql（SQL 部分）疊上新 migration 後全部斷言仍通過', security.detail);
+  const audience = await runStacked('STACK3', 'verify-rls-audience-mentor.sql', '20261022010000_tighten_course_audience_and_mentor_access.sql');
+  record('STACK3', audience.ok, 'verify-rls-audience-mentor.sql 在 010000 之後疊上新 migration，全部斷言仍通過', audience.detail);
 } catch (error) {
   record('X99', false, '執行中斷', error.message);
 } finally {

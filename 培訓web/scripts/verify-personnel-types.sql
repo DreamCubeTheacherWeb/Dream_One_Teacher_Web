@@ -1,10 +1,13 @@
 -- 人員類別（personnel_types）migration 驗證：由 scripts/verify-personnel-types.mjs 在暫時 PostgreSQL 執行。
 -- psql 變數：
---   apply_migration  on＝套用 20261022100000_personnel_types.sql 兩次；off＝不套用（反向對照）
+--   apply_migration   on＝套用 20261022100000_personnel_types.sql 兩次；off＝不套用（反向對照）
+--   prior_migrations  on＝先套 20261022010000（課程受眾＋輔導員權限）與 20261022093700（夥伴號碼），
+--                     並跑課程可見性整合檢查（I 開頭）；off＝不套（驗證本 migration 不依賴它們）
 --   baseline_sql     由 .mjs 從 repo migration 原文抽出的函式定義（合約提醒、等級 guard、updated_at）
 -- 每項檢查記一列 RESULT|代碼|tag|PASS/FAIL|說明|細節：
 --   tag new＝新行為（沒套 migration 時必須 FAIL）；old＝既有行為（套不套都必須 PASS）。
 -- 所有檢查都在子交易內執行後回滾，互不影響。
+-- 本 migration 以非 superuser 的表擁有者 sql_editor 執行（模擬 Supabase SQL Editor 的 postgres 角色）。
 
 \set ON_ERROR_STOP on
 \set QUIET on
@@ -144,6 +147,33 @@ CREATE TABLE storage.objects (
   bucket_id text NOT NULL,
   name text NOT NULL
 );
+-- 課程相關（20260823094617 與 20261022010000 需要）
+CREATE TABLE public.courses (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  is_published boolean NOT NULL DEFAULT false,
+  visibility text NOT NULL DEFAULT 'all',
+  "order" integer NOT NULL DEFAULT 0
+);
+CREATE TABLE public.lessons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id uuid NOT NULL REFERENCES public.courses(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  is_published boolean NOT NULL DEFAULT false,
+  "order" integer NOT NULL DEFAULT 0
+);
+CREATE TABLE public.contents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lesson_id uuid NOT NULL REFERENCES public.lessons(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  status text NOT NULL DEFAULT 'draft'
+);
+CREATE TABLE public.progress (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, lesson_id uuid);
+CREATE TABLE public.assignments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, lesson_id uuid);
+CREATE TABLE public.course_training_status (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, course_id uuid);
+CREATE TABLE public.lesson_comments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, lesson_id uuid, body text);
+CREATE TABLE public.lesson_comment_likes (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), comment_id uuid, user_id uuid);
+CREATE TABLE public.class_sessions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), instructor_id uuid, total_salary numeric);
 
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Approved users can view published announcements"
@@ -168,6 +198,12 @@ CREATE POLICY "Users can update own instructor profile"
 CREATE POLICY "Users can insert own instructor profile"
   ON public.instructors FOR INSERT TO authenticated
   WITH CHECK ((SELECT auth.uid()) = user_id);
+-- public.users、課程三表與報酬紀錄照正式庫開 RLS（20260819153000）
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lessons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.class_sessions ENABLE ROW LEVEL SECURITY;
 
 CREATE OR REPLACE FUNCTION private.current_user_is_staff()
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
@@ -187,6 +223,10 @@ $$;
 CREATE TRIGGER on_auth_user_created
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+CREATE POLICY "Users can view own profile" ON public.users FOR SELECT TO authenticated
+  USING ((SELECT auth.uid()) = id);
+CREATE POLICY "Staff can view all profiles" ON public.users FOR SELECT TO authenticated
+  USING ((SELECT private.current_user_is_staff()));
 
 -- ────────────────────────────────────────────────────────────────────
 -- 1. 正式庫現況：repo 內實際 migration 原文（不是仿寫）
@@ -211,6 +251,89 @@ CREATE TRIGGER set_instructors_updated_at
   BEFORE UPDATE ON public.instructors
   FOR EACH ROW
   EXECUTE FUNCTION update_instructors_updated_at();
+
+-- 課程大分類與受眾（實際 migration 原文），再補上 20260819153000 的 staff／「Complete teachers」政策（正式庫 2026-10-22 現況）
+\ir ../supabase/migrations/20260823094617_add_course_categories.sql
+CREATE POLICY "Staff can manage courses" ON public.courses FOR ALL TO authenticated
+  USING ((SELECT private.current_user_is_staff())) WITH CHECK ((SELECT private.current_user_is_staff()));
+CREATE POLICY "Complete teachers can view published courses" ON public.courses FOR SELECT TO authenticated
+  USING (
+    is_published = true
+    AND (SELECT private.current_user_is_teacher())
+    AND (SELECT public.is_my_instructor_profile_complete())
+  );
+CREATE POLICY "Staff can manage lessons" ON public.lessons FOR ALL TO authenticated
+  USING ((SELECT private.current_user_is_staff())) WITH CHECK ((SELECT private.current_user_is_staff()));
+CREATE POLICY "Complete teachers can view published lessons" ON public.lessons FOR SELECT TO authenticated
+  USING (
+    is_published = true
+    AND EXISTS (SELECT 1 FROM public.courses c WHERE c.id = course_id AND c.is_published = true)
+    AND (SELECT private.current_user_is_teacher())
+    AND (SELECT public.is_my_instructor_profile_complete())
+  );
+CREATE POLICY "Staff can manage contents" ON public.contents FOR ALL TO authenticated
+  USING ((SELECT private.current_user_is_staff())) WITH CHECK ((SELECT private.current_user_is_staff()));
+CREATE POLICY "Complete teachers can view published contents" ON public.contents FOR SELECT TO authenticated
+  USING (
+    status = 'published'
+    AND EXISTS (
+      SELECT 1
+      FROM public.lessons l
+      JOIN public.courses c ON c.id = l.course_id
+      WHERE l.id = lesson_id
+        AND l.is_published = true
+        AND c.is_published = true
+    )
+    AND (SELECT private.current_user_is_teacher())
+    AND (SELECT public.is_my_instructor_profile_complete())
+  );
+CREATE POLICY "Admins manage all sessions" ON public.class_sessions FOR ALL TO authenticated
+  USING ((SELECT private.current_user_is_staff())) WITH CHECK ((SELECT private.current_user_is_staff()));
+
+-- 檔名排在本 migration 前面、正式庫尚未套用的兩支（實際原文）
+\if :prior_migrations
+\ir ../supabase/migrations/20261022010000_tighten_course_audience_and_mentor_access.sql
+\ir ../supabase/migrations/20261022093700_instructor_partner_no.sql
+\endif
+
+-- 模擬 SQL Editor：Supabase 的 postgres 角色不是 superuser，而是這些物件的擁有者。
+-- 把 public／private／auth／storage 的 schema、表、函式、enum 擁有者改成非 superuser 的 sql_editor，
+-- 本 migration 之後以 SET ROLE sql_editor 執行（表擁有者不受 RLS 限制，與正式庫相同）。
+DO $$
+DECLARE
+  r record;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sql_editor') THEN
+    CREATE ROLE sql_editor NOLOGIN NOSUPERUSER NOBYPASSRLS;
+  END IF;
+  EXECUTE format('GRANT CREATE ON DATABASE %I TO sql_editor', current_database());
+  FOR r IN SELECT nspname FROM pg_namespace WHERE nspname IN ('public', 'private', 'auth', 'storage') LOOP
+    EXECUTE format('ALTER SCHEMA %I OWNER TO sql_editor', r.nspname);
+  END LOOP;
+  FOR r IN
+    SELECT c.oid::regclass AS rel
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('public', 'private', 'auth', 'storage') AND c.relkind IN ('r', 'v', 'p')
+  LOOP
+    EXECUTE format('ALTER TABLE %s OWNER TO sql_editor', r.rel);
+  END LOOP;
+  FOR r IN
+    SELECT p.oid::regprocedure AS fn
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'private', 'auth', 'storage') AND p.prokind = 'f'
+      AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+  LOOP
+    EXECUTE format('ALTER FUNCTION %s OWNER TO sql_editor', r.fn);
+  END LOOP;
+  FOR r IN
+    SELECT t.oid::regtype AS typ
+    FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname IN ('public', 'private', 'auth', 'storage') AND t.typtype = 'e'
+  LOOP
+    EXECUTE format('ALTER TYPE %s OWNER TO sql_editor', r.typ);
+  END LOOP;
+END;
+$$;
 
 -- ────────────────────────────────────────────────────────────────────
 -- 2. 種子資料：比照正式庫形狀（3 筆 NULL 狀態都連到 admin 帳號）
@@ -259,6 +382,21 @@ FROM (VALUES
 
 INSERT INTO public.instructor_contracts (user_id, status)
 VALUES ('00000000-0000-4000-8000-000000000013', 'signed');
+
+-- 課程：預設大分類（20260823094617 建立，受眾 all、已發佈）下各一門 all／formal 的已發佈課程，各有已發佈章節與內容
+INSERT INTO public.courses (id, title, is_published, visibility, category_id)
+SELECT v.id::uuid, v.title, true, v.visibility,
+       (SELECT id FROM public.course_categories WHERE title = '講師培訓課程' ORDER BY created_at LIMIT 1)
+FROM (VALUES
+  ('30000000-0000-4000-8000-000000000001', '全體課程', 'all'),
+  ('30000000-0000-4000-8000-000000000002', '正式講師課程', 'formal')
+) AS v(id, title, visibility);
+INSERT INTO public.lessons (id, course_id, title, is_published) VALUES
+  ('31000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', '全體章節', true),
+  ('31000000-0000-4000-8000-000000000002', '30000000-0000-4000-8000-000000000002', '正式章節', true);
+INSERT INTO public.contents (id, lesson_id, title, status) VALUES
+  ('32000000-0000-4000-8000-000000000001', '31000000-0000-4000-8000-000000000001', '全體內容', 'published'),
+  ('32000000-0000-4000-8000-000000000002', '31000000-0000-4000-8000-000000000002', '正式內容', 'published');
 
 -- ────────────────────────────────────────────────────────────────────
 -- 3. 檢查工具（schema pt；記錄函式 SECURITY DEFINER，檢查函式以呼叫者身分執行）
@@ -409,6 +547,29 @@ RETURNS text LANGUAGE sql STABLE AS $$
   WHERE p.oid = p_oid
 $$;
 
+-- 以 SQL Editor 身分（superuser、清掉 JWT）執行一段 SQL，給 authenticated 身分的檢查做準備；回滾由呼叫端負責。
+CREATE FUNCTION pt.sudo(p_sql text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE
+  v_sub text := current_setting('request.jwt.claim.sub', true);
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  EXECUTE p_sql;
+  PERFORM set_config('request.jwt.claim.sub', COALESCE(v_sub, ''), true);
+END;
+$$;
+
+-- 以 authenticated 身分可見的課程／章節／內容 id（RLS 生效後）
+CREATE FUNCTION pt.visible_course_items()
+RETURNS text[] LANGUAGE sql STABLE AS $$
+  SELECT ARRAY(
+    SELECT 'course:' || title FROM public.courses
+    UNION ALL SELECT 'lesson:' || title FROM public.lessons
+    UNION ALL SELECT 'content:' || title FROM public.contents
+    ORDER BY 1
+  )
+$$;
+
 GRANT USAGE ON SCHEMA pt TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pt TO authenticated;
 
@@ -432,13 +593,17 @@ CREATE TABLE pt.counts_before AS
 -- ────────────────────────────────────────────────────────────────────
 SELECT set_config('request.jwt.claim.sub', '', false);
 \if :apply_migration
+SET ROLE sql_editor;
 \ir ../supabase/migrations/20261022100000_personnel_types.sql
+RESET ROLE;
 UPDATE public.instructors SET personnel_types = ARRAY['staff']
  WHERE id = '10000000-0000-4000-8000-000000000012';
+SET ROLE sql_editor;
 \ir ../supabase/migrations/20261022100000_personnel_types.sql
-SELECT pt.record('M01', 'new', 'migration 連跑兩次都成功（可重跑）', true, 'applied twice without error');
+RESET ROLE;
+SELECT pt.record('M01', 'new', 'migration 連跑兩次都成功（可重跑；以非 superuser 擁有者 sql_editor 執行）', true, 'applied twice without error');
 \else
-SELECT pt.record('M01', 'new', 'migration 連跑兩次都成功（可重跑）', false, 'reverse control: migration not applied');
+SELECT pt.record('M01', 'new', 'migration 連跑兩次都成功（可重跑；以非 superuser 擁有者 sql_editor 執行）', false, 'reverse control: migration not applied');
 \endif
 
 -- ────────────────────────────────────────────────────────────────────
@@ -552,6 +717,15 @@ SELECT pt.expect_true('F06', 'old', 'employment_status_enum 六個值都還在�
   SELECT array_agg(enumlabel::text ORDER BY enumsortorder)
        = ARRAY['active', 'staff', 'assistant', 'part_time', 'frozen', 'cancelled']
   FROM pg_enum WHERE enumtypid = 'public.employment_status_enum'::regtype
+$c$);
+SELECT pt.expect_true('F07', 'old', '模擬 SQL Editor：instructors 與三個函式的擁有者是非 superuser、無 BYPASSRLS 的 sql_editor', NULL, $c$
+  SELECT NOT r.rolsuper AND NOT r.rolbypassrls
+     AND pg_get_userbyid((SELECT relowner FROM pg_class WHERE oid = 'public.instructors'::regclass)) = 'sql_editor'
+     AND (SELECT bool_and(pg_get_userbyid(p.proowner) = 'sql_editor') FROM pg_proc p
+          WHERE p.oid IN (to_regprocedure('public.guard_instructor_admin_fields()'),
+                          to_regprocedure('private.instructor_profile_is_complete(uuid)'),
+                          to_regprocedure('public.ensure_my_contract_reminder()')))
+  FROM pg_roles r WHERE r.rolname = 'sql_editor'
 $c$);
 
 -- ────────────────────────────────────────────────────────────────────
@@ -777,7 +951,56 @@ RESET ROLE;
 SELECT set_config('request.jwt.claim.sub', '', false);
 
 -- ────────────────────────────────────────────────────────────────────
--- 10. 輸出
+-- 10. 與 20261022010000（課程受眾）＋ 20261022093700（夥伴號碼）的整合（prior_migrations=on 才跑）
+--     帳號都是 teacher、合作中；「缺接課四欄」＝學期／寒暑假頻率、授課地區、簡介清空，其餘齊全。
+-- ────────────────────────────────────────────────────────────────────
+\if :prior_migrations
+SELECT pt.expect_true('I00', 'old', '前置 migration 已生效：夥伴號碼 trigger、名冊函式存在，「Complete teachers」舊政策已移除', NULL, $c$
+  SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.instructors'::regclass AND tgname = 'trg_guard_instructor_partner_no')
+     AND to_regprocedure('public.mentor_instructor_directory(uuid[])') IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE 'Complete teachers can view published %')
+     AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'courses' AND cmd = 'SELECT') = 1
+$c$);
+
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000012', false);
+SET ROLE authenticated;
+SELECT pt.expect_true('I01', 'new', '純職員（無等級、缺接課四欄）讀得到受眾 all 的已發佈課程、章節、內容',
+  ARRAY[$s$SELECT pt.sudo($q$UPDATE public.instructors SET personnel_types = ARRAY['staff'], instructor_role = NULL,
+     teaching_freq_semester = NULL, teaching_freq_vacation = NULL, teaching_regions = NULL, bio_notes = NULL
+     WHERE id = '10000000-0000-4000-8000-000000000012'$q$)$s$],
+  $c$SELECT pt.visible_course_items() @> ARRAY['course:全體課程', 'lesson:全體章節', 'content:全體內容']$c$);
+SELECT pt.expect_true('I02', 'new', '純職員（無等級）讀不到受眾 formal 的課程、章節、內容',
+  ARRAY[$s$SELECT pt.sudo($q$UPDATE public.instructors SET personnel_types = ARRAY['staff'], instructor_role = NULL,
+     teaching_freq_semester = NULL, teaching_freq_vacation = NULL, teaching_regions = NULL, bio_notes = NULL
+     WHERE id = '10000000-0000-4000-8000-000000000012'$q$)$s$],
+  $c$SELECT pt.visible_course_items() = ARRAY['content:全體內容', 'course:全體課程', 'lesson:全體章節']$c$);
+SELECT pt.expect_true('I03', 'new', '職員有等級 B（缺接課四欄）→ formal 課程也讀得到（受眾仍只看等級）',
+  ARRAY[$s$SELECT pt.sudo($q$UPDATE public.instructors SET personnel_types = ARRAY['staff'], instructor_role = 'B',
+     teaching_freq_semester = NULL, teaching_freq_vacation = NULL, teaching_regions = NULL, bio_notes = NULL
+     WHERE id = '10000000-0000-4000-8000-000000000012'$q$)$s$],
+  $c$SELECT pt.visible_course_items() @> ARRAY['course:正式講師課程', 'lesson:正式章節', 'content:正式內容', 'course:全體課程']$c$);
+SELECT pt.expect_true('I04', 'new', '職員但冷凍 → 課程、章節、內容全部讀不到',
+  ARRAY[$s$SELECT pt.sudo($q$UPDATE public.instructors SET personnel_types = ARRAY['staff'], employment_status = 'frozen'
+     WHERE id = '10000000-0000-4000-8000-000000000012'$q$)$s$,
+        $s$SELECT pt.sudo($q$UPDATE public.users SET role = 'teacher' WHERE id = '00000000-0000-4000-8000-000000000012'$q$)$s$],
+  $c$SELECT cardinality(pt.visible_course_items()) = 0$c$);
+RESET ROLE;
+
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000011', false);
+SET ROLE authenticated;
+SELECT pt.expect_true('I05', 'old', '講師（無等級、缺接課四欄）→ 課程、章節、內容全部讀不到',
+  ARRAY[$s$SELECT pt.sudo($q$UPDATE public.instructors SET instructor_role = NULL,
+     teaching_freq_semester = NULL, teaching_freq_vacation = NULL, teaching_regions = NULL, bio_notes = NULL
+     WHERE id = '10000000-0000-4000-8000-000000000011'$q$)$s$],
+  $c$SELECT cardinality(pt.visible_course_items()) = 0$c$);
+SELECT pt.expect_true('I06', 'old', '資料齊全的講師（無等級）→ 只讀得到 all，讀不到 formal', NULL,
+  $c$SELECT pt.visible_course_items() = ARRAY['content:全體內容', 'course:全體課程', 'lesson:全體章節']$c$);
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '', false);
+\endif
+
+-- ────────────────────────────────────────────────────────────────────
+-- 11. 輸出
 -- ────────────────────────────────────────────────────────────────────
 \o
 SELECT format('MD5|before|%s|%s', fn, md5) FROM pt.functions_before
