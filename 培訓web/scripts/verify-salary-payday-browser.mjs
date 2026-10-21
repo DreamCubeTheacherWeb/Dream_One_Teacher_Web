@@ -272,7 +272,8 @@ async function handleSupabase(route, request, url) {
         const range = page.length ? `${offset}-${offset + page.length - 1}` : '*';
         return json(route, page, 200, { 'content-range': `${range}/${wantsCount ? total : '*'}` });
     }
-    if (['site_links', 'notifications', 'salary_report_options'].includes(table) && method === 'GET') {
+    // announcements：mentor 進 /admin/salary 被導回首頁（2026-10-22 起 adminOnly），首頁會讀最新公告
+    if (['site_links', 'notifications', 'salary_report_options', 'announcements'].includes(table) && method === 'GET') {
         return json(route, acceptsObject ? null : []);
     }
     return reject(`table ${table} ${method}`);
@@ -679,10 +680,12 @@ async function run() {
         context = await newContext(browser, { viewport: { width: 1280, height: 900 }, now: TAIPEI_NOON('2026-10-20') });
         page = await newPage(context);
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        await page.getByRole('heading', { name: '報酬登記中心' }).waitFor({ timeout: 15000 });
+        await page.waitForURL((url) => !url.pathname.startsWith('/admin'), { timeout: 15000 });
         await page.waitForTimeout(500);
-        check('後台11：mentor 進得了報酬登記中心（路由 staffOnly）', await page.getByRole('heading', { name: '報酬登記中心' }).isVisible());
-        check('後台11：mentor 看不到「講師端匯款日」區塊', (await page.getByText('講師端匯款日').count()) === 0 && (await page.locator('input[type="date"]').count()) === 0
+        // 2026-10-22 起報酬登記中心只限 admin（輔導員只負責培訓，不碰錢與個資）
+        check('後台11：mentor 進 /admin/salary 被導離後台（路由 adminOnly）', !new URL(page.url()).pathname.startsWith('/admin')
+            && (await page.getByRole('heading', { name: '報酬登記中心' }).count()) === 0);
+        check('後台11：mentor 看不到「講師端匯款日」區塊', (await page.getByText('講師端匯款日').count()) === 0
             && (await page.locator('section[aria-labelledby="salary-payday-title"]').count()) === 0);
         check('後台11：mentor 的頁面根本沒有去讀／寫 salary_payout_schedule', reqLog.filter(r => r.path === '/rest/v1/salary_payout_schedule').length === 0);
         await context.close();

@@ -17,6 +17,15 @@ export const VENDOR_CSV_HEADERS = [
     '',
 ];
 
+// 正式庫還沒套 20261022093700_instructor_partner_no.sql 時，查詢帶 partner_no 會回這兩種代碼：
+// 42703＝SELECT 的欄位不存在；PGRST204＝PATCH／INSERT 的欄位不在 schema cache
+export const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204']);
+export const isMissingPartnerNoError = (error) => Boolean(
+    error
+    && MISSING_COLUMN_CODES.has(String(error.code))
+    && (!error.message || /partner_no/.test(error.message)),
+);
+
 const REQUIRED_EXPORT_FIELDS = [
     ['full_name', '姓名'],
     ['id_number', '身分證字號'],
@@ -43,16 +52,29 @@ const escapeCsvCell = (value) => {
         : normalized;
 };
 
-export const getVendorExportMissingFields = (instructor) => REQUIRED_EXPORT_FIELDS
-    .filter(([key]) => !normalizeCsvValue(instructor?.[key]))
-    .map(([, label]) => label);
+// 國籍只在身分證是本國格式（1 碼英文＋性別碼 1／2＋8 碼數字）時才填 TW；
+// 居留證、舊式統一證號或空白一律留空，交給財務確認（2026-10-22，原本寫死 TW）。
+const TW_NATIONAL_ID = /^[A-Z][12]\d{8}$/;
+export const vendorNationalityOf = (idNumber) => (
+    TW_NATIONAL_ID.test(String(idNumber ?? '').replace(/\s/g, '').toUpperCase()) ? 'TW' : ''
+);
+export const NATIONALITY_UNCONFIRMED = '國籍需確認';
+
+export const getVendorExportMissingFields = (instructor) => {
+    const missing = REQUIRED_EXPORT_FIELDS
+        .filter(([key]) => !normalizeCsvValue(instructor?.[key]))
+        .map(([, label]) => label);
+    if (!vendorNationalityOf(instructor?.id_number)) missing.push(NATIONALITY_UNCONFIRMED);
+    return missing;
+};
 
 export const instructorToVendorRow = (instructor) => [
     'Z007',
-    '', // 財務系統夥伴號碼目前沒有存於講師主檔，禁止自行推算。
+    // 夥伴號碼只用資料庫裡財務給的值（instructors.partner_no，由後台匯入）；沒有就留白，禁止自行推算。
+    instructor.partner_no || '',
     instructor.full_name,
     instructor.full_name,
-    'TW',
+    vendorNationalityOf(instructor.id_number),
     instructor.id_number,
     instructor.household_address,
     instructor.address,
@@ -66,14 +88,15 @@ export const instructorToVendorRow = (instructor) => [
     '',
 ];
 
-export const buildVendorCsv = (instructors) => {
-    const blankRow = Array(VENDOR_CSV_HEADERS.length).fill('');
-    const rows = [
-        blankRow,
-        VENDOR_CSV_HEADERS,
-        ...instructors.map(instructorToVendorRow),
-    ];
+// 財務供應商格式：第一列空白、第二列表頭、之後一人一列（CSV 與月結匯款 Excel 的「供應商」分頁共用）
+export const buildVendorRows = (instructors) => [
+    Array(VENDOR_CSV_HEADERS.length).fill(''),
+    VENDOR_CSV_HEADERS,
+    ...instructors.map(instructorToVendorRow),
+];
 
+export const buildVendorCsv = (instructors) => {
+    const rows = buildVendorRows(instructors);
     return `\uFEFF${rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')}\r\n`;
 };
 

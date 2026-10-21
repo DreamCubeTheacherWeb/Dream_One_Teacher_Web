@@ -856,12 +856,14 @@ async function run() {
                 !new URL(page.url()).pathname.startsWith('/admin') && await page.getByRole('heading', { name: '回報選項管理', level: 1 }).count() === 0);
             await context.close();
         }
+        // 2026-10-22 起報酬登記中心只限 admin（輔導員只負責培訓，不碰錢與個資）
         appRole = 'mentor';
         context = await contextFor(browser, { width: 1280, height: 900 });
         page = await context.newPage();
         await page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
-        await page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
-        check('mentor 的報酬登記中心沒有「回報選項管理」入口', await page.getByRole('link', { name: '回報選項管理' }).count() === 0);
+        await until(async () => !new URL(page.url()).pathname.startsWith('/admin'));
+        check('mentor 進 /admin/salary 被導離後台，看不到「回報選項管理」入口',
+            !new URL(page.url()).pathname.startsWith('/admin') && await page.getByRole('link', { name: '回報選項管理' }).count() === 0);
         await context.close();
 
         // ══════════ 手機 390px ══════════

@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    NATIONALITY_UNCONFIRMED,
     VENDOR_CSV_HEADERS,
     buildVendorCsv,
+    buildVendorRows,
     createVendorExportFilename,
     filterVendorInstructors,
     getVendorExportMissingFields,
     instructorToVendorRow,
+    vendorNationalityOf,
 } from './vendorCsvExport.js';
 
 const completeInstructor = {
@@ -108,7 +111,7 @@ test('未指定日期時可匯出沒有報酬紀錄的講師主檔', () => {
 test('缺漏欄位會列出可理解的中文名稱', () => {
     assert.deepEqual(
         getVendorExportMissingFields({ ...completeInstructor, id_number: '', bank_code: null }),
-        ['身分證字號', '銀行代號'],
+        ['身分證字號', '銀行代號', '國籍需確認'],
     );
 });
 
@@ -121,4 +124,36 @@ test('檔名包含篩選區間與匯出日期', () => {
         }),
         '夢想講師供應商_2026-06-01-2026-06-30_20260826.csv',
     );
+});
+
+test('國籍只在本國身分證格式時填 TW，居留證或空白留空並提示「國籍需確認」', () => {
+    assert.equal(vendorNationalityOf('A123456789'), 'TW');
+    assert.equal(vendorNationalityOf('b223456789'), 'TW', '小寫英文字母視同大寫');
+    assert.equal(vendorNationalityOf(' A123456789 '), 'TW');
+    assert.equal(vendorNationalityOf('A823456789'), '', '新式居留證（第 2 碼 8／9）不是本國身分證');
+    assert.equal(vendorNationalityOf('AC12345678'), '', '舊式居留證（第 2 碼英文）');
+    assert.equal(vendorNationalityOf('A12345678'), '', '少一碼');
+    assert.equal(vendorNationalityOf(''), '');
+    assert.equal(vendorNationalityOf(null), '');
+
+    const resident = { ...completeInstructor, id_number: 'A823456789' };
+    assert.equal(instructorToVendorRow(resident)[4], '');
+    assert.deepEqual(getVendorExportMissingFields(resident), [NATIONALITY_UNCONFIRMED]);
+    assert.deepEqual(getVendorExportMissingFields(completeInstructor), []);
+});
+
+test('夥伴號碼取自講師主檔 partner_no，沒有就留白（不推算）', () => {
+    assert.equal(instructorToVendorRow({ ...completeInstructor, partner_no: 'A036872' })[1], 'A036872');
+    assert.equal(instructorToVendorRow({ ...completeInstructor, partner_no: null })[1], '');
+    assert.equal(instructorToVendorRow(completeInstructor)[1], '', '查詢沒帶 partner_no（舊資料庫）也留白');
+    const csv = buildVendorCsv([{ ...completeInstructor, partner_no: 'A036872' }]);
+    assert.match(csv, /\r\nZ007,A036872,王小明,王小明,TW,A123456789,/);
+});
+
+test('buildVendorRows 與 CSV 同一份：空白列＋表頭＋每人一列', () => {
+    const rows = buildVendorRows([completeInstructor]);
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows[0], Array(16).fill(''));
+    assert.deepEqual(rows[1], VENDOR_CSV_HEADERS);
+    assert.deepEqual(rows[2], instructorToVendorRow(completeInstructor));
 });
