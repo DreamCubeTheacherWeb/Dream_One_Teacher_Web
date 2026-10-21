@@ -12,6 +12,10 @@
  *  C 個人資料頁：純職員看不到接課欄位且沒填也能存檔（請求不帶管理員專屬欄位）；講師（含舊資料）沒填仍被擋
  *  D 課程列表：純職員看到新提示；講師維持原提示；資料庫還沒有 personnel_types 欄位時退回舊查詢
  *  E 合約管理：非講師不計入未簽約，列表標「非講師，不需簽約」；上傳新版文件的通知不寄給非講師
+ *  G 關於我（/me）：職員看到「人員類別」而不是講師等級；講師與舊資料（沒有人員類別欄位）仍看到等級；資料庫欄位不存在時退回舊查詢
+ *  H 薪資：講師回報頁的目前級別／速解、管理員報酬登記的講師下拉，非講師顯示「不適用」；課程紀錄上的歷史快照維持原樣
+ *  I 簽約流程（/contract）：非 admin 的非講師看到說明與回個人資料頁連結、不進簽約流程；講師、admin、查無人員類別時照常進入；
+ *    /contract/view/:id 不擋
  *  F 已移除的死選項（職員／工讀生等級、助教）不再出現在原始碼
  *
  * 用法（在 培訓web/ 下）：node scripts/verify-personnel-types-ui.mjs
@@ -23,6 +27,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
+import { tourStorageKey } from '../src/lib/onboarding.js';
 
 const require = createRequire(import.meta.url);
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -122,7 +127,7 @@ const adminRows = () => [
 ];
 
 // ───────────────────────── 假後端 ─────────────────────────
-const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], contractDocs = [], legacyDb = false }) => {
+const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], contractDocs = [], classSessions = [], legacyDb = false }) => {
     const user = {
         id: persona.id, aud: 'authenticated', role: 'authenticated', email: persona.email,
         app_metadata: { provider: 'google', providers: ['google'] },
@@ -133,7 +138,7 @@ const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], contractD
         expires_in: 31536000, expires_at: Math.floor(Date.now() / 1000) + 31536000, user,
     };
     const profile = { id: persona.id, name: persona.name, email: persona.email, role: persona.role, created_at: NOW };
-    const state = { rows, writes: [], other: [], legacyDb, selects: [] };
+    const state = { rows, writes: [], other: [], legacyDb, selects: [], reads: [] };
 
     const json = (route, data, status = 200) => route.fulfill({
         status,
@@ -180,6 +185,7 @@ const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], contractD
             return route.fulfill({ status: 204, body: '' });
         }
 
+        state.reads.push(table);
         if (table === 'users') {
             const idEq = url.searchParams.get('id');
             if (idEq) return reply([profile]);
@@ -202,6 +208,7 @@ const makeBackend = ({ persona, rows, extraUsers = [], contracts = [], contractD
         }
         if (table === 'instructor_contracts') return reply(contracts);
         if (table === 'contract_documents') return reply(contractDocs);
+        if (table === 'class_sessions') return reply(classSessions);
         return reply([]);
     };
     return { handler, session, state, persona };
@@ -213,6 +220,9 @@ const personas = {
     incompleteInstr: { key: 'incompleteInstr', role: 'teacher', id: ids.incompleteInstr, name: '缺資料講師', email: 'incomplete@example.com' },
     incompleteLegacy: { key: 'incompleteLegacy', role: 'teacher', id: ids.incompleteLegacy, name: '缺資料舊講師', email: 'legacy@example.com' },
     noRoleInstr: { key: 'noRoleInstr', role: 'teacher', id: ids.noRoleInstr, name: '無等級講師', email: 'norole@example.com' },
+    instr: { key: 'instr', role: 'teacher', id: ids.instr, name: '林講師', email: 'instr@example.com' },
+    legacy: { key: 'legacy', role: 'teacher', id: ids.legacy, name: '舊資料老師', email: 'legacy@example.com' },
+    mentor: { key: 'mentor', role: 'mentor', id: '00000000-0000-4000-8000-0000000000d1', name: '測試輔導員', email: 'mentor@example.com' },
 };
 
 // ───────────────────────── 執行 ─────────────────────────
@@ -229,6 +239,8 @@ async function run() {
     const openPage = async (backend, { width = 1280, height = 1000, dialogs } = {}) => {
         const context = await browser.newContext({ viewport: { width, height } });
         await context.addInitScript(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: storageKey, value: backend.session });
+        // 新手導覽只在第一次進 /me 時自動跳出，先標記「看過了」，不讓它蓋住頁面
+        await context.addInitScript((key) => localStorage.setItem(key, '1'), tourStorageKey(backend.persona.id));
         await context.route('**/*', backend.handler);
         const page = await context.newPage();
         const pageErrors = [];
@@ -726,6 +738,189 @@ async function run() {
         });
         ok(uploadPage.pageErrors.length === 0, `上傳頁有未捕捉錯誤：${uploadPage.pageErrors.join('；')}`);
         await uploadPage.context.close();
+
+        // ═════════ G 關於我（/me）═════════
+        const aboutLevelText = (page) => page.locator('body').innerText();
+        const staffMeRow = () => completeInstructor(23, { full_name: '王職員', personnel_types: ['staff'], ...withoutTeaching, instructor_role: 'A', speed_qualification: 'speed_master', user_id: ids.staff });
+        const instrMeRow = (extra = {}) => completeInstructor(24, { full_name: '林講師', personnel_types: ['instructor'], instructor_role: 'A', speed_qualification: 'speed_master', user_id: ids.instr, ...extra });
+        const legacyMeRow = () => completeInstructor(25, { full_name: '舊資料老師', instructor_role: 'B', user_id: ids.legacy }); // 沒有 personnel_types
+
+        const aboutStaff = await openPage(makeBackend({ persona: personas.staff, rows: [staffMeRow()] }));
+        await aboutStaff.page.goto(`${base}/me`, { waitUntil: 'networkidle' });
+        await aboutStaff.page.getByRole('heading', { name: '關於我', exact: true }).waitFor();
+        await check('G1 職員的「關於我」顯示「人員類別：職員」，不顯示講師等級（即使主檔還存著 A 級）', async () => {
+            const chip = aboutStaff.page.getByTestId('about-personnel-types');
+            await chip.waitFor();
+            equal((await chip.innerText()).trim(), '人員類別：職員', '人員類別標籤');
+            ok(!(await aboutLevelText(aboutStaff.page)).includes('講師等級：'), '不該出現「講師等級：」');
+            await shot(aboutStaff.page, 'about-me-staff.png');
+        });
+        ok(aboutStaff.pageErrors.length === 0, `關於我（職員）有未捕捉錯誤：${aboutStaff.pageErrors.join('；')}`);
+        await aboutStaff.context.close();
+
+        const aboutInstr = await openPage(makeBackend({ persona: personas.instr, rows: [instrMeRow()] }));
+        await aboutInstr.page.goto(`${base}/me`, { waitUntil: 'networkidle' });
+        await aboutInstr.page.getByRole('heading', { name: '關於我', exact: true }).waitFor();
+        await check('G2 講師的「關於我」仍顯示「講師等級：A 級」，沒有人員類別標籤', async () => {
+            await aboutInstr.page.getByText('講師等級：A 級').waitFor({ timeout: 8000 });
+            equal(await aboutInstr.page.getByTestId('about-personnel-types').count(), 0, '人員類別標籤數');
+            await shot(aboutInstr.page, 'about-me-instructor.png');
+        });
+        await aboutInstr.context.close();
+
+        const aboutLegacy = await openPage(makeBackend({ persona: personas.legacy, rows: [legacyMeRow()] }));
+        await aboutLegacy.page.goto(`${base}/me`, { waitUntil: 'networkidle' });
+        await aboutLegacy.page.getByRole('heading', { name: '關於我', exact: true }).waitFor();
+        await check('G3 舊資料（沒有 personnel_types 欄位）的「關於我」當講師：顯示「講師等級：B 級」', async () => {
+            await aboutLegacy.page.getByText('講師等級：B 級').waitFor({ timeout: 8000 });
+            equal(await aboutLegacy.page.getByTestId('about-personnel-types').count(), 0, '人員類別標籤數');
+        });
+        await aboutLegacy.context.close();
+
+        const aboutLegacyDbBackend = makeBackend({ persona: personas.instr, rows: [instrMeRow()], legacyDb: true });
+        const aboutLegacyDb = await openPage(aboutLegacyDbBackend);
+        await aboutLegacyDb.page.goto(`${base}/me`, { waitUntil: 'networkidle' });
+        await aboutLegacyDb.page.getByRole('heading', { name: '關於我', exact: true }).waitFor();
+        await check('G4 資料庫還沒有 personnel_types 欄位：「關於我」先試新欄位、退回舊查詢，照常顯示講師等級', async () => {
+            await aboutLegacyDb.page.getByText('講師等級：A 級').waitFor({ timeout: 8000 });
+            ok(aboutLegacyDbBackend.state.selects.some((q) => q.includes('personnel_types')), '應先試新欄位');
+            ok(aboutLegacyDbBackend.state.selects.some((q) => q === 'id,instructor_role'), '應退回只查 id,instructor_role');
+            ok(aboutLegacyDb.pageErrors.length === 0, `未捕捉錯誤：${aboutLegacyDb.pageErrors.join('；')}`);
+        });
+        await aboutLegacyDb.context.close();
+
+        // ═════════ H 薪資 ═════════
+        const staffSalaryRow = () => completeInstructor(26, { full_name: '王職員', personnel_types: ['staff'], ...withoutTeaching, instructor_role: 'A', speed_qualification: 'speed_master', user_id: ids.staff });
+        const salaryStaff = await openPage(makeBackend({ persona: personas.staff, rows: [staffSalaryRow()] }));
+        await salaryStaff.page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
+        await check('H1 講師回報頁：職員的「講師級別」「速解資格」顯示不適用（主檔存的 A 級／速解大師不顯示）', async () => {
+            await salaryStaff.page.getByTestId('report-level-chip').waitFor({ timeout: 8000 });
+            equal((await salaryStaff.page.getByTestId('report-level-chip').innerText()).trim(), '講師級別：不適用', '級別');
+            equal((await salaryStaff.page.getByTestId('report-speed-chip').innerText()).trim(), '速解資格：不適用', '速解');
+            await shot(salaryStaff.page, 'salary-report-staff.png');
+        });
+        await salaryStaff.context.close();
+
+        const salaryInstr = await openPage(makeBackend({ persona: personas.instr, rows: [instrMeRow()] }));
+        await salaryInstr.page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
+        await check('H2 講師回報頁：講師仍看到「講師級別：A」「速解資格：速解大師」', async () => {
+            await salaryInstr.page.getByTestId('report-level-chip').waitFor({ timeout: 8000 });
+            equal((await salaryInstr.page.getByTestId('report-level-chip').innerText()).trim(), '講師級別：A', '級別');
+            equal((await salaryInstr.page.getByTestId('report-speed-chip').innerText()).trim(), '速解資格：速解大師', '速解');
+        });
+        await salaryInstr.context.close();
+
+        const salaryLegacyDbBackend = makeBackend({ persona: personas.instr, rows: [instrMeRow()], legacyDb: true });
+        const salaryLegacyDb = await openPage(salaryLegacyDbBackend);
+        await salaryLegacyDb.page.goto(`${base}/my/salary/new`, { waitUntil: 'networkidle' });
+        await check('H3 資料庫還沒有 personnel_types 欄位：講師回報頁退回舊查詢、全部當講師，不出錯', async () => {
+            await salaryLegacyDb.page.getByTestId('report-level-chip').waitFor({ timeout: 8000 });
+            equal((await salaryLegacyDb.page.getByTestId('report-level-chip').innerText()).trim(), '講師級別：A', '級別');
+            ok(salaryLegacyDbBackend.state.selects.some((q) => q.includes('personnel_types')), '應先試新欄位');
+            ok(salaryLegacyDb.pageErrors.length === 0, `未捕捉錯誤：${salaryLegacyDb.pageErrors.join('；')}`);
+        });
+        await salaryLegacyDb.context.close();
+
+        const historyRow = {
+            id: 'cs-1', instructor_id: rowId(2), instructor_name: '王職員', instructor_role_at_time: 'A', speed_qualification_at_time: 'speed_master',
+            course_type: 'onsite_2hr', course_name: '到府課', session_date: '2026-10-10', status: 'approved', pricing_status: 'priced',
+            total_salary: 1500, base_salary: 1500, bonus: 0, month_label: '2026/10', is_anomaly: false, created_at: NOW,
+        };
+        const salaryAdminBackend = makeBackend({ persona: personas.admin, rows: adminRows(), classSessions: [historyRow] });
+        const salaryAdmin = await openPage(salaryAdminBackend, { width: 1280, height: 1000 });
+        await salaryAdmin.page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
+        await salaryAdmin.page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
+        await check('H4 管理員報酬登記：新增紀錄的講師下拉，非講師顯示「不適用」，講師與舊資料照舊顯示等級與速解', async () => {
+            await salaryAdmin.page.getByRole('button', { name: /新增報酬紀錄/ }).click();
+            const options = await salaryAdmin.page.locator('select').filter({ has: salaryAdmin.page.locator('option', { hasText: '林講師' }) }).first().locator('option').allTextContents();
+            const optionOf = (name) => options.find((text) => text.startsWith(name));
+            equal(optionOf('王職員'), '王職員（講師等級、速解：不適用）', '王職員');
+            equal(optionOf('陳工讀'), '陳工讀（講師等級、速解：不適用）', '陳工讀（已存 B 級＋速解大師也不顯示）');
+            equal(optionOf('林講師'), '林講師（一般：A／速解：速解大師）', '林講師');
+            equal(optionOf('舊資料老師'), '舊資料老師（一般：B／速解：未取得）', '舊資料老師');
+            equal(optionOf('雙身分'), '雙身分（一般：S／速解：未取得）', '雙身分（也是講師）');
+            await shot(salaryAdmin.page, 'salary-register-add-modal.png');
+            await salaryAdmin.page.getByRole('button', { name: '關閉新增報酬紀錄' }).click();
+        });
+        await check('H5 報酬登記列表上的歷史快照維持原樣：王職員那筆課程紀錄仍顯示當時的 A 級與速解大師', async () => {
+            await salaryAdmin.page.getByText('速解大師', { exact: true }).first().waitFor({ timeout: 8000 });
+            ok((await salaryAdmin.page.getByText('A', { exact: true }).count()) >= 1, '快照的等級 A 不見了');
+            ok((await salaryAdmin.page.getByText('王職員').count()) >= 1, '王職員那筆課程紀錄不見了');
+        });
+        ok(salaryAdmin.pageErrors.length === 0, `報酬登記有未捕捉錯誤：${salaryAdmin.pageErrors.join('；')}`);
+        await salaryAdmin.context.close();
+
+        const salaryAdminLegacyBackend = makeBackend({ persona: personas.admin, rows: adminRows(), legacyDb: true });
+        const salaryAdminLegacy = await openPage(salaryAdminLegacyBackend);
+        await salaryAdminLegacy.page.goto(`${base}/admin/salary`, { waitUntil: 'networkidle' });
+        await salaryAdminLegacy.page.getByRole('heading', { name: '報酬登記中心' }).waitFor();
+        await check('H6 資料庫還沒有 personnel_types 欄位：報酬登記退回舊查詢，講師下拉照常載入（全部當講師）', async () => {
+            await salaryAdminLegacy.page.getByRole('button', { name: /新增報酬紀錄/ }).click();
+            const options = await salaryAdminLegacy.page.locator('select').filter({ has: salaryAdminLegacy.page.locator('option', { hasText: '林講師' }) }).first().locator('option').allTextContents();
+            equal(options.find((text) => text.startsWith('王職員')), '王職員（一般：A／速解：未取得）', '舊庫時全部當講師（mock 已把 personnel_types 拿掉）');
+            ok(salaryAdminLegacyBackend.state.selects.some((q) => q.includes('personnel_types')), '應先試新欄位');
+        });
+        await salaryAdminLegacy.context.close();
+
+        // ═════════ I 簽約流程（/contract）═════════
+        const NOT_REQUIRED_TEXT = '你的人員類別不是講師，不需要簽署講師合約。';
+        const FLOW_READY_TEXT = '文件尚未就緒'; // mock 沒有合約文件時，簽約流程頁顯示這句：代表流程頁真的被載入
+        const staffOldContract = { id: 'c-1', user_id: ids.staff, status: 'signed', signed_at: NOW, doc_versions: {}, contract_doc_version: 1, filled_name: '王職員' }; // 轉成職員前簽過的舊合約
+        const contractStaffBackend = makeBackend({ persona: personas.staff, contracts: [staffOldContract], rows: [completeInstructor(27, { full_name: '王職員', personnel_types: ['staff'], ...withoutTeaching, user_id: ids.staff })] });
+        const contractStaff = await openPage(contractStaffBackend);
+        await contractStaff.page.goto(`${base}/contract`, { waitUntil: 'networkidle' });
+        await check('I1 職員進 /contract：顯示說明與「回個人資料頁」連結，不進簽約流程（沒有讀合約文件）', async () => {
+            const notice = contractStaff.page.getByTestId('contract-not-required-notice');
+            await notice.waitFor({ timeout: 8000 });
+            equal((await notice.innerText()).includes(NOT_REQUIRED_TEXT), true, '說明文字');
+            equal(await notice.getByRole('link', { name: '回個人資料頁' }).getAttribute('href'), '/profile', '連結');
+            ok(!(await contractStaff.page.locator('body').innerText()).includes(FLOW_READY_TEXT), '不該進簽約流程');
+            ok(!contractStaffBackend.state.reads.includes('contract_documents'), '不該讀合約文件');
+            equal(new URL(contractStaff.page.url()).pathname, '/contract', '網址');
+            await shot(contractStaff.page, 'contract-staff-notice.png');
+        });
+        await check('I2 職員點連結回個人資料頁', async () => {
+            await contractStaff.page.getByRole('link', { name: '回個人資料頁' }).click();
+            await waitUntil(() => new URL(contractStaff.page.url()).pathname === '/profile', '回到 /profile');
+        });
+        await check('I3 職員進 /contract/view/:id（查看轉職員前簽過的舊合約）不被擋：看到合約檢視頁、沒有說明、網址不變', async () => {
+            await contractStaff.page.goto(`${base}/contract/view/c-1`, { waitUntil: 'networkidle' });
+            await contractStaff.page.getByRole('heading', { name: '合約檢視' }).waitFor({ timeout: 8000 });
+            ok(!(await contractStaff.page.locator('body').innerText()).includes(NOT_REQUIRED_TEXT), '不該出現說明');
+            equal(new URL(contractStaff.page.url()).pathname, '/contract/view/c-1', '網址');
+        });
+        ok(contractStaff.pageErrors.length === 0, `簽約說明頁有未捕捉錯誤：${contractStaff.pageErrors.join('；')}`);
+        await contractStaff.context.close();
+
+        const contractCases = [
+            ['I4 講師進 /contract：照常進入簽約流程，沒有說明', personas.instr, [instrMeRow()], false],
+            ['I5 舊資料（沒有人員類別欄位）的講師進 /contract：當講師，照常進入簽約流程', personas.legacy, [legacyMeRow()], false],
+            ['I6 沒有講師主檔的人（例如輔導員）進 /contract：當講師，不顯示說明、照常進入簽約流程', personas.mentor, [], false],
+            ['I7 資料庫還沒有人員類別欄位：查不到人員類別一律當講師，照常進入簽約流程', personas.instr, [instrMeRow()], true],
+        ];
+        for (const [name, persona, rows, legacyDbMode] of contractCases) {
+            await check(name, async () => {
+                const backend = makeBackend({ persona, rows, legacyDb: legacyDbMode });
+                const opened = await openPage(backend);
+                await opened.page.goto(`${base}/contract`, { waitUntil: 'networkidle' });
+                await sleep(500);
+                const body = await opened.page.locator('body').innerText();
+                ok(!body.includes(NOT_REQUIRED_TEXT), '不該出現說明');
+                equal(await opened.page.getByTestId('contract-not-required-notice').count(), 0, '說明區塊數');
+                ok(backend.state.reads.includes('contract_documents'), '簽約流程沒有被載入（沒讀合約文件）');
+                ok(persona.role !== 'teacher' || body.includes(FLOW_READY_TEXT), `應進入簽約流程（看到「${FLOW_READY_TEXT}」）`);
+                await opened.context.close();
+            });
+        }
+        await check('I8 admin 進 /contract：即使自己的主檔是職員也照常進入簽約流程（測試用），且不必查人員類別', async () => {
+            const backend = makeBackend({ persona: personas.admin, rows: [completeInstructor(28, { full_name: '管理員職員', personnel_types: ['staff'], ...withoutTeaching, user_id: ids.admin })] });
+            const opened = await openPage(backend);
+            await opened.page.goto(`${base}/contract`, { waitUntil: 'networkidle' });
+            await opened.page.getByText(FLOW_READY_TEXT).waitFor({ timeout: 8000 });
+            ok(!(await opened.page.locator('body').innerText()).includes(NOT_REQUIRED_TEXT), '不該出現說明');
+            ok(!backend.state.selects.some((q) => q === 'personnel_types'), 'admin 不該為此多查一次人員類別');
+            await opened.context.close();
+        });
 
         // ═════════ F 死選項 ═════════
         await check('F1 個人資料頁、待審作業頁、編輯頁的原始碼不再有「職員／工讀生」等級與「助教」業務狀態', async () => {

@@ -136,6 +136,35 @@ def parse_date(value: Any) -> str | None:
     return None
 
 
+# 舊表單「管理層級」→（合作狀態 employment_status，人員類別 personnel_types）。
+# 2026-10-22 起身分（老師／職員／工讀生）改放人員類別，employment_status 只剩 active／frozen／cancelled；
+# 助教沒有獨立類別，歸為講師，原字串另存在 employment_status_raw（merge_instructors.py 輸出）。
+MANAGEMENT_LEVEL_MAP: dict[str, tuple[str, list[str]]] = {
+    "老師": ("active", ["instructor"]),
+    "職員": ("active", ["staff"]),
+    "工讀生": ("active", ["part_time"]),
+    "助教": ("active", ["instructor"]),
+    "冷凍": ("frozen", ["instructor"]),
+    "取消合作": ("cancelled", ["instructor"]),
+}
+
+
+def map_management_level(raw: Any) -> tuple[str | None, list[str]]:
+    """「管理層級」原字串 → (employment_status, personnel_types)；空白／未知 → (None, ['instructor'])。"""
+    key = str(raw).strip() if raw is not None else ""
+    status, types = MANAGEMENT_LEVEL_MAP.get(key, (None, ["instructor"]))
+    return status, list(types)
+
+
+def resolve_employment_and_personnel(record: dict[str, Any]) -> tuple[str | None, list[str]]:
+    """匯入用：優先採 merge_instructors.py 已算好的 personnel_types；
+    舊版預覽 JSON（沒有這個欄位）改由 employment_status_raw 重算，避免把 staff／part_time 這類舊代碼寫進合作狀態。"""
+    types = record.get("personnel_types")
+    if types:
+        return record.get("employment_status"), list(types)
+    return map_management_level(record.get("employment_status_raw"))
+
+
 def derive_gender(id_number: Any) -> str | None:
     normalized = (clean(id_number) or "").upper()
     if not re.fullmatch(r"[A-Z][12]\d{8}", normalized):
