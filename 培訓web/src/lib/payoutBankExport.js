@@ -110,7 +110,13 @@ export const memoLength = (memo) => [...String(memo ?? '')].length;
 const stripSeparators = (value) => String(value ?? '').replace(/[\s\-‐‑‒–—－]/g, '');
 export const normalizeBankCode = stripSeparators;
 export const normalizeAccountNumber = stripSeparators;
-export const normalizeIdNumber = (value) => String(value ?? '').replace(/\s/g, '').toUpperCase();
+export const normalizeIdNumber = (value) => String(value ?? '').replace(/\s/g, '').toUpperCase();  // 匯入比對用
+// 轉帳檔的收款人ID：只去前後空白、轉大寫（中間有空白或全形字就留著，交給下面的格式警告）
+export const normalizeRecipientId = (value) => String(value ?? '').trim().toUpperCase();
+// 本國身分證、新式居留證（第 2 碼 8／9）、舊式居留證（2 碼英文）；其他（含全形字元）一律警告
+const COMMON_ID_PATTERNS = [/^[A-Z][12]\d{8}$/, /^[A-Z][89]\d{8}$/, /^[A-Z]{2}\d{8}$/];
+export const isCommonIdFormat = (value) => COMMON_ID_PATTERNS.some((pattern) => pattern.test(String(value ?? '')));
+export const ID_FORMAT_WARNING = '身分證／居留證格式不常見，請確認';
 const normalizeName = (value) => String(value ?? '').replace(/\s/g, '');
 
 export const maskAccount = (value) => {
@@ -140,6 +146,13 @@ const formatYuan = (cents) => {
 export const formatMoney = formatYuan;
 
 // 單堂本次應付＝max(total_salary − paid_amount, 0)
+// 分頁讀取時資料若有變動，同一列可能出現在兩頁：依 id 去重（保留第一次出現的）
+export const dedupeById = (rows) => {
+    const seen = new Map();
+    for (const row of rows || []) if (!seen.has(row.id)) seen.set(row.id, row);
+    return [...seen.values()];
+};
+
 export const sessionPayableCents = (session) => Math.max(toCents(session?.total_salary) - toCents(session?.paid_amount), 0);
 
 // 明細的「薪資／獎金」拆分：沒付過且金額正常 → 原本的底薪／獎金；部分已付或金額異常 → 本次應付整筆放薪資、獎金 0
@@ -192,10 +205,13 @@ const compareSessions = (a, b) => (
 // ───────────────────────── 每人一列 ─────────────────────────
 // sessions：該期 status='approved' 的課（已依期別起訖篩好）
 // instructors：講師主檔（id、full_name、bank_code、bank_account_number、bank_account_name、id_number、email_primary、partner_no…）
-// edits：{ excludedSessionIds, excludedInstructorIds, adjustments: { [instructorId]: { amount, reason, costCenter } },
+// 有異常標記（is_anomaly，例如疑似重複登記）的課「預設排除」，避免同一堂被匯兩次；
+// 管理者確認無誤後把它放進 includedAnomalySessionIds 才會計入。
+// edits：{ excludedSessionIds, includedAnomalySessionIds, excludedInstructorIds, adjustments: { [instructorId]: { amount, reason, costCenter } },
 //          memoOverrides: { [instructorId]: string }, costCenters: { [sessionId]: '90180'… } }
 export const computePayoutPeople = ({ sessions = [], instructors = [], periodMonth, memoTemplate = DEFAULT_MEMO_TEMPLATE, edits = {} }) => {
     const excludedSessionIds = toSet(edits.excludedSessionIds);
+    const includedAnomalyIds = toSet(edits.includedAnomalySessionIds);
     const excludedInstructorIds = toSet(edits.excludedInstructorIds);
     const adjustments = edits.adjustments || {};
     const memoOverrides = edits.memoOverrides || {};
@@ -227,7 +243,9 @@ export const computePayoutPeople = ({ sessions = [], instructors = [], periodMon
         const name = String(instructor?.full_name || ownSessions[0]?.instructor_name || '').trim();
         const sessionRows = [...ownSessions].sort(compareSessions).map((session) => ({
             session,
-            excluded: excludedSessionIds.has(session.id),
+            anomaly: Boolean(session.is_anomaly),
+            anomalyReasons: Array.isArray(session.anomaly_reasons) ? session.anomaly_reasons.filter(Boolean).map(String) : [],
+            excluded: session.is_anomaly ? !includedAnomalyIds.has(session.id) : excludedSessionIds.has(session.id),
             payableCents: sessionPayableCents(session),
             ...splitSessionCents(session),
             costCenter: COST_CENTERS.includes(costCenters[session.id]) ? costCenters[session.id] : '',
@@ -243,29 +261,32 @@ export const computePayoutPeople = ({ sessions = [], instructors = [], periodMon
         const bankCode = normalizeBankCode(instructor?.bank_code);
         const accountNumber = normalizeAccountNumber(instructor?.bank_account_number);
         const accountName = String(instructor?.bank_account_name ?? '').trim();
-        const idNumber = normalizeIdNumber(instructor?.id_number);
+        const idNumber = normalizeRecipientId(instructor?.id_number);
         const email = String(instructor?.email_primary ?? '').trim();
         const partnerNo = String(instructor?.partner_no ?? '').trim();
         const overrideMemo = String(memoOverrides[instructorId] ?? '').trim();
         const memo = overrideMemo || defaultMemo;
 
         const blockers = [];
+        const blockerTags = [];  // 手機姓名格內的簡短標籤（例：不匯：缺解款行）
+        const block = (message, tag) => { blockers.push(message); blockerTags.push(tag); };
         const warnings = [];
         if (!instructor) {
-            blockers.push('找不到講師主檔');
+            block('找不到講師主檔', '找不到主檔');
         } else {
-            if (!/^\d{7}$/.test(bankCode)) blockers.push(bankCode ? `解款行需為 7 碼數字（目前 ${[...bankCode].length} 碼${/^\d+$/.test(bankCode) ? '' : '，含非數字'}）` : '缺解款行（銀行＋分行代碼）');
-            if (!accountNumber) blockers.push('缺收款帳號');
-            else if (!/^\d+$/.test(accountNumber)) blockers.push('收款帳號含非數字字元');
-            if (!accountName) blockers.push('缺收款人戶名');
-            else if (unsafeTransferCellReason(accountName)) blockers.push(`收款人戶名${unsafeTransferCellReason(accountName)}`);
-            if (!idNumber) blockers.push('缺身分證字號');
-            else if (unsafeTransferCellReason(idNumber)) blockers.push(`身分證字號${unsafeTransferCellReason(idNumber)}`);
-            if (email && unsafeTransferCellReason(email)) blockers.push(`Email ${unsafeTransferCellReason(email)}`);
-            if (partnerNo && !PARTNER_NO_PATTERN.test(partnerNo)) blockers.push('夥伴號碼格式不符');
+            if (!bankCode) block('缺解款行（銀行＋分行代碼）', '缺解款行');
+            else if (!/^\d{7}$/.test(bankCode)) block(`解款行需為 7 碼數字（目前 ${[...bankCode].length} 碼${/^\d+$/.test(bankCode) ? '' : '，含非數字'}）`, '解款行有誤');
+            if (!accountNumber) block('缺收款帳號', '缺帳號');
+            else if (!/^\d+$/.test(accountNumber)) block('收款帳號含非數字字元', '帳號有誤');
+            if (!accountName) block('缺收款人戶名', '缺戶名');
+            else if (unsafeTransferCellReason(accountName)) block(`收款人戶名${unsafeTransferCellReason(accountName)}`, '戶名有誤');
+            if (!idNumber) block('缺身分證字號', '缺身分證');
+            else if (unsafeTransferCellReason(idNumber)) block(`身分證字號${unsafeTransferCellReason(idNumber)}`, '身分證有誤');
+            if (email && unsafeTransferCellReason(email)) block(`Email ${unsafeTransferCellReason(email)}`, 'Email 有誤');
+            if (partnerNo && !PARTNER_NO_PATTERN.test(partnerNo)) block('夥伴號碼格式不符', '夥伴號碼有誤');
         }
-        if (payCents % 100 !== 0) blockers.push('金額有小數，請人工確認');
-        if (payCents <= 0) blockers.push('實付金額需大於 0');
+        if (payCents % 100 !== 0) block('金額有小數，請人工確認', '金額有小數');
+        if (payCents <= 0) block('實付金額需大於 0', '金額為 0');
 
         if (instructor) {
             if (accountName && name && normalizeName(accountName) !== normalizeName(name)) warnings.push('戶名與姓名不同');
@@ -283,6 +304,11 @@ export const computePayoutPeople = ({ sessions = [], instructors = [], periodMon
         if (needsReview) warnings.push(`含待確認報價 ${needsReview} 筆`);
         if (rejected) warnings.push(`含已退回報價 ${rejected} 筆`);
         if (partiallyPaid) warnings.push(`有部分已付 ${partiallyPaid} 筆`);
+        if (instructor && idNumber && !isCommonIdFormat(idNumber)) warnings.push(ID_FORMAT_WARNING);
+        const anomalyExcluded = sessionRows.filter((row) => row.anomaly && row.excluded).length;
+        const anomalyIncluded = sessionRows.filter((row) => row.anomaly && !row.excluded).length;
+        if (anomalyExcluded) warnings.push(`異常標記課 ${anomalyExcluded} 筆已預設排除`);
+        if (anomalyIncluded) warnings.push(`已勾回異常標記課 ${anomalyIncluded} 筆，請確認不是重複登記`);
 
         const blocked = blockers.length > 0;
         return {
@@ -309,7 +335,10 @@ export const computePayoutPeople = ({ sessions = [], instructors = [], periodMon
             memo,
             memoOverridden: Boolean(overrideMemo),
             blockers,
+            blockerTags,
             warnings,
+            anomalyExcluded,
+            anomalyIncluded,
             blocked,
             included: !blocked && !excludedInstructorIds.has(instructorId),
             partnerLabel: partnerNo,
@@ -333,6 +362,8 @@ export const computePayoutPeople = ({ sessions = [], instructors = [], periodMon
         unmatchedSessions,
         totalCents: includedPeople.reduce((sum, person) => sum + person.payCents, 0),
         blockedCount: people.filter((person) => person.blocked).length,
+        anomalyExcludedCount: people.reduce((sum, person) => sum + person.anomalyExcluded, 0),
+        anomalyIncludedCount: people.reduce((sum, person) => sum + person.anomalyIncluded, 0),
         warningCount: people.filter((person) => !person.blocked && person.warnings.length > 0).length,  // 被擋的人另算在 blockedCount
     };
 };

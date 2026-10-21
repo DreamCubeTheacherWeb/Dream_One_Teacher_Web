@@ -1,7 +1,7 @@
 // 後台「月結匯款」（2026-10-22 第一版，admin 限定）：把某一期已核准、未付款的講師報酬匯出成財務部的銀行批次轉帳檔。
 // 計算與檢查全部在 src/lib/payoutBankExport.js（有單元測試）；這頁只負責讀資料、收集調整、顯示與下載。
 // 本頁不寫任何報酬資料（不標記已付款，那是另一個功能）；唯一的寫入是 admin 匯入／修改講師的夥伴號碼。
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
     AlertTriangle,
@@ -28,6 +28,7 @@ import {
     buildTransferCsv,
     computePayoutPeople,
     decodeCsvBytes,
+    dedupeById,
     defaultPaydayForPeriod,
     defaultPayoutPlan,
     formatMoney,
@@ -46,11 +47,14 @@ import {
 
 const PAGE_SIZE = 1000;
 const BASE_INSTRUCTOR_COLUMNS = 'id,full_name,bank_code,bank_account_number,bank_account_name,id_number,email_primary,household_address,address,phone_mobile';
-const SESSION_COLUMNS = 'id,instructor_id,instructor_name,session_date,course_type,course_name,base_salary,bonus,total_salary,paid_amount,status,pricing_status';
+const SESSION_COLUMNS = 'id,instructor_id,instructor_name,session_date,course_type,course_name,base_salary,bonus,total_salary,paid_amount,status,pricing_status,is_anomaly,anomaly_reasons';
 const STORAGE_KEYS = { payerAccount: 'dreamone.payout.payerAccount', payerBranch: 'dreamone.payout.payerBranch' };
 const PRICING_LABELS = { needs_review: '待確認報價', rejected: '已退回', manual_override: '手動改價', quoted: '已報價', legacy: '舊資料' };
 const IMPORT_STATUS_LABELS = { change: '會變更', same: '不變', unmatched: '對不到', conflict: '衝突', invalid: '格式不符' };
-const EMPTY_EDITS = { excludedSessionIds: new Set(), excludedInstructorIds: new Set(), adjustments: {}, memoOverrides: {}, costCenters: {} };
+const EMPTY_EDITS = { excludedSessionIds: new Set(), includedAnomalySessionIds: new Set(), excludedInstructorIds: new Set(), adjustments: {}, memoOverrides: {}, costCenters: {} };
+// 某一期讀回來的資料；ready=false 代表還在讀（或讀的不是目前選的期別）
+const EMPTY_PERIOD = { periodMonth: '', sessions: [], stats: null, approvedCount: null, ready: false };
+const DATA_CHANGED_MESSAGE = '讀取期間資料有變動，請重新整理';
 
 const readStored = (key) => {
     try { return window.localStorage.getItem(key) || ''; } catch { return ''; }
@@ -59,7 +63,7 @@ const writeStored = (key, value) => {
     try { window.localStorage.setItem(key, value); } catch { /* 無痕模式等情況存不了就算了 */ }
 };
 
-// 分頁抓滿；build(query) 加篩選條件
+// 分頁抓滿、依 id 去重（分頁期間有人新增／修改，同一列可能出現在兩頁）；build(query) 加篩選條件
 const fetchAll = async (table, columns, build = (q) => q) => {
     const rows = [];
     for (let from = 0; ; from += PAGE_SIZE) {
@@ -70,7 +74,7 @@ const fetchAll = async (table, columns, build = (q) => q) => {
         rows.push(...(data || []));
         if ((data || []).length < PAGE_SIZE) break;
     }
-    return rows;
+    return dedupeById(rows);
 };
 const countRows = async (build) => {
     const { count, error } = await build(supabase.from('class_sessions').select('id', { count: 'exact', head: true }));
@@ -115,16 +119,35 @@ const Chip = ({ tone, children }) => {
     return <span className={`inline-block text-[11px] font-black px-2 py-0.5 rounded-full border border-bauhaus-black mr-1 mb-1 ${tones[tone]}`}>{children}</span>;
 };
 
+// 匯款通知方式／手續費負擔方式：預設財務範本值，選「其他代碼…」才能輸入；不寫代碼的中文意義（我們不知道）
+const CodeSelect = ({ label, templateValue, value, onChange }) => {
+    const isOther = value !== templateValue;
+    return (
+        <div className="block">
+            <span className="bh-label block mb-1.5">{label}</span>
+            <select aria-label={label} value={isOther ? '__other' : templateValue} onChange={(event) => onChange(event.target.value === '__other' ? '' : templateValue)} className="bh-input min-h-[44px]">
+                <option value={templateValue}>{templateValue}（財務範本值）</option>
+                <option value="__other">其他代碼…</option>
+            </select>
+            {isOther && (
+                <>
+                    <input aria-label={`${label}（其他代碼）`} type="text" inputMode="numeric" value={value} onChange={(event) => onChange(event.target.value)} placeholder="輸入代碼（數字）" className="bh-input min-h-[44px] font-mono mt-2" />
+                    <span role="status" className="block mt-1 text-xs font-black text-bauhaus-black bg-bauhaus-yellow border border-bauhaus-black rounded-lg px-2 py-1">與財務範本不同，請先向財務確認代碼意義</span>
+                </>
+            )}
+        </div>
+    );
+};
+
 const SalaryPayoutExport = () => {
     const [today] = useState(() => taipeiToday());
-    const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
     const [scheduleNote, setScheduleNote] = useState('');
     const [plan, setPlan] = useState(null);
     const [regularDay, setRegularDay] = useState(null);
     const [periodMonth, setPeriodMonth] = useState('');
-    const [sessions, setSessions] = useState([]);
-    const [stats, setStats] = useState(null);
+    const [periodData, setPeriodData] = useState(EMPTY_PERIOD);
+    const latestRequest = useRef(0);  // 只採用最後一次期別讀取的回應
     const [instructors, setInstructors] = useState([]);
     const [partnerNoMissing, setPartnerNoMissing] = useState(false);
     const [settings, setSettings] = useState(() => ({
@@ -170,39 +193,54 @@ const SalaryPayoutExport = () => {
             } catch (error) {
                 console.error('讀取月結匯款資料失敗：', error);
                 setLoadError(`資料讀取失敗：${error.message || '請稍後再試'}`);
-                setLoading(false);
             }
         }, 0);
         return () => window.clearTimeout(timer);
     }, [loadInstructors, today]);
 
-    const loadPeriod = useCallback(async (targetPeriod) => {
+    // 期別切換很快時，舊期別的回應可能比新的晚到：每次讀取編號，只有最後一次的回應會被採用，其餘直接丟掉。
+    // reloadInstructors：「重新整理」時連講師主檔一起重抓（銀行資料改過才看得到）。
+    const loadPeriod = useCallback(async (targetPeriod, { reloadInstructors = false } = {}) => {
         const range = periodRange(targetPeriod);
         if (!range) return;
-        setLoading(true);
+        latestRequest.current += 1;
+        const requestId = latestRequest.current;
+        const isLatest = () => requestId === latestRequest.current;
         setLoadError('');
+        setPeriodData((current) => (current.periodMonth === targetPeriod ? { ...current, ready: false } : { ...EMPTY_PERIOD, periodMonth: targetPeriod }));
         try {
+            if (reloadInstructors) {
+                const result = await fetchInstructors();
+                if (!isLatest()) return;
+                setInstructors(result.rows);
+                setPartnerNoMissing(result.partnerNoMissing);
+            }
             const inPeriod = (q) => q.gte('session_date', range.periodStart).lte('session_date', range.periodEnd);
-            const [approved, pendingCount, paidCount, earlier] = await Promise.all([
+            const [approved, approvedCount, pendingCount, paidCount, earlier] = await Promise.all([
                 fetchAll('class_sessions', SESSION_COLUMNS, (q) => inPeriod(q).eq('status', 'approved')),
+                countRows((q) => inPeriod(q).eq('status', 'approved')),
                 countRows((q) => inPeriod(q).eq('status', 'pending')),
                 countRows((q) => inPeriod(q).eq('status', 'paid')),
                 fetchAll('class_sessions', 'id,total_salary,paid_amount', (q) => q.eq('status', 'approved').lt('session_date', range.periodStart)),
             ]);
-            setSessions(approved);
-            setStats({
-                pendingCount,
-                paidCount,
-                earlierCount: earlier.length,
-                earlierCents: earlier.reduce((sum, row) => sum + sessionPayableCents(row), 0),
+            if (!isLatest()) return;  // 過期的回應：使用者已經改選別期或按了重新整理
+            setPeriodData({
+                periodMonth: targetPeriod,
+                sessions: approved,
+                approvedCount,
+                stats: {
+                    pendingCount,
+                    paidCount,
+                    earlierCount: earlier.length,
+                    earlierCents: earlier.reduce((sum, row) => sum + sessionPayableCents(row), 0),
+                },
+                ready: true,
             });
         } catch (error) {
+            if (!isLatest()) return;
             console.error('讀取本期報酬失敗：', error);
             setLoadError(`本期報酬讀取失敗：${error.message || '請稍後再試'}`);
-            setSessions([]);
-            setStats(null);
-        } finally {
-            setLoading(false);
+            setPeriodData({ ...EMPTY_PERIOD, periodMonth: targetPeriod, ready: true });
         }
     }, []);
 
@@ -212,11 +250,17 @@ const SalaryPayoutExport = () => {
         return () => window.clearTimeout(timer);
     }, [loadPeriod, periodMonth]);
 
+    // 畫面只用「已讀完、且就是目前選的期別」的資料；附言、檔名、課程一律同一期
+    const loading = !periodData.ready || periodData.periodMonth !== periodMonth;
+    const sessions = loading ? EMPTY_PERIOD.sessions : periodData.sessions;
+    const stats = loading ? null : periodData.stats;
+    const dataChanged = !loading && !loadError && periodData.approvedCount !== periodData.sessions.length;
     const computed = useMemo(() => computePayoutPeople({
         sessions, instructors, periodMonth, memoTemplate: settings.memoTemplate, edits,
     }), [edits, instructors, periodMonth, sessions, settings.memoTemplate]);
 
     const hasEdits = edits.excludedSessionIds.size > 0
+        || edits.includedAnomalySessionIds.size > 0
         || edits.excludedInstructorIds.size > 0
         || Object.values(edits.adjustments).some((a) => String(a?.amount ?? '').trim() || String(a?.reason ?? '').trim() || a?.costCenter)
         || Object.values(edits.memoOverrides).some((m) => String(m ?? '').trim())
@@ -293,6 +337,7 @@ const SalaryPayoutExport = () => {
     const exportErrors = () => {
         if (loading) return ['資料還在讀取中，請稍候'];
         if (loadError) return ['資料讀取失敗，請先重新整理'];
+        if (dataChanged) return [`${DATA_CHANGED_MESSAGE}後再匯出`];
         return validatePayoutExport({ settings, people: computed.people });
     };
     const onDownloadCsv = () => {
@@ -400,7 +445,7 @@ const SalaryPayoutExport = () => {
                         把某一期「已核准、未付款」的講師報酬，匯出成財務部的銀行批次轉帳檔。付款日期、金額調整與附言都可以在這裡改。
                     </p>
                 </div>
-                <button type="button" onClick={() => loadPeriod(periodMonth)} disabled={loading || !periodMonth} className="bh-btn bh-btn-outline px-4 py-2.5 min-h-[44px] shrink-0 self-start disabled:opacity-50">
+                <button type="button" onClick={() => loadPeriod(periodMonth, { reloadInstructors: true })} disabled={loading || !periodMonth} className="bh-btn bh-btn-outline px-4 py-2.5 min-h-[44px] shrink-0 self-start disabled:opacity-50">
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                     {loading ? '讀取中' : '重新整理'}
                 </button>
@@ -426,7 +471,7 @@ const SalaryPayoutExport = () => {
                 <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     <label className="block md:col-span-2 xl:col-span-1">
                         <span className="bh-label block mb-1.5">期別</span>
-                        <select aria-label="期別" value={periodMonth} onChange={(event) => changePeriod(event.target.value)} className="bh-input min-h-[44px]" disabled={!plan}>
+                        <select aria-label="期別" value={periodMonth} onChange={(event) => changePeriod(event.target.value)} className="bh-input min-h-[44px]" disabled={!plan || loading}>
                             {periodOptions.map((option) => (
                                 <option key={option} value={option}>{periodLabel(option)}{option === plan?.periodMonth ? '・下次匯款' : ''}</option>
                             ))}
@@ -445,14 +490,8 @@ const SalaryPayoutExport = () => {
                         <span className="bh-label block mb-1.5">付款分行（4 碼）</span>
                         <input aria-label="付款分行" type="text" inputMode="numeric" autoComplete="off" value={settings.payerBranch} onChange={(event) => updateSetting('payerBranch', event.target.value)} placeholder="必填，例：0123" className="bh-input min-h-[44px] font-mono" />
                     </label>
-                    <label className="block">
-                        <span className="bh-label block mb-1.5">匯款通知方式</span>
-                        <input aria-label="匯款通知方式" type="text" inputMode="numeric" value={settings.noticeMethod} onChange={(event) => updateSetting('noticeMethod', event.target.value)} className="bh-input min-h-[44px] font-mono" />
-                    </label>
-                    <label className="block">
-                        <span className="bh-label block mb-1.5">手續費負擔方式</span>
-                        <input aria-label="手續費負擔方式" type="text" inputMode="numeric" value={settings.feeBearer} onChange={(event) => updateSetting('feeBearer', event.target.value)} className="bh-input min-h-[44px] font-mono" />
-                    </label>
+                    <CodeSelect label="匯款通知方式" templateValue={DEFAULT_NOTICE_METHOD} value={settings.noticeMethod} onChange={(value) => updateSetting('noticeMethod', value)} />
+                    <CodeSelect label="手續費負擔方式" templateValue={DEFAULT_FEE_BEARER} value={settings.feeBearer} onChange={(value) => updateSetting('feeBearer', value)} />
                     <label className="block md:col-span-2 xl:col-span-3">
                         <span className="bh-label block mb-1.5">付款相關附言範本（{'{YYYY}'} 年、{'{YY}'} 年末兩碼、{'{MM}'} 月）</span>
                         <input aria-label="附言範本" type="text" value={settings.memoTemplate} onChange={(event) => updateSetting('memoTemplate', event.target.value)} className="bh-input min-h-[44px]" />
@@ -486,9 +525,29 @@ const SalaryPayoutExport = () => {
                     <div data-testid="payout-stats-earlier" className={`text-sm font-black ${stats?.earlierCount ? 'text-bauhaus-red' : 'text-bauhaus-black'}`}>
                         {stats ? `${stats.earlierCount} 筆・${formatMoney(stats.earlierCents)}` : '—'}
                     </div>
-                    <div className="text-[11px] font-bold text-bauhaus-black/50">不在本期，請人工處理</div>
+                    <div className="text-[11px] font-bold text-bauhaus-black/50">不在本期。切換到那些課所在的期別即可匯出，或到報酬登記中心處理</div>
                 </div>
             </section>
+
+            {(dataChanged || stats?.paidCount > 0 || computed.anomalyExcludedCount > 0 || computed.anomalyIncludedCount > 0) && (
+                <div className="mb-6 space-y-2">
+                    {dataChanged && (
+                        <div role="alert" data-testid="payout-data-changed" className="bg-bauhaus-red text-white border-2 border-bauhaus-black rounded-xl p-3 text-sm font-black">
+                            {DATA_CHANGED_MESSAGE}（本期已核准共 {periodData.approvedCount} 筆，讀到 {periodData.sessions.length} 筆），匯出前請先按「重新整理」。
+                        </div>
+                    )}
+                    {stats?.paidCount > 0 && (
+                        <div role="status" data-testid="payout-paid-warning" className="bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl p-3 text-sm font-black text-bauhaus-black">
+                            本期已有 {stats.paidCount} 筆標為已付款，請確認不會重複匯款
+                        </div>
+                    )}
+                    {(computed.anomalyExcludedCount > 0 || computed.anomalyIncludedCount > 0) && (
+                        <div role="status" data-testid="payout-anomaly-note" className="bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl p-3 text-sm font-black text-bauhaus-black">
+                            已預設排除 {computed.anomalyExcludedCount} 筆異常標記的課，確認無誤可勾回{computed.anomalyIncludedCount > 0 ? `（目前已勾回 ${computed.anomalyIncludedCount} 筆）` : ''}。展開該講師可看到異常原因；要勾回就把那堂課的「排除」取消勾選。
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* ── 每人一列 */}
             <section className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard overflow-hidden mb-6" aria-labelledby="payout-people-heading">
@@ -543,6 +602,16 @@ const SalaryPayoutExport = () => {
                                                     {person.name || '（未填姓名）'}
                                                 </button>
                                                 <div className="text-[11px] font-bold text-bauhaus-black/50 font-mono pl-5">{person.partnerLabel || '—'}</div>
+                                                {/* 窄螢幕看不到右邊的狀態欄：姓名格內直接放簡短標籤 */}
+                                                {person.blocked ? (
+                                                    <span data-testid={`payout-tag-${person.instructorId}`} className="xl:hidden inline-block mt-1 ml-5 text-[11px] font-black px-2 py-0.5 rounded-full border border-bauhaus-black bg-bauhaus-red text-white whitespace-normal">
+                                                        不匯：{person.blockerTags[0]}{person.blockerTags.length > 1 ? ` 等 ${person.blockerTags.length} 項` : ''}
+                                                    </span>
+                                                ) : person.warnings.length > 0 ? (
+                                                    <span data-testid={`payout-tag-${person.instructorId}`} className="xl:hidden inline-block mt-1 ml-5 text-[11px] font-black px-2 py-0.5 rounded-full border border-bauhaus-black bg-bauhaus-yellow text-bauhaus-black whitespace-normal">
+                                                        注意 {person.warnings.length} 項
+                                                    </span>
+                                                ) : null}
                                             </td>
                                             <td className="px-3 py-3 text-right align-top font-mono">{person.sessionCount}{person.excludedSessionCount ? <span className="block text-[11px] text-bauhaus-black/50">排除 {person.excludedSessionCount}</span> : null}</td>
                                             <td className="px-3 py-3 text-right align-top font-mono">{formatMoney(person.systemCents)}</td>
@@ -554,7 +623,7 @@ const SalaryPayoutExport = () => {
                                             </td>
                                             <td data-testid={`payout-pay-${person.instructorId}`} className="px-3 py-3 text-right align-top font-mono font-black">{formatMoney(person.payCents)}</td>
                                             <td className="px-3 py-3 align-top">
-                                                <input type="text" aria-label={`${person.name} 附言`} value={edits.memoOverrides[person.instructorId] ?? ''} onChange={(event) => setMemoOverride(person.instructorId, event.target.value)} placeholder={memoPreview} className="bh-input w-56 py-1.5 text-xs" />
+                                                <input type="text" aria-label={`${person.name} 附言`} value={edits.memoOverrides[person.instructorId] ?? ''} onChange={(event) => setMemoOverride(person.instructorId, event.target.value)} placeholder="留空＝用範本附言" className="bh-input w-56 py-1.5 text-xs" />
                                             </td>
                                             <td className="px-3 py-3 align-top max-w-[260px]">
                                                 {person.blockers.map((text) => <Chip key={text} tone="block">{text}</Chip>)}
@@ -626,10 +695,17 @@ const SalaryPayoutExport = () => {
                                                                     const label = `${row.session.session_date} ${row.session.course_name || COURSE_LABELS[row.session.course_type] || ''}`;
                                                                     return (
                                                                         <tr key={row.session.id} className={row.excluded ? 'opacity-50 line-through' : ''}>
-                                                                            <td className="px-2 py-1.5"><input type="checkbox" aria-label={`${label} 排除`} checked={row.excluded} onChange={() => toggleSet('excludedSessionIds', row.session.id)} className="w-4 h-4 accent-bauhaus-red" /></td>
+                                                                            <td className="px-2 py-1.5"><input type="checkbox" aria-label={`${label} 排除`} checked={row.excluded} onChange={() => toggleSet(row.anomaly ? 'includedAnomalySessionIds' : 'excludedSessionIds', row.session.id)} className="w-4 h-4 accent-bauhaus-red" /></td>
                                                                             <td className="px-2 py-1.5 font-mono">{row.session.session_date}</td>
                                                                             <td className="px-2 py-1.5">{COURSE_LABELS[row.session.course_type] || row.session.course_type}</td>
-                                                                            <td className="px-2 py-1.5">{row.session.course_name || '—'}</td>
+                                                                            <td className="px-2 py-1.5">
+                                                                                {row.session.course_name || '—'}
+                                                                                {row.anomaly && (
+                                                                                    <span data-testid={`payout-anomaly-${row.session.id}`} className="block no-underline text-[11px] font-black text-bauhaus-red">
+                                                                                        異常標記{row.excluded ? '（預設排除）' : '（已勾回）'}：{row.anomalyReasons.join('、') || '未註明原因'}
+                                                                                    </span>
+                                                                                )}
+                                                                            </td>
                                                                             <td className="px-2 py-1.5 text-right font-mono">{formatMoney(row.payableCents)}</td>
                                                                             <td className="px-2 py-1.5 text-right font-mono">{Number(row.session.paid_amount || 0) ? formatMoney(Math.round(Number(row.session.paid_amount) * 100)) : '—'}</td>
                                                                             <td className="px-2 py-1.5">{PRICING_LABELS[row.session.pricing_status] || row.session.pricing_status || '—'}</td>

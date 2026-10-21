@@ -1,4 +1,4 @@
-temporary PostgreSQL ready (socket dir $TMPDIR/d1-partner-XN1IGZ, pid 18161)
+temporary PostgreSQL ready (socket dir $TMPDIR/d1-partner-utNemc, pid 46918)
 
 == A. migration 可重跑 ==
 PASS  A1 第一次套用成功（非 superuser 表擁有者身分）
@@ -53,6 +53,6 @@ PASS  F2 service_role（沒有使用者 JWT）可設定 partner_no  [t
 PASS  F3 service_role INSERT 時可帶 partner_no  [S000003|]
 
 ------------------------------------------------------------
-Total checks: 38   PASS: 38   FAIL: 0   (1.2s)
+Total checks: 38   PASS: 38   FAIL: 0   (1.3s)
 RESULT 38/38
 ALL PASS: instructor partner_no migration verified on isolated PostgreSQL

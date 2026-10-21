@@ -19,6 +19,9 @@ import {
     decodeCsvBytes,
     defaultPaydayForPeriod,
     defaultPayoutPlan,
+    dedupeById,
+    ID_FORMAT_WARNING,
+    isCommonIdFormat,
     isMissingPartnerNoError,
     maskAccount,
     maskIdNumber,
@@ -484,4 +487,59 @@ test('夥伴號碼匯入：找不到表頭就回錯誤；Big5 編碼的 Excel CS
     const utf8 = decodeCsvBytes(new TextEncoder().encode('\uFEFF夥伴號碼,身份證\nA1,Z1\n'));
     assert.equal(utf8.encoding, 'utf-8');
     assert.equal(parseCsv(utf8.text)[0][0], '夥伴號碼');
+});
+
+test('有異常標記的課預設排除；勾回（includedAnomalySessionIds）才計入', () => {
+    const sessions = [
+        session(T.wang, { id: 'a-normal', base_salary: 1000, total_salary: 1000 }),
+        session(T.wang, { id: 'a-dup', base_salary: 1000, total_salary: 1000, is_anomaly: true, anomaly_reasons: ['疑似重複登記'] }),
+    ];
+    const byDefault = compute(sessions);
+    const wang = person(byDefault, T.wang);
+    assert.equal(wang.payCents, 100000, '異常那堂不算');
+    assert.equal(wang.sessions.find((r) => r.session.id === 'a-dup').excluded, true);
+    assert.deepEqual(wang.sessions.find((r) => r.session.id === 'a-dup').anomalyReasons, ['疑似重複登記']);
+    assert.ok(wang.warnings.includes('異常標記課 1 筆已預設排除'));
+    assert.equal(byDefault.anomalyExcludedCount, 1);
+    // excludedSessionIds 對異常課沒有作用（不會因為「沒排除」就被算進去）
+    assert.equal(person(compute(sessions, { excludedSessionIds: [] }), T.wang).payCents, 100000);
+    const optedIn = compute(sessions, { includedAnomalySessionIds: ['a-dup'] });
+    assert.equal(person(optedIn, T.wang).payCents, 200000);
+    assert.ok(person(optedIn, T.wang).warnings.includes('已勾回異常標記課 1 筆，請確認不是重複登記'));
+    assert.equal(optedIn.anomalyIncludedCount, 1);
+    assert.equal(buildDetailRows(byDefault.people).filter((r) => r[1] === '王測二' && r[2] !== '').length, 1, '明細只有正常那堂');
+});
+
+test('收款人ID：去前後空白轉大寫；不是本國／新式／舊式居留證格式（含全形）就警告', () => {
+    assert.ok(isCommonIdFormat('A123456789'));
+    assert.ok(isCommonIdFormat('A823456789'), '新式居留證');
+    assert.ok(isCommonIdFormat('AB12345678'), '舊式居留證');
+    assert.ok(!isCommonIdFormat('A323456789'));
+    assert.ok(!isCommonIdFormat('Ａ123456789'), '全形英文');
+    assert.ok(!isCommonIdFormat('A12345678９'), '全形數字');
+    const result = compute([session(T.ding), session(T.wang)], {}, [
+        instructor(T.ding, { full_name: '丁測一', id_number: '  z100000001 ' }),
+        instructor(T.wang, { full_name: '王測二', id_number: 'Ｚ１０００００００２' }),
+    ]);
+    const ding = person(result, T.ding);
+    assert.equal(ding.idNumber, 'Z100000001');
+    assert.ok(!ding.warnings.includes(ID_FORMAT_WARNING));
+    assert.ok(person(result, T.wang).warnings.includes(ID_FORMAT_WARNING));
+    assert.equal(person(result, T.wang).blocked, false, '只是警告，照樣可匯');
+    assert.equal(buildTransferRows({ people: result.people, settings: SETTINGS })[0][8], 'Z100000001');
+});
+
+test('阻擋原因都有簡短標籤（手機姓名格用）', () => {
+    const result = compute([session(T.ding), session(T.wang)], {}, [
+        instructor(T.ding, { full_name: '丁測一', bank_code: '' }),
+        instructor(T.wang, { full_name: '王測二', bank_code: '008183', bank_account_name: '' }),
+    ]);
+    assert.deepEqual(person(result, T.ding).blockerTags, ['缺解款行']);
+    assert.deepEqual(person(result, T.wang).blockerTags, ['解款行有誤', '缺戶名']);
+    assert.equal(person(result, T.wang).blockers.length, person(result, T.wang).blockerTags.length);
+});
+
+test('dedupeById：同一列出現兩次只留一筆', () => {
+    assert.deepEqual(dedupeById([{ id: 'a', v: 1 }, { id: 'b' }, { id: 'a', v: 2 }]), [{ id: 'a', v: 1 }, { id: 'b' }]);
+    assert.deepEqual(dedupeById(null), []);
 });

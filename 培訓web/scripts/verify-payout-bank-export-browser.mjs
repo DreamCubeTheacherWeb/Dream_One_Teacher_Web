@@ -53,19 +53,20 @@ const baseInstructor = (id, overrides) => ({
 const INSTRUCTORS_SEED = [
     baseInstructor(I.ding, { full_name: '丁測一', bank_code: '0081832', bank_account_number: '00291234567890', bank_account_name: '丁測一', id_number: 'Z100000001', email_primary: 'ding@example.test' }),
     baseInstructor(I.wang, { full_name: '王測二', bank_code: '0130017', bank_account_number: '0123-456-789012', bank_account_name: '王測二', id_number: 'Z200000002', email_primary: 'wang@example.test', partner_no: 'A036872' }),
-    baseInstructor(I.jiang, { full_name: '江測五', bank_code: '8120345', bank_account_number: '00012345678901', bank_account_name: '江測五', id_number: 'Z100000005', email_primary: 'jiang@example.test' }),
+    baseInstructor(I.jiang, { full_name: '江測五', bank_code: '8120345', bank_account_number: '00012345678901', bank_account_name: '江測五', id_number: 'Ｚ１００００００５', email_primary: 'jiang@example.test' }),
     baseInstructor(I.lin, { full_name: '林測三', bank_code: '008183', bank_account_number: '00098765432100', bank_account_name: '林測三', id_number: 'Z100000003', email_primary: 'lin@example.test' }),
-    baseInstructor(I.chen, { full_name: '陳測四', bank_code: '0070937', bank_account_number: '98765432101', bank_account_name: '陳測四媽媽', id_number: 'Z200000004', email_primary: '' }),
+    baseInstructor(I.chen, { full_name: '陳測四', bank_code: '0070937', bank_account_number: '98765432101', bank_account_name: '陳測四媽媽', id_number: ' z200000004 ', email_primary: '' }),
     baseInstructor(I.zhou, { full_name: '周測六', bank_code: '0081832', bank_account_number: '00291234567899', bank_account_name: '周測六', id_number: 'Z100000006', email_primary: 'zhou@example.test' }),
 ];
 let seq = 0;
-const s = (courseName, instructorId, date, status, { base = 0, bonus = 0, paid = 0, pricing = 'quoted', name } = {}) => {
+const s = (courseName, instructorId, date, status, { base = 0, bonus = 0, paid = 0, pricing = 'quoted', name, anomaly = null } = {}) => {
     seq += 1;
     return {
         id: `20000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
         instructor_id: instructorId, instructor_name: name || INSTRUCTORS_SEED.find((i) => i.id === instructorId)?.full_name || '對不到測試',
         session_date: date, course_type: 'regular_basic', course_name: courseName,
         base_salary: base, bonus, total_salary: base + bonus, paid_amount: paid, status, pricing_status: pricing,
+        is_anomaly: Boolean(anomaly), anomaly_reasons: anomaly || [],
     };
 };
 const SESSIONS = [
@@ -75,6 +76,7 @@ const SESSIONS = [
     s('王-線上課', I.wang, '2026-10-03', 'approved', { base: 1000, paid: 400 }),     // 部分已付 → 600
     s('王-待確認課', I.wang, '2026-10-08', 'approved', { base: 500, pricing: 'needs_review' }),
     s('江-營隊', I.jiang, '2026-10-11', 'approved', { base: 1200 }),
+    s('江-營隊重複', I.jiang, '2026-10-11', 'approved', { base: 1200, anomaly: ['疑似重複：同講師同日同課程'] }),  // 異常標記 → 預設排除
     s('林-體驗課', I.lin, '2026-10-12', 'approved', { base: 900 }),
     s('陳-常態課', I.chen, '2026-10-02', 'approved', { base: 700 }),
     s('陳-加課', I.chen, '2026-10-20', 'approved', { base: 300 }),
@@ -90,10 +92,14 @@ const SESSIONS = [
     ...Array.from({ length: 1001 }, (_, n) => s(`丁-八月批次${n + 1}`, I.ding, `2026-08-${String(1 + (n % 25)).padStart(2, '0')}`, 'approved', { base: 10 })),
 ];
 
-const world = { role: 'admin', partnerMissing: false, instructors: [] };
+const world = { role: 'admin', partnerMissing: false, instructors: [], delayOnceFor: null, delayedServed: false, duplicateApproved: false, countDelta: 0 };
 const resetWorld = ({ role = 'admin', partnerMissing = false } = {}) => {
     world.role = role;
     world.partnerMissing = partnerMissing;
+    world.delayOnceFor = null;       // 'YYYY-MM-DD'：該期起日的已核准查詢第一次延遲 3 秒（競態測試）
+    world.delayedServed = false;
+    world.duplicateApproved = false; // 已核准查詢的回應重複塞一列（去重測試）
+    world.countDelta = 0;            // 已核准筆數（count=exact）多報幾筆（讀取期間資料變動）
     world.instructors = INSTRUCTORS_SEED.map((row) => ({ ...row }));
 };
 const reqLog = [];
@@ -205,10 +211,22 @@ async function handleSupabase(route, request, url) {
         if (!['GET', 'HEAD'].includes(method)) return reject(`class_sessions ${method}`);
         let rows;
         try { rows = sortById(SESSIONS.filter(compileFilters(params, new Set(['status', 'session_date', 'instructor_id'])))); } catch (error) { return reject(error.message); }
-        if (method === 'HEAD') return route.fulfill({ status: 200, headers: { ...CORS, 'content-range': `*/${wantsCount ? rows.length : '*'}` }, body: '' });
+        const approvedInPeriod = params.get('status') === 'eq.approved' && params.getAll('session_date').some((v) => v.startsWith('gte.'));
+        if (method === 'HEAD') {
+            const total = rows.length + (approvedInPeriod ? world.countDelta : 0);
+            return route.fulfill({ status: 200, headers: { ...CORS, 'content-range': `*/${wantsCount ? total : '*'}` }, body: '' });
+        }
         const offset = Number(params.get('offset') || 0);
         const limit = Math.min(params.has('limit') ? Number(params.get('limit')) : Infinity, 1000);
-        const page = rows.slice(offset, offset + limit).map((row) => project(row, params.get('select')));
+        let page = rows.slice(offset, offset + limit).map((row) => project(row, params.get('select')));
+        if (approvedInPeriod && world.duplicateApproved && page.length) page = [...page, page[0]];
+        if (approvedInPeriod && world.delayOnceFor && params.getAll('session_date').includes(`gte.${world.delayOnceFor}`)) {
+            world.delayOnceFor = null;
+            await new Promise((r) => setTimeout(r, 3000));
+            await json(route, page, 200, { 'content-range': `${page.length ? `${offset}-${offset + page.length - 1}` : '*'}/*` });
+            world.delayedServed = true;
+            return undefined;
+        }
         return json(route, page, 200, { 'content-range': `${page.length ? `${offset}-${offset + page.length - 1}` : '*'}/${wantsCount ? rows.length : '*'}` });
     }
     // 首頁（輔導員被導回 / 時）會讀公告
@@ -420,6 +438,28 @@ async function run() {
         const wangRow = await text(testId(page, `payout-row-${I.wang}`));
         check('王測二標出「含待確認報價 1 筆」「有部分已付 1 筆」，系統金額 $1,100', wangRow.includes('含待確認報價 1 筆') && wangRow.includes('有部分已付 1 筆') && wangRow.includes('$1,100'));
         check('對不到講師的課列出 1 筆、不納入', (await text(testId(page, 'payout-unmatched'))).includes('對不到講師 1 筆'));
+        check('本期有已付款的課：黃色警告「本期已有 1 筆標為已付款，請確認不會重複匯款」',
+            (await text(testId(page, 'payout-paid-warning'))) === '本期已有 1 筆標為已付款，請確認不會重複匯款');
+        check('「本期以前仍未付」附說明：切換到那些課所在的期別即可匯出，或到報酬登記中心處理',
+            (await page.getByText('不在本期。切換到那些課所在的期別即可匯出，或到報酬登記中心處理', { exact: true }).count()) === 1);
+        check('異常標記的課預設排除，上方顯示「已預設排除 1 筆異常標記的課，確認無誤可勾回」',
+            (await text(testId(page, 'payout-anomaly-note'))).startsWith('已預設排除 1 筆異常標記的課，確認無誤可勾回'));
+        const jiangRow = await text(testId(page, `payout-row-${I.jiang}`));
+        check('江測五：異常課不計入（系統金額 $1,200、筆數 1、排除 1），並標「異常標記課 1 筆已預設排除」',
+            jiangRow.includes('$1,200') && jiangRow.includes('排除 1') && jiangRow.includes('異常標記課 1 筆已預設排除'), jiangRow);
+        check('江測五身分證是全形字：黃色警告「身分證／居留證格式不常見，請確認」（照樣納入）',
+            jiangRow.includes('身分證／居留證格式不常見，請確認') && (await lbl(page, '江測五 納入匯款').isChecked()));
+        check('陳測四身分證「 z200000004 」去空白轉大寫後是正常格式，不警告', !chenRow.includes('身分證／居留證格式不常見'));
+        check('附言欄提示字改為「留空＝用範本附言」（不像已填的值）', (await lbl(page, '陳測四 附言').getAttribute('placeholder')) === '留空＝用範本附言');
+        await lbl(page, '江測五 展開明細').click();
+        check('展開後每堂顯示異常原因', (await page.getByText('異常標記（預設排除）：疑似重複：同講師同日同課程').count()) === 1);
+        await lbl(page, '2026-10-11 江-營隊重複 排除').uncheck();
+        check('勾回異常課：江測五實付 $2,400、總額 $6,800、提示改成「目前已勾回 1 筆」',
+            (await text(testId(page, `payout-pay-${I.jiang}`))) === '$2,400' && (await text(testId(page, 'payout-total'))) === '$6,800'
+            && (await text(testId(page, 'payout-anomaly-note'))).includes('目前已勾回 1 筆'));
+        await lbl(page, '2026-10-11 江-營隊重複 排除').check();
+        check('再排除回去：總額回到 $5,600', (await text(testId(page, 'payout-total'))) === '$5,600');
+        await lbl(page, '江測五 展開明細').click();
         const firstOrder = await page.locator('[data-testid^="payout-row-"]').evaluateAll((rows) => rows.map((r) => r.querySelector('button')?.textContent.trim()));
         check('畫面依姓名筆畫排序：丁、王、江、林、陳', firstOrder.join() === '丁測一,王測二,江測五,林測三,陳測四', firstOrder.join());
         await page.screenshot({ path: shot('desktop-1280-initial.png'), fullPage: true });
@@ -467,6 +507,7 @@ async function run() {
             csvRows1[0][11] === '26/10報酬夢想一號文化教育股份有限公司' && csvRows1[3][11] === '26/10報酬補登');
         check('CSV 夥伴號碼：丁 需新增1、王 A036872、江 需新增2、陳 需新增3', csvRows1.map((r) => r[13]).join() === '需新增1,A036872,需新增2,需新增3', csvRows1.map((r) => r[13]).join());
         check('CSV 陳測四匯款通知資訊空白（缺 Email）', csvRows1[3][10] === '');
+        check('CSV 收款人ID 去前後空白轉大寫：陳測四 Z200000004', csvRows1[3][8] === 'Z200000004', csvRows1[3][8]);
         check('下載後頁面顯示「已下載轉帳檔 CSV：4 人，共 $5,500」', (await text(testId(page, 'payout-download-message'))) === '已下載轉帳檔 CSV：4 人，共 $5,500');
         check('剛匯出、沒有新改動：離開頁面不提醒', (await beforeUnloadPrevented(page)) === false);
 
@@ -535,7 +576,7 @@ async function run() {
         check('成本中心出現在明細：丁-常態課A＝90181、丁-常態課B 空白、王兩堂＋調整列＝90183',
             findDetail('丁-常態課A')?.[0]?.v === '90181' && findDetail('丁-常態課B')?.[0] === undefined
             && findDetail('王-線上課')?.[0]?.v === '90183' && findDetail('王-待確認課')?.[0]?.v === '90183' && findDetail('教材費扣回')?.[0]?.v === '90183');
-        check('明細不含被排除的課（陳-加課、江-營隊）', !findDetail('陳-加課') && !findDetail('江-營隊'));
+        check('明細不含被排除的課（陳-加課、江-營隊）與預設排除的異常課', !findDetail('陳-加課') && !findDetail('江-營隊') && !findDetail('江-營隊重複'));
         check('明細合計＝轉帳總額 4000', (() => { const t = detail2.at(-1); return t[0].v === '合計' && t[5].v + t[6].v + t[7].v === 4000; })());
         const summary2 = book2.grids[2].filter(Boolean);
         const dingRows = summary2.filter((r) => r[0]?.v === '丁測一');
@@ -627,6 +668,13 @@ async function run() {
         check(`375 寬沒有整頁橫捲（scrollWidth ${mobileOverflow[0]} ≤ ${mobileOverflow[1]}）`, mobileOverflow[0] <= mobileOverflow[1]);
         const scrollBox = await testId(page, 'payout-people-scroll').evaluate((el) => [el.scrollWidth, el.clientWidth, getComputedStyle(el).overflowX]);
         check('講師表格在自己的容器內橫向捲動（overflow-x auto）', scrollBox[0] > scrollBox[1] && scrollBox[2] === 'auto', JSON.stringify(scrollBox));
+        const linTag = testId(page, `payout-tag-${I.lin}`);
+        const linTagBox = await linTag.boundingBox();
+        check('375 寬：被擋的林測三在姓名格內直接看到紅色「不匯：解款行有誤」，不用往右滑',
+            (await text(linTag)) === '不匯：解款行有誤' && (await linTag.isVisible()) && linTagBox && linTagBox.x >= 0 && linTagBox.x + linTagBox.width <= 375, JSON.stringify(linTagBox));
+        const chenTag = testId(page, `payout-tag-${I.chen}`);
+        const chenTagBox = await chenTag.boundingBox();
+        check('375 寬：有警告的陳測四姓名格內看到黃色「注意 N 項」', /^注意 \d+ 項$/.test(await text(chenTag)) && chenTagBox && chenTagBox.x + chenTagBox.width <= 375, `${await text(chenTag)} ${JSON.stringify(chenTagBox)}`);
         await page.screenshot({ path: shot('mobile-375-initial.png'), fullPage: true });
         await lbl(page, '丁測一 展開明細').click();
         mobileOverflow = await noPageOverflow(page);
@@ -654,6 +702,18 @@ async function run() {
         check('沒有紅色讀取錯誤', (await page.getByText('資料讀取失敗').count()) === 0);
         await lbl(page, '付款帳號').fill('123456789012');
         await lbl(page, '付款分行').fill('0456');
+        await lbl(page, '手續費負擔方式').selectOption('__other');
+        check('手續費選「其他代碼…」才出現輸入框，並顯示黃色警告「與財務範本不同，請先向財務確認代碼意義」',
+            (await lbl(page, '手續費負擔方式（其他代碼）').isVisible()) && (await page.getByText('與財務範本不同，請先向財務確認代碼意義', { exact: true }).count()) === 1);
+        await page.getByRole('button', { name: '轉帳檔 CSV' }).click();
+        check('其他代碼留空：擋下「手續費負擔方式需為數字」', (await text(testId(page, 'payout-csv-errors'))).includes('手續費負擔方式需為數字'));
+        await lbl(page, '手續費負擔方式（其他代碼）').fill('1');
+        const csvOther = await downloadVia(page, '轉帳檔 CSV');
+        check('其他代碼 1 會寫進 CSV 的手續費欄', parseCsvLines(csvOther.bytes).lines[1].split(',')[12] === '1');
+        await lbl(page, '手續費負擔方式').selectOption('2');
+        check('改回範本值 2：輸入框與警告消失', (await lbl(page, '手續費負擔方式（其他代碼）').count()) === 0 && (await page.getByText('與財務範本不同，請先向財務確認代碼意義').count()) === 0);
+        check('下拉選單選項是「3（財務範本值）」「其他代碼…」，沒有自編的代碼意義',
+            (await lbl(page, '匯款通知方式').locator('option').allTextContents()).join('|') === '3（財務範本值）|其他代碼…');
         const csv3 = await downloadVia(page, '轉帳檔 CSV');
         const csvRows3 = parseCsvLines(csv3.bytes).lines.slice(1, -1).map((line) => line.split(','));
         check('欄位不存在時 CSV 照常下載，夥伴號碼全部「需新增1～4」', csvRows3.map((r) => r[13]).join() === '需新增1,需新增2,需新增3,需新增4', csvRows3.map((r) => r[13]).join());
@@ -670,6 +730,76 @@ async function run() {
         check('供應商匯出頁沒有紅色讀取錯誤', (await page.getByText('資料讀取失敗').count()) === 0);
         await page.screenshot({ path: shot('vendor-export-missing-column.png'), fullPage: true });
         await missingContext.close();
+
+        // ════════ 5. 競態：10 月期還在讀就改選 9 月期，10 月的回應晚到 ════════
+        section('5. 競態：第一期的回應延遲 3 秒，期間改選別期');
+        resetWorld();
+        world.delayOnceFor = '2026-09-26';
+        const raceContext = await newContext(browser, { viewport: { width: 1280, height: 900 } });
+        page = await newPage(raceContext);
+        let raceDownloads = 0;
+        page.on('download', () => { raceDownloads += 1; });
+        await page.goto(`${base}/admin/salary/payout`, { waitUntil: 'domcontentloaded' });
+        await page.getByRole('heading', { name: '月結匯款', exact: true }).waitFor({ timeout: 15000 });
+        await page.getByText('正在讀取本期報酬…').waitFor({ timeout: 10000 });
+        check('讀取中：期別下拉停用', await lbl(page, '期別').isDisabled());
+        check('讀取中：重新整理按鈕停用', await page.getByRole('button', { name: '讀取中' }).isDisabled());
+        await page.getByRole('button', { name: '轉帳檔 CSV' }).click();
+        check('讀取中按下載：擋下並提示「資料還在讀取中，請稍候」、沒有下載',
+            (await text(testId(page, 'payout-csv-errors'))) === '資料還在讀取中，請稍候' && raceDownloads === 0);
+        // 模擬極端情況：繞過停用，在 10 月期還沒回來時改選 9 月期
+        await lbl(page, '期別').evaluate((el) => el.removeAttribute('disabled'));
+        await lbl(page, '期別').selectOption('2026/09');
+        await waitText(testId(page, 'payout-total'), '$5,700');
+        const deadlineRace = Date.now() + 8000;
+        while (!world.delayedServed && Date.now() < deadlineRace) await new Promise((r) => setTimeout(r, 100));
+        await page.waitForTimeout(500);
+        check('10 月期的延遲回應確實晚到（在 9 月期之後）', world.delayedServed === true);
+        check('晚到的 10 月期回應被丟掉：仍是 9 月期資料（總額 $5,700、2 人）',
+            (await text(testId(page, 'payout-total'))) === '$5,700' && (await text(testId(page, 'payout-included-count'))) === '2'
+            && (await lbl(page, '期別').inputValue()) === '2026/09', `${await text(testId(page, 'payout-total'))}`);
+        check('附言預覽是 9 月（26/09…）、畫面沒有 10 月的課', (await text(testId(page, 'payout-memo-preview'))).startsWith('26/09') && (await page.getByText('江測五').count()) === 0);
+        await lbl(page, '付款帳號').fill('123456789012');
+        await lbl(page, '付款分行').fill('0456');
+        const raceCsv = await downloadVia(page, '轉帳檔 CSV');
+        const raceRows = parseCsvLines(raceCsv.bytes).lines.slice(1, -1).map((line) => line.split(','));
+        check('檔名與內容一致是 9 月期：202609…_20261010.csv，丁 5000、陳 700，附言 26/09',
+            raceCsv.name === '202609夢想講師轉帳檔_20261010.csv' && raceRows.map((r) => `${r[6]}:${r[7]}`).join() === '丁測一:5000,陳測四媽媽:700'
+            && raceRows.every((r) => r[11].startsWith('26/09')), `${raceCsv.name} ${raceRows.map((r) => `${r[6]}:${r[7]}`)}`);
+        await raceContext.close();
+
+        // ════════ 6. 去重、筆數不一致、重新整理會重抓主檔 ════════
+        section('6. 去重／讀取期間資料變動／重新整理連主檔一起重抓');
+        resetWorld();
+        world.duplicateApproved = true;
+        const dupContext = await newContext(browser, { viewport: { width: 1280, height: 900 } });
+        page = await newPage(dupContext);
+        let dupDownloads = 0;
+        page.on('download', () => { dupDownloads += 1; });
+        await openPayout(page, base);
+        check('回應裡同一堂課出現兩次：依 id 去重，總額仍是 $5,600（沒有重複計入）',
+            (await text(testId(page, 'payout-total'))) === '$5,600' && (await testId(page, 'payout-data-changed').count()) === 0);
+        world.countDelta = 1;
+        await page.getByRole('button', { name: '重新整理' }).click();
+        await testId(page, 'payout-data-changed').waitFor({ timeout: 10000 });
+        check('已核准總筆數（count=exact）和讀到的不一致：顯示「讀取期間資料有變動，請重新整理」',
+            (await text(testId(page, 'payout-data-changed'))).startsWith('讀取期間資料有變動，請重新整理'));
+        await lbl(page, '付款帳號').fill('123456789012');
+        await lbl(page, '付款分行').fill('0456');
+        await page.getByRole('button', { name: '完整 Excel（四分頁）' }).click();
+        check('筆數不一致時擋下載', (await text(testId(page, 'payout-xlsx-errors'))).includes('讀取期間資料有變動') && dupDownloads === 0);
+        world.countDelta = 0;
+        world.instructors.find((row) => row.id === I.lin).bank_code = '0081830';  // 講師主檔在別處被修好了
+        const beforeRefresh = reqLog.length;
+        await page.getByRole('button', { name: '重新整理' }).click();
+        await waitText(testId(page, 'payout-included-count'), '5');
+        const refreshInstructorGets = reqLog.slice(beforeRefresh).filter((r) => r.path === '/rest/v1/instructors' && r.method === 'GET' && !new URLSearchParams(r.search).get('user_id'));
+        check('重新整理會重抓講師主檔（有新的 instructors 查詢）', refreshInstructorGets.length >= 1, `gets=${refreshInstructorGets.length}`);
+        check('主檔修好後林測三不再被擋：納入 5 人、總額 $6,500、筆數警告消失',
+            (await text(testId(page, 'payout-included-count'))) === '5' && (await text(testId(page, 'payout-total'))) === '$6,500' && (await testId(page, 'payout-data-changed').count()) === 0);
+        const dupCsv = await downloadVia(page, '轉帳檔 CSV');
+        check('恢復正常後可下載，林測三在檔案裡', parseCsvLines(dupCsv.bytes).textValue.includes('林測三'));
+        await dupContext.close();
 
         // ════════ 4. 非 admin ════════
         section('4. 輔導員（mentor）直接開網址');
