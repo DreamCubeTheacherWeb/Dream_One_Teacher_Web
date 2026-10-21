@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 頂端導覽列斷點：以 mock Supabase 實際開頁（管理員＋講師，768～1440 各寬度），
+// 頂端導覽列斷點：以 mock Supabase 實際開頁（管理員＋講師＋未登入訪客，390～1440 各寬度），
 // 量測 1280px 以下改用漢堡選單、1280px 以上桌機選單每個項目都只佔一行、不超出版心、不壓到 Logo。
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -192,6 +192,32 @@ async function run() {
                 }
                 await context.close();
             }
+        }
+
+        // 未登入訪客：桌機列只有登入鈕，平板（768px）起就要直接看得到，不能收進漢堡選單
+        for (const width of [390, 767, 768, 820, 1024, 1279, 1440]) {
+            const tag = `訪客 ${width}px`;
+            const context = await browser.newContext({ viewport: { width, height: 800 } });
+            await context.route('**/*', routeFor('pending'));
+            const page = await context.newPage();
+            await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+            await page.locator('header').waitFor();
+            await page.waitForTimeout(400);
+            const m = await measure(page);
+            const loginVisible = await page.locator('header nav').getByRole('button', { name: /使用 Google 登入/ }).isVisible().catch(() => false);
+            if (width < 768) {
+                check(`${tag} 用漢堡選單、桌機列隱藏`, m.burgerVisible && !m.navVisible);
+                await page.getByRole('button', { name: '開啟選單' }).click();
+                // 選單文字有 uppercase 樣式，innerText 會是「GOOGLE」，比對不分大小寫
+                check(`${tag} 漢堡選單展開後看得到 Google 登入`, /使用 google (帳號)?登入/i.test(await page.locator('header').innerText()));
+            } else {
+                check(`${tag} 登入鈕直接顯示在頂端列（不必開漢堡選單）`, m.navVisible && !m.burgerVisible && loginVisible);
+                check(`${tag} 登入鈕只佔一行`, m.items.every(i => i.lines === 1), m.items.map(i => `${i.text}=${i.lines}行`).join('、'));
+                check(`${tag} 頂端列沒有超出版心、沒有壓到 Logo`, m.navOverflow <= 0 && m.logoGap >= 8, `超出 ${m.navOverflow}px／間距 ${m.logoGap}px`);
+                if (width === 820) await page.screenshot({ path: path.join(shotDir, `visitor-${width}.png`) });
+            }
+            check(`${tag} 整頁沒有橫向捲軸`, m.docOverflow <= 0, `超出 ${m.docOverflow}px`);
+            await context.close();
         }
     } finally {
         if (browser) await browser.close();
