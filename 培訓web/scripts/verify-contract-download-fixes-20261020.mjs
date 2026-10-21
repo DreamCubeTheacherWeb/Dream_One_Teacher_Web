@@ -9,7 +9,12 @@
  * F3 批次下載遇到同名講師 → zip 內每人一份（重名加序號），不重名維持原檔名
  * F4 合約後台上傳新版：先寫入新版成功才停用舊版；兩步失敗都讓管理員看到訊息
  *    （F4d/F4e：表單模板上傳同一套順序）
- * F5 唯讀文件排在最後一步：最後一步顯示簽約表單並可送出，不會跳到空白畫面
+ * F5 唯讀文件排在最後一步：最後一步的「看完」按鈕帶去選擇簽約方式，之後可完成簽約，不會跳到空白畫面
+ *
+ * 2026-10-21 合併認領啟用＋電子簽約線（release/esign-20261021）後改寫簽約操作：簽約頁改成「閱讀 → 電子簽約同意 →
+ * 簽署（已讀勾選＋Email 驗證碼＋手寫簽名）」，失敗訊息改在頁面上（data-testid="submit-error"）顯示，不再用 alert；
+ * mock 補上 get_my_activation_status／record_contract_consent／request_email_otp／verify_email_otp 與 v2 的
+ * submit_my_contract 回覆。斷言意圖不變。
  *
  * 用法：node scripts/verify-contract-download-fixes-20261020.mjs [--skip-build]
  */
@@ -156,7 +161,17 @@ async function handleRoute(route) {
         return jsonRes(route, {});
     }
     if (pathname.startsWith('/rest/v1/rpc/')) {
-        if (pathname.endsWith('/submit_my_contract')) return jsonRes(route, { id: 'contract-new-1' });
+        if (pathname.endsWith('/submit_my_contract')) {
+            return jsonRes(route, { status: 'signed', contract_id: 'contract-new-1', signed_at: NOW, evidence_id: 'evidence-new-1', copy_email_masked: 'co***@test.local' });
+        }
+        if (pathname.endsWith('/get_my_activation_status')) {
+            return jsonRes(route, { status: 'active', claim_method: 'legacy_pre_activation', has_confirmed_email: true, masked_email: 'co***@test.local', profile_complete: true });
+        }
+        if (pathname.endsWith('/record_contract_consent')) return jsonRes(route, { status: 'recorded', consent_id: '00000000-0000-4000-8000-0000000000c1', created_at: NOW });
+        if (pathname.endsWith('/request_email_otp')) {
+            return jsonRes(route, { status: 'sent', challenge_id: '00000000-0000-4000-8000-0000000000d1', expires_at: new Date(Date.now() + 300000).toISOString(), masked_email: 'co***@test.local', resend_after_seconds: 60 });
+        }
+        if (pathname.endsWith('/verify_email_otp')) return jsonRes(route, { status: 'verified', verified_at: new Date().toISOString(), activated: false });
         return jsonRes(route, null);
     }
     if (pathname.startsWith('/storage/v1/object/sign/') && method === 'POST') {
@@ -266,21 +281,41 @@ const waitUntil = async (fn, timeoutMs = 15000) => {
     return false;
 };
 
-// ── 簽約流程共用：讀完唯讀文件 → Email 驗證 → 勾同意 → 簽名 → 送出 ──
+// ── 簽約流程共用：讀完所有文件 → 電子簽約同意 → 已讀勾選 → Email 驗證 → 簽名 → 確認簽署 ──
 const FINISH_READING = '我已完整看完且清楚這份文件的所有內容';
+const FINISH_READING_LAST = '我已看完，前往選擇簽約方式';
+// 逐份讀完（唯讀文件按「看完」、需簽署文件按「下一步／前往選擇簽約方式」），直到出現電子簽約同意頁
+async function readThroughToConsent(page, label = '') {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+        if (await page.getByTestId('consent-page').isVisible()) return;
+        for (const name of [FINISH_READING, FINISH_READING_LAST]) {
+            const button = page.getByRole('button', { name, exact: true });
+            if (await button.isVisible() && await button.isEnabled()) { await button.click(); break; }
+        }
+        const readNext = page.getByTestId('read-next');
+        if (await readNext.isVisible()) await readNext.click();
+        await page.waitForTimeout(300);
+    }
+    console.log(`   [${label}] stuck at ${page.url()} :: ${(await page.locator('body').innerText()).slice(0, 300).replace(/\n/g, ' / ')}`);
+    await page.getByTestId('consent-page').waitFor({ timeout: 5000 });
+}
+
 async function completeSigningForm(page) {
-    await page.getByRole('button', { name: '寄送驗證碼到我的信箱' }).click();
-    const firstDigit = page.getByLabel('驗證碼第 1 碼');
-    await firstDigit.waitFor({ timeout: 10000 });
-    await firstDigit.click();
-    await page.keyboard.type('123456');
-    await page.getByText('本人身分已驗證', { exact: true }).waitFor({ timeout: 10000 });
-    await page.getByLabel('清楚看過所有合約文件內容，皆可遵守並配合。').check();
-    await page.getByLabel('清楚且接受線上電子簽名與實體簽約具備一樣的法律效力。').check();
-    await page.getByRole('button', { name: /點擊此處進行簽名/ }).click();
-    const canvas = page.locator('canvas.cursor-crosshair');
+    await page.getByTestId('consent-checkbox').check();
+    await page.getByTestId('consent-agree').click();
+    await page.getByTestId('sign-phase').waitFor({ timeout: 10000 });
+    await page.getByTestId('read-ack-checkbox').check();
+    await page.getByTestId('send-otp').click();
+    const dialog = page.getByTestId('email-otp-dialog');
+    await dialog.waitFor({ timeout: 10000 });
+    await page.locator('#email-otp-code').waitFor({ timeout: 10000 });
+    await page.locator('#email-otp-code').fill('123456');
+    await dialog.getByRole('button', { name: '驗證', exact: true }).click();
+    await page.getByTestId('contract-otp-card').getByText('本人身分已驗證').waitFor({ timeout: 10000 });
+    await page.getByTestId('open-signature').click();
+    const canvas = page.locator('canvas').last();
     await canvas.waitFor({ timeout: 10000 });
-    // 簽名板開啟 50ms 後會依容器大小重設畫布（並清空），等它重設完再簽
+    // 簽名板開啟後會依容器大小重設畫布（並清空），等它重設完再簽
     await page.waitForTimeout(400);
     const box = await canvas.boundingBox();
     await page.mouse.move(box.x + 30, box.y + box.height / 2);
@@ -290,16 +325,20 @@ async function completeSigningForm(page) {
     }
     await page.mouse.up();
     await page.getByRole('button', { name: '確認簽名' }).click();
-    await page.getByText('已簽名', { exact: true }).waitFor({ timeout: 10000 });
 }
 
-async function submitAndSettle(page, dialogs) {
-    const submit = page.getByRole('button', { name: /確認送出簽約/ });
+// 送出後等「簽約完成」或頁面上的錯誤訊息；回傳按鈕當時是否可按。錯誤訊息併入 messages（與 alert 一起看）。
+async function submitAndSettle(page, messages) {
+    const submit = page.getByTestId('submit-contract');
+    await waitUntil(async () => submit.isEnabled(), 5000);
     const enabled = await submit.isEnabled();
     if (enabled) await submit.click();
-    await waitUntil(async () => dialogs.length > 0
-        || await page.getByRole('heading', { name: '簽約完成！' }).count() > 0, 15000);
+    await waitUntil(async () => messages.length > 0
+        || await page.getByTestId('signing-complete').count() > 0
+        || await page.getByTestId('submit-error').count() > 0, 25000);
     await page.waitForTimeout(300);
+    const errorBox = page.getByTestId('submit-error');
+    if (await errorBox.count() > 0) messages.push(await errorBox.innerText());
     return enabled;
 }
 
@@ -310,17 +349,10 @@ const rpcCalls = () => mock.requests.filter((r) => r.pathname === '/rest/v1/rpc/
 async function scenarioSigning(browser, label, mockOverrides, expectSuccess) {
     resetMock(mockOverrides);
     const { context, page, dialogs, pageErrors } = await openPage(browser, '/contract');
-    const viewOnlyCount = mock.contractDocs.filter((d) => d.doc_mode === 'view_only').length;
-    for (let i = 0; i < viewOnlyCount; i += 1) {
-        await page.getByRole('button', { name: FINISH_READING }).waitFor({ timeout: 15000 }).catch(async (error) => {
-            console.log(`   [${label}] stuck at ${page.url()} :: ${(await page.locator('body').innerText()).slice(0, 300).replace(/\n/g, ' / ')}`);
-            throw error;
-        });
-        await page.getByRole('button', { name: FINISH_READING }).click();
-    }
+    await readThroughToConsent(page, label);
     await completeSigningForm(page);
     const submitEnabled = await submitAndSettle(page, dialogs);
-    const completed = await page.getByRole('heading', { name: '簽約完成！' }).count() === 1;
+    const completed = await page.getByTestId('signing-complete').count() === 1;
     const out = { submitEnabled, completed, dialogs: [...dialogs], uploads: signedUploads(), rpc: rpcCalls(), pageErrors };
     await context.close();
     if (expectSuccess !== undefined) {
@@ -361,7 +393,7 @@ async function main() {
         assert('F1d 查詢失敗 → 不呼叫簽約 RPC', failed.rpc.length === 0, `rpc=${failed.rpc.length}`);
         assert('F1e 查詢失敗 → 不上傳任何簽署檔（簽名圖與 PDF 都不上傳）', failed.uploads.length === 0,
             failed.uploads.map((u) => u.pathname.split('/').pop()).join(',') || 'uploads=0');
-        assert('F1f 查詢失敗 → 跳出失敗訊息給講師', failed.dialogs.some((m) => m.includes('簽約送出失敗') && m.includes('欄位')),
+        assert('F1f 查詢失敗 → 頁面顯示失敗訊息給講師', failed.dialogs.some((m) => m.includes('簽約送出失敗') && m.includes('欄位')),
             failed.dialogs.join(' | ') || 'no dialog');
 
         const noSig = await scenarioSigning(browser, 'F1g 定位缺簽名', {
@@ -515,28 +547,31 @@ async function main() {
             await page.getByRole('button', { name: FINISH_READING }).waitFor({ timeout: 15000 });
             await page.getByRole('button', { name: FINISH_READING }).click();
             await page.getByRole('heading', { name: '委任契約書' }).waitFor({ timeout: 10000 });
-            await page.getByRole('button', { name: /下一步/ }).click();
+            await page.getByTestId('read-next').click();
             await page.getByRole('heading', { name: '附件：補充說明' }).waitFor({ timeout: 10000 });
-            await page.waitForTimeout(800);
-            const formShown = await page.getByRole('heading', { name: '填寫契約資料' }).count() === 1;
-            const finishButtonShown = await page.getByRole('button', { name: FINISH_READING }).count();
-            const submitShown = await page.getByRole('button', { name: /確認送出簽約/ }).count() === 1;
-            assert('F5a 最後一步是唯讀文件時，最後一步顯示簽約表單與送出按鈕', formShown && submitShown,
-                `form=${formShown} submit=${submitShown}`);
-            assert('F5b 最後一步不再出現會跳到空白頁的「看完」按鈕', finishButtonShown === 0, `finishButtons=${finishButtonShown}`);
+            const lastFinish = page.getByRole('button', { name: FINISH_READING_LAST, exact: true });
+            const lastFinishShown = await waitUntil(async () => await lastFinish.isVisible() && await lastFinish.isEnabled(), 15000);
+            const plainFinishShown = await page.getByRole('button', { name: FINISH_READING, exact: true }).count();
+            assert('F5a 最後一步是唯讀文件時，按鈕是「我已看完，前往選擇簽約方式」', lastFinishShown, `lastFinish=${lastFinishShown}`);
+            assert('F5b 最後一步不再出現會跳到空白頁的一般「看完」按鈕', plainFinishShown === 0, `plainFinish=${plainFinishShown}`);
             let rpcBody = {};
             let completed = false;
-            if (formShown) {
+            let consentShown = false;
+            if (lastFinishShown) {
+                await lastFinish.click();
+                consentShown = await waitUntil(async () => page.getByTestId('consent-page').isVisible(), 10000);
+            }
+            if (consentShown) {
                 await completeSigningForm(page);
                 await submitAndSettle(page, dialogs);
-                completed = await page.getByRole('heading', { name: '簽約完成！' }).count() === 1;
+                completed = await page.getByTestId('signing-complete').count() === 1;
                 rpcBody = rpcCalls()[0] ? JSON.parse(rpcCalls()[0].body) : {};
             }
             assert('F5c 此排序下可完成簽約，RPC 帶三份文件版本、只有需簽署的 contract 有簽署 PDF',
                 completed
                 && JSON.stringify(rpcBody.p_doc_versions) === JSON.stringify({ rules: 2, contract: 3, appendix: 1 })
                 && JSON.stringify(Object.keys(rpcBody.p_signed_pdf_paths || {})) === JSON.stringify(['contract']),
-                `completed=${completed} ${JSON.stringify({ v: rpcBody.p_doc_versions, p: Object.keys(rpcBody.p_signed_pdf_paths || {}) })} dialogs=${dialogs.join(' | ')}`);
+                `consent=${consentShown} completed=${completed} ${JSON.stringify({ v: rpcBody.p_doc_versions, p: Object.keys(rpcBody.p_signed_pdf_paths || {}) })} dialogs=${dialogs.join(' | ')}`);
             assert('F5d 此排序沒有未預期的頁面錯誤', pageErrors.length === 0, pageErrors.join(' | ') || 'errors=0');
             await context.close();
         }

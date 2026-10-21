@@ -224,8 +224,10 @@ function expectationFor(role, r) {
             // 待審帳號被導到 /pending（含首頁與公開頁），這是改動前就有的行為
             return role === 'pending' ? { redirect: '/pending' } : { expect: r.expect };
         case 'pending-page':
-            // 只有待審帳號留在 /pending；其他人（含訪客）被頁面本身導回首頁
-            return role === 'pending' ? { expect: r.expect } : { redirect: '/' };
+            // 只有待審帳號留在 /pending；訪客被導回首頁；已核准的人被頁面導去 /courses
+            // （2026-10-20 認領啟用線修正：登入狀態載入完才判斷，不再先誤判未登入而跳回首頁）
+            if (role === 'pending') return { expect: r.expect };
+            return role === 'anonymous' ? { redirect: '/' } : { redirect: '/courses' };
         case 'allowPending':
             return role === 'anonymous' ? { redirect: '/' } : { expect: r.expect };
         case 'approved':

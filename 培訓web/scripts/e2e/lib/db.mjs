@@ -96,6 +96,23 @@ export function listMigrationFiles(appDir) {
     .sort((a, b) => normalizeMigrationKey(a).localeCompare(normalizeMigrationKey(b)));
 }
 
+// 指定 migration 套用順序（模擬正式庫實際套用的先後）。沒設環境變數時維持檔名順序，行為不變。
+// E2E_MIGRATION_ORDER＝逗號分隔的檔名前綴（例如 20261020010000,20261019103000,…）：
+//   列到的檔案從檔名順序中抽出，其餘照檔名順序先套，再依列表順序套列到的檔案；
+//   同一個前綴可以出現多次（例：某支在後面再重跑一次）。每個前綴必須剛好對到一個檔，否則直接報錯。
+export function orderMigrationFiles(names, spec = process.env.E2E_MIGRATION_ORDER) {
+  if (!spec || !spec.trim()) return names;
+  const prefixes = spec.split(',').map((item) => item.trim()).filter(Boolean);
+  const resolved = prefixes.map((prefix) => {
+    const hits = names.filter((name) => name.startsWith(prefix));
+    if (hits.length !== 1) throw new Error(`E2E_MIGRATION_ORDER 的「${prefix}」對到 ${hits.length} 個檔（必須剛好 1 個）`);
+    return hits[0];
+  });
+  const listed = new Set(resolved);
+  console.log(`[db] E2E_MIGRATION_ORDER 生效：最後依序套 ${resolved.map((name) => name.slice(0, 14)).join(' → ')}`);
+  return [...names.filter((name) => !listed.has(name)), ...resolved];
+}
+
 export function listRootFiles(appDir) {
   const onDisk = readdirSync(path.join(appDir, 'supabase')).filter((name) => name.endsWith('.sql')).sort();
   const missing = onDisk.filter((name) => !ROOT_SQL_ORDER.includes(name));
@@ -184,7 +201,7 @@ export class TempPostgres {
     return this.psqlSync(sql, { ...opts, tuplesOnly: true }).stdout;
   }
 
-  // 套 bootstrap → supabase/*.sql（實際順序）→ supabase/migrations/*.sql（檔名順序）
+  // 套 bootstrap → supabase/*.sql（實際順序）→ supabase/migrations/*.sql（檔名順序；E2E_MIGRATION_ORDER 可指定）
   applyChain(appDir, { bootstrapFile, afterChainFile } = {}) {
     const report = { applied: [], patched: [], skipped: [], unlisted: [] };
     this.psqlSync(null, { file: bootstrapFile, tuplesOnly: false });
@@ -197,7 +214,7 @@ export class TempPostgres {
     }
     const files = [
       ...root.order.map((name) => ({ rel: `supabase/${name}`, name })),
-      ...listMigrationFiles(appDir).map((name) => ({ rel: `supabase/migrations/${name}`, name })),
+      ...orderMigrationFiles(listMigrationFiles(appDir)).map((name) => ({ rel: `supabase/migrations/${name}`, name })),
     ];
     for (const { rel, name } of files) {
       const abs = path.join(appDir, rel);

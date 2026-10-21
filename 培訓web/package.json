@@ -37,6 +37,7 @@
     "verify:salary-report-options:browser": "node scripts/verify-salary-report-options-browser.mjs",
     "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs",
     "e2e:onboarding": "node scripts/e2e/run-onboarding.mjs",
+    "verify:esign-production-order": "node scripts/verify-esign-production-order.mjs",
     "verify:salary-payday:browser": "node scripts/verify-salary-payday-browser.mjs",
     "verify:salary-payout-schedule": "node scripts/verify-salary-payout-schedule.mjs",
     "verify:doc-edit-unlock": "node scripts/verify-doc-edit-unlock.mjs",
