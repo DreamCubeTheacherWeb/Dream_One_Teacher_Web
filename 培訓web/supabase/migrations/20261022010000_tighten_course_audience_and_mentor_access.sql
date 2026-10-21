@@ -31,6 +31,11 @@
 --    AssignmentReview、LessonDetail、Dashboard 由 mentor 讀講師名稱時改呼叫名冊函式。
 --    上線順序：先套本 migration 再部署前端，或反過來皆可——mentor 0 人，兩種順序都不影響 admin 與講師。
 
+
+-- 單一交易：中途失敗整批回滾（避免先刪了舊政策、新政策還沒建好的空窗）；拿不到鎖 5 秒就放棄，不讓查詢排隊
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+
 -- ── A. 課程受眾 ──────────────────────────────────────────────────────
 
 DROP POLICY IF EXISTS "Complete teachers can view published courses" ON public.courses;
@@ -184,5 +189,7 @@ $$;
 -- Supabase 預設會把新函式的 EXECUTE 發給 anon，REVOKE PUBLIC 擋不到，必須明寫 anon
 REVOKE ALL ON FUNCTION public.mentor_instructor_directory(uuid[]) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.mentor_instructor_directory(uuid[]) TO authenticated;
+
+COMMIT;
 
 NOTIFY pgrst, 'reload schema';
