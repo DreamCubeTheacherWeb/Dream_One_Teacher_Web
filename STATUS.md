@@ -7,6 +7,16 @@
 
 ## 🪪 2026-10-20：講師「姓名空位＋Email 驗證碼啟用」＋電子簽約證據與防竄改（🛠 本機全測通過；⚠️ 未上線，需業主先設定 Resend 並套 migration）
 
+**2026-10-21 發版準備（分支 `release/esign-20261021`，合併 origin/main `467579d`，未推 main）**：
+- 合併衝突 4 檔：STATUS.md（兩邊保留，本段在最上）、package.json scripts（兩邊保留）、ProfilePage.jsx import（啟用＋證件鎖定都要）、
+  verify-profile-draft.mjs（T12 啟用案例＋unlockRows 重設）。其餘（含 ProfilePage 存檔流程、簽約頁）自動合併，第 5 批修正早已在本分支。
+- 驗證（依序單獨跑）：build、npm test 230/230、lint 0；e2e:onboarding 756/756（3 輪，KNOWN-ISSUE 1＝簽約碼驗證後關頁要等冷卻）、
+  e2e:profile-save 81/81、verify-claim-activation-esign 219/219；全部 verify:* 與 mock 腳本全過。
+  合併後要改的測試：verify-code-split（已核准者開 /pending 改導 /courses，187/187×3）、verify-contract-download-fixes（改走新簽約頁，32/32）。
+- 正式庫順序模擬：`npm run verify:esign-production-order` 12/12（010000→103000→120000→130000→140000→150000→160000→233000→100000，
+  100000 之後與再重跑 140000 後，輔導員都讀不到別人的 signed/）；同順序（`E2E_MIGRATION_ORDER`）verify-claim-activation-esign 219/219、e2e:onboarding 756/756。
+- 上線順序不變：業主設好 Resend＋Vault → 套 `20261019233000` → `20261020100000`（建議再重跑一次 `20261020140000` 當保險）→ 立刻推 main。
+
 **需求（業主 10/19 晚、10/20 凌晨）**：① 後台「新增老師」只填姓名，老師登入輸入姓名就能認領，同名同姓可以各自一個空位；
 後台要能追蹤誰的資料還沒填完。② 業主貼的「認領＋電子契約簽署」規格（本週上線）：認領後要用 Email OTP 啟用，OTP 只能寄到「公司已確認」的信箱；
 簽約前要明確同意電子簽約（可拒絕改紙本），再驗一次 OTP，接著手寫簽名、產生 PDF，保存可查證的證據（含 SHA-256），用 Resend 寄送通知，簽後不可竄改。
