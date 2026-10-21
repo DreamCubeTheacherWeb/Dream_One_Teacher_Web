@@ -27,6 +27,7 @@ import {
     parseNameLines,
 } from '../../lib/instructorNameSlots';
 import FilledFormPreviewModal from '../../components/FilledFormPreviewModal';
+import { fetchInstructorDirectory } from '../../lib/instructorDirectory';
 import { INSTRUCTOR_LEVEL_LABELS as ROLE_LABELS, SPEED_QUALIFICATION_LABELS, speedQualificationLabel } from '../../lib/constants';
 
 const STATUS_OPTIONS = [
@@ -41,6 +42,8 @@ const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map(s => [s.key, s]));
 
 // 桌機表格：欄數與每格左右留白（lg 較窄、xl 放寬）
 const TABLE_COLS = 8;
+// 輔導員看不到「資料進度」「文件」「操作」三欄（進度要靠個資欄位才算得準，輔導員已讀不到）
+const tableColsFor = (isAdmin) => (isAdmin ? TABLE_COLS : TABLE_COLS - 3);
 const CELL_X = 'px-1.5 xl:px-4 py-3';
 
 const DOC_KEYS = [
@@ -105,6 +108,16 @@ const InstructorList = () => {
     const formPreviewUrl = formPreview?.url;
 
     const loadInstructors = useCallback(async () => {
+        // 輔導員只看名冊（姓名、等級、狀態、地區、速解資格）；個資、文件與自動填表只限管理員（2026-10-22）
+        if (!isAdmin) {
+            const { data, error } = await fetchInstructorDirectory({ role: profile?.role });
+            if (error) console.error('讀取講師名冊失敗：', error.message);
+            setInstructors(data || []);
+            setFormTemplates([]);
+            setSelectedFormType('');
+            setLoading(false);
+            return;
+        }
         const [instructorResult, formResult, support] = await Promise.all([
             fetchAllPages(() => supabase
                 .from('instructors')
@@ -146,7 +159,7 @@ const InstructorList = () => {
             console.error('讀取自動填表模板失敗：', formResult.error.message);
         }
         setLoading(false);
-    }, [isAdmin]);
+    }, [isAdmin, profile?.role]);
 
     useEffect(() => {
         const timer = window.setTimeout(loadInstructors, 0);
@@ -173,6 +186,7 @@ const InstructorList = () => {
         setSearchParams(nextParams, { replace: true });
     };
     const toggleExpand = async (inst) => {
+        if (!isAdmin) return;
         if (expandedId === inst.id) {
             setExpandedId(null);
             return;
@@ -194,8 +208,9 @@ const InstructorList = () => {
     };
 
     const progressRows = useMemo(
-        () => buildProgressRows(instructors, { usersById, signedUserIds, activationsByUserId }),
-        [instructors, usersById, signedUserIds, activationsByUserId],
+        // 進度要靠個資欄位才算得準；輔導員只拿到名冊（20261022010000），不算也不顯示
+        () => (isAdmin ? buildProgressRows(instructors, { usersById, signedUserIds, activationsByUserId }) : []),
+        [isAdmin, instructors, usersById, signedUserIds, activationsByUserId],
     );
     const progressById = useMemo(
         () => new Map(progressRows.map(({ instructor, progress }) => [instructor.id, progress])),
@@ -206,7 +221,7 @@ const InstructorList = () => {
     const contractKnown = signedUserIds !== null;
     // 啟用紀錄（待確認 Email／待信箱驗證的判斷依據）同樣只有管理員讀得到，讀不到就不顯示「待確認 Email」。
     const activationKnown = activationsByUserId !== null;
-    const progressChips = [
+    const progressChips = !isAdmin ? [] : [
         { key: '', label: '全部', count: instructors.length },
         { key: PROGRESS_TODO_FILTER, label: '還沒完成', count: progressCounts.todo },
         ...getVisibleProgressStages({ contractKnown, activationKnown })
@@ -403,6 +418,7 @@ const InstructorList = () => {
                 )}
             </div>
 
+            {isAdmin && (
             <div className="mb-6 border-2 lg:border-4 border-bauhaus-black rounded-2xl bg-white p-4 shadow-hard flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex items-start gap-3 flex-1 min-w-0">
                     <div className="w-10 h-10 rounded-lg border-2 border-bauhaus-black bg-bauhaus-blue text-white flex items-center justify-center shrink-0">
@@ -438,6 +454,7 @@ const InstructorList = () => {
                     </Link>
                 </div>
             </div>
+            )}
 
             {formError && (
                 <div role="alert" className="mb-6 bg-bauhaus-red text-white border-2 border-bauhaus-black rounded-xl px-4 py-3 text-sm font-bold flex items-start gap-2">
@@ -467,13 +484,14 @@ const InstructorList = () => {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-bauhaus-black/40" />
                 <input
                     type="text"
-                    placeholder="搜尋姓名、Email 或手機號碼⋯⋯"
+                    placeholder={isAdmin ? '搜尋姓名、Email 或手機號碼⋯⋯' : '搜尋姓名⋯⋯'}
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     className="bh-input pl-12 py-3"
                 />
             </div>
 
+            {isAdmin && (
             <div role="group" aria-label="資料進度篩選" className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="inline-flex items-center gap-1 text-xs font-black text-bauhaus-black/60 mr-1">
                     <ListChecks className="w-4 h-4" /> 資料進度
@@ -498,11 +516,10 @@ const InstructorList = () => {
                     );
                 })}
             </div>
-            {!contractKnown && (
+            )}
+            {isAdmin && !contractKnown && (
                 <p className="text-xs font-medium text-bauhaus-black/50 mb-3">
-                    {isAdmin
-                        ? '簽約紀錄暫時讀不到，所以「待簽約」「已完成」先合併顯示為「資料已完整」。'
-                        : '簽約狀態只有管理員看得到，所以資料完整的老師顯示為「資料已完整」。'}
+                    簽約紀錄暫時讀不到，所以「待簽約」「已完成」先合併顯示為「資料已完整」。
                 </p>
             )}
 
@@ -613,12 +630,12 @@ const InstructorList = () => {
                             {/* 「講師」以外的欄寬度剛好包住內容（w-px），螢幕多出來的寬度都給「講師」欄，欄距才不會忽寬忽窄 */}
                             <th className={CELL_X}>講師</th>
                             <th className={`${CELL_X} w-px`}>綁定</th>
-                            <th className={`${CELL_X} w-px`}>資料進度</th>
+                            {isAdmin && <th className={`${CELL_X} w-px`}>資料進度</th>}
                             <th className={`${CELL_X} w-px`}>等級</th>
                             <th className={`${CELL_X} w-px`}>速解資格</th>
                             <th className={`${CELL_X} w-px`}>地區</th>
-                            <th className={`${CELL_X} w-px`}>文件</th>
-                            <th className={`${CELL_X} w-px`}>操作</th>
+                            {isAdmin && <th className={`${CELL_X} w-px`}>文件</th>}
+                            {isAdmin && <th className={`${CELL_X} w-px`}>操作</th>}
                         </tr>
                     </thead>
                     <tbody className="divide-y-2 divide-bauhaus-black/20">
@@ -645,7 +662,7 @@ const InstructorList = () => {
                         ))}
                         {filtered.length === 0 && (
                             <tr>
-                                <td colSpan={TABLE_COLS} className="px-6 py-12 text-center text-bauhaus-black/50">
+                                <td colSpan={tableColsFor(isAdmin)} className="px-6 py-12 text-center text-bauhaus-black/50">
                                     {search ? '找不到符合的講師' : '尚無講師資料'}
                                 </td>
                             </tr>
@@ -910,10 +927,10 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
                         <span className="bh-chip bg-bauhaus-muted text-bauhaus-black shrink-0">{inst.gender}</span>
                     )}
                 </div>
-                <div className="text-sm text-bauhaus-black/60 mt-0.5 truncate">{inst.email_primary}</div>
-                <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} />
+                {isAdmin && <div className="text-sm text-bauhaus-black/60 mt-0.5 truncate">{inst.email_primary}</div>}
+                {isAdmin && <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} />}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
-                    <ProgressBadge progress={progress} />
+                    {isAdmin && <ProgressBadge progress={progress} />}
                     <StatusBadge status={inst.employment_status} />
                     <LinkBadge userId={inst.user_id} />
                     <NameSlotBadge inst={inst} />
@@ -946,21 +963,23 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
                     )}
                     <SpeedQualificationBadge value={inst.speed_qualification} />
                     <RegionSummary inst={inst} />
-                    <span className={`bh-chip whitespace-nowrap ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
-                        <FileImage className="w-3 h-3" />
-                        {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
-                    </span>
+                    {isAdmin && (
+                        <span className={`bh-chip whitespace-nowrap ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
+                            <FileImage className="w-3 h-3" />
+                            {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
+                        </span>
+                    )}
                 </div>
                 {/* 按鈕獨立一行，每張卡片的按鈕位置才會對齊 */}
+                {isAdmin && (
+                <>
                 <div className="flex flex-wrap items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
-                    {isAdmin && (
-                        <Link
-                            to={`/admin/instructors/${inst.id}/edit`}
-                            className="bh-btn bh-btn-blue px-3 py-2 text-xs"
-                        >
-                            <Pencil className="w-3.5 h-3.5" /> 編輯資料
-                        </Link>
-                    )}
+                    <Link
+                        to={`/admin/instructors/${inst.id}/edit`}
+                        className="bh-btn bh-btn-blue px-3 py-2 text-xs"
+                    >
+                        <Pencil className="w-3.5 h-3.5" /> 編輯資料
+                    </Link>
                     <button
                         type="button"
                         onClick={onPreview}
@@ -987,12 +1006,16 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, progress, lo
                 <div className="mt-1.5" onClick={e => e.stopPropagation()}>
                     <NameSlotUnlinkHint inst={inst} isAdmin={isAdmin} />
                 </div>
+                </>
+                )}
             </div>
-            <button className="shrink-0 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors p-1">
-                {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-            </button>
+            {isAdmin && (
+                <button className="shrink-0 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors p-1">
+                    {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                </button>
+            )}
         </div>
-        {expanded && (
+        {isAdmin && expanded && (
             <div className="px-4 pb-4 pt-0 bg-bauhaus-cream border-t-2 border-bauhaus-black">
                 <InstructorExpandedContent inst={inst} urls={urls} progress={progress} isAdmin={isAdmin} onConfirmEmail={onConfirmEmail} />
             </div>
@@ -1011,13 +1034,15 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
                     <span className="font-bold text-bauhaus-black whitespace-nowrap">{inst.full_name}</span>
                     <StatusBadge status={inst.employment_status} />
                 </div>
-                <div
-                    className="mt-1 text-xs text-bauhaus-black/60 truncate w-0 min-w-full"
-                    title={inst.email_primary || undefined}
-                >
-                    {inst.email_primary || <span className="text-bauhaus-black/30">—</span>}
-                </div>
-                <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} truncate />
+                {isAdmin && (
+                    <div
+                        className="mt-1 text-xs text-bauhaus-black/60 truncate w-0 min-w-full"
+                        title={inst.email_primary || undefined}
+                    >
+                        {inst.email_primary || <span className="text-bauhaus-black/30">—</span>}
+                    </div>
+                )}
+                {isAdmin && <LoginEmailLine loginEmail={loginEmail} primaryEmail={inst.email_primary} truncate />}
             </td>
             <td className={CELL_X} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-2">
@@ -1064,9 +1089,11 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
                     <div className="mt-1 w-0 min-w-full"><NameSlotUnlinkHint inst={inst} isAdmin={isAdmin} /></div>
                 )}
             </td>
-            <td className={CELL_X} onClick={e => e.stopPropagation()}>
-                <ProgressBadge progress={progress} />
-            </td>
+            {isAdmin && (
+                <td className={CELL_X} onClick={e => e.stopPropagation()}>
+                    <ProgressBadge progress={progress} />
+                </td>
+            )}
             <td className={CELL_X} onClick={e => e.stopPropagation()}>
                 {isAdmin ? (
                     <select
@@ -1096,13 +1123,16 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
             <td className={CELL_X}>
                 <RegionSummary inst={inst} compact />
             </td>
-            <td className={CELL_X}>
-                <span className={`bh-chip whitespace-nowrap ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
-                    <FileImage className="w-3 h-3" />
-                    {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
-                </span>
-            </td>
+            {isAdmin && (
+                <td className={CELL_X}>
+                    <span className={`bh-chip whitespace-nowrap ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
+                        <FileImage className="w-3 h-3" />
+                        {docCount}/{REQUIRED_PROFILE_DOCUMENTS.length}
+                    </span>
+                </td>
+            )}
             {/* 1024–1279px 按鈕只寫「編輯／預覽」，1280px 以上才顯示完整文字；aria-label 固定是完整名稱 */}
+            {isAdmin && (
             <td className={CELL_X}>
                 <div className="flex items-center gap-1.5 xl:gap-2" onClick={e => e.stopPropagation()}>
                     {isAdmin && (
@@ -1114,26 +1144,31 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, progress, log
                             <Pencil className="w-3.5 h-3.5" /><span>編輯<span className="hidden xl:inline">資料</span></span>
                         </Link>
                     )}
-                    <button
-                        type="button"
-                        onClick={onPreview}
-                        disabled={previewDisabled}
-                        aria-label={previewing ? '產生預覽' : '預覽表單'}
-                        className="bh-btn bh-btn-outline px-2.5 xl:px-3 py-2 text-xs whitespace-nowrap disabled:opacity-40"
-                    >
-                        {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
-                        <span>{previewing ? '產生' : '預覽'}<span className="hidden xl:inline">{previewing ? '預覽' : '表單'}</span></span>
-                    </button>
-                    <button type="button" onClick={onToggle} className="p-1.5 xl:p-2 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors" aria-label={expanded ? '收合講師資料' : '展開講師資料'}>
-                        {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                    </button>
+                    {isAdmin && (
+                        <button
+                            type="button"
+                            onClick={onPreview}
+                            disabled={previewDisabled}
+                            aria-label={previewing ? '產生預覽' : '預覽表單'}
+                            className="bh-btn bh-btn-outline px-2.5 xl:px-3 py-2 text-xs whitespace-nowrap disabled:opacity-40"
+                        >
+                            {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                            <span>{previewing ? '產生' : '預覽'}<span className="hidden xl:inline">{previewing ? '預覽' : '表單'}</span></span>
+                        </button>
+                    )}
+                    {isAdmin && (
+                        <button type="button" onClick={onToggle} className="p-1.5 xl:p-2 text-bauhaus-black/40 hover:text-bauhaus-black transition-colors" aria-label={expanded ? '收合講師資料' : '展開講師資料'}>
+                            {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        </button>
+                    )}
                 </div>
             </td>
+            )}
         </tr>
 
-        {expanded && (
+        {isAdmin && expanded && (
             <tr>
-                <td colSpan={TABLE_COLS} className="px-6 py-6 bg-bauhaus-cream">
+                <td colSpan={tableColsFor(isAdmin)} className="px-6 py-6 bg-bauhaus-cream">
                     <InstructorExpandedContent inst={inst} urls={urls} progress={progress} isAdmin={isAdmin} onConfirmEmail={onConfirmEmail} />
                 </td>
             </tr>

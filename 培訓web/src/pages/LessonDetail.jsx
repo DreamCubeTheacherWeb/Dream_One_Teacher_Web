@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { sanitizeRichHtml } from '../lib/sanitizeRichHtml';
 import { toYouTubeEmbedUrl as toEmbedUrl } from '../lib/youtube';
 import { useAuth } from '../context/AuthContext';
+import { fetchInstructorDirectory } from '../lib/instructorDirectory';
 import { ChevronLeft, ChevronRight, Play, FileText, CheckCircle, Circle, Image as ImageIcon, MessageSquare, Send, Clock, Star, ThumbsUp, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
 const CANVAS_WIDTH = 960;
@@ -28,6 +29,7 @@ const LessonDetail = () => {
     const [commentLikes, setCommentLikes] = useState({});
     const [myLikes, setMyLikes] = useState(new Set());
     const isAdmin = profile?.role === 'admin';
+    const viewerRole = profile?.role;
 
     useEffect(() => {
         // 快速切換上一章／下一章時，前一章較晚回來的回應不可蓋掉目前章節（比照 Leaderboard 的 cancelled 旗標）
@@ -126,7 +128,7 @@ const LessonDetail = () => {
                     if (fbAuthorUids.size > 0) {
                         const authorIds = [...fbAuthorUids];
                         const [{ data: aInstr }, { data: aUsers }] = await Promise.all([
-                            supabase.from('instructors').select('user_id, full_name, nickname').in('user_id', authorIds),
+                            fetchInstructorDirectory({ role: viewerRole, columns: 'user_id, full_name, nickname', userIds: authorIds }),
                             supabase.from('users').select('id, name, role').in('id', authorIds),
                         ]);
                         if (cancelled) return;
@@ -166,10 +168,11 @@ const LessonDetail = () => {
             if (cancelled) return;
             if (commentData && commentData.length > 0) {
                 const uids = [...new Set(commentData.map((c) => c.user_id))];
-                const { data: instrData } = await supabase
-                    .from('instructors')
-                    .select('user_id, full_name, nickname')
-                    .in('user_id', uids);
+                const { data: instrData } = await fetchInstructorDirectory({
+                    role: viewerRole,
+                    columns: 'user_id, full_name, nickname',
+                    userIds: uids,
+                });
                 if (cancelled) return;
                 const nameMap = {};
                 instrData?.forEach((i) => { nameMap[i.user_id] = { full_name: i.full_name, nickname: i.nickname }; });
@@ -204,7 +207,7 @@ const LessonDetail = () => {
         };
         fetchData();
         return () => { cancelled = true; };
-    }, [courseId, lessonId]);
+    }, [courseId, lessonId, viewerRole]);
 
     const toggleComplete = async () => {
         if (!currentUser) return;
