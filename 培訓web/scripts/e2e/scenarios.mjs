@@ -511,6 +511,46 @@ export async function scenarioG(ctx) {
   }
 }
 
+// ═══ H 上線前審查 必修 1（2026-10-22）：既有 teacher（沒有任何啟用紀錄）在 /profile 自建主檔後簽約不卡死 ═══
+// 模擬「migration 套用當下 role 已是 teacher、但還沒有講師主檔」或「被行政用角色下拉直接改成 teacher」的人：
+// 他們不會有啟用紀錄，個人資料頁也不會出現啟用卡；修正前要簽約碼會被回 account_not_active（死循環）。
+export async function scenarioH(ctx) {
+  const r = ctx.r;
+  const { api } = ctx;
+  const fullName = '測試舊制老師周';
+  const user = await newUser(ctx, 'h-legacy', fullName);
+  api.sql(`UPDATE public.users SET role = 'teacher' WHERE id = :'uid'`, { uid: user.id });
+  const s = await openAs(ctx.browser, ctx.stack, user);
+  try {
+    r.check('H 前提：role = teacher、沒有講師主檔、沒有任何啟用紀錄',
+      roleOf(ctx, user.id) === 'teacher' && !instructorOf(ctx, user.id) && !activationOf(ctx, user.id));
+    await goto(ctx, s, '/profile');
+    await waitProfileLoaded(s.page);
+    await fillProfile(s.page, profileData(user, fullName));
+    const saved = await saveProfileAndWait(s);
+    const inst = instructorOf(ctx, user.id);
+    r.check('H teacher 在 /profile 第一次存檔自建主檔成功、仍沒有任何啟用紀錄',
+      saved.includes('個人資料已儲存') && Boolean(inst) && !activationOf(ctx, user.id)
+      && api.sql(`SELECT count(*) FROM public.instructor_account_activations WHERE user_id = :'uid'`, { uid: user.id }) === '0', saved);
+    await goto(ctx, s, '/profile');
+    await waitProfileLoaded(s.page);
+    r.check('H 個人資料頁沒有啟用卡（狀態 none）', !(await s.page.getByTestId('activation-card').isVisible()));
+    const before = await api.rpc(user.token, 'request_email_otp', { p_purpose: 'contract_sign' });
+    r.check('H 行政確認 Email 前要簽約碼 → no_confirmed_email（走既有待行政確認路徑，不是 account_not_active）',
+      before.data?.status === 'no_confirmed_email', JSON.stringify(before.data));
+    const confirm = await api.rpc(ctx.base.admin.token, 'admin_confirm_instructor_email', { p_instructor_id: inst.id, p_email: user.email, p_note: '10/22 必修 1 回歸（E2E）' });
+    r.check('H 行政確認 Email 成功', confirm.data?.status === 'confirmed', JSON.stringify(confirm.data));
+    if (!inst.instructor_role) api.sql(`UPDATE public.instructors SET instructor_role = '實習' WHERE id = :'id'`, { id: inst.id });
+    const sign = await signContractV2(ctx, s, user, 'H');
+    if (sign.done) await verifyContractEvidence(ctx, user, 'H');
+    r.check('H 簽約全程沒有出現 account_not_active／「還沒有啟用」', sign.done
+      && !(await s.page.getByText('還沒有啟用').first().isVisible().catch(() => false)));
+  } finally {
+    ctx.consoleErrors.push(...s.consoleErrors.map((e) => `H: ${e}`));
+    await s.context.close();
+  }
+}
+
 export async function selfTest(ctx) {
   const r = ctx.r;
   const { api } = ctx;
@@ -531,4 +571,4 @@ export async function selfTest(ctx) {
   r.check('底座 寄信設定（Vault 替身 resend_api_key／resend_from）已就緒', vault === '2');
 }
 
-export const SCENARIOS = { A: scenarioA, B: scenarioB, C: scenarioC, D: scenarioD, E: scenarioE, F: scenarioF, G: scenarioG };
+export const SCENARIOS = { A: scenarioA, B: scenarioB, C: scenarioC, D: scenarioD, E: scenarioE, F: scenarioF, G: scenarioG, H: scenarioH };

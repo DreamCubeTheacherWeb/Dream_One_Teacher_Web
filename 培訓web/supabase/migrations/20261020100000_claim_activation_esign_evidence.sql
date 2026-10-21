@@ -668,8 +668,15 @@ BEGIN
 END;
 $$;
 
--- 4.4 簽約帳號狀態：teacher 必須有 active 啟用紀錄；mentor／admin 是邀請制 staff，不需啟用紀錄；
+-- 4.4 簽約帳號狀態：teacher 有啟用紀錄時必須有 active 那筆；mentor／admin 是邀請制 staff，不需啟用紀錄；
 --     三者都必須綁定未停用的講師主檔（OTP 寄到主檔的 confirmed_email）。
+--     【上線前審查 必修 1，2026-10-22】teacher「完全沒有任何啟用紀錄」視為 legacy（已由管理員核准的舊流程帳號）放行。
+--     原因：D4 回填只幫「套用當下已綁主檔的 teacher」補 legacy 紀錄；套用當下是 teacher 但還沒有主檔、之後在
+--     /profile 自建主檔的人，以及被行政用角色下拉直接改成 teacher 的人，都不會有任何啟用紀錄。若一律要求 active，
+--     他們要簽約驗證碼會被回 account_not_active，個人資料頁卻因狀態是 none 不顯示啟用卡、要啟用碼又回
+--     no_pending_activation——死循環（舊版 submit_my_contract 只擋 pending，一律要求 active 是倒退）。
+--     仍擋：有 pending 紀錄（只綁不開通，須本人以 Email 驗證碼啟用）或只剩 revoked 紀錄者。
+--     confirmed_email 為 NULL 時由呼叫端走既有「待行政確認 Email」路徑（no_confirmed_email），此處不放寬。
 CREATE OR REPLACE FUNCTION private.signing_account_state(
   p_uid uuid,
   OUT is_active boolean,
@@ -701,10 +708,15 @@ BEGIN
     RETURN;
   END IF;
 
-  IF user_role = 'teacher' AND NOT EXISTS (
-    SELECT 1 FROM public.instructor_account_activations a
-     WHERE a.user_id = p_uid AND a.status = 'active'
-  ) THEN
+  IF user_role = 'teacher'
+     AND EXISTS (
+       SELECT 1 FROM public.instructor_account_activations a
+        WHERE a.user_id = p_uid
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM public.instructor_account_activations a
+        WHERE a.user_id = p_uid AND a.status = 'active'
+     ) THEN
     RETURN;
   END IF;
 

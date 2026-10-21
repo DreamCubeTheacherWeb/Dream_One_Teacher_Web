@@ -418,6 +418,76 @@ try {
   check('admin_link_instructor：主檔不存在 → INSTRUCTOR_NOT_FOUND', alMissing?.ok === false && alMissing.message === 'INSTRUCTOR_NOT_FOUND', alMissing);
 
   // ════════════════════════════════════════════════════════════════
+  // 上線前審查 必修 1（2026-10-22）：回填之後才出現的「沒有任何啟用紀錄的 teacher」不能被簽約卡死。
+  // 他們不會有啟用卡（get_my_activation_status = none）、也要不到啟用碼（no_pending_activation），
+  // 所以簽約資格只擋「有啟用紀錄但沒有 active」的人（只綁不開通的 pending 仍須本人啟用）。
+  group('legacy teachers without activation records (必修 1)');
+  const signingActive = (uid) => suVal(`SELECT COALESCE(s.is_active, false) FROM private.signing_account_state(${lit(uid)}) s`) === 't';
+  const selfCreateInstructorSql = (name, email, phone, idNumber) => `INSERT INTO public.instructors (
+      user_id, full_name, nickname, gender, birth_date, id_number, phone_mobile, line_id, address, household_address, email_primary,
+      teaching_freq_semester, teaching_freq_vacation, teaching_regions, bio_notes, bank_account_name, bank_name, bank_branch,
+      bank_account_number, bank_code, id_front_path, id_back_path, bankbook_path)
+    VALUES (auth.uid(), ${lit(name)}, ${lit(name + '暱稱')}, '女', '1992-02-02', ${lit(idNumber)}, ${lit(phone)}, ${lit('line-' + phone)},
+      '新北市', '新北市', ${lit(email)}, '每週 1 次', '每週 2 次', ARRAY['新北市']::public.tw_county[], '自建', ${lit(name)}, '銀行', '分行',
+      '2222222222', '0000002', 'instructors/' || auth.uid() || '/f.png', 'instructors/' || auth.uid() || '/b.png', 'instructors/' || auth.uid() || '/k.png')`;
+
+  // T-legacy-1：回填之後才出現、role 已是 teacher、還沒有主檔 → 在 /profile 第一次存檔自建主檔
+  const uLate = createAuthUser('late-teacher@t.test', '晚建檔老師');
+  su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uLate)}`);
+  const lateIns = exec(uLate, selfCreateInstructorSql('晚建檔老師', 'late-teacher@t.test', '0966000111', 'F223450001'));
+  check('T-legacy-1 前提：teacher 自建主檔成功、完全沒有啟用紀錄、get_my_activation_status = none',
+    lateIns?.ok && lateIns.rows === 1 && (activationsOf(uLate) || []).length === 0
+    && call(uLate, 'public.get_my_activation_status()').result?.status === 'none', { lateIns, acts: activationsOf(uLate) });
+  check('T-legacy-1 signing_account_state.is_active = true（無啟用紀錄的 teacher 視為 legacy）', signingActive(uLate),
+    suJson(`SELECT to_jsonb(s) FROM private.signing_account_state(${lit(uLate)}) s`));
+  check('T-legacy-1 行政確認 Email 前 → no_confirmed_email（走既有待行政確認路徑，不是 account_not_active）',
+    requestOtp(uLate, 'contract_sign')?.status === 'no_confirmed_email');
+  const lateInstructor = instructorOf(uLate);
+  call(admin, `public.admin_confirm_instructor_email(${ulit(lateInstructor.id)}, 'late-teacher@t.test', 'Email 確認')`);
+  const lateOtp = requestOtp(uLate, 'contract_sign');
+  check('T-legacy-1 行政確認 Email 後可要簽約碼（sent，不再回 account_not_active）', lateOtp?.status === 'sent', lateOtp);
+  const lateVerify = lateOtp?.challenge_id ? verifyOtp(uLate, lateOtp.challenge_id, codeOf(lateOtp.challenge_id)) : null;
+  check('T-legacy-1 簽約碼可驗證（verified）', lateVerify?.status === 'verified', lateVerify);
+  const lateConsent = recordConsent(uLate, 'agree_electronic', { rules: 1, contract: 1 });
+  check('T-legacy-1 可記錄電子簽約同意（不再 ACCOUNT_NOT_ACTIVE）', lateConsent?.result?.status === 'recorded', lateConsent);
+
+  // T-legacy-1b：新進講師自建主檔後，被行政用角色下拉直接改成 teacher（沒走核准 RPC，所以沒有啟用紀錄）
+  const uDropdown = createAuthUser('dropdown@t.test', '下拉改角色');
+  const ddIns = exec(uDropdown, selfCreateInstructorSql('下拉改角色', 'dropdown@t.test', '0966000222', 'F223450002'));
+  const ddRole = exec(admin, `UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uDropdown)}`);
+  if (!(ddRole?.ok && ddRole.rows === 1)) su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uDropdown)}`);
+  check('T-legacy-1b 角色下拉改成 teacher、沒有啟用紀錄 → signing_account_state.is_active = true',
+    ddIns?.ok && roleOf(uDropdown) === 'teacher' && (activationsOf(uDropdown) || []).length === 0 && signingActive(uDropdown), { ddIns, ddRole });
+
+  // T-legacy-2：teacher 但有一筆 pending 啟用紀錄（只綁不開通）→ 仍擋
+  const uPendTeacher = createAuthUser('pend-teacher@t.test', '只綁不開通');
+  const pendTeacherInstructor = makeInstructor('只綁不開通', 'pend-teacher@t.test', { phone: '0966000333', idNumber: 'F223450003', userId: uPendTeacher });
+  su(`SELECT private.open_pending_activation(${lit(uPendTeacher)}, ${lit(pendTeacherInstructor)}, 'name_slot')`);
+  su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uPendTeacher)}`);
+  call(admin, `public.admin_confirm_instructor_email(${ulit(pendTeacherInstructor)}, 'pend-teacher@t.test', 'Email 確認')`);
+  const ptReq = requestOtp(uPendTeacher, 'contract_sign');
+  check('T-legacy-2 teacher＋pending 啟用紀錄 → is_active = false、要簽約碼仍回 account_not_active',
+    openActivation(uPendTeacher)?.status === 'pending' && !signingActive(uPendTeacher)
+    && ptReq?.status === 'not_allowed' && ptReq.reason === 'account_not_active', { ptReq, acts: activationsOf(uPendTeacher) });
+  check('T-legacy-2 記同意仍 ACCOUNT_NOT_ACTIVE', errOf(recordConsent(uPendTeacher, 'agree_electronic', { rules: 1, contract: 1 })) === 'ACCOUNT_NOT_ACTIVE');
+
+  // T-legacy-3：teacher＋active 啟用紀錄 → 放行（既有行為不變）
+  check('T-legacy-3 teacher＋active（legacy_pre_activation／admin_link）→ is_active = true',
+    openActivation(legacyTeacher)?.status === 'active' && signingActive(legacyTeacher)
+    && openActivation(uAlTeacher)?.status === 'active' && signingActive(uAlTeacher));
+
+  // T-legacy-4：只剩 revoked 紀錄（主檔被解除綁定過）→ 依規則仍擋（有紀錄但沒有 active）
+  const uRevoked = createAuthUser('revoked-teacher@t.test', '解綁過');
+  const revokedInstructor = makeInstructor('解綁過', 'revoked-teacher@t.test', { phone: '0966000444', idNumber: 'F223450004', userId: uRevoked });
+  su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uRevoked)}`);
+  su(`SELECT private.open_pending_activation(${lit(uRevoked)}, ${lit(revokedInstructor)}, 'admin_link')`);
+  su(`UPDATE public.instructors SET user_id = NULL WHERE id = ${lit(revokedInstructor)}`);
+  su(`UPDATE public.instructors SET user_id = ${lit(uRevoked)} WHERE id = ${lit(revokedInstructor)}`);
+  check('T-legacy-4 teacher 只剩 revoked 紀錄 → is_active = false（有紀錄但沒有 active 一律擋）',
+    (activationsOf(uRevoked) || []).every((a) => a.status === 'revoked') && (activationsOf(uRevoked) || []).length === 1 && !signingActive(uRevoked),
+    activationsOf(uRevoked));
+
+  // ════════════════════════════════════════════════════════════════
   group('OTP rules');
   check('Email 對應帳號沒有已確認 Email（新主檔未回填）→ no_confirmed_email', requestOtp(uEmail, 'account_activation')?.status === 'no_confirmed_email');
   call(admin, `public.admin_confirm_instructor_email(${ulit(emailInstructor)}, 'em@t.test', '電話確認')`);
