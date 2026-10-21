@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     DEFAULT_PAYDAY_DAY,
+    markPaidPeriodChoices,
     monthNameOf,
     normalizePaydayDay,
     parseIsoDate,
@@ -132,4 +133,27 @@ test('該期累計：只算區間內（含頭尾）、退回不算、待核准�
     assert.deepEqual(summarizePayrollPeriod(sessions, { periodStart: '2026-10-26', periodEnd: '2026-11-25' }),
         { total: 7777, count: 1, pendingTotal: 7777, awaitingPriceCount: 0 });
     assert.deepEqual(summarizePayrollPeriod(null, range), { total: 0, count: 0, pendingTotal: 0, awaitingPriceCount: 0 });
+});
+
+test('「本期匯款完成」期別：預設目前這一期；它還沒結束就預設上一期（還沒結束的期別不能標）', () => {
+    const pick = (schedule, today) => {
+        const { choices, defaultMonth } = markPaidPeriodChoices(schedule, today);
+        return `${defaultMonth} | ${choices.map(c => `${c.periodMonth} ${c.periodStart}~${c.periodEnd}${c.ended ? '' : ' 未結束'}`).join(' / ')}`;
+    };
+    const schedule = { nextPayday: '2026-11-10', regularDay: 10 };
+    // 10/21：目前這一期 10 月（9/26～10/25）還沒結束 → 預設 9 月
+    assert.equal(pick(schedule, '2026-10-21'),
+        '2026/09 | 2026/10 2026-09-26~2026-10-25 未結束 / 2026/09 2026-08-26~2026-09-25 / 2026/08 2026-07-26~2026-08-25 / 2026/07 2026-06-26~2026-07-25');
+    // 10/25 當天仍未結束；10/26 起 10 月可標
+    assert.match(pick(schedule, '2026-10-25'), /^2026\/09 \| 2026\/10 2026-09-26~2026-10-25 未結束/);
+    assert.match(pick(schedule, '2026-10-26'), /^2026\/10 \| 2026\/10 2026-09-26~2026-10-25 \//);
+    // 匯款日當天 11/10：仍是 10 月
+    assert.match(pick(schedule, '2026-11-10'), /^2026\/10 \| 2026\/10 /);
+    // 匯款日過了 11/11：目前這一期換成 11 月（10/26～11/25，未結束）→ 預設仍是 10 月
+    assert.match(pick(schedule, '2026-11-11'), /^2026\/10 \| 2026\/11 2026-10-26~2026-11-25 未結束 \/ 2026\/10 2026-09-26~2026-10-25 \//);
+    // 跨年：2027/1/5 匯 12 月（11/26～12/25，已結束）
+    assert.match(pick({ nextPayday: '2027-01-10', regularDay: 10 }, '2027-01-05'), /^2026\/12 \| 2026\/12 2026-11-26~2026-12-25 \/ 2026\/11 /);
+    const { choices } = markPaidPeriodChoices(schedule, '2026-10-26');
+    assert.equal(choices[0].payday, '2026-11-10');
+    assert.equal(choices[1].payday, null);
 });

@@ -87,6 +87,19 @@ export const regularPaydayFor = (periodMonth, regularDay) => {
     return toIso(paydayIn(next, normalizePaydayDay(regularDay)));
 };
 
+// 後台「本期匯款完成」可選的期別：「目前這一期」（resolvePayout 那一期）往前共 count 期，新到舊。
+// ended＝結束日已過（早於今天）；還沒結束的期別不能標已付款（資料庫函式也會擋）。
+// 預設選目前這一期；它還沒結束（例：匯款日 11/10 過了，目前這一期換成 10/26～11/25）就預設上一期。
+export const markPaidPeriodChoices = (schedule, today, count = 4) => {
+    const current = resolvePayout(schedule, today);
+    const [year, month] = current.periodMonth.split('/').map(Number);
+    const choices = Array.from({ length: count }, (_, index) => {
+        const period = settlementOf(shiftMonth({ year, month }, -index));
+        return { ...period, ended: period.periodEnd < today, payday: index === 0 ? current.payday : null };
+    });
+    return { choices, defaultMonth: (choices[0].ended ? choices[0] : choices[1]).periodMonth };
+};
+
 // 前端讀 salary_payout_schedule 的結果 → 設定值；表還沒建或讀不到列時用每月 10 號，
 // 其他錯誤（網路、伺服器）也先用 10 號，但標 failed 讓畫面註明「預估」。
 export const payoutScheduleFromResponse = ({ data, error } = {}) => {

@@ -1,0 +1,62 @@
+
+== bootstrap：repo 的建表 SQL＋migration 建 class_sessions ==
+PASS  S1 class_sessions 用 repo SQL 建好，有 3 個 trigger（anomaly／guard pricing／updated_at）  [trg_class_sessions_updated_at,trg_guard_class_session_pricing,trg_session_anomaly]
+PASS  S2 一模一樣的兩筆：先登記那筆沒標異常、後登記那筆有標（新增時只比對已存在的列）  [false,true]
+
+== migration 20261021233000_mark_salary_period_paid.sql ==
+PASS  M1a migration 第一次套用成功（非 superuser 表擁有者身分）
+PASS  M1b migration 連續第二次套用成功（可重跑）
+PASS  M2a 函式是 SECURITY DEFINER、擁有者 sbadmin（非 superuser）
+PASS  M2b search_path 固定為空字串
+PASS  M2c anon 不能執行
+PASS  M2d PUBLIC 沒有執行權（ACL 裡沒有 =X/）  [{sbadmin=X/sbadmin,authenticated=X/sbadmin,service_role=X/sbadmin}]
+PASS  M2e authenticated 可以呼叫（是否 admin 由函式內檢查）
+
+== 權限：只有 admin ==
+PASS  R1 anon 呼叫被拒（permission denied for function）  [psql:<stdin>:3: ERROR:  42501: permission denied for function mark_salary_period_paid]
+PASS  R2 teacher 呼叫回 42501「只有管理員可以標記匯款完成。」  [psql:<stdin>:4: ERROR:  42501: 只有管理員可以標記匯款完成。]
+PASS  R2 mentor 呼叫回 42501「只有管理員可以標記匯款完成。」  [psql:<stdin>:4: ERROR:  42501: 只有管理員可以標記匯款完成。]
+PASS  R2 pending 呼叫回 42501「只有管理員可以標記匯款完成。」  [psql:<stdin>:4: ERROR:  42501: 只有管理員可以標記匯款完成。]
+PASS  R2 ghost（沒有 users 列） 呼叫回 42501「只有管理員可以標記匯款完成。」  [psql:<stdin>:4: ERROR:  42501: 只有管理員可以標記匯款完成。]
+PASS  R3 被拒之後整張表完全沒變（含 updated_at）
+
+== 參數檢查（admin 也擋） ==
+PASS  V 起日 NULL → 22023  [psql:<stdin>:4: ERROR:  22023: 期間起訖日不正確。]
+PASS  V 迄日 NULL → 22023  [psql:<stdin>:4: ERROR:  22023: 期間起訖日不正確。]
+PASS  V 迄日早於起日 → 22023  [psql:<stdin>:4: ERROR:  22023: 期間起訖日不正確。]
+PASS  V 區間 55 天（超過一期） → 22023  [psql:<stdin>:4: ERROR:  22023: 一次只能標記一期（最長 31 天）。]
+PASS  V 區間 32 天（1/25～2/25，比最長的一期多一天） → 22023  [psql:<stdin>:4: ERROR:  22023: 一次只能標記一期（最長 31 天）。]
+PASS  V 迄日＝台北今天（這期還沒結束） → 22023  [psql:<stdin>:4: ERROR:  22023: 這一期到 10/21 才結束，結束後才能標記已付款。]
+PASS  V 迄日＝台北明天 → 22023  [psql:<stdin>:4: ERROR:  22023: 這一期到 10/22 才結束，結束後才能標記已付款。]
+PASS  V 連線時區是檀香山也照台北日期判斷（迄日＝台北今天仍擋）  [psql:<stdin>:5: ERROR:  22023: 這一期到 10/21 才結束，結束後才能標記已付款。]
+PASS  V 最長的一期（12/26～1/25，31 天）可以執行（預演後取消）  [{"paid_at": "2026-10-21T23:47:59.550185+08:00", "marked_count": 0, "marked_amount": 0}]
+PASS  V 迄日＝台北昨天（這期剛結束）可以執行（預演後取消）  [{"paid_at": "2026-10-21T23:47:59.557974+08:00", "marked_count": 1, "marked_amount": 777.00}]
+PASS  V 以上被擋／取消之後整張表完全沒變
+
+== admin 標記 9 月期（2026-08-26～2026-09-25） ==
+PASS  A1 回傳 8 筆、$4800  [{"paid_at": "2026-10-21T23:47:59.581851+08:00", "marked_count": 8, "marked_amount": 4800.00}]
+PASS  A2 這 8 筆都變成已付款、已領＝總額、paid_at 同一個時間（＝回傳的 paid_at）、updated_at 有更新  [8|1|true|true]
+PASS  A3 有獎金那筆：已領＝底薪＋獎金 850  [paid|850.00|850.00]
+PASS  A4 先付過 100 的那筆：已領改成總額 600（本期匯款＝付清）  [paid|600.00|600.00]
+PASS  A5 別的講師、自動試算、總表匯入的已核准列也都標到了
+PASS  A6 邊界：8/25（25 日）與 9/26（26 日）都沒動  [approved|0.00|5000.00 / approved|0.00|4000.00]
+PASS  A7 待核准、待定價、退回、已付款、目前這一期的列，整列（含 updated_at）完全沒變
+PASS  A8 已付款那筆（像 06 標過的列）updated_at 仍是原值 → 96 還原腳本照樣認得它「之後沒人改過」
+PASS  A9 trigger 照常跑：一模一樣的兩筆標完後依現行規則重算，兩筆都標異常（原本只有後登記那筆）
+PASS  A10 三個 trigger 仍是啟用狀態（函式沒有停用 trigger）
+
+== 重跑 ==
+PASS  B1 同一期再按一次 → 0 筆、$0  [{"paid_at": "2026-10-21T23:47:59.71414+08:00", "marked_count": 0, "marked_amount": 0}]
+PASS  B2 重跑後整張表完全沒變（沒有任何列的 updated_at 被碰到）
+PASS  B3 之後核准了一筆待核准（700）→ 再按一次只標那 1 筆、$700  [{"paid_at":"2026-10-21T23:47:59.737166+08:00","marked_count":1,"marked_amount":700}]
+PASS  B4 用過之後再重套 migration 仍成功，anon 仍不能執行
+
+== 兩位管理員同時按（8 月期 2026-07-26～2026-08-25） ==
+PASS  C1 先按的那位標到 3 筆、$5530（含 8/25 那筆）  [{"paid_at": "2026-10-21T23:47:59.776536+08:00", "marked_count": 3, "marked_amount": 5530.00}]
+PASS  C2 後按的那位等前一位完成後回 0 筆（不會重複標、金額不會算兩次）  [ms=1011 {"paid_at": "2026-10-21T23:48:00.283304+08:00", "marked_count": 0, "marked_amount": 0}]
+PASS  C3 那 3 筆都是已付款、paid_at 只有一個（只被標一次）  [3|1]
+PASS  C4 Q 期前一天（7/25）沒動
+
+------------------------------------------------------------
+Total checks: 44   PASS: 44   FAIL: 0   (2.9s)
+ALL PASS: mark_salary_period_paid verified on isolated PostgreSQL
