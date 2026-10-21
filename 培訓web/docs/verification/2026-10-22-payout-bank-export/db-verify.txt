@@ -1,0 +1,58 @@
+temporary PostgreSQL ready (socket dir $TMPDIR/d1-partner-utNemc, pid 46918)
+
+== A. migration 可重跑 ==
+PASS  A1 第一次套用成功（非 superuser 表擁有者身分）
+PASS  A2 連續第二次套用成功
+PASS  A3 欄位 partner_no 存在且型別為 text
+PASS  A4 格式 CHECK 只有 1 條（重跑沒有重複）
+PASS  A5 partner_no trigger 只有 1 個（BEFORE INSERT OR UPDATE）
+PASS  A6 trigger 函式 anon／authenticated 不能直接 EXECUTE
+PASS  A7 欄位有 COMMENT
+PASS  A8 沒有建 unique（同號碼可存在兩位講師身上，只在畫面警告）
+PASS  A9 既有資料沒被動到（partner_no 全為 NULL、電話不變）  [<null>|0900000001 / <null>|0900000002]
+
+== B. admin 可設定 ==
+PASS  B1 admin 設定講師甲的 partner_no = A036872（1 列）  [1]
+PASS  B2 值確實寫入  [A036872|0900000001]
+PASS  B3 admin 可修改為另一個號碼  [B000001|0900000001]
+PASS  B4 admin 改回 A036872
+PASS  B5 admin INSERT 時可直接帶 partner_no  [C000123|]
+PASS  B6 同號碼可設在第二位講師身上（沒有 unique，畫面上警告）
+
+== C. 講師本人不能改，但其他欄位照常 ==
+PASS  C1 講師本人改自己的 partner_no 被擋（SQLSTATE 42501）  [psql:<stdin>:4: ERROR:  42501: partner_no is administrator-managed and cannot be changed by instructors]
+PASS  C2 被擋後值不變  [A036872|0900000001]
+PASS  C3 講師本人把自己的 partner_no 清成 NULL 也被擋（42501）  [psql:<stdin>:4: ERROR:  42501: partner_no is administrator-managed and cannot be changed by instructors]
+PASS  C4 講師本人改自己的電話仍可以（1 列）  [1]
+PASS  C5 電話已更新、partner_no 沒被動到  [A036872|0911111111]
+PASS  C6 存檔時帶回原本的 partner_no（值沒變）不會被誤擋  [A036872|0922222222]
+PASS  C7 輔導員改別人的 partner_no：0 列受影響或被拒，值不變  [affected=0]
+
+== D. 講師 INSERT ==
+PASS  D1 講師 INSERT 時帶 partner_no 被擋（42501）  [psql:<stdin>:4: ERROR:  42501: partner_no is administrator-managed and cannot be set by instructors]
+PASS  D2 被擋的列沒有寫進去
+PASS  D3 講師 INSERT 不帶 partner_no 仍可以（對照組）  [<null>|]
+
+== E. 格式 CHECK ==
+PASS  E 小寫 a036872 被 CHECK 擋（23514）  [psql:<stdin>:4: ERROR:  23514: new row for relation "instructors" violates check constraint "instructors_partner_no_format_check"]
+PASS  E 含連字號 A-0368 被 CHECK 擋（23514）  [psql:<stdin>:4: ERROR:  23514: new row for relation "instructors" violates check constraint "instructors_partner_no_format_check"]
+PASS  E 空字串 被 CHECK 擋（23514）  [psql:<stdin>:4: ERROR:  23514: new row for relation "instructors" violates check constraint "instructors_partner_no_format_check"]
+PASS  E 含空白 A 036872 被 CHECK 擋（23514）  [psql:<stdin>:4: ERROR:  23514: new row for relation "instructors" violates check constraint "instructors_partner_no_format_check"]
+PASS  E 21 碼 被 CHECK 擋（23514）  [psql:<stdin>:4: ERROR:  23514: new row for relation "instructors" violates check constraint "instructors_partner_no_format_check"]
+PASS  E 中文 需新增1 被 CHECK 擋（23514）  [psql:<stdin>:4: ERROR:  23514: new row for relation "instructors" violates check constraint "instructors_partner_no_format_check"]
+PASS  E7 被擋之後值不變  [<null>|0900000002]
+PASS  E8 邊界 20 碼數字可寫入
+PASS  E9 邊界 1 碼可寫入
+PASS  E10 NULL 可寫入（尚未建檔）
+
+== F. auth.uid() 為 NULL 時放行 ==
+PASS  F1 SQL Editor（表擁有者、沒有 JWT）可設定 partner_no  [t
+1]
+PASS  F2 service_role（沒有使用者 JWT）可設定 partner_no  [t
+1]
+PASS  F3 service_role INSERT 時可帶 partner_no  [S000003|]
+
+------------------------------------------------------------
+Total checks: 38   PASS: 38   FAIL: 0   (1.3s)
+RESULT 38/38
+ALL PASS: instructor partner_no migration verified on isolated PostgreSQL
