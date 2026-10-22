@@ -160,21 +160,23 @@ const session = {
     expires_in: 31536000, expires_at: Math.floor(new Date('2030-01-01T00:00:00Z').getTime() / 1000), user: authUser,
 };
 
-// mock 版 mark_salary_period_paid：與 migration 相同的條件與回傳
-function markPeriodPaid(start, end) {
-    let count = 0;
-    let amount = 0;
+// mock 版 mark_salary_period_paid：與 migration 相同的條件、核對與回傳
+const fmt = (n) => Math.round(Number(n)).toLocaleString('en-US');
+function markPeriodPaid({ p_period_start: start, p_period_end: end, p_expected_count: expectedCount, p_expected_amount: expectedAmount }) {
+    const rows = world.sessions.filter(row => row.status === 'approved' && !['needs_review', 'rejected'].includes(row.pricing_status)
+        && row.session_date >= start && row.session_date <= end);
+    const count = rows.length;
+    const amount = rows.reduce((sum, row) => sum + Number(row.total_salary), 0);
+    if ((expectedCount != null && count !== expectedCount) || (expectedAmount != null && Math.round(amount * 100) !== Math.round(expectedAmount * 100))) {
+        return { error: { code: '22023', message: `這一期的紀錄剛剛有變動（確認時 ${expectedCount} 筆、$${fmt(expectedAmount)}，現在 ${count} 筆、$${fmt(amount)}），這次沒有標記任何紀錄，請重新確認。`, details: null, hint: null } };
+    }
     const paidAt = new Date().toISOString();
-    for (const row of world.sessions) {
-        if (row.status !== 'approved' || ['needs_review', 'rejected'].includes(row.pricing_status)) continue;
-        if (row.session_date < start || row.session_date > end) continue;
+    for (const row of rows) {
         row.status = 'paid';
         row.paid_amount = row.total_salary;
         row.paid_at = paidAt;
-        count += 1;
-        amount += Number(row.total_salary);
     }
-    return { marked_count: count, marked_amount: amount, paid_at: paidAt };
+    return { data: { marked_count: count, marked_amount: amount, paid_at: paidAt } };
 }
 
 async function handleSupabase(route, request, url) {
@@ -206,8 +208,9 @@ async function handleSupabase(route, request, url) {
                 return json(route, { code: 'PGRST202', message: `Could not find the function public.${RPC}(p_period_end, p_period_start) in the schema cache`, details: null, hint: null }, 404);
             }
             if (world.rpcMode === '22023') return json(route, { code: '22023', message: '這一期到 10/25 才結束，結束後才能標記已付款。', details: null, hint: null }, 400);
-            if (Object.keys(body).sort().join(',') !== 'p_period_end,p_period_start') return reject(`rpc body ${JSON.stringify(body)}`);
-            return json(route, markPeriodPaid(body.p_period_start, body.p_period_end));
+            if (Object.keys(body).sort().join(',') !== 'p_expected_amount,p_expected_count,p_period_end,p_period_start') return reject(`rpc body ${JSON.stringify(body)}`);
+            const result = markPeriodPaid(body);
+            return result.error ? json(route, result.error, 400) : json(route, result.data);
         }
         return reject(`rpc ${name}`);
     }
@@ -322,7 +325,7 @@ async function waitStat(page, label, expected) {
     }
     return value;
 }
-const previewQueries = () => reqLog.filter(r => r.path === '/rest/v1/class_sessions' && new URLSearchParams(r.search).get('select') === 'id,total_salary');
+const previewQueries = () => reqLog.filter(r => r.path === '/rest/v1/class_sessions' && new URLSearchParams(r.search).get('select') === 'id,total_salary,paid_amount,is_anomaly');
 const optionTexts = (page) => paidSection(page).locator('select option').evaluateAll(options => options.map(o => ({ value: o.value, text: o.textContent, disabled: o.disabled })));
 
 async function run() {
@@ -361,8 +364,11 @@ async function run() {
             === '10月（9/26～10/25） / 9月（8/26～9/25） / 8月（7/26～8/25） / 7月（6/26～7/25）', JSON.stringify(options1));
         check('1d 按鈕旁顯示「將標記 3 筆、共 $2,100（期間 9/26～10/25）」（9/25 與 10/26 不算；待核准、待定價、退回、已付款不算）',
             text === '將標記 3 筆、共 $2,100（期間 9/26～10/25）', text);
-        check('1e 另列「另有 2 筆待核准，這次不會標記；核准後可再按一次。」（退回那筆不算待核准）',
-            (await sectionEl.getByText('另有 2 筆待核准，這次不會標記；核准後可再按一次。').count()) === 1, await sectionEl.innerText());
+        check('1e 另列「另有 2 筆待核准，這次不會標記；核准後等實際匯款了再按一次。」（退回那筆不算待核准）',
+            (await sectionEl.getByText('另有 2 筆待核准，這次不會標記；核准後等實際匯款了再按一次。').count()) === 1, await sectionEl.innerText());
+        check('1e2 更早期別還沒標的已核准（9/25 那筆）另外提醒「更早的期別還有 1 筆已核准、還沒標已付款…請到下方紀錄逐筆處理。」',
+            (await sectionEl.getByText('更早的期別還有 1 筆已核准、還沒標已付款（多半是晚核准的），這裡不會標到，請到下方紀錄逐筆處理。').count()) === 1);
+        check('1e3 沒有異常、沒有先付過的列 → 不顯示這兩行提醒', (await sectionEl.getByText(/標「異常」|之前已記錄付過/).count()) === 0);
         check('1f 匯款日還沒到 → 提醒「這一期的匯款日是 11/10，請確認已實際匯款再標記。」',
             (await sectionEl.getByText('這一期的匯款日是 11/10，請確認已實際匯款再標記。').count()) === 1);
         const pq = new URLSearchParams(previewQueries().at(-1)?.search || '');
@@ -399,13 +405,14 @@ async function run() {
             && await sectionEl.getByRole('button', { name: '標記中…' }).isDisabled(), submittingLabel);
         await sectionEl.getByText(/已把 \d+ 筆/).waitFor({ timeout: 10000 });
         check('1o 連點兩下只送出 1 次 mark_salary_period_paid', rpcCalls.length === 1, `rpc=${rpcCalls.length}`);
-        check('1p 送出的參數是 {p_period_start: 2026-09-26, p_period_end: 2026-10-25}',
-            rpcCalls[0]?.body?.p_period_start === '2026-09-26' && rpcCalls[0]?.body?.p_period_end === '2026-10-25', JSON.stringify(rpcCalls[0]?.body));
+        check('1p 送出的參數是期間 2026-09-26～2026-10-25，並帶確認框的 3 筆、2100 給資料庫核對',
+            rpcCalls[0]?.body?.p_period_start === '2026-09-26' && rpcCalls[0]?.body?.p_period_end === '2026-10-25'
+            && rpcCalls[0]?.body?.p_expected_count === 3 && rpcCalls[0]?.body?.p_expected_amount === 2100, JSON.stringify(rpcCalls[0]?.body));
         check('1q 完成訊息「已把 3 筆、共 $2,100 標記為已付款（10月，9/26～10/25）。」',
             (await sectionEl.getByText('已把 3 筆、共 $2,100 標記為已付款（10月，9/26～10/25）。', { exact: true }).count()) === 1, await sectionEl.innerText());
-        text = await waitPreview(page, /沒有要標記/);
-        check('1r 完成後預覽重讀 →「這一期沒有要標記的紀錄（期間 9/26～10/25 已核准、還沒標已付款的 0 筆）」、按鈕 disabled',
-            text === '這一期沒有要標記的紀錄（期間 9/26～10/25 已核准、還沒標已付款的 0 筆）' && await startButton.isDisabled(), text);
+        text = await waitPreview(page, /沒有待標記/);
+        check('1r 完成後預覽重讀 →「這一期沒有待標記的已核准紀錄（期間 9/26～10/25）」、按鈕 disabled',
+            text === '這一期沒有待標記的已核准紀錄（期間 9/26～10/25）' && await startButton.isDisabled(), text);
         const paidAfter = await waitStat(page, '已付款', '$2,099');
         const rpcAt = rpcCalls[0]?.at ?? Infinity;
         check('1s 完成後統計卡重讀：「已付款」$999 → $2,099（10 月的 800＋300）', paidAfter === '$2,099'
@@ -417,7 +424,7 @@ async function run() {
         await page.screenshot({ path: shot('admin-1280-page-after-mark.png'), fullPage: false });
         await context.close();
 
-        // ════════ 1b. 確認後、送出前又多了一筆 → 以實際標記的為準 ════════
+        // ════════ 1b. 確認後、送出前又多了一筆 → 資料庫整批取消 ════════
         console.log('\n── 1b. 確認之後到送出之前資料有異動');
         world.sessions = seedSessions();
         ({ context, page } = await openAdmin(browser, base, { today: '2026-10-27' }));
@@ -427,10 +434,36 @@ async function run() {
         await sectionEl.getByRole('group').waitFor({ timeout: 10000 });
         world.sessions.push(makeSession({ date: '2026-10-24', status: 'approved', total: 500 }));
         await sectionEl.getByRole('button', { name: '確認標記 3 筆' }).click();
-        await sectionEl.getByText(/已把 \d+ 筆/).waitFor({ timeout: 10000 });
-        check('1b 實際標記 4 筆時訊息照實說，並註明「原本是 3 筆、$2,100，以這次實際標記的為準」',
-            (await sectionEl.getByText('已把 4 筆、共 $2,600 標記為已付款（10月，9/26～10/25）。（確認後到送出前資料有異動，原本是 3 筆、$2,100，以這次實際標記的為準）').count()) === 1,
+        await sectionEl.getByRole('alert').waitFor({ timeout: 10000 });
+        const driftText = (await sectionEl.getByRole('alert').innerText()).trim();
+        check('1b 確認後多了一筆 → 紅字「這一期的紀錄剛剛有變動（確認時 3 筆、$2,100，現在 4 筆、$2,600），這次沒有標記任何紀錄，請重新確認。」',
+            driftText === '這一期的紀錄剛剛有變動（確認時 3 筆、$2,100，現在 4 筆、$2,600），這次沒有標記任何紀錄，請重新確認。', driftText);
+        check('1b2 資料完全沒被改（4 筆都還是已核准）', world.sessions.filter(r => r.status === 'approved' && r.session_date >= '2026-09-26' && r.session_date <= '2026-10-25').length === 4);
+        text = await waitPreview(page, /將標記 4 筆/);
+        check('1b3 預覽自動重讀成「將標記 4 筆、共 $2,600（期間 9/26～10/25）」，可以重新確認', text === '將標記 4 筆、共 $2,600（期間 9/26～10/25）'
+            && await sectionEl.getByRole('button', { name: '本期匯款完成' }).isEnabled(), text);
+        await context.close();
+
+        // ════════ 1c. 有異常、之前付過一部分、溢付的列 → 預覽與確認框都點出來 ════════
+        console.log('\n── 1c. 有異常、之前付過一部分、溢付的列');
+        world.sessions = seedSessions();
+        world.sessions[1].paid_amount = 1200;   // 9/26：總額 1000、已付 1200（溢付）
+        world.sessions[2].paid_amount = 100;    // 10/7：總額 800、已付 100 → 這次匯 700
+        world.sessions[7].is_anomaly = true;    // 10/25：標異常
+        ({ context, page } = await openAdmin(browser, base, { today: '2026-10-27' }));
+        sectionEl = paidSection(page);
+        text = await waitPreview(page, /將標記 3 筆/);
+        check('1c 預覽總額仍是 3 筆 $2,100（與資料庫函式回傳的總額一致）', text === '將標記 3 筆、共 $2,100（期間 9/26～10/25）', text);
+        check('1c2 紅字「其中 1 筆標「異常」（可能重複登記），建議先到下方「異常」確認再標記。」',
+            (await sectionEl.getByText('其中 1 筆標「異常」（可能重複登記），建議先到下方「異常」確認再標記。').count()) === 1, await sectionEl.innerText());
+        check('1c3「其中 2 筆之前已記錄付過 $1,300，這次實際要匯 $1,000；標記後已領一律改成總額。有 1 筆已付超過總額，請先逐筆確認。」',
+            (await sectionEl.getByText(/^其中 2 筆之前已記錄付過 \$1,300，這次實際要匯 \$1,000；標記後已領一律改成總額。\s*有 1 筆已付超過總額，請先逐筆確認。$/).count()) === 1,
             await sectionEl.innerText());
+        await sectionEl.getByRole('button', { name: '本期匯款完成' }).click();
+        await sectionEl.getByRole('group').waitFor({ timeout: 10000 });
+        const confirm1c = (await sectionEl.getByRole('group').innerText()).trim();
+        check('1c4 確認框也寫出「其中 1 筆標「異常」。這次實際要匯 $1,000。」', confirm1c.includes('其中 1 筆標「異常」。') && confirm1c.includes('這次實際要匯 $1,000。'), confirm1c);
+        await sectionEl.screenshot({ path: shot('admin-1280-warnings-confirm.png') });
         await context.close();
 
         // ════════ 2. 10/21：10月期還沒結束 → 預設 9月期，10月不能選 ════════
@@ -483,8 +516,9 @@ async function run() {
             await sectionEl.getByRole('button', { name: '確認標記 3 筆' }).click();
             await sectionEl.getByRole('alert').waitFor({ timeout: 10000 });
             const alertText = (await sectionEl.getByRole('alert').innerText()).trim();
-            check(`4 ${mode} → 紅字「${expected}」、確認框收起、預覽仍是 3 筆`, alertText === expected && (await sectionEl.getByRole('group').count()) === 0
-                && (await preview(page).innerText()).trim() === '將標記 3 筆、共 $2,100（期間 9/26～10/25）', alertText);
+            const afterError = await waitPreview(page, /將標記 3 筆/);
+            check(`4 ${mode} → 紅字「${expected}」、確認框收起、預覽重讀仍是 3 筆`, alertText === expected && (await sectionEl.getByRole('group').count()) === 0
+                && afterError === '將標記 3 筆、共 $2,100（期間 9/26～10/25）', `${alertText} / ${afterError}`);
             if (mode === 'missing') await sectionEl.screenshot({ path: shot('admin-1280-error-migration-missing.png') });
             await context.close();
         }
@@ -542,7 +576,7 @@ async function run() {
         await page.screenshot({ path: shot('admin-mobile-390-confirm.png'), fullPage: false });
         await sectionEl.getByRole('button', { name: '確認標記 3 筆' }).click();
         await sectionEl.getByText(/已把 \d+ 筆/).waitFor({ timeout: 10000 });
-        await waitPreview(page, /沒有要標記/);
+        await waitPreview(page, /沒有待標記/);
         await sectionEl.scrollIntoViewIfNeeded();
         await page.waitForTimeout(300);
         check('7d 手機上完成後訊息完整顯示、沒有水平捲軸', await page.evaluate(() => document.scrollingElement.scrollWidth <= window.innerWidth));

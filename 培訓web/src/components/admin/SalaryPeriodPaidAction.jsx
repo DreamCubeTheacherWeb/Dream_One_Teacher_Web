@@ -3,23 +3,24 @@ import { BadgeCheck, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { money, taipeiToday } from '../../lib/salary';
 import { SALARY_STATS_CHUNK_SIZE, fetchRows } from '../../lib/salaryRegisterQuery';
-import { markPaidPeriodChoices, monthNameOf, payoutScheduleFromResponse, shortDateOf } from '../../lib/salaryPayday';
+import { markPaidPeriodChoices, monthNameOf, payoutScheduleFromResponse, shortDateOf, summarizeMarkPaid } from '../../lib/salaryPayday';
 
 const MIGRATION_FILE = '20261021233000_mark_salary_period_paid.sql';
 const rangeOf = (period) => `${shortDateOf(period.periodStart)}～${shortDateOf(period.periodEnd)}`;
 
-// 與資料庫函式 mark_salary_period_paid 相同的條件：session_date 在區間內（含頭尾）、已核准
-const approvedInPeriod = (period) => supabase
+// 與資料庫函式 mark_salary_period_paid 相同的條件：已核准（排除待定價／退回）
+const approvedSessions = (columns, options) => supabase
     .from('class_sessions')
-    .select('id, total_salary', { count: 'exact' })
+    .select(columns, options)
     .eq('status', 'approved')
-    .not('pricing_status', 'in', '(needs_review,rejected)')
+    .not('pricing_status', 'in', '(needs_review,rejected)');
+const approvedInPeriod = (period) => approvedSessions('id, total_salary, paid_amount, is_anomaly', { count: 'exact' })
     .gte('session_date', period.periodStart)
     .lte('session_date', period.periodEnd)
     .order('id');
 
 const loadPeriodSummary = async (period) => {
-    const [approved, pending] = await Promise.all([
+    const [approved, pending, earlier] = await Promise.all([
         fetchRows(() => approvedInPeriod(period), { chunkSize: SALARY_STATS_CHUNK_SIZE }),
         // 待核准（含待定價）；退回的也是 pending，但不算待核准
         supabase.from('class_sessions').select('id', { count: 'exact', head: true })
@@ -27,13 +28,12 @@ const loadPeriodSummary = async (period) => {
             .neq('pricing_status', 'rejected')
             .gte('session_date', period.periodStart)
             .lte('session_date', period.periodEnd),
+        // 更早的期別還沒標的已核准（多半是晚核准的）：這一期不會標到，提醒管理員另外處理
+        approvedSessions('id', { count: 'exact', head: true }).lt('session_date', period.periodStart),
     ]);
     if (pending.error) throw pending.error;
-    return {
-        count: approved.rows.length,
-        amount: approved.rows.reduce((sum, row) => sum + Number(row.total_salary || 0), 0),
-        pendingCount: pending.count ?? 0,
-    };
+    if (earlier.error) throw earlier.error;
+    return { ...summarizeMarkPaid(approved.rows), pendingCount: pending.count ?? 0, earlierCount: earlier.count ?? 0 };
 };
 
 const markErrorText = (error) => {
@@ -52,9 +52,9 @@ const SalaryPeriodPaidAction = ({ onMarked }) => {
     const [choices, setChoices] = useState([]);
     const [selectedMonth, setSelectedMonth] = useState('');
     // 都帶 periodMonth：換期別時舊期別的數字不會配上新期別的日期顯示
-    const [summary, setSummary] = useState(null);     // { periodMonth, count, amount, pendingCount }
+    const [summary, setSummary] = useState(null);     // { periodMonth, count, amount, …summarizeMarkPaid, pendingCount, earlierCount }
     const [summaryError, setSummaryError] = useState(null); // { periodMonth, text }
-    const [confirming, setConfirming] = useState(null); // 按下後重新數過的 { count, amount }
+    const [confirming, setConfirming] = useState(null); // 按下後重新數過的數字（送出時一起帶給資料庫核對）
     const [checking, setChecking] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [message, setMessage] = useState(null);
@@ -119,7 +119,7 @@ const SalaryPeriodPaidAction = ({ onMarked }) => {
             setMessage({ tone: 'error', text: '這一期已經沒有要標記的紀錄。' });
             return;
         }
-        setConfirming({ count: fresh.count, amount: fresh.amount });
+        setConfirming(fresh);
     };
 
     const submit = async () => {
@@ -129,25 +129,24 @@ const SalaryPeriodPaidAction = ({ onMarked }) => {
         setMessage(null);
         const target = period;
         const expected = confirming;
+        // 帶上確認框的筆數與金額：確認之後又有人核准或改金額，資料庫會整批取消、什麼都不改
         const { data, error } = await supabase.rpc('mark_salary_period_paid', {
             p_period_start: target.periodStart,
             p_period_end: target.periodEnd,
+            p_expected_count: expected.count,
+            p_expected_amount: Math.round(expected.amount * 100) / 100,
         });
         busy.current = false;
         setSubmitting(false);
         setConfirming(null);
         if (error) {
             setMessage({ tone: 'error', text: markErrorText(error) });
+            loadSummary(target);
             return;
         }
-        const count = Number(data?.marked_count ?? 0);
-        const amount = Number(data?.marked_amount ?? 0);
-        const drift = count !== expected.count || Math.round(amount * 100) !== Math.round(expected.amount * 100)
-            ? `（確認後到送出前資料有異動，原本是 ${expected.count} 筆、${money(expected.amount)}，以這次實際標記的為準）`
-            : '';
         setMessage({
             tone: 'ok',
-            text: `已把 ${count} 筆、共 ${money(amount)} 標記為已付款（${monthNameOf(target.periodMonth)}，${rangeOf(target)}）。${drift}`,
+            text: `已把 ${Number(data?.marked_count ?? 0)} 筆、共 ${money(data?.marked_amount ?? 0)} 標記為已付款（${monthNameOf(target.periodMonth)}，${rangeOf(target)}）。`,
         });
         loadSummary(target);
         onMarked?.();
@@ -165,7 +164,7 @@ const SalaryPeriodPaidAction = ({ onMarked }) => {
             </h2>
             <p className="text-xs text-bauhaus-black/60 font-medium mt-1">
                 每期匯完款按一次：這一期（上月 26 日～本月 25 日）「已核准」的紀錄會一起改成「已付款」，講師「我的報酬」的「已匯款」跟著更新。
-                待核准的不會標記，之後核准了再按一次就好；已付款的不會重複計算。
+                待核准的不會標記，核准後等實際匯款了再按一次；已付款的不會重複計算。
             </p>
 
             {status === 'loading' && <p className="text-sm text-bauhaus-black/50 font-bold mt-4">載入中…</p>}
@@ -204,12 +203,28 @@ const SalaryPeriodPaidAction = ({ onMarked }) => {
                         ) : shown.count > 0 ? (
                             <>將標記 {shown.count} 筆、共 {money(shown.amount)}（期間 {rangeOf(period)}）</>
                         ) : (
-                            <>這一期沒有要標記的紀錄（期間 {rangeOf(period)} 已核准、還沒標已付款的 0 筆）</>
+                            <>這一期沒有待標記的已核准紀錄（期間 {rangeOf(period)}）</>
                         )}
                     </div>
+                    {shown?.anomalyCount > 0 && (
+                        <p className="w-full text-xs font-bold text-bauhaus-red">
+                            其中 {shown.anomalyCount} 筆標「異常」（可能重複登記），建議先到下方「異常」確認再標記。
+                        </p>
+                    )}
+                    {shown?.prepaidCount > 0 && (
+                        <p className="w-full text-xs font-bold text-bauhaus-black/70">
+                            其中 {shown.prepaidCount} 筆之前已記錄付過 {money(shown.prepaidAmount)}，這次實際要匯 {money(shown.toTransfer)}；標記後已領一律改成總額。
+                            {shown.overpaidCount > 0 && <span className="text-bauhaus-red">有 {shown.overpaidCount} 筆已付超過總額，請先逐筆確認。</span>}
+                        </p>
+                    )}
                     {shown?.pendingCount > 0 && (
                         <p className="w-full text-xs font-bold text-bauhaus-black/70">
-                            另有 {shown.pendingCount} 筆待核准，這次不會標記；核准後可再按一次。
+                            另有 {shown.pendingCount} 筆待核准，這次不會標記；核准後等實際匯款了再按一次。
+                        </p>
+                    )}
+                    {shown?.earlierCount > 0 && (
+                        <p className="w-full text-xs font-bold text-bauhaus-black/70">
+                            更早的期別還有 {shown.earlierCount} 筆已核准、還沒標已付款（多半是晚核准的），這裡不會標到，請到下方紀錄逐筆處理。
                         </p>
                     )}
                     {beforePayday && shown?.count > 0 && (
@@ -226,7 +241,9 @@ const SalaryPeriodPaidAction = ({ onMarked }) => {
                             className="w-full border-2 border-bauhaus-black rounded-xl bg-bauhaus-yellow/30 p-3 flex flex-col gap-3">
                             <p id="period-paid-confirm-text" className="text-sm font-bold text-bauhaus-black">
                                 確定要把 {monthNameOf(period.periodMonth)}這 {confirming.count} 筆、共 {money(confirming.amount)}（期間 {rangeOf(period)}）標記為已付款嗎？
-                                標記後講師會看到「已付款」；要改回只能到下方紀錄逐筆修改。
+                                {confirming.anomalyCount > 0 && `其中 ${confirming.anomalyCount} 筆標「異常」。`}
+                                {confirming.prepaidCount > 0 && `這次實際要匯 ${money(confirming.toTransfer)}。`}
+                                標記後講師會看到「已付款」；沒有一鍵復原，標錯了請聯絡工程師依這一批的付款時間還原。
                             </p>
                             <div className="flex gap-2 flex-wrap">
                                 <button type="button" onClick={submit} disabled={submitting} className="bh-btn bh-btn-blue px-4 py-2.5 min-h-[44px]">

@@ -10,6 +10,7 @@ import {
     regularPaydayFor,
     resolvePayout,
     shortDateOf,
+    summarizeMarkPaid,
     summarizePayrollPeriod,
 } from './salaryPayday.js';
 
@@ -156,4 +157,14 @@ test('「本期匯款完成」期別：預設目前這一期；它還沒結束�
     const { choices } = markPaidPeriodChoices(schedule, '2026-10-26');
     assert.equal(choices[0].payday, '2026-11-10');
     assert.equal(choices[1].payday, null);
+});
+
+test('「本期匯款完成」確認數字：總額、之前付過一部分的實匯金額、溢付與異常筆數', () => {
+    assert.deepEqual(summarizeMarkPaid([
+        { total_salary: 1000, paid_amount: 0, is_anomaly: false },
+        { total_salary: '600.00', paid_amount: '100.00', is_anomaly: false },  // 付過 100，這次匯 500
+        { total_salary: 300, paid_amount: 350, is_anomaly: true },             // 溢付 50，這次匯 0
+        { total_salary: 200, paid_amount: null, is_anomaly: true },
+    ]), { count: 4, amount: 2100, prepaidCount: 2, prepaidAmount: 450, toTransfer: 1700, overpaidCount: 1, anomalyCount: 2 });
+    assert.deepEqual(summarizeMarkPaid(null), { count: 0, amount: 0, prepaidCount: 0, prepaidAmount: 0, toTransfer: 0, overpaidCount: 0, anomalyCount: 0 });
 });

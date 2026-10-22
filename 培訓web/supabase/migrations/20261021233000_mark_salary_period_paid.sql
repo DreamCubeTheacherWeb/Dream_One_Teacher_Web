@@ -4,11 +4,13 @@
 --         每期匯完若沒人標，紀錄會一直停在「已核准」（10/20 以前只能後台逐筆改）。
 --   一期＝結算週期「上月 26 日～本月 25 日」（前端 src/lib/salaryPayday.js 決定是哪一期，這裡只收起訖日）。
 --
---   mark_salary_period_paid(p_period_start, p_period_end)
+--   mark_salary_period_paid(p_period_start, p_period_end, p_expected_count, p_expected_amount)
 --     只有 admin（其他人 42501）；anon／PUBLIC 不能執行。
 --     只動 session_date 落在區間內（含頭尾）、status = 'approved' 的列：
 --       status → 'paid'、paid_amount → total_salary、paid_at → now()（同一次呼叫的列 paid_at 相同，可當批次記號）。
 --     待核准（pending）、待定價（needs_review）、退回（rejected）、已付款的列一律不動（updated_at 也不會變）。
+--     p_expected_count／p_expected_amount（選填）：管理員在確認框看到的筆數與金額；實際要標的跟它不同
+--       （確認之後又有人核准或改了金額）就整批取消、什麼都不改，請前端重新確認。
 --     可重跑：第二次找不到已核准的列，回 0 筆。兩位管理員同時按，後到的那次等前一次結束後回 0 筆，不會重複計算。
 --     擋下：起訖日缺漏或顛倒、區間超過 31 天（含頭尾；最長的一期如 12/26～1/25 剛好 31 天）、這一期還沒結束（迄日 ≥ 台北今天）。
 --     回傳 {"marked_count": 筆數, "marked_amount": 金額, "paid_at": 這批的付款時間}。
@@ -18,7 +20,15 @@
 -- 本檔可重複執行。
 -- ═══════════════════════════════════════════════════════════════════
 
-CREATE OR REPLACE FUNCTION public.mark_salary_period_paid(p_period_start date, p_period_end date)
+-- 本檔早期草稿只有兩個參數（從未套到正式庫）；新舊兩版並存時用兩個參數呼叫會分不出是哪一個，先刪舊版
+DROP FUNCTION IF EXISTS public.mark_salary_period_paid(date, date);
+
+CREATE OR REPLACE FUNCTION public.mark_salary_period_paid(
+  p_period_start date,
+  p_period_end date,
+  p_expected_count integer DEFAULT NULL,
+  p_expected_amount numeric DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -61,14 +71,24 @@ BEGIN
     INTO v_count, v_amount
     FROM marked;
 
+  -- 跟確認框上的數字不同：丟出例外，上面的 UPDATE 整批取消
+  IF (p_expected_count IS NOT NULL AND v_count <> p_expected_count)
+     OR (p_expected_amount IS NOT NULL AND round(v_amount, 2) <> round(p_expected_amount, 2)) THEN
+    RAISE EXCEPTION USING ERRCODE = '22023',
+      MESSAGE = format('這一期的紀錄剛剛有變動（確認時 %s 筆、$%s，現在 %s 筆、$%s），這次沒有標記任何紀錄，請重新確認。',
+        COALESCE(p_expected_count::text, '?'),
+        COALESCE(to_char(round(p_expected_amount), 'FM999,999,999,990'), '?'),
+        v_count, to_char(round(v_amount), 'FM999,999,999,990'));
+  END IF;
+
   RETURN jsonb_build_object('marked_count', v_count, 'marked_amount', v_amount, 'paid_at', now());
 END;
 $$;
 
-COMMENT ON FUNCTION public.mark_salary_period_paid(date, date) IS
-  '後台「本期匯款完成」：把 session_date 在區間內（含頭尾）的已核准紀錄標成已付款（paid_amount=total_salary、paid_at=now()）。只有 admin；可重跑。';
+COMMENT ON FUNCTION public.mark_salary_period_paid(date, date, integer, numeric) IS
+  '後台「本期匯款完成」：把 session_date 在區間內（含頭尾）的已核准紀錄標成已付款（paid_amount=total_salary、paid_at=now()）。只有 admin；可重跑；筆數或金額與確認時不同就整批取消。';
 
-REVOKE ALL ON FUNCTION public.mark_salary_period_paid(date, date) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.mark_salary_period_paid(date, date) TO authenticated;
+REVOKE ALL ON FUNCTION public.mark_salary_period_paid(date, date, integer, numeric) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.mark_salary_period_paid(date, date, integer, numeric) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';

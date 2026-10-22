@@ -2,7 +2,8 @@
 // 後台「本期匯款完成」：在隔離 PostgreSQL 實跑 migration 與 RPC，斷言寫在程式裡，stdout 就是證據。
 //
 //   migration 20261021233000_mark_salary_period_paid.sql → public.mark_salary_period_paid(p_period_start, p_period_end)
-//   （只有 admin、只動區間內已核准、邊界 25／26 日、可重跑、兩人同時按不重複、還沒結束的期別擋下）
+//   （只有 admin、只動區間內已核准、邊界 25／26 日、可重跑、兩人同時按不重複、還沒結束的期別擋下、
+//    筆數或金額與確認框不同就整批取消）
 //
 // class_sessions 用 repo 裡真的建表 SQL＋migration 建（含 trg_session_anomaly、trg_class_sessions_updated_at、
 // trg_guard_class_session_pricing 三個 trigger），不是手刻的假表。
@@ -156,8 +157,8 @@ const I2 = '10000000-0000-4000-8000-000000000002';
 const authed = (uid) => ({ role: 'authenticated', uid });
 const ANON = { role: 'anon' };
 const DB = 'pp';
-const FN = 'public.mark_salary_period_paid(date, date)';
-const call = (start, end) => `SELECT public.mark_salary_period_paid(${start}, ${end})::text;`;
+const FN = 'public.mark_salary_period_paid(date, date, integer, numeric)';
+const call = (start, end, ...expected) => `SELECT public.mark_salary_period_paid(${[start, end, ...expected].join(', ')})::text;`;
 const parse = (r) => { try { return JSON.parse(r.out.split('\n').pop()); } catch { return null; } };
 
 // 測試資料：目標期別 P＝2026-08-26～2026-09-25（9 月期，一定已結束）；另一期 Q＝2026-07-26～2026-08-25 給「同時按」用
@@ -272,6 +273,9 @@ try {
     check('M1a migration 第一次套用成功（非 superuser 表擁有者身分）', r1.ok, r1.err);
     const r2 = psql(DB, { file: MIG, user: 'sbadmin' });
     check('M1b migration 連續第二次套用成功（可重跑）', r2.ok, r2.err);
+    check('M1c 只有一個 mark_salary_period_paid（4 個參數，後兩個選填）',
+      must(DB, `SELECT string_agg(oid::regprocedure::text || '/' || pronargdefaults, ',') FROM pg_proc WHERE proname = 'mark_salary_period_paid'`)
+        === 'mark_salary_period_paid(date,date,integer,numeric)/2');
   });
 
   await step('M2 catalog', () => {
@@ -323,6 +327,18 @@ try {
     check('V 以上被擋／取消之後整張表完全沒變', tableMd5() === before);
   });
 
+  section('確認框的筆數／金額跟實際不同 → 整批取消');
+  await step('E expected guard', () => {
+    const before = tableMd5();
+    const wrongCount = asRole(DB, authed(U.admin), call("DATE '2026-08-26'", "DATE '2026-09-25'", 7, 4800));
+    check('E1 確認時 7 筆、實際 8 筆 → 22023「剛剛有變動（確認時 7 筆、$4,800，現在 8 筆、$4,800）…沒有標記任何紀錄」',
+      sqlstate(wrongCount, '22023') && /剛剛有變動（確認時 7 筆、\$4,800，現在 8 筆、\$4,800），這次沒有標記任何紀錄/.test(wrongCount.err), firstLine(wrongCount.err) || wrongCount.out);
+    const wrongAmount = asRole(DB, authed(U.admin), call("DATE '2026-08-26'", "DATE '2026-09-25'", 8, 4300));
+    check('E2 筆數相同但金額不同（確認時 $4,300、實際 $4,800）→ 22023、沒有標記', sqlstate(wrongAmount, '22023') && /剛剛有變動/.test(wrongAmount.err),
+      firstLine(wrongAmount.err) || wrongAmount.out);
+    check('E3 兩次都整批取消：整張表完全沒變（含 updated_at）', tableMd5() === before);
+  });
+
   section('admin 標記 9 月期（2026-08-26～2026-09-25）');
   await step('A mark', () => {
     const untouched = Object.keys(ROWS).filter((k) => !P_MARK.includes(k));
@@ -358,11 +374,16 @@ try {
     check('B1 同一期再按一次 → 0 筆、$0', r.ok && result?.marked_count === 0 && Number(result?.marked_amount) === 0, r.err || r.out);
     check('B2 重跑後整張表完全沒變（沒有任何列的 updated_at 被碰到）', tableMd5() === before);
     must(DB, `UPDATE public.class_sessions SET status = 'approved' WHERE id = '${idOf('p_pending')}'`);
-    const again = parse(asRole(DB, authed(U.admin), call("DATE '2026-08-26'", "DATE '2026-09-25'")));
-    check('B3 之後核准了一筆待核准（700）→ 再按一次只標那 1 筆、$700', again?.marked_count === 1 && Number(again?.marked_amount) === 700
+    const again = parse(asRole(DB, authed(U.admin), call("DATE '2026-08-26'", "DATE '2026-09-25'", 1, 700)));
+    check('B3 之後核准了一筆待核准（700）→ 再按一次（確認框 1 筆 $700）只標那 1 筆', again?.marked_count === 1 && Number(again?.marked_amount) === 700
       && statusOf('p_pending') === 'paid|700.00|700.00', JSON.stringify(again));
+    // 模擬早期兩個參數的草稿還留在資料庫：重套後應該只剩新版
+    must(DB, `CREATE FUNCTION public.mark_salary_period_paid(p_period_start date, p_period_end date) RETURNS jsonb
+      LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;`, 'sbadmin');
     const reapply = psql(DB, { file: MIG, user: 'sbadmin' });
-    check('B4 用過之後再重套 migration 仍成功，anon 仍不能執行', reapply.ok && must(DB, `SELECT has_function_privilege('anon', '${FN}', 'EXECUTE')`) === 'f', reapply.err);
+    check('B4 用過之後（且有兩參數舊草稿）再重套 migration 仍成功，只剩新版、anon 仍不能執行', reapply.ok
+      && must(DB, `SELECT count(*) FROM pg_proc WHERE proname = 'mark_salary_period_paid'`) === '1'
+      && must(DB, `SELECT has_function_privilege('anon', '${FN}', 'EXECUTE')`) === 'f', reapply.err);
   });
 
   section('兩位管理員同時按（8 月期 2026-07-26～2026-08-25）');
@@ -381,6 +402,10 @@ try {
     const rows = must(DB, `SELECT count(*) FILTER (WHERE status = 'paid') || '|' || count(DISTINCT paid_at) FROM public.class_sessions WHERE id IN (${idList(Q_MARK)})`);
     check('C3 那 3 筆都是已付款、paid_at 只有一個（只被標一次）', rows === '3|1', rows);
     check('C4 Q 期前一天（7/25）沒動', rowsMd5(['q_before']) === qBefore);
+    const before = tableMd5();
+    const late = asRole(DB, authed(U.admin2), call("DATE '2026-07-26'", "DATE '2026-08-25'", 3, Q_AMOUNT));
+    check('C5 後按的那位若帶著自己確認框的 3 筆送出 → 22023「剛剛有變動（…現在 0 筆、$0）」、資料不變',
+      sqlstate(late, '22023') && /現在 0 筆、\$0/.test(late.err) && tableMd5() === before, firstLine(late.err) || late.out);
   });
 } catch (error) {
   check('腳本本身執行中斷', false, error.stack || error.message);
