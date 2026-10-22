@@ -22,7 +22,6 @@ import {
 } from '../../lib/salaryRegisterQuery';
 import SalaryQuotePanel from '../../components/SalaryQuotePanel';
 import SalaryPaydaySetting from '../../components/admin/SalaryPaydaySetting';
-import SalaryPeriodPaidAction from '../../components/admin/SalaryPeriodPaidAction';
 
 const STATUS_STYLES = {
     pending:  { label: '待核准',   color: 'bg-bauhaus-yellow text-bauhaus-black', icon: Clock },
@@ -295,7 +294,6 @@ const SalaryRegister = () => {
             </div>
 
             {profile?.role === 'admin' && <SalaryPaydaySetting />}
-            {profile?.role === 'admin' && <SalaryPeriodPaidAction onMarked={refresh} />}
 
             {(pendingCount > 0 || anomalyCount > 0) && (
                 <div className="flex flex-wrap gap-2 mb-6" aria-label="快速篩選">
