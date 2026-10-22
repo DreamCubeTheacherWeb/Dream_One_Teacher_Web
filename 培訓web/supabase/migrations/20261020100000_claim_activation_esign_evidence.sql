@@ -6,7 +6,7 @@
 --
 -- 區段：
 --   0. 擴充（pg_net 能啟用就啟用；失敗不擋，寄信改記 not_configured）
---   1. instructors 新欄位＋管理欄位 guard
+--   1. instructors 新欄位＋管理欄位 guard（獨立 trigger trg_guard_instructor_claim_fields）
 --   2. contract_documents.content_sha256、instructor_contracts 新欄位
 --   3. 新表（啟用紀錄、OTP challenge、寄送紀錄、法規文案版本、同意紀錄、簽署證據）＋RLS
 --   4. 內部輔助函式（內部寫入旗標、遮罩、header、寄信、雜湊鏈）
@@ -73,8 +73,10 @@ END $$;
 COMMENT ON COLUMN public.instructors.identity_verified_at IS '身分已核驗的登錄時間（admin 專屬）。';
 COMMENT ON COLUMN public.instructors.confirmed_email IS '公司已確認屬於該講師的 Email（小寫去空白）；啟用與簽約 OTP 一律寄到這裡（admin 專屬）。';
 
--- guard 以 20261019233000 版本為底，多保護 1.1 的七個新欄位（講師不能自己設定或更改）。
-CREATE OR REPLACE FUNCTION public.guard_instructor_admin_fields()
+-- 1.1 的七個新欄位只有 admin 能設定或更改：以 20261019233000 的獨立 guard 為底（name_slot），多保護這七欄。
+-- 不重定義共用的 guard_instructor_admin_fields（正式庫已套 20261022100000_personnel_types 的版本，
+-- 本檔若再 CREATE OR REPLACE 它，不管誰後套都會把另一邊的保護洗掉；理由見 20261019233000）。
+CREATE OR REPLACE FUNCTION public.guard_instructor_claim_fields()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -96,21 +98,7 @@ BEGIN
   END IF;
 
   IF TG_OP = 'INSERT' THEN
-    IF NEW.employment_status IS NOT NULL
-       OR NEW.instructor_role IS NOT NULL
-       OR NEW.speed_qualification IS NOT NULL
-       OR NEW.form_submitted_at IS NOT NULL
-       OR NEW.note_internal IS NOT NULL
-       OR NEW.teaching_regions_raw IS NOT NULL
-       OR NEW.bank_info_raw IS NOT NULL
-       OR NEW.id_front_external_url IS NOT NULL
-       OR NEW.id_back_external_url IS NOT NULL
-       OR NEW.photo_external_url IS NOT NULL
-       OR NEW.bankbook_external_url IS NOT NULL
-       OR NEW.wca_name IS NOT NULL
-       OR NEW.wca_synced_at IS NOT NULL
-       OR NEW.hide_from_leaderboard IS DISTINCT FROM false
-       OR NEW.name_slot IS DISTINCT FROM false
+    IF NEW.name_slot IS DISTINCT FROM false
        OR NEW.identity_verified_at IS NOT NULL
        OR NEW.identity_verification_basis IS NOT NULL
        OR NEW.confirmed_email IS NOT NULL
@@ -124,22 +112,12 @@ BEGIN
   END IF;
 
   IF ROW(
-      NEW.id, NEW.created_at,
-      NEW.employment_status, NEW.instructor_role, NEW.speed_qualification,
-      NEW.form_submitted_at, NEW.note_internal, NEW.teaching_regions_raw,
-      NEW.bank_info_raw, NEW.id_front_external_url, NEW.id_back_external_url,
-      NEW.photo_external_url, NEW.bankbook_external_url, NEW.wca_name,
-      NEW.wca_synced_at, NEW.hide_from_leaderboard, NEW.name_slot,
+      NEW.name_slot,
       NEW.identity_verified_at, NEW.identity_verification_basis,
       NEW.confirmed_email, NEW.confirmed_email_at, NEW.confirmed_email_by,
       NEW.confirmed_email_method, NEW.confirmed_email_note
     ) IS DISTINCT FROM ROW(
-      OLD.id, OLD.created_at,
-      OLD.employment_status, OLD.instructor_role, OLD.speed_qualification,
-      OLD.form_submitted_at, OLD.note_internal, OLD.teaching_regions_raw,
-      OLD.bank_info_raw, OLD.id_front_external_url, OLD.id_back_external_url,
-      OLD.photo_external_url, OLD.bankbook_external_url, OLD.wca_name,
-      OLD.wca_synced_at, OLD.hide_from_leaderboard, OLD.name_slot,
+      OLD.name_slot,
       OLD.identity_verified_at, OLD.identity_verification_basis,
       OLD.confirmed_email, OLD.confirmed_email_at, OLD.confirmed_email_by,
       OLD.confirmed_email_method, OLD.confirmed_email_note
@@ -147,16 +125,16 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'administrator-managed instructor fields cannot be changed by instructors';
   END IF;
 
-  IF NEW.user_id IS DISTINCT FROM OLD.user_id
-     AND NOT (OLD.user_id IS NULL AND NEW.user_id = actor_id) THEN
-    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'instructor account link cannot be changed by instructors';
-  END IF;
-
   RETURN NEW;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.guard_instructor_admin_fields() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_instructor_claim_fields() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_guard_instructor_claim_fields ON public.instructors;
+CREATE TRIGGER trg_guard_instructor_claim_fields
+  BEFORE INSERT OR UPDATE ON public.instructors
+  FOR EACH ROW EXECUTE FUNCTION public.guard_instructor_claim_fields();
 
 -- 管理員在後台新建講師列時，登錄「管理員建立講師資料」為身分核驗依據（Email 仍需另外確認）。
 CREATE OR REPLACE FUNCTION private.stamp_admin_created_instructor()

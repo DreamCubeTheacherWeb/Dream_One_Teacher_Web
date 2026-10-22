@@ -19,8 +19,13 @@ CREATE INDEX IF NOT EXISTS idx_instructors_unclaimed_name_slots
   WHERE name_slot AND user_id IS NULL;
 
 
--- guard 以 20260826140000 版本為底，只多保護 name_slot（講師不能自己設定或更改）。
-CREATE OR REPLACE FUNCTION public.guard_instructor_admin_fields()
+-- name_slot 只有 admin 能設定或更改。
+-- 用獨立 trigger 擋（同 20261022093700 partner_no 的做法），不重定義共用的 guard_instructor_admin_fields：
+--   正式庫已先套 main 的 20261022100000_personnel_types（它的 guard 版本多保護 personnel_types）；
+--   若本檔再 CREATE OR REPLACE 那個共用函式，不管誰後套都會把另一邊的保護洗掉。
+--   20261020100000 會 CREATE OR REPLACE 本函式，再多保護 1.1 的七個 Email／身分核驗欄位。
+-- 慣例同 guard_instructor_admin_fields：auth.uid() 為 NULL（SQL Editor／service／migration）與 admin 放行。
+CREATE OR REPLACE FUNCTION public.guard_instructor_claim_fields()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -42,54 +47,26 @@ BEGIN
   END IF;
 
   IF TG_OP = 'INSERT' THEN
-    IF NEW.employment_status IS NOT NULL
-       OR NEW.instructor_role IS NOT NULL
-       OR NEW.speed_qualification IS NOT NULL
-       OR NEW.form_submitted_at IS NOT NULL
-       OR NEW.note_internal IS NOT NULL
-       OR NEW.teaching_regions_raw IS NOT NULL
-       OR NEW.bank_info_raw IS NOT NULL
-       OR NEW.id_front_external_url IS NOT NULL
-       OR NEW.id_back_external_url IS NOT NULL
-       OR NEW.photo_external_url IS NOT NULL
-       OR NEW.bankbook_external_url IS NOT NULL
-       OR NEW.wca_name IS NOT NULL
-       OR NEW.wca_synced_at IS NOT NULL
-       OR NEW.hide_from_leaderboard IS DISTINCT FROM false
-       OR NEW.name_slot IS DISTINCT FROM false THEN
+    IF NEW.name_slot IS DISTINCT FROM false THEN
       RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'administrator-managed instructor fields cannot be set by instructors';
     END IF;
     RETURN NEW;
   END IF;
 
-  IF ROW(
-      NEW.id, NEW.created_at,
-      NEW.employment_status, NEW.instructor_role, NEW.speed_qualification,
-      NEW.form_submitted_at, NEW.note_internal, NEW.teaching_regions_raw,
-      NEW.bank_info_raw, NEW.id_front_external_url, NEW.id_back_external_url,
-      NEW.photo_external_url, NEW.bankbook_external_url, NEW.wca_name,
-      NEW.wca_synced_at, NEW.hide_from_leaderboard, NEW.name_slot
-    ) IS DISTINCT FROM ROW(
-      OLD.id, OLD.created_at,
-      OLD.employment_status, OLD.instructor_role, OLD.speed_qualification,
-      OLD.form_submitted_at, OLD.note_internal, OLD.teaching_regions_raw,
-      OLD.bank_info_raw, OLD.id_front_external_url, OLD.id_back_external_url,
-      OLD.photo_external_url, OLD.bankbook_external_url, OLD.wca_name,
-      OLD.wca_synced_at, OLD.hide_from_leaderboard, OLD.name_slot
-    ) THEN
+  IF NEW.name_slot IS DISTINCT FROM OLD.name_slot THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'administrator-managed instructor fields cannot be changed by instructors';
-  END IF;
-
-  IF NEW.user_id IS DISTINCT FROM OLD.user_id
-     AND NOT (OLD.user_id IS NULL AND NEW.user_id = actor_id) THEN
-    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'instructor account link cannot be changed by instructors';
   END IF;
 
   RETURN NEW;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.guard_instructor_admin_fields() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_instructor_claim_fields() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS trg_guard_instructor_claim_fields ON public.instructors;
+CREATE TRIGGER trg_guard_instructor_claim_fields
+  BEFORE INSERT OR UPDATE ON public.instructors
+  FOR EACH ROW EXECUTE FUNCTION public.guard_instructor_claim_fields();
 
 
 CREATE OR REPLACE FUNCTION public.claim_instructor_name_slot(provided_full_name text)

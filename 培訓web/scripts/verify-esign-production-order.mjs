@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 // 認領啟用＋電子簽約線上線前的「正式庫實際套用順序」模擬（2026-10-21；2026-10-22 加入 main 第三批兩支 migration；
-// 同日再加第三支電子簽約 migration 20261022120000「未滿 18 歲不可線上簽約」）。
+// 同日再加第三支電子簽約 migration 20261022120000「未滿 18 歲不可線上簽約」；
+// 2026-10-22 晚再加 main 已套正式庫的 20261022100000「人員類別」）。
 //
 // 正式庫已依序套過：20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000
-//   → 20261020150000 → 20261020160000；這次要接著套 20261019233000 → 20261020100000，
-//   另外還有 main 第三批尚未套的 20261022093700（partner_no）與 20261022010000（輔導員權限收緊）。
-// 總指揮會先套 20261022093700、20261022010000，再套 233000、100000、120000（primary）；
-// 也要確認反過來（233000、100000、120000 先，兩支 main 第三批後套）同樣全過（variant）。
-// 120000（未滿 18 歲防線）只依賴 100000 的表與函式，與 main 第三批互不相依，兩種順序都要通。
+//   → 20261020150000 → 20261020160000，2026-10-22 下午再依序套了 main 的
+//   20261022010000（輔導員權限收緊）→ 20261022093700（partner_no）→ 20261022100000（人員類別）。
+// 電子簽約線接著套 233000 → 100000 → 120000（primary＝正式庫實際順序）；
+// 也確認反過來（233000、100000、120000 先，main 那三支後套）同樣全過（variant，接近全新環境的檔名順序）。
+// 120000（未滿 18 歲防線）只依賴 100000 的表與函式，與 main 那三支互不相依，兩種順序都要通。
+// 人員類別 migration 與 233000／100000 都需要保護 instructors 的管理欄位：233000／100000 改用獨立 trigger
+//   trg_guard_instructor_claim_fields，不再 CREATE OR REPLACE 共用的 guard_instructor_admin_fields，
+//   兩種順序套完都要同時擋住 personnel_types 與 name_slot／已確認 Email／身分核驗欄位（verifyAdminFieldGuards）。
 // 本腳本在隔離 PostgreSQL 依各順序套用（E2E_MIGRATION_ORDER，見 scripts/e2e/lib/db.mjs），
 // 確認 20261020100000 之後 20261020140000 的「輔導員不能讀別人已簽契約檔」仍成立，再重跑 140000 一次再確認一次。
 // verify-claim-activation-esign 與 e2e:onboarding 用同一個環境變數跑正式庫順序，見 STATUS.md。
@@ -24,7 +28,7 @@ const ALREADY_APPLIED = [
   '20261020150000', '20261020160000',
 ];
 const ESIGN = ['20261019233000', '20261020100000', '20261022120000'];
-const MAIN_THIRD = ['20261022093700', '20261022010000'];
+const MAIN_THIRD = ['20261022010000', '20261022093700', '20261022100000'];
 
 export const PRODUCTION_ORDERS = {
   primary: [...ALREADY_APPLIED, ...MAIN_THIRD, ...ESIGN],
@@ -127,8 +131,53 @@ try {
     check(`${tag}${stage}：未成年的 decline（改紙本）寫得進去`, declineOk.ok, declineOk.stderr.split('\n')[0]);
   };
 
+  // 管理欄位 guard：人員類別（main 20261022100000）與認領／Email 確認欄位（233000／100000）兩邊的保護都要在
+  const asUser = (role, sql) => db.psqlSync(`SET ROLE authenticated;
+    SET request.jwt.claims = ${lit(JSON.stringify({ sub: users[role], role: 'authenticated', aud: 'authenticated' }))};
+    ${sql}`, { expectFail: true });
+  const verifyAdminFieldGuards = (stage) => {
+    check(`${tag}${stage}：instructors 上同時有共用 guard 與獨立的認領欄位 guard`,
+      Number(su(`SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.instructors'::regclass AND NOT tgisinternal
+        AND tgname IN ('trg_guard_instructor_admin_fields', 'trg_guard_instructor_claim_fields', 'trg_guard_instructor_partner_no')`)) === 3);
+    check(`${tag}${stage}：共用 guard 與完整度、合約提醒仍是人員類別版（含 personnel_types）`,
+      su(`SELECT bool_and(pg_get_functiondef(p) LIKE '%personnel_types%') FROM unnest(ARRAY[
+        'public.guard_instructor_admin_fields()'::regprocedure,
+        'private.instructor_profile_is_complete(uuid)'::regprocedure,
+        'public.ensure_my_contract_reminder()'::regprocedure]) AS p`) === 't');
+    su(`DELETE FROM public.instructors WHERE user_id = ${lit(users.teacher)};
+        INSERT INTO public.instructors (user_id, full_name, nickname) VALUES (${lit(users.teacher)}, '順序測試講師', '原暱稱');`);
+    const own = (sql) => asUser('teacher', sql);
+    const plain = own(`UPDATE public.instructors SET nickname = '新暱稱' WHERE user_id = ${lit(users.teacher)} RETURNING nickname;`);
+    check(`${tag}${stage}：講師改自己的一般欄位（暱稱）照常成功`, plain.ok && plain.stdout.includes('新暱稱'), plain.stderr.split('\n')[0]);
+    for (const [label, assignment] of [
+      ['人員類別', `personnel_types = ARRAY['staff']::text[]`],
+      ['姓名空位旗標', 'name_slot = true'],
+      ['已確認 Email', `confirmed_email = 'self@order.test'`],
+      ['身分核驗時間', 'identity_verified_at = now()'],
+    ]) {
+      const result = own(`UPDATE public.instructors SET ${assignment} WHERE user_id = ${lit(users.teacher)};`);
+      check(`${tag}${stage}：講師不能自己改${label}（42501 管理欄位）`,
+        !result.ok && result.stderr.includes('administrator-managed instructor fields cannot be changed by instructors'), result.stderr.split('\n')[0] || 'ok');
+    }
+    for (const [label, columns, values] of [
+      ['人員類別', 'personnel_types', `ARRAY['staff']::text[]`],
+      ['已確認 Email', 'confirmed_email', `'self@order.test'`],
+    ]) {
+      su(`DELETE FROM public.instructors WHERE user_id = ${lit(users.other)};`);
+      const result = asUser('other', `INSERT INTO public.instructors (user_id, full_name, ${columns}) VALUES (${lit(users.other)}, '順序測試新講師', ${values});`);
+      check(`${tag}${stage}：講師新增主檔時不能自帶${label}（42501 管理欄位）`,
+        !result.ok && result.stderr.includes('administrator-managed instructor fields cannot be set by instructors'), result.stderr.split('\n')[0] || 'ok');
+    }
+    const adminEdit = asUser('admin', `UPDATE public.instructors
+        SET personnel_types = ARRAY['instructor', 'staff']::text[], confirmed_email = 'teacher@order.test', name_slot = false
+      WHERE user_id = ${lit(users.teacher)} RETURNING array_to_string(personnel_types, '+') || ' ' || confirmed_email;`);
+    check(`${tag}${stage}：管理員可以改人員類別與已確認 Email`, adminEdit.ok && adminEdit.stdout.includes('instructor+staff teacher@order.test'),
+      adminEdit.stderr.split('\n')[0] || adminEdit.stdout);
+  };
+
   verifyPolicy('套完 100000 後（未重跑 140000）');
   verifyMinorGuard('套完全部順序後');
+  verifyAdminFieldGuards('套完全部順序後');
   db.psqlSync(null, { file: REVOKE, tuplesOnly: false });
   verifyPolicy('再重跑 140000 後');
   verifyMinorGuard('再重跑 140000 後');

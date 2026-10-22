@@ -17,7 +17,7 @@
 
 ## 1. 資料庫（migration：`supabase/migrations/20261020100000_claim_activation_esign_evidence.sql`）
 
-### 1.1 instructors 新欄位（admin 專屬，加進 guard_instructor_admin_fields 保護）
+### 1.1 instructors 新欄位（admin 專屬，由獨立 trigger `trg_guard_instructor_claim_fields` 保護；2026-10-22 起不再改寫共用的 guard_instructor_admin_fields，以免與已上線的 personnel_types 版本互相覆蓋）
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | identity_verified_at | timestamptz | 身分已核驗的登錄時間 |
