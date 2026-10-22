@@ -203,10 +203,11 @@ const ROUTES = [
     route('/contract', /講師管理辦法/, 'contract'),
     route(`/contract/view/${CONTRACT_ID}`, /合約檢視/, 'contract'),
     route('/admin/contracts', /合約文件管理/, 'admin'),
-    route('/admin/salary', /報酬登記中心/, 'staff'),
+    // 2026-10-22 起報酬與表單（含身分證、銀行資料）只限 admin
+    route('/admin/salary', /報酬登記中心/, 'admin'),
     route('/admin/salary/export', /報酬供應商 CSV 匯出/, 'admin'),
     route('/admin/salary/options', /回報選項管理/, 'admin'),
-    route('/admin/download-center', /講師表單預覽與下載/, 'staff'),
+    route('/admin/download-center', /講師表單預覽與下載/, 'admin'),
     route('/admin/badges', /徽章管理/, 'admin'),
     route('/admin/salary-links', /網站連結管理/, 'admin'),
     route('/admin/notifications', /廣播通知/, 'admin'),

@@ -16,10 +16,11 @@ import {
     createVendorExportFilename,
     filterVendorInstructors,
     getVendorExportMissingFields,
+    isMissingPartnerNoError,
 } from '../../lib/vendorCsvExport';
 
 const PAGE_SIZE = 1000;
-const INSTRUCTOR_COLUMNS = [
+const BASE_INSTRUCTOR_COLUMNS = [
     'id',
     'full_name',
     'instructor_role',
@@ -30,7 +31,10 @@ const INSTRUCTOR_COLUMNS = [
     'bank_code',
     'bank_account_number',
     'email_primary',
-].join(',');
+];
+// partner_no 由 migration 20261022093700 新增；正式庫還沒套用時改用不含它的查詢，頁面照常可用
+const INSTRUCTOR_COLUMNS = [...BASE_INSTRUCTOR_COLUMNS, 'partner_no'].join(',');
+const INSTRUCTOR_COLUMNS_WITHOUT_PARTNER = BASE_INSTRUCTOR_COLUMNS.join(',');
 const SESSION_COLUMNS = 'id,instructor_id,session_date';
 const LEVEL_ORDER = ['實習', 'B', 'A', 'A+', 'S'];
 
@@ -48,6 +52,15 @@ const fetchAllRows = async (table, columns) => {
         if (page.length < PAGE_SIZE) break;
     }
     return rows;
+};
+
+const fetchInstructors = async () => {
+    try {
+        return { rows: await fetchAllRows('instructors', INSTRUCTOR_COLUMNS), partnerNoMissing: false };
+    } catch (error) {
+        if (!isMissingPartnerNoError(error)) throw error;
+        return { rows: await fetchAllRows('instructors', INSTRUCTOR_COLUMNS_WITHOUT_PARTNER), partnerNoMissing: true };
+    }
 };
 
 const getTaipeiToday = () => new Intl.DateTimeFormat('en-CA', {
@@ -68,15 +81,18 @@ const SalaryVendorExport = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [downloaded, setDownloaded] = useState(false);
+    const [partnerNoMissing, setPartnerNoMissing] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
         setError('');
         try {
-            const [nextInstructors, nextSessions] = await Promise.all([
-                fetchAllRows('instructors', INSTRUCTOR_COLUMNS),
+            const [instructorResult, nextSessions] = await Promise.all([
+                fetchInstructors(),
                 fetchAllRows('class_sessions', SESSION_COLUMNS),
             ]);
+            const nextInstructors = instructorResult.rows;
+            setPartnerNoMissing(instructorResult.partnerNoMissing);
             setInstructors(nextInstructors);
             setSessions(nextSessions);
             setSelectedInstructorIds((current) => current.filter((id) => (
@@ -196,7 +212,10 @@ const SalaryVendorExport = () => {
                 <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="text-sm font-medium leading-relaxed">
                     <p className="font-black">檔案含身分證字號、地址與銀行帳號，只能提供財務作業使用。</p>
-                    <p className="mt-1">目前系統沒有「夥伴號碼」欄位，CSV 會保留該欄但留白，不會自行編號。</p>
+                    <p className="mt-1">「夥伴號碼」取自講師主檔（可在「月結匯款」頁匯入財務的供應商資料）；沒有的留白，不會自行編號。「國籍」只有本國身分證格式才填 TW，其餘留空待確認。</p>
+                    {partnerNoMissing && (
+                        <p className="mt-1 font-black text-bauhaus-red" role="status">資料庫還沒有夥伴號碼欄位（需先套資料庫更新 20261022093700_instructor_partner_no.sql），這次匯出的夥伴號碼欄全部留白。</p>
+                    )}
                 </div>
             </div>
 

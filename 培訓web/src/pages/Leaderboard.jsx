@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { AlertTriangle, Timer, Globe, Heart, Award } from 'lucide-react';
@@ -151,10 +152,15 @@ async function fetchAvatarMap(rows) {
 
 const Leaderboard = () => {
     const { user } = useAuth();
+    const [searchParams] = useSearchParams();
     const [tab, setTab] = useState('teaching'); // 'teaching' | 'cube' | 'wca' | 'interaction'
 
     // ── 教學時數 ──
-    const [year, setYear] = useState(null); // null＝歷屆總榜
+    // null＝歷屆總榜；網址帶 ?year=2026（「關於我」的今年排名連過來）就先顯示那一年
+    const [year, setYear] = useState(() => {
+        const fromUrl = Number(searchParams.get('year'));
+        return Number.isInteger(fromUrl) && fromUrl >= 2000 && fromUrl <= 2100 ? fromUrl : null;
+    });
     const [years, setYears] = useState([]);
     const [category, setCategory] = useState('all'); // 範圍：all/big/small/online/speed/kids
     const [basis, setBasis] = useState('hours'); // 依據：hours/sessions/reach（不重抓，只換 metric）

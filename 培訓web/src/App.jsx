@@ -10,6 +10,7 @@ import { isApprovedUser } from './lib/roles';
 
 // 路由頁面依需求才下載：首頁、登入後導向的待審頁、Layout 與守衛留在入口 chunk，
 // 其餘（含 pdf-lib／react-pdf／quill／jszip 等大型套件）各自成 chunk，講師手機首次開啟不必下載全站。
+const AboutMe = lazy(() => import('./pages/AboutMe'));
 const CourseList = lazy(() => import('./pages/CourseList'));
 const LessonView = lazy(() => import('./pages/LessonView'));
 const LessonDetail = lazy(() => import('./pages/LessonDetail'));
@@ -29,6 +30,7 @@ const ContractView = lazy(() => import('./pages/ContractView'));
 const ContractAdmin = lazy(() => import('./pages/admin/ContractAdmin'));
 const SalaryRegister = lazy(() => import('./pages/admin/SalaryRegister'));
 const SalaryVendorExport = lazy(() => import('./pages/admin/SalaryVendorExport'));
+const SalaryPayoutExport = lazy(() => import('./pages/admin/SalaryPayoutExport'));
 const SalaryReportOptionsManager = lazy(() => import('./pages/admin/SalaryReportOptionsManager'));
 const MySalary = lazy(() => import('./pages/MySalary'));
 const MySalaryNew = lazy(() => import('./pages/MySalaryNew'));
@@ -136,6 +138,14 @@ function App() {
             element={
               <ProtectedRoute allowPending>
                 <PageLayout><ProfilePage /></PageLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/me"
+            element={
+              <ProtectedRoute>
+                <PageLayout><AboutMe /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -286,7 +296,7 @@ function App() {
           <Route
             path="/admin/salary"
             element={
-              <ProtectedRoute staffOnly={true}>
+              <ProtectedRoute adminOnly={true}>
                 <PageLayout><SalaryRegister /></PageLayout>
               </ProtectedRoute>
             }
@@ -296,6 +306,14 @@ function App() {
             element={
               <ProtectedRoute adminOnly={true}>
                 <PageLayout><SalaryVendorExport /></PageLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/salary/payout"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <PageLayout><SalaryPayoutExport /></PageLayout>
               </ProtectedRoute>
             }
           />
@@ -310,7 +328,7 @@ function App() {
           <Route
             path="/admin/download-center"
             element={
-              <ProtectedRoute staffOnly={true}>
+              <ProtectedRoute adminOnly={true}>
                 <PageLayout><DownloadCenter /></PageLayout>
               </ProtectedRoute>
             }
