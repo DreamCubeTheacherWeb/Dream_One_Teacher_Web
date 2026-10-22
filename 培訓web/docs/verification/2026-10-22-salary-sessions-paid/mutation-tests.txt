@@ -1,7 +1,11 @@
-突變測試：把 migration 故意改壞，確認 verify-salary-sessions-paid.mjs 抓得到（SESSIONS_PAID_MIGRATION_SQL 指向改壞的副本）
-m1 已領改成直接＝總額（溢付會被改小）／m2 拿掉金額核對／m3 還原不看 updated_at／m4 拿掉 admin 檢查／m5 拿掉期別核對
-m1_no_greatest: Total checks: 98   PASS: 96   FAIL: 2   (3.4s)
-m2_no_amount_check: Total checks: 87   PASS: 73   FAIL: 14   (3.3s)
-m3_revert_ignores_updated_at: Total checks: 98   PASS: 93   FAIL: 5   (3.5s)
-m4_no_admin_check: Total checks: 87   PASS: 63   FAIL: 24   (3.4s)
-m5_period_unchecked: Total checks: 87   PASS: 70   FAIL: 17   (3.4s)
+突變測試：把 migration 故意改壞，確認 verify-salary-sessions-paid.mjs 抓得到（SESSIONS_PAID_MIGRATION_SQL 指向改壞的副本）。原版 122/122。
+m1 已領直接＝總額（溢付會被改小）／m2 拿掉金額核對／m3 還原不看 updated_at／m4 標記拿掉 admin 檢查／m5 拿掉期別核對／m6 拿掉講師比對／m7 標記不看匯出紀錄、改標整期已核准／m8 標記跳過逐筆核對／m9 存匯出跳過逐筆核對
+m1_no_greatest: Total checks: 122   PASS: 120   FAIL: 2   (3.8s)
+m2_no_amount_check: Total checks: 122   PASS: 119   FAIL: 3   (3.8s)
+m3_revert_ignores_updated_at: Total checks: 122   PASS: 118   FAIL: 4   (3.7s)
+m4_no_admin_check_on_mark: Total checks: 122   PASS: 118   FAIL: 4   (3.8s)
+m5_no_period_check: Total checks: 122   PASS: 119   FAIL: 3   (3.8s)
+m6_no_instructor_check: Total checks: 122   PASS: 114   FAIL: 8   (2.7s)
+m7_mark_ignores_export_items: Total checks: 122   PASS: 119   FAIL: 3   (3.7s)
+m8_mark_skips_item_check: Total checks: 122   PASS: 117   FAIL: 5   (2.7s)
+m9_record_skips_item_check: Total checks: 122   PASS: 113   FAIL: 9   (3.7s)

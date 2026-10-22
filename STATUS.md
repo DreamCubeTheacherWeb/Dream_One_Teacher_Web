@@ -5,13 +5,14 @@
 
 ---
 
-## 💳 2026-10-22：月結匯款「匯款完成，標記為已付款」重做（🟡 分支 `takeover/salary-mark-period-paid` 已 commit、未推 main；migration `20261022140000_mark_salary_sessions_paid` 待業主授權套正式庫，**先套 migration 再推前端**）
+## 💳 2026-10-22：月結匯款「匯款完成，標記為已付款」重做第二版——下載時存匯出紀錄、對某一份標記（🟡 分支 `takeover/salary-mark-period-paid` 已 commit、未推 main；migration `20261022140000_mark_salary_sessions_paid` 待業主授權套正式庫，**先套 migration 再推前端**）
 
-- 為什麼重做：舊版 `20261021233000_mark_salary_period_paid`（從未套正式庫、從未上 main）把整期「已核准」一起標已付款，但轉帳檔會排除異常課、對不到講師的課、缺帳號／身分證被擋的講師、取消勾選的人，也不含匯出後才核准的紀錄 → 沒匯的錢被標成已付款、之後不再出現在匯款檔＝永久漏匯。獨立審查判定不能上線；舊 migration、報酬登記中心的舊按鈕、舊驗證腳本已刪（commit 77f194a）。
-- 新做法：月結匯款頁下載轉帳檔（CSV 或 Excel）時記下「這份檔案納入的課＋每堂應付金額」；按「匯款完成，標記為已付款」只送這份清單（下載後名單或金額有任何變動就要重新下載）。資料庫 `mark_salary_sessions_paid` 鎖住清單內的列後逐筆核對（仍是已核准、在期別內、有講師、應付金額相同），任一不符整批不改並列出原因；通過才標 paid、已領＝max(已領, 總額)（溢付不改小），同一交易寫批次紀錄 `salary_payout_batches`／`salary_payout_batch_items`（舊 status／已領／付款時間、誰、何時、期別、筆數、金額、付款日、轉帳檔總額、人工調整）。`revert_salary_payout_batch` 只還原「之後沒被改過」的列，其他列出原因。兩個函式只限 admin；兩張表只限 admin 讀、不能直接寫。報酬登記中心改成連到月結匯款頁的提示。
-- 證據：`培訓web/scripts/verify-salary-sessions-paid.mjs` 98/98（第 0 段先用 git 歷史的舊函式重現漏匯 4 項；另做 5 種突變測試全部抓到）；`verify-salary-sessions-paid-browser.mjs` 41/41（vite dev 與 PREVIEW=1 建置產物各跑一次）；回歸：npm test 199/199、lint 0、build 通過、verify-payout-bank-export-browser 125/125、verify-code-split 187/187、register paging 38/38、payday 113/113、mentor-access 9/9。截圖 `培訓web/docs/verification/2026-10-22-salary-sessions-paid/`。
-- 待業主確認：①人工調整（加／減）只記在批次紀錄，不寫進任何一堂課的已領金額——要不要算「已領」？②交通補助目前只有「是否申請＋公里數」，不是金額欄位；只有被算進底薪／獎金的部分才會被標已付款。③流程是「下載轉帳檔 → 銀行匯款完成 → 回同一頁按標記」；排除與調整不會存檔，隔天回來要重做同樣的排除／調整並重新下載才按得了。
-- 地雷：verify-code-split 的 P1（CourseList 預載失敗自動重整）偶發「Execution context was destroyed」中斷（本分支 5 次中 2 次，origin/main 3 次 0 次；中斷點在課程頁預載，與本次改動無關，重跑即過）。verify-code-split 沒有涵蓋 /admin/salary/payout。
+- 為什麼重做兩次：①舊版 `20261021233000_mark_salary_period_paid`（從未套正式庫、從未上 main）把整期「已核准」一起標已付款，轉帳檔排除的課（異常、對不到講師、缺帳號／身分證被擋、取消勾選、匯出後才核准）也會被標 → 永久漏匯，已刪（77f194a）。②第一版重做（61d1ef9）標的是「網頁記憶體裡最後一次下載的清單」，重新整理、隔天回來、匯出後才核准或補好銀行資料再下載，會用資料庫現況重算 → 可能標到銀行沒匯的課；也沒比對講師。獨立審查必修 2／建議 3，本版全部處理。
+- 新做法：按下載 → 先產生檔案 → 呼叫 `record_salary_payout_export` 把這份檔的逐筆清單（課、講師、金額）、每位講師實付與人工調整、檔案總額、下載當時沒納入的摘要存成一筆「匯出紀錄」（存的時候逐筆核對已核准／期別／講師／金額，不符就不存也不下載）→ 拿到編號才下載，檔名加 `_匯出{編號}`（檔案內容不變）。月結匯款頁下方列出這一期所有匯出紀錄（編號、時間、誰下載、人數、筆數、金額、狀態），對交給銀行的那一份按「標記這份已付款」：只送匯出編號＋畫面上的筆數／金額，`mark_salary_payout_export_paid` 從資料庫那筆紀錄拿清單、鎖列、用同一套規則逐筆核對（含講師），任一不符整份不改；通過才標 paid、已領＝max(已領, 總額)（溢付不改小）、留舊值；`revert_salary_payout_export` 只還原該份、之後沒被改過的列。重新整理、隔天回來都可直接標；同一期可有多份匯出（補匯），重疊的課會整份被擋（預期）。確認框列每位講師實付（對銀行）、「這份匯出之後才新增或變動的紀錄不會被標記：N 筆」、下載當時沒納入的摘要；有負數人工調整要勾「我確認這些負數是扣款，不需要之後補發」才能按。網路逾時／5xx／看不懂的回應顯示「結果不確定」並自動重讀，只有資料庫明確回不符或 4xx 才說「沒有改任何紀錄」。資料庫還沒套更新時照舊可下載（檔名沒編號），並提示這份無法在系統標記。報酬登記中心只剩連到月結匯款頁的提示；編輯視窗存檔／退回加樂觀鎖（updated_at 不同就不寫入，提示「這筆紀錄已被其他人修改」）。
+- schema：`salary_payout_exports`、`salary_payout_export_items`（只有 admin 讀、任何人不能直接寫、mentor 讀不到）；內部核對函式 `salary_payout_item_mismatches`（前端不能呼叫）。三個 RPC 皆 SECURITY DEFINER＋search_path=''＋只限 admin＋REVOKE PUBLIC／anon。
+- 證據（`培訓web/docs/verification/2026-10-22-salary-sessions-paid/`）：`verify-salary-sessions-paid.mjs` 122/122（第 0 段先用 git 歷史的舊函式重現漏匯；含匯出後才核准不標、匯出後換講師整份擋、另一連線另一位管理員直接標昨天那份、同期兩份重疊被擋、還原只還原該份）；突變測試 9 種全部抓到（含「拿掉講師比對」「標記不看匯出紀錄、改標整期」「標記跳過逐筆核對」）；`verify-salary-sessions-paid-browser.mjs` 46/46（vite dev 與建置產物各一次）；回歸：npm test 199/199、lint 0、build、payout-bank-export-browser 125/125、salary-fixes 34/34（新增樂觀鎖 B7）、register paging 38/38、payday 113/113、mentor-access 9/9、speed-salary-browser 13/13、report-options-browser 99/99、verify-code-split 連跑 5 次皆 187/187（`code-split-p1-race.txt`）。
+- 待業主確認：①人工調整（加／減）只記在匯出紀錄，不寫進任何一堂課的已領——要不要算「已領」？負數調整目前要勾選確認是扣款、不補發。②交通補助只有「是否申請＋公里數」，不是金額欄位，只有算進底薪／獎金的部分會被標已付款。③一份匯出只能標一次；還原後要再標，請重新下載一份新的匯出。
+- 地雷：verify-code-split 的 P1 原本有競態（舊頁導覽列就有「我的課程」，等待條件可能在重新整理前就成立，接著撞上重新整理而中斷；實測成立當下文件載入 1 次那次就中斷），已改成先等第 2 次文件載入與新頁 load 再檢查課程頁內容，斷言不變。verify-code-split 沒涵蓋 /admin/salary/payout。
 
 ## 👥 2026-10-22：「人員類別」拆分（✅ 2026-10-22 下午 migration 已套正式庫、前端已上線 305aee9）
 
@@ -85,7 +86,7 @@ staff／assistant／part_time／frozen 皆 0 筆。等級 S14／A+16／A19／B41
    ① `20261022010000_tighten_course_audience_and_mentor_access`（前端已上；套完跑 security-auditor 建議的三段唯讀查詢，見 fix/rls-audience-mentor 分支說明）
    ② `20261022093700_instructor_partner_no`（月結匯款；前端已上、有容錯）
    ③ `20261022100000_personnel_types`（人員類別，分支 feat/personnel-types；**先套 migration 再推前端**，反過來後台編輯會 400；業主說「正式庫要套之前再問我」）
-   ④ ~~`20261021233000_mark_salary_period_paid`~~ **已作廢、勿套**（審查判定會永久漏匯）→ 改套 `20261022140000_mark_salary_sessions_paid`（分支 takeover/salary-mark-period-paid，見 💳 2026-10-22 段；先套 migration 再推前端）
+   ④ ~~`20261021233000_mark_salary_period_paid`~~ **已作廢、勿套**（審查判定會永久漏匯）→ 改套 `20261022140000_mark_salary_sessions_paid` 第二版（下載時存匯出紀錄、對某一份標記；分支 takeover/salary-mark-period-paid，見 💳 2026-10-22 段；**先套 migration 再推前端**；套前請再送一次獨立審查）
    ⑤ 資料修正 `scripts/salary_master_import/08_reclassify_maple_trial.sql`（10/20 業主選方案 A：楓葉體驗課 11 筆 other→trial；分支 data/reclassify-imported-other；交易內前後逐欄比對）
 2. 認領＋電子簽約（分支 release/esign-20261021，已試合併最新 main 零衝突）：Vault 補 resend_api_key／resend_from、確認 Resend 網域 Verified、開 pg_net；之後套 233000 → 100000 並**立刻**推前端。法規：隱私權政策生效日、保存 15 年、未滿 18 歲講師。
 3. 月結匯款 7 項待財務確認（見 🏦 段）；人員類別預設 6 項確認、上線後自己勾職員（見 feat/personnel-types 分支 STATUS）。
