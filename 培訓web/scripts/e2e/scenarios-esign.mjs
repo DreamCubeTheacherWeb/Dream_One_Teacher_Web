@@ -2,7 +2,9 @@
 // OTP 過期、重複使用、錯 5 次鎖、重寄冷卻（含接續輸入）、冒用別人的 challenge、簽署中斷、簽署途中契約改版、
 // 重複送出（連點＋重放）、不同意電子簽約、未設定寄信金鑰、簽後文件遭修改（檔案被換／證據被改）。
 // 「錯誤認領」在 scenarios.mjs 的 G。最後一步會竄改全域證據鏈，所以 SEC 一定排在最後。
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   latestOtp, skipOtpCooldown, setEmailConfigured, makeActiveTeacherViaRest, makeReadyPendingTeacher, signViaRest, makePdf, sha256,
 } from './lib/fixtures.mjs';
@@ -11,6 +13,9 @@ import {
   readDocuments, agreeConsent, verifyContractOtp, drawSignature, submitContract, waitProfileLoaded,
 } from './lib/flows.mjs';
 import { openEvidencePanel } from './scenarios-admin.mjs';
+
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const MINOR_SHOTS_DIR = path.join(appDir, 'docs/verification/2026-10-22-esign-minor');
 
 const challengeRow = (ctx, id) => ctx.api.json(`SELECT row_to_json(c) FROM private.email_otp_challenges c WHERE c.id = :'id'`, { id });
 const contractsOf = (ctx, uid) => ctx.api.json(`SELECT coalesce(json_agg(row_to_json(c) ORDER BY c.created_at), '[]') FROM public.instructor_contracts c WHERE c.user_id = :'uid'`, { uid });
@@ -406,6 +411,90 @@ export async function secTamper(ctx) {
   }
 }
 
+// ═══ MINOR1 未滿 18 歲講師（法遵紅燈 R3，2026-10-22）：不能線上簽約，只能改紙本＋法定代理人 ═══
+//   A. 真 PostgREST：成年時完成同意＋簽約 OTP，送出前出生日期被更正為未成年 → 被擋，OTP 沒被消耗、沒有半套紀錄
+//   B. 畫面：未成年進簽約頁 → 同意頁換成未成年說明（沒有同意按鈕）→ 按「改以紙本簽約」→ 紙本簽約處理中
+//   C. 畫面沒擋到（同意頁已打開才被更正出生日期）→ 按同意 → 伺服器擋下 → 畫面改顯示未成年說明
+export async function minorPaperOnly(ctx) {
+  const r = ctx.r;
+  mkdirSync(MINOR_SHOTS_DIR, { recursive: true });
+  const mctx = { ...ctx, shotsDir: MINOR_SHOTS_DIR };
+  const minorBirth = ctx.api.sql(`SELECT ((now() AT TIME ZONE 'Asia/Taipei')::date - interval '18 years' + interval '1 day')::date`);
+  const setBirth = (uid, value) => ctx.api.sql(`UPDATE public.instructors SET birth_date = :'b' WHERE user_id = :'uid'`, { b: value, uid });
+
+  // ── A ──
+  const restUser = await makeActiveTeacherViaRest(ctx.stack, ctx.api, ctx.base.admin, { emailPrefix: 'minor-rest', fullName: '未成年REST講師' });
+  const attempt = await signViaRest(ctx.stack, ctx.api, restUser, { allowFailure: true, beforeSubmit: () => setBirth(restUser.id, minorBirth) });
+  r.check('MINOR REST：成年時完成同意＋簽約 OTP，送出前出生日期變未成年 → 400 MINOR_REQUIRES_GUARDIAN',
+    attempt.failed && attempt.result.status === 400 && JSON.stringify(attempt.result.data).includes('MINOR_REQUIRES_GUARDIAN'), `${attempt.result.status} ${JSON.stringify(attempt.result.data)}`);
+  const otpRow = challengeRow(ctx, attempt.otp.challenge_id);
+  r.check('MINOR REST：被擋之後簽約 OTP 沒有被消耗（verified_at 在、consumed_at 空）', Boolean(otpRow?.verified_at) && !otpRow?.consumed_at, JSON.stringify(otpRow));
+  r.check('MINOR REST：沒有半套紀錄（沒有契約、沒有證據）', contractsOf(ctx, restUser.id).length === 0 && evidenceCount(ctx, restUser.id) === 0);
+  const restAgree = await ctx.api.rpc(restUser.token, 'record_contract_consent', { p_decision: 'agree_electronic', p_doc_versions: attempt.params.p_doc_versions, p_consent_text_version: 'esign-consent-v1' });
+  r.check('MINOR REST：未成年再記錄 agree 同意也被擋（400 MINOR_REQUIRES_GUARDIAN）', restAgree.status === 400 && JSON.stringify(restAgree.data).includes('MINOR_REQUIRES_GUARDIAN'), JSON.stringify(restAgree.data));
+
+  // ── B ──
+  const ui = await makeActiveTeacherViaRest(ctx.stack, ctx.api, ctx.base.admin, { emailPrefix: 'minor-ui', fullName: '未成年畫面講師' });
+  setBirth(ui.id, minorBirth);
+  const s = await openAs(ctx.browser, ctx.stack, ui);
+  try {
+    await goto(ctx, s, '/contract');
+    await readDocuments(s.page, { landing: 'minor-paper-page' });
+    const page = s.page;
+    const noConsentUi = (await page.getByTestId('consent-agree').count()) === 0 && (await page.getByTestId('consent-checkbox').count()) === 0
+      && (await page.getByTestId('consent-decline').count()) === 0 && (await page.getByTestId('consent-page').count()) === 0;
+    r.check('MINOR 畫面：未成年進簽約頁 → 同意頁換成未成年說明，沒有同意按鈕、勾選框與「不同意」按鈕', noConsentUi && await visible(page.getByTestId('minor-paper-button')));
+    const minorText = await page.getByTestId('minor-paper-page').innerText();
+    r.check('MINOR 畫面：說明含「未滿 18 歲」「法定代理人」「紙本簽約」「行政人員會和你聯繫」，且文件清單已代入、沒有殘留佔位符',
+      ['請改以紙本簽約', '未滿 18 歲', '法定代理人', '一起簽名', '行政人員會和你聯繫', '第 '].every((t) => minorText.includes(t)) && !minorText.includes('{{'), minorText.slice(0, 200));
+    r.check('MINOR 畫面：個資告知照常顯示', await visible(page.getByTestId('privacy-notice')));
+    r.check('MINOR 畫面：進度列沒有「驗證與簽署」這一步（未成年沒有那條路）', (await page.getByText('驗證與簽署').count()) === 0);
+    await dualShot(mctx, s, 'MINOR-01-minor-paper-page');
+    await page.getByTestId('minor-paper-button').click();
+    r.check('MINOR 畫面：按「改以紙本簽約」→ 進「已記錄：改以紙本簽約」（紙本簽約處理中）',
+      await visible(page.getByTestId('paper-flow'), 10000) && await page.getByText('已記錄：改以紙本簽約').isVisible());
+    const paperText = await page.getByTestId('paper-flow').innerText();
+    r.check('MINOR 畫面：處理中畫面提醒和法定代理人一起簽，沒有「改變主意改用線上簽約」',
+      paperText.includes('法定代理人') && !paperText.includes('改變主意') && (await page.getByRole('button', { name: /改變主意/ }).count()) === 0, paperText.slice(0, 200));
+    await dualShot(mctx, s, 'MINOR-02-paper-flow');
+    const consent = ctx.api.json(`SELECT row_to_json(x) FROM public.contract_consent_records x WHERE x.user_id = :'uid' ORDER BY created_at DESC LIMIT 1`, { uid: ui.id });
+    r.check('MINOR 資料庫：記錄 decline_electronic、版本 esign-minor-paper-v1、存未成年說明全文＋個資告知＋IP',
+      consent?.decision === 'decline_electronic' && consent.consent_text_version === 'esign-minor-paper-v1'
+      && String(consent.consent_text).includes('法定代理人') && !String(consent.consent_text).includes('{{')
+      && String(consent.privacy_notice_text).length > 50 && Boolean(consent.ip_address), JSON.stringify(consent).slice(0, 200));
+    const notices = ctx.api.json(`SELECT coalesce(json_agg(n.title ORDER BY n.title), '[]') FROM public.notifications n WHERE n.user_id = :'admin' AND n.body LIKE :'who'`,
+      { admin: ctx.base.admin.id, who: '%未成年畫面講師%' });
+    r.check('MINOR 資料庫：管理員收到「講師選擇改以紙本簽約」與「未滿 18 歲的講師需由法定代理人一起簽紙本契約」兩則通知',
+      notices.includes('講師選擇改以紙本簽約') && notices.includes('未滿 18 歲的講師需由法定代理人一起簽紙本契約'), JSON.stringify(notices));
+    r.check('MINOR 資料庫：沒有任何簽約紀錄或證據', contractsOf(ctx, ui.id).length === 0 && evidenceCount(ctx, ui.id) === 0);
+    await goto(ctx, s, '/profile');
+    r.check('MINOR 個人資料頁顯示「紙本簽約處理中」', await visible(page.getByTestId('paper-pending'), 10000));
+  } finally {
+    ctx.consoleErrors.push(...s.consoleErrors.map((e) => `MINOR-B: ${e}`));
+    await s.context.close();
+  }
+
+  // ── C ──
+  const stale = await makeActiveTeacherViaRest(ctx.stack, ctx.api, ctx.base.admin, { emailPrefix: 'minor-stale', fullName: '生日剛被更正的講師' });
+  const sc = await openAs(ctx.browser, ctx.stack, stale);
+  try {
+    await goto(ctx, sc, '/contract');
+    await readDocuments(sc.page); // 此時是成年：一般同意頁
+    setBirth(stale.id, minorBirth); // 同意頁還開著，出生日期被行政更正為未成年
+    await sc.page.getByTestId('consent-checkbox').check();
+    await sc.page.getByTestId('consent-agree').click();
+    r.check('MINOR 畫面沒擋到時：按「同意」被伺服器擋下 → 同意頁改成未成年說明（不是一串錯誤代碼）',
+      await visible(sc.page.getByTestId('minor-paper-page'), 10000) && (await sc.page.getByTestId('consent-agree').count()) === 0
+      && (await sc.page.getByTestId('consent-error').count()) === 0);
+    await dualShot(mctx, sc, 'MINOR-03-server-blocked-flips-to-minor-page', { fullPage: false });
+    const agreeRows = Number(ctx.api.sql(`SELECT count(*) FROM public.contract_consent_records WHERE user_id = :'uid' AND decision = 'agree_electronic'`, { uid: stale.id }));
+    r.check('MINOR 資料庫：被擋的 agree 沒有留下任何同意紀錄', agreeRows === 0 && contractsOf(ctx, stale.id).length === 0);
+  } finally {
+    ctx.consoleErrors.push(...sc.consoleErrors.map((e) => `MINOR-C: ${e}`));
+    await sc.context.close();
+  }
+}
+
 export const ESIGN_SCENARIOS = {
   SEC1: secOtpExpiredAndReuse,
   SEC2: secOtpLocked,
@@ -416,5 +505,6 @@ export const ESIGN_SCENARIOS = {
   SEC7: secVersionChanged,
   SEC8: secDoubleSubmit,
   SEC9: secEmailNotConfigured,
+  MINOR1: minorPaperOnly, // 放在 SEC10 前：SEC10 會竄改全域證據鏈
   SEC10: secTamper,
 };

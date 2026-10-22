@@ -53,6 +53,10 @@ const INSTRUCTOR_EMAIL_GUARD_MESSAGES = [
 // 資料庫 Email 守門 trigger 的英文錯誤轉成講師看得懂的中文；其他錯誤維持原訊息。
 export const describeInstructorSaveError = (error, { googleEmail } = {}) => {
     const message = error?.message || String(error ?? '');
+    // 出生日期已登錄為未滿 18 歲時，只有管理員能更正（避免未成年講師自己改成成年再線上簽約）。
+    if (message.includes('BIRTH_DATE_ADMIN_ONLY')) {
+        return '出生日期已登錄為未滿 18 歲，需由行政人員更正；如果登錄有誤，請聯繫管理員。';
+    }
     if (!INSTRUCTOR_EMAIL_GUARD_MESSAGES.some((guardMessage) => message.includes(guardMessage))) return message;
     const account = googleEmail ? `（${googleEmail}）` : '';
     return `主要 Email 必須是你登入用的 Google 信箱${account}；若要改用其他信箱，請聯繫管理員。`;

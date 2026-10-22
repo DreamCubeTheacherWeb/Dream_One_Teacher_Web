@@ -8,11 +8,12 @@ import SignaturePadComponent from '../components/SignaturePad';
 import EmailOtpDialog from '../components/EmailOtpDialog';
 import { downloadContractFile, fetchContractFileBytes } from '../lib/contractFiles';
 import {
-  buildDocEntries, describeContractRpcError, formatTaipeiTime, isSha256Hex, safeDownloadName, sha256Hex,
+  buildDocEntries, describeContractRpcError, formatTaipeiTime, isMinorOn, isSha256Hex, safeDownloadName, sha256Hex,
+  taipeiToday,
 } from '../lib/esign';
 import {
   CONTRACT_OTP_VALID_MINUTES, ESIGN_COPY_VERSIONS, buildConsentCopy, buildDeclineCopy, buildFinalConfirm,
-  buildPaperPendingCopy, buildReadAck, formatDocList, splitEsignInline,
+  buildMinorPaperCopy, buildPaperPendingCopy, buildReadAck, formatDocList, splitEsignInline,
 } from '../lib/esignCopy';
 import { OTP_PURPOSES, formatCountdown, secondsUntil } from '../lib/emailOtp';
 import { interpretActivationStatus } from '../lib/accountActivation';
@@ -24,6 +25,9 @@ import {
 
 // 電子簽約流程（2026-10-20 改版，規格 docs/specs/2026-10-20-claim-activation-esign.md §2）：
 //   閱讀文件（可下載範本）→ 電子簽約同意頁（同意／不同意改紙本）→ 填資料＋Email 驗證碼＋手寫簽名 → 確認簽署
+// 2026-10-22（法遵紅燈 R3）：出生日期顯示未滿 18 歲的講師不能線上簽約。同意頁不顯示同意按鈕與勾選，
+// 改顯示 esign-minor-paper-v1 說明＋「改以紙本簽約」（走既有 decline 流程）。這只是提早說清楚；
+// 真正的防線在資料庫（20261022120000：未成年的同意與簽署一律拒絕 MINOR_REQUIRES_GUARDIAN）。
 // 送出前在瀏覽器用 WebCrypto 算每份範本（下載到的原始位元組）與每份成品 PDF 的 SHA-256，
 // 連同 OTP challenge、同意紀錄一起交給 submit_my_contract；所有判定由伺服器負責，前端只是依序帶資料。
 // 文案全部來自 src/lib/esignCopy.js（法規顧問定稿）。
@@ -37,6 +41,24 @@ const Inline = ({ text }) => (
       part.bold ? <strong key={index}>{part.text}</strong> : <span key={index}>{part.text}</span>
     ))}
   </>
+);
+
+// 同意頁與未成年說明頁共用：個資蒐集告知（預設展開，同意與不同意都會存）
+const PrivacyNoticeBlock = ({ privacy }) => (
+  <details open className="border-2 border-bauhaus-black/30 rounded-xl bg-bauhaus-paper" data-testid="privacy-notice">
+    <summary className="cursor-pointer min-h-[44px] flex items-center px-4 text-sm font-black text-bauhaus-black">
+      {privacy.title}
+    </summary>
+    <div className="px-4 pb-4 text-xs sm:text-sm leading-relaxed text-bauhaus-black/80 font-medium space-y-2">
+      <p className="break-words">{privacy.intro}</p>
+      <ul className="list-disc pl-5 space-y-1.5">
+        {privacy.items.map((item, index) => (
+          <li key={index} className="break-words"><Inline text={item} /></li>
+        ))}
+      </ul>
+      <p>{privacy.outro}</p>
+    </div>
+  </details>
 );
 
 // 驗證通過後的倒數獨立成小元件，每秒重繪不會牽動整個簽約頁。
@@ -79,6 +101,7 @@ const ContractSigningFlow = () => {
   const [consent, setConsent] = useState(null); // { id, atMs, key }
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState('');
+  const [isMinor, setIsMinor] = useState(false); // 出生日期顯示未滿 18 歲（台灣日期）→ 只能紙本簽約
   const [showDeclineConfirm, setShowDeclineConfirm] = useState(false);
   const [downloadError, setDownloadError] = useState('');
 
@@ -170,7 +193,7 @@ const ContractSigningFlow = () => {
 
       const { data: instrData } = await supabase
         .from('instructors')
-        .select('full_name, instructor_role, id_number, address, phone_mobile')
+        .select('full_name, instructor_role, id_number, address, phone_mobile, birth_date')
         .eq('user_id', user.id)
         .single();
 
@@ -183,6 +206,7 @@ const ContractSigningFlow = () => {
           address: instrData.address || '',
           phone: instrData.phone_mobile || '',
         }));
+        setIsMinor(isMinorOn(instrData.birth_date, taipeiToday()));
       }
 
       // 同意頁要顯示「驗證碼會寄到哪個信箱」（遮罩後）。讀不到就用通用說法，不擋流程。
@@ -411,7 +435,13 @@ const ContractSigningFlow = () => {
       setFlowNotice('');
       setPhase('sign');
     } catch (err) {
-      setConsentError(describeConsentFailure(err));
+      if (describeContractRpcError(err).action === 'minor') {
+        // 畫面沒有提早擋到（例如出生日期剛被更正）→ 伺服器擋下，改顯示未成年說明頁
+        setIsMinor(true);
+        setConsentChecked(false);
+      } else {
+        setConsentError(describeConsentFailure(err));
+      }
     }
     consentBusyRef.current = false;
     setConsentBusy(false);
@@ -423,7 +453,8 @@ const ContractSigningFlow = () => {
     consentBusyRef.current = true;
     setConsentBusy(true);
     try {
-      await recordConsent('decline_electronic', ESIGN_COPY_VERSIONS.declinePaper);
+      // 未成年看到的是 esign-minor-paper-v1 說明頁，存證就存那份全文
+      await recordConsent('decline_electronic', isMinor ? ESIGN_COPY_VERSIONS.minorPaper : ESIGN_COPY_VERSIONS.declinePaper);
       setConsent(null);
       setShowDeclineConfirm(false);
       setPhase('declined');
@@ -450,7 +481,7 @@ const ContractSigningFlow = () => {
   // ── 送出 ──
   const handleSubmitFailure = async (err) => {
     const info = describeContractRpcError(err);
-    const redirected = info.action === 'consent' || info.action === 'reload';
+    const redirected = info.action === 'consent' || info.action === 'reload' || info.action === 'minor';
     setSubmitError(redirected ? '' : info.message);
     setFlowNotice(redirected ? info.message : '');
     if (info.action === 'otp') {
@@ -458,6 +489,13 @@ const ContractSigningFlow = () => {
     } else if (info.action === 'consent') {
       setConsent(null);
       setConsentChecked(false);
+      setPhase('consent');
+    } else if (info.action === 'minor') {
+      // 伺服器依出生日期判定未滿 18 歲：舊的同意與驗證都不算數，回到未成年說明頁（紙本簽約）
+      setIsMinor(true);
+      setConsent(null);
+      setConsentChecked(false);
+      setOtp(null);
       setPhase('consent');
     } else if (info.action === 'reload') {
       // 文件在簽約途中改版：舊的同意與已讀都不算數，從頭重新閱讀
@@ -679,15 +717,19 @@ const ContractSigningFlow = () => {
 
   const consentCopy = buildConsentCopy({ docList, maskedEmail });
   const declineCopy = buildDeclineCopy({ docList });
+  const minorCopy = buildMinorPaperCopy({ docList });
   const readAckCopy = buildReadAck({ docList });
   const finalConfirm = buildFinalConfirm({ instructorName: formData.name.trim(), docList });
 
   // 進度條：文件各一步，再加「簽約方式」「驗證與簽署」兩步
-  const displaySteps = [
-    ...steps,
-    { id: '__consent', title: '選擇簽約方式', icon: Shield },
-    { id: '__sign', title: '驗證與簽署', icon: PenTool },
-  ];
+  // （未成年只有紙本這條路，沒有「驗證與簽署」這一步）
+  const displaySteps = isMinor
+    ? [...steps, { id: '__consent', title: '改以紙本簽約', icon: FileText }]
+    : [
+      ...steps,
+      { id: '__consent', title: '選擇簽約方式', icon: Shield },
+      { id: '__sign', title: '驗證與簽署', icon: PenTool },
+    ];
   const activeIndex = phase === 'read' ? step : phase === 'sign' ? steps.length + 1 : steps.length;
 
   return (
@@ -799,8 +841,52 @@ const ContractSigningFlow = () => {
         </div>
       )}
 
+      {/* ── 2a. 未滿 18 歲：不能線上簽約，只有「改以紙本簽約」（esign-minor-paper-v1） ── */}
+      {phase === 'consent' && isMinor && (
+        <div className="bh-card overflow-hidden" data-testid="minor-paper-page">
+          <div className="p-5 sm:p-6 border-b-2 border-bauhaus-black bg-bauhaus-paper">
+            <h2 className="text-lg sm:text-xl font-bold text-bauhaus-black">{minorCopy.title}</h2>
+          </div>
+          <div className="p-4 sm:p-6 space-y-4">
+            <div className="space-y-3 text-sm sm:text-base leading-relaxed text-bauhaus-black font-medium">
+              {minorCopy.paragraphs.map((paragraph, index) => (
+                <p key={index} className="break-words">{paragraph}</p>
+              ))}
+            </div>
+
+            <PrivacyNoticeBlock privacy={minorCopy.privacy} />
+
+            {consentError && (
+              <div role="alert" data-testid="consent-error" className="bg-red-50 border-2 border-bauhaus-red rounded-xl px-4 py-3 text-sm font-bold text-bauhaus-red flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /> <span className="break-words">{consentError}</span>
+              </div>
+            )}
+
+            <div className="pt-2">
+              <button
+                type="button"
+                data-testid="minor-paper-button"
+                onClick={handleConfirmDecline}
+                disabled={consentBusy}
+                className="bh-btn bh-btn-yellow min-h-[56px] w-full sm:w-auto px-6 py-3 text-sm sm:text-base justify-center disabled:opacity-50"
+              >
+                {consentBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                {minorCopy.paperButton}
+              </button>
+            </div>
+
+            <div className="pt-2">
+              <button onClick={() => { setPhase('read'); }}
+                className="bh-btn bh-btn-outline px-5 py-3 md:py-2.5 text-sm">
+                <ChevronLeft className="w-4 h-4" /> 回到文件
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 2. 電子簽約同意 ── */}
-      {phase === 'consent' && (
+      {phase === 'consent' && !isMinor && (
         <div className="bh-card overflow-hidden" data-testid="consent-page">
           <div className="p-5 sm:p-6 border-b-2 border-bauhaus-black bg-bauhaus-paper">
             <h2 className="text-lg sm:text-xl font-bold text-bauhaus-black">{consentCopy.title}</h2>
@@ -812,20 +898,7 @@ const ContractSigningFlow = () => {
               ))}
             </div>
 
-            <details open className="border-2 border-bauhaus-black/30 rounded-xl bg-bauhaus-paper" data-testid="privacy-notice">
-              <summary className="cursor-pointer min-h-[44px] flex items-center px-4 text-sm font-black text-bauhaus-black">
-                {consentCopy.privacy.title}
-              </summary>
-              <div className="px-4 pb-4 text-xs sm:text-sm leading-relaxed text-bauhaus-black/80 font-medium space-y-2">
-                <p className="break-words">{consentCopy.privacy.intro}</p>
-                <ul className="list-disc pl-5 space-y-1.5">
-                  {consentCopy.privacy.items.map((item, index) => (
-                    <li key={index} className="break-words"><Inline text={item} /></li>
-                  ))}
-                </ul>
-                <p>{consentCopy.privacy.outro}</p>
-              </div>
-            </details>
+            <PrivacyNoticeBlock privacy={consentCopy.privacy} />
 
             <label className="flex items-start gap-3 cursor-pointer bg-bauhaus-yellow border-2 border-bauhaus-black rounded-2xl p-4">
               <input
@@ -880,7 +953,7 @@ const ContractSigningFlow = () => {
 
       {/* ── 選擇紙本之後 ── */}
       {phase === 'declined' && (() => {
-        const paper = buildPaperPendingCopy({ docList });
+        const paper = buildPaperPendingCopy({ docList, minor: isMinor });
         return (
           <div className="bh-card overflow-hidden" data-testid="paper-flow">
             <div className="p-5 sm:p-6 border-b-2 border-bauhaus-black bg-bauhaus-paper">
@@ -894,12 +967,14 @@ const ContractSigningFlow = () => {
                 <button onClick={() => navigate('/profile')} className="bh-btn bh-btn-blue min-h-[48px] px-6 py-3 text-sm justify-center">
                   返回個人資料
                 </button>
-                <button
-                  onClick={() => { setConsentChecked(false); setPhase('consent'); }}
-                  className="bh-btn bh-btn-outline min-h-[48px] px-6 py-3 text-sm justify-center"
-                >
-                  改變主意，回到簽約方式
-                </button>
+                {!isMinor && (
+                  <button
+                    onClick={() => { setConsentChecked(false); setPhase('consent'); }}
+                    className="bh-btn bh-btn-outline min-h-[48px] px-6 py-3 text-sm justify-center"
+                  >
+                    改變主意，回到簽約方式
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -28,7 +28,7 @@ import EmailOtpDialog from '../components/EmailOtpDialog';
 import { useActivationStatus } from '../lib/useActivationStatus';
 import { ACTIVATION_BUTTON_LABEL } from '../lib/accountActivation';
 import { OTP_PURPOSES } from '../lib/emailOtp';
-import { contractStatusLabel, formatTaipeiTime } from '../lib/esign';
+import { contractStatusLabel, formatTaipeiTime, isMinorOn, taipeiToday } from '../lib/esign';
 import {
     LOCKABLE_DOCUMENT_KEYS,
     LOCK_NOTICE,
@@ -1244,7 +1244,9 @@ const ProfilePage = () => {
                         <div data-testid="paper-pending" className="bg-bauhaus-yellow/10 border-2 border-bauhaus-black rounded-xl p-3 mb-4 flex items-start gap-2">
                             <Clock className="w-4 h-4 text-bauhaus-black mt-0.5 shrink-0" />
                             <p className="text-sm text-bauhaus-black font-medium">
-                                <strong>紙本簽約處理中</strong>：你已選擇改以紙本簽約，行政人員會主動和你聯繫。如果想改用線上簽約，請按下方「{contractInfo ? '重新簽約' : '前往簽約'}」。
+                                {isMinorOn(form.birth_date, taipeiToday())
+                                    ? <><strong>紙本簽約處理中</strong>：你已選擇改以紙本簽約，行政人員會主動和你聯繫。紙本簽約時，請由你和法定代理人（通常是父母）一起簽名。</>
+                                    : <><strong>紙本簽約處理中</strong>：你已選擇改以紙本簽約，行政人員會主動和你聯繫。如果想改用線上簽約，請按下方「{contractInfo ? '重新簽約' : '前往簽約'}」。</>}
                             </p>
                         </div>
                     )}

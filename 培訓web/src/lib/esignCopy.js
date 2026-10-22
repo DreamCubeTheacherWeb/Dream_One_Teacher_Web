@@ -23,6 +23,7 @@ export const ESIGN_COPY_VERSIONS = Object.freeze({
   readAck: 'esign-read-ack-v1',
   consent: 'esign-consent-v1',
   declinePaper: 'esign-decline-paper-v1',
+  minorPaper: 'esign-minor-paper-v1', // 未滿 18 歲講師的「請改以紙本簽約」說明（2026-10-22，法遵紅燈 R3）
   finalConfirm: 'esign-final-confirm-v1',
   privacyNotice: 'esign-privacy-notice-v1',
   signedEmail: 'esign-signed-email-v1', // 寄信用，資料庫端使用；前端只放常數
@@ -132,8 +133,9 @@ export const buildConsentCopy = ({ docList, maskedEmail }) => {
 };
 
 // ── b. esign-decline-paper-v1：按「不同意，改以紙本簽約」後的確認視窗 ──
-// 【待業主確認】是否寫明「在 N 個工作天內」聯繫、紙本提供方式，以及是否承諾「不影響合作資格與權益」：
-// 業主決定前照預設文字上線（不加承諾句，也不暗示選紙本會比較慢或吃虧），決定後升版。
+// 業主 2026-10-22 授權主對話定案：照預設文字上線，不加 N 個工作天與「不影響合作資格」承諾。
+// （原標【待業主確認】的三件事：幾個工作天內聯繫、紙本提供方式、是否承諾不影響合作資格與權益；
+//   都不寫，也不暗示選紙本會比較慢或吃虧。之後要改文字就升版 -v2。）
 const DECLINE_TITLE = '改以紙本簽約';
 const DECLINE_INTRO = '你可以不使用線上簽約，這是你的權利。選擇紙本簽約不代表你不同意契約內容。';
 const DECLINE_STEP_TEMPLATES = [
@@ -160,19 +162,44 @@ export const buildDeclineCopy = ({ docList }) => {
   };
 };
 
-// 選擇紙本之後的「處理中」畫面（承接 b 段第 1～4 點，不新增法律承諾）。
-export const buildPaperPendingCopy = ({ docList }) => {
+// ── g. esign-minor-paper-v1：未滿 18 歲講師的簽約方式說明（2026-10-22，法遵紅燈 R3，業主授權主對話定案） ──
+// 未滿 18 歲不能線上簽約，同意頁不顯示同意按鈕，改顯示這份說明＋一顆「改以紙本簽約」。
+// 按鈕走既有的「不同意」流程（record_contract_consent decline、紙本處理中畫面），但記錄的是本版文案，
+// 所以資料庫 esign_text_versions 也種入同一份全文（逐字一致，esignCopy.test.js 核對）。
+// 措辭中性、不嚇人、不宣稱法律結論；個資告知照常顯示（同意與不同意都存，見 esign-privacy-notice-v1）。
+const MINOR_TITLE = '請改以紙本簽約';
+const MINOR_PARAGRAPH_TEMPLATES = [
+  '這次要簽的文件是：{{doc_list}}。',
+  '依民法規定，未滿 18 歲簽訂契約需要法定代理人（通常是父母）同意。為保障你的權益，請改以紙本簽約，由你和法定代理人一起簽名。',
+  '按下方按鈕後，行政人員會和你聯繫。',
+  '系統是依你個人資料裡的出生日期判斷的。如果出生日期登錄有誤，請寄信到 {{contact_email}}。',
+];
+const MINOR_PAPER_BUTTON = '改以紙本簽約';
+
+export const buildMinorPaperCopy = ({ docList }) => {
   const values = commonValues({ docList });
   return {
-    title: '已記錄：改以紙本簽約',
-    body: [
-      '系統已記錄你選擇紙本簽約，並已通知本公司行政人員。',
-      '行政人員會主動和你聯繫，安排紙本簽約。',
-      fillPlaceholders('紙本契約和線上版本是同一個版本：{{doc_list}}。', values),
-      '紙本簽署完成前，網站上的簽約狀態會顯示「紙本簽約處理中」。',
-      fillPlaceholders('如果之後改變主意想改用線上簽約，請聯絡 {{contact_email}}。', values),
-    ],
+    version: ESIGN_COPY_VERSIONS.minorPaper,
+    title: MINOR_TITLE,
+    paragraphs: MINOR_PARAGRAPH_TEMPLATES.map((paragraph) => fillPlaceholders(paragraph, values)),
+    paperButton: MINOR_PAPER_BUTTON,
+    privacy: buildPrivacyNotice(),
   };
+};
+
+// 選擇紙本之後的「處理中」畫面（承接 b 段第 1～4 點，不新增法律承諾）。
+// 未滿 18 歲：不提「改變主意改用線上簽約」（那條路現在走不通），改提醒紙本簽約要和法定代理人一起簽。
+export const buildPaperPendingCopy = ({ docList, minor = false }) => {
+  const values = commonValues({ docList });
+  const body = [
+    '系統已記錄你選擇紙本簽約，並已通知本公司行政人員。',
+    '行政人員會主動和你聯繫，安排紙本簽約。',
+    fillPlaceholders('紙本契約和線上版本是同一個版本：{{doc_list}}。', values),
+  ];
+  if (minor) body.push('紙本簽約時，請由你和法定代理人（通常是父母）一起簽名。');
+  body.push('紙本簽署完成前，網站上的簽約狀態會顯示「紙本簽約處理中」。');
+  if (!minor) body.push(fillPlaceholders('如果之後改變主意想改用線上簽約，請聯絡 {{contact_email}}。', values));
+  return { title: '已記錄：改以紙本簽約', body };
 };
 
 // ── c. esign-final-confirm-v1：「確認簽署」按鈕正上方 ──

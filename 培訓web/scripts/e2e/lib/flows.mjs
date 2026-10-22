@@ -200,7 +200,8 @@ export function checkActivationRecord(ctx, user, tag, { method, email }) {
 }
 
 // ── 簽約 v2：閱讀 → 同意頁 → 驗證與簽署（勾已讀、簽約 OTP、手寫簽名、確認簽署）
-export async function readDocuments(page) {
+// landing：讀完文件後預期出現的頁面 testid（一般是同意頁；未滿 18 歲是 minor-paper-page）
+export async function readDocuments(page, { landing = 'consent-page' } = {}) {
   const finish = page.getByRole('button', { name: '我已完整看完且清楚這份文件的所有內容' });
   if (await visible(finish, 25000)) {
     await pollUntil(() => finish.isEnabled(), { timeoutMs: 15000 });
@@ -209,7 +210,7 @@ export async function readDocuments(page) {
   const next = page.getByTestId('read-next');
   await next.waitFor({ state: 'visible', timeout: 25000 });
   await next.click();
-  await page.getByTestId('consent-page').waitFor({ state: 'visible', timeout: 15000 });
+  await page.getByTestId(landing).waitFor({ state: 'visible', timeout: 15000 });
 }
 
 export async function agreeConsent(page) {

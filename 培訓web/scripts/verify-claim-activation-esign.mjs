@@ -13,10 +13,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { TempPostgres } from './e2e/lib/db.mjs';
+import { isMinorOn } from '../src/lib/esign.js';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIGRATION = path.join(appDir, 'supabase/migrations/20261020100000_claim_activation_esign_evidence.sql');
 const LEGAL_COPY = path.join(appDir, 'docs/specs/2026-10-20-esign-legal-copy.md');
+const MINOR_MIGRATION = path.join(appDir, 'supabase/migrations/20261022120000_block_minor_online_signing.sql');
 const COMPANY = '夢想一號文化教育股份有限公司';
 const CONTACT = 'hi@dreamcube.tw';
 const RESEND_KEY = 're_test_key_DO_NOT_USE';
@@ -951,6 +953,197 @@ try {
   const anonRead = exec(null, `SELECT * FROM public.contract_signing_evidence`, { role: 'anon' });
   check('anon 讀證據 → 權限不足', anonRead?.ok === false && anonRead.sqlstate === '42501', anonRead);
   check('講師讀不到 private.email_otp_challenges', exec(uEmail, `SELECT * FROM private.email_otp_challenges`)?.ok === false);
+
+  // ════════════════════════════════════════════════════════════════
+  group('minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）');
+  check('新 migration 已被套用（chain 包含 20261022120000_block_minor_online_signing.sql）',
+    chain.applied.includes('supabase/migrations/20261022120000_block_minor_online_signing.sql'));
+
+  // 函式與 trigger 的硬化：SECURITY DEFINER、search_path=''、PUBLIC／anon／authenticated 都沒有 EXECUTE
+  const minorFns = suJson(`SELECT jsonb_agg(jsonb_build_object('fn', p.proname, 'definer', p.prosecdef, 'path', p.proconfig,
+      'anon', has_function_privilege('anon', p.oid, 'EXECUTE'), 'auth', has_function_privilege('authenticated', p.oid, 'EXECUTE'),
+      'public', EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a WHERE a.grantee = 0)) ORDER BY p.proname)
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'private' AND p.proname IN ('is_minor_birth_date', 'instructor_is_minor', 'block_minor_online_signing', 'guard_minor_birth_date_change', 'notify_minor_paper_signing')`);
+  check('5 個新函式都是 SECURITY DEFINER＋search_path=\'\'', minorFns?.length === 5
+    && minorFns.every((f) => f.definer && JSON.stringify(f.path) === '["search_path=\\"\\""]'), minorFns);
+  check('5 個新函式：PUBLIC／anon／authenticated 都沒有 EXECUTE', minorFns.every((f) => !f.public && !f.anon && !f.auth), minorFns);
+  const minorTriggers = suJson(`SELECT jsonb_agg(tgname ORDER BY tgname) FROM pg_trigger WHERE NOT tgisinternal
+      AND tgname IN ('trg_block_minor_signed_contract', 'trg_block_minor_agree_consent', 'trg_guard_minor_birth_date_change', 'trg_notify_minor_paper_signing')`);
+  check('4 個新 trigger 都在（擋簽署列、擋 agree 同意、擋未成年改生日、通知管理員）', minorTriggers?.length === 4, minorTriggers);
+  check('既有 append-only／契約 guard trigger 仍在（沒有被我們取代）',
+    suVal(`SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN ('trg_guard_instructor_contracts', 'trg_guard_contract_consent_records')`) === '2');
+
+  // 邊界：資料庫函式與前端 isMinorOn 逐筆相同（生日前一天／當天／隔天、閏年 2/29、年底年初）
+  const grid = [
+    ['2008-10-23', '2026-10-22'], ['2008-10-22', '2026-10-22'], ['2008-10-21', '2026-10-22'],
+    ['2008-10-22', '2026-10-21'], ['2008-10-22', '2026-10-23'],
+    ['2008-02-29', '2026-02-27'], ['2008-02-29', '2026-02-28'], ['2008-02-29', '2026-03-01'], ['2008-02-29', '2026-03-02'],
+    ['2006-02-28', '2024-02-27'], ['2006-02-28', '2024-02-28'], ['2006-03-01', '2024-02-29'], ['2006-03-01', '2024-03-01'],
+    ['2008-12-31', '2026-12-30'], ['2008-12-31', '2026-12-31'], ['2009-01-01', '2026-12-31'], ['2009-01-01', '2027-01-01'],
+    ['2015-05-05', '2026-10-22'], ['1992-02-02', '2026-10-22'],
+  ];
+  const gridSql = suJson(`SELECT jsonb_agg(private.is_minor_birth_date(v.b::date, v.o::date) ORDER BY v.n)
+      FROM (VALUES ${grid.map(([b, o], i) => `(${i}, ${lit(b)}, ${lit(o)})`).join(', ')}) AS v(n, b, o)`);
+  const gridMismatch = grid.filter(([b, o], i) => gridSql[i] !== isMinorOn(b, o));
+  check(`資料庫 is_minor_birth_date 與前端 isMinorOn 在 ${grid.length} 個邊界日期完全一致`, gridMismatch.length === 0, gridMismatch);
+  check('邊界答案本身正確：生日前一天未成年、當天成年、隔天成年；2/29 出生者 2/28 未成年、3/1 成年',
+    gridSql[0] === true && gridSql[1] === false && gridSql[2] === false && gridSql[6] === true && gridSql[7] === false, gridSql);
+  check('birth_date 為 NULL → false（視為成年）', suVal(`SELECT private.is_minor_birth_date(NULL, '2026-10-22')`) === 'f');
+  const todayTpe = suVal(`SELECT (now() AT TIME ZONE 'Asia/Taipei')::date`);
+  const birthRel = (days) => suVal(`SELECT ((now() AT TIME ZONE 'Asia/Taipei')::date - interval '18 years' + interval '${days} days')::date`);
+  const turns18Today = birthRel(0);
+  const turns18Tomorrow = birthRel(1);
+  const turned18Yesterday = birthRel(-1);
+  check('以台灣今天為準：今天滿 18 歲（成年）、明天才滿 18 歲（未成年）、昨天已滿（成年）',
+    suVal(`SELECT private.is_minor_birth_date(${lit(turns18Today)}::date)`) === 'f'
+    && suVal(`SELECT private.is_minor_birth_date(${lit(turns18Tomorrow)}::date)`) === 't'
+    && suVal(`SELECT private.is_minor_birth_date(${lit(turned18Yesterday)}::date)`) === 'f', { todayTpe, turns18Today, turns18Tomorrow });
+
+  // 受測帳號：legacy teacher（無啟用紀錄視為已啟用）＋已確認 Email＋指定出生日期
+  let minorSeq = 0;
+  const MV = suJson(`SELECT jsonb_object_agg(d.doc_type, d.version)
+      FROM (SELECT DISTINCT ON (d0.doc_type) d0.doc_type, d0.version FROM public.contract_documents d0
+             WHERE d0.is_active = true AND COALESCE(to_jsonb(d0) ->> 'doc_category', 'contract') <> 'form'
+             ORDER BY d0.doc_type, d0.version DESC) d`);
+  const DOCH_M = Object.fromEntries(Object.keys(MV).map((k) => [k, k === 'rules' ? sha('rules-v1') : sha(`${k}-v${MV[k]}`)]));
+  const makeSigner = (tag, birthDate) => {
+    minorSeq += 1;
+    const email = `${tag}@t.test`;
+    const uid = createAuthUser(email, tag);
+    const iid = makeInstructor(tag, email, { phone: `097000000${minorSeq}`, idNumber: `M2234500${minorSeq}0`.slice(0, 10), userId: uid });
+    su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uid)}`);
+    su(`UPDATE public.instructors SET birth_date = ${birthDate ? lit(birthDate) : 'NULL'} WHERE id = ${lit(iid)}`);
+    const confirmed = call(admin, `public.admin_confirm_instructor_email(${ulit(iid)}, ${lit(email)}, 'minor 測試：Email 確認')`);
+    if (confirmed?.result?.status !== 'confirmed') throw new Error(`confirm email failed ${JSON.stringify(confirmed)}`);
+    su(`INSERT INTO storage.objects (bucket_id, name) VALUES ('contract-documents', 'signed/${uid}/signature_1.png'), ('contract-documents', 'signed/${uid}/contract_1.pdf')`);
+    return { uid, iid, email };
+  };
+  const submitFor = (signer, { otp, consent }) => call(signer.uid, submitExpr({
+    sig: `signed/${signer.uid}/signature_1.png`, pdfs: { contract: `signed/${signer.uid}/contract_1.pdf` }, versions: MV,
+    docHash: DOCH_M, pdfHash: { contract: sha(`signed-${signer.uid}`) }, otp, consent,
+  }));
+  const countOf = (table, uid, col = 'user_id') => Number(suVal(`SELECT count(*) FROM public.${table} WHERE ${col} = ${lit(uid)}`));
+  const notifCount = () => Number(suVal(`SELECT count(*) FROM public.notifications WHERE user_id = ${lit(admin)} AND type = 'contract'`));
+  const minor = makeSigner('minor-tomorrow', turns18Tomorrow);
+  check('前提：受測帳號是 teacher（無啟用紀錄視為已啟用）、已確認 Email、出生日期＝明天才滿 18 歲',
+    roleOf(minor.uid) === 'teacher' && suVal(`SELECT s.is_active FROM private.signing_account_state(${lit(minor.uid)}) s`) === 't'
+    && suVal(`SELECT private.instructor_is_minor(${lit(minor.uid)})`) === 't');
+
+  // 未成年：同意（agree）被擋，沒有留下任何紀錄
+  const mAgree = recordConsent(minor.uid, 'agree_electronic', MV, 'esign-consent-v1');
+  check('未成年 record_contract_consent(agree) → MINOR_REQUIRES_GUARDIAN（P0001）', errOf(mAgree) === 'MINOR_REQUIRES_GUARDIAN' && mAgree.sqlstate === 'P0001', mAgree);
+  check('未成年 agree 被擋後沒有留下任何同意紀錄', countOf('contract_consent_records', minor.uid) === 0);
+
+  // 未成年：不同意（改紙本）照常可用，記錄未成年說明全文，通知管理員（原本一則＋未成年補充一則）
+  const notifBeforeMinor = notifCount();
+  const mDecline = recordConsent(minor.uid, 'decline_electronic', MV, 'esign-minor-paper-v1');
+  check('未成年 record_contract_consent(decline, esign-minor-paper-v1) → recorded', mDecline.result?.status === 'recorded' && mDecline.result.consent_id, mDecline);
+  const mRow = suJson(`SELECT to_jsonb(r) FROM public.contract_consent_records r WHERE id = ${ulit(mDecline.result?.consent_id)}`);
+  check('decline 紀錄存「未成年說明」全文：代碼 esign-minor-paper-v1、文件清單已代入、有法定代理人、無殘留佔位符',
+    mRow?.decision === 'decline_electronic' && mRow.consent_text_version === 'esign-minor-paper-v1'
+    && mRow.consent_text.startsWith('請改以紙本簽約') && mRow.consent_text.includes('法定代理人（通常是父母）') && !mRow.consent_text.includes('{{')
+    && mRow.consent_text.includes('（第 1 版）') && mRow.instructor_id === minor.iid, mRow?.consent_text);
+  check('decline 紀錄同時存個資告知版本與全文（與一般 decline 相同）', mRow?.privacy_notice_version === 'esign-privacy-notice-v1' && mRow.privacy_notice_text === privacySeed);
+  check('未成年也可以用一般的「不同意」文案記錄（esign-decline-paper-v1 不受影響）',
+    recordConsent(minor.uid, 'decline_electronic', MV, 'esign-decline-paper-v1').result?.status === 'recorded');
+  const minorNotif = suJson(`SELECT to_jsonb(n) FROM public.notifications n WHERE n.user_id = ${lit(admin)} AND n.title LIKE '未滿 18 歲%' ORDER BY n.created_at DESC LIMIT 1`);
+  check('管理員收到通知：原本「講師選擇改以紙本簽約」×2（兩次 decline）＋「未滿 18 歲…法定代理人」×2',
+    notifCount() === notifBeforeMinor + 4 && minorNotif?.body?.includes('minor-tomorrow') && minorNotif.body.includes('法定代理人') && minorNotif.link === '/admin/contracts', { count: notifCount() - notifBeforeMinor, minorNotif });
+  check('成年講師選擇紙本時不會多出「未滿 18 歲」通知', (() => {
+    const before = Number(suVal(`SELECT count(*) FROM public.notifications WHERE title LIKE '未滿 18 歲%'`));
+    recordConsent(uPre, 'decline_electronic', V, 'esign-decline-paper-v1');
+    return Number(suVal(`SELECT count(*) FROM public.notifications WHERE title LIKE '未滿 18 歲%'`)) === before;
+  })());
+
+  // 未成年：直接呼叫 submit_my_contract 被擋，而且不留半套紀錄；OTP 不被消耗（整筆交易回滾）
+  //   作法：出生日期原本是成年 → 記同意、驗證簽約碼（此時完全合法）→ 出生日期被更正為未成年 → 送出
+  const corrected = makeSigner('minor-corrected', '1990-01-01');
+  const cConsent = recordConsent(corrected.uid, 'agree_electronic', MV, 'esign-consent-v1');
+  check('對照組：同一人在出生日期是成年時可記同意（agree → recorded）', cConsent.result?.status === 'recorded', cConsent);
+  const cOtp = verifiedContractOtp(corrected.uid);
+  su(`UPDATE public.instructors SET birth_date = ${lit(turns18Tomorrow)} WHERE id = ${lit(corrected.iid)}`);
+  const evidenceBefore = Number(suVal(`SELECT count(*) FROM public.contract_signing_evidence`));
+  const mailBefore = Number(suVal(`SELECT count(*) FROM public.email_delivery_log WHERE kind = 'contract_signed_copy'`));
+  const cSubmit = submitFor(corrected, { otp: cOtp, consent: cConsent.result.consent_id });
+  check('未成年（出生日期被更正）呼叫 submit_my_contract → MINOR_REQUIRES_GUARDIAN', errOf(cSubmit) === 'MINOR_REQUIRES_GUARDIAN', cSubmit);
+  const cChallenge = suJson(`SELECT to_jsonb(c) FROM private.email_otp_challenges c WHERE c.id = ${ulit(cOtp)}`);
+  check('被擋之後 OTP 沒有被消耗（consumed_at 仍是 NULL，verified_at 還在）：整筆交易回滾', cChallenge.consumed_at === null && cChallenge.verified_at !== null, cChallenge);
+  check('被擋之後沒有任何半套紀錄：沒有契約、沒有證據、沒有簽署完成通知信、證據鏈長度不變',
+    countOf('instructor_contracts', corrected.uid) === 0 && Number(suVal(`SELECT count(*) FROM public.contract_signing_evidence`)) === evidenceBefore
+    && Number(suVal(`SELECT count(*) FROM public.email_delivery_log WHERE kind = 'contract_signed_copy'`)) === mailBefore
+    && Number(suVal(`SELECT count(*) FROM public.email_delivery_log WHERE related_contract_id IS NOT NULL AND related_user_id = ${lit(corrected.uid)}`)) === 0);
+  // 出生日期改回成年後，同一組 OTP＋同意還能用（證明上面真的沒消耗任何東西）
+  su(`UPDATE public.instructors SET birth_date = '1990-01-01' WHERE id = ${lit(corrected.iid)}`);
+  const cRetry = submitFor(corrected, { otp: cOtp, consent: cConsent.result.consent_id });
+  check('出生日期更正回成年後，同一組同意＋OTP 可以簽成功（證明被擋時沒有消耗 OTP）', cRetry.ok && cRetry.result?.status === 'signed', cRetry);
+  su(`UPDATE public.instructors SET birth_date = ${lit(turns18Tomorrow)} WHERE id = ${lit(corrected.iid)}`);
+
+  // 未成年：拿別人的同意／沒有同意直接送出 → 在更前面就被擋
+  check('未成年沒有同意直接送出 → CONSENT_REQUIRED（被擋，沒有留下契約）',
+    errOf(submitFor(minor, { otp: cOtp, consent: null })) === 'CONSENT_REQUIRED' && countOf('instructor_contracts', minor.uid) === 0);
+  check('未成年拿別人（成年）的同意紀錄送出 → CONSENT_REQUIRED（被擋，沒有留下契約）',
+    errOf(submitFor(minor, { otp: cOtp, consent: cConsent.result.consent_id })) === 'CONSENT_REQUIRED' && countOf('instructor_contracts', minor.uid) === 0);
+
+  // 資料庫 trigger 本身（深度防禦）：即使走「內部寫入」通道，未成年的 signed 契約列與 agree 同意列也寫不進去
+  const mInsContract = suExec(`DO $d$ BEGIN PERFORM private.internal_write_begin();
+      INSERT INTO public.instructor_contracts (user_id, filled_name, filled_instructor_role, filled_id_number, filled_address, filled_phone, signature_path, status)
+      VALUES (${lit(minor.uid)}, 'x', 'A', 'A123456789', 'x', 'x', 's.png', 'signed'); END $d$`);
+  check('內部寫入通道也寫不進未成年的 signed 契約列（MINOR_REQUIRES_GUARDIAN）', mInsContract?.ok === false && mInsContract.message === 'MINOR_REQUIRES_GUARDIAN', mInsContract);
+  const mInsConsent = suExec(`DO $d$ BEGIN PERFORM private.internal_write_begin();
+      INSERT INTO public.contract_consent_records (user_id, decision, consent_text_version, consent_text, doc_versions)
+      VALUES (${lit(minor.uid)}, 'agree_electronic', 'esign-consent-v1', 'x', '{}'::jsonb); END $d$`);
+  check('內部寫入通道也寫不進未成年的 agree 同意列（MINOR_REQUIRES_GUARDIAN）', mInsConsent?.ok === false && mInsConsent.message === 'MINOR_REQUIRES_GUARDIAN', mInsConsent);
+  const mSrv = exec(null, `INSERT INTO public.contract_consent_records (user_id, decision, consent_text_version, consent_text, doc_versions) VALUES (${ulit(minor.uid)}, 'agree_electronic', 'esign-consent-v1', 'x', '{}')`, { role: 'service_role' });
+  check('service_role 直接寫未成年的 agree 同意列也被擋（不是靠 RPC 才擋）', mSrv?.ok === false && ['MINOR_REQUIRES_GUARDIAN', 'EVIDENCE_WRITE_DENIED'].includes(mSrv.message), mSrv);
+
+  // 邊界：今天剛好滿 18 歲可以簽；出生日期 NULL 當成年；成年人不受影響
+  const bday = makeSigner('adult-bday-today', turns18Today);
+  const bConsent = recordConsent(bday.uid, 'agree_electronic', MV, 'esign-consent-v1');
+  check('剛好今天滿 18 歲：可記錄 agree 同意', bConsent.result?.status === 'recorded', bConsent);
+  const bOtp = verifiedContractOtp(bday.uid);
+  const bSign = submitFor(bday, { otp: bOtp, consent: bConsent.result.consent_id });
+  check('剛好今天滿 18 歲：submit_my_contract 簽署成功（signed）、證據多一筆', bSign.ok && bSign.result?.status === 'signed'
+    && Number(suVal(`SELECT count(*) FROM public.contract_signing_evidence`)) === evidenceBefore + 2 && countOf('instructor_contracts', bday.uid) === 1,
+    { bSign, evidenceBefore });
+  const nullBirth = makeSigner('adult-no-birth', null);
+  check('出生日期 NULL：視為成年，可記錄 agree 同意', recordConsent(nullBirth.uid, 'agree_electronic', MV, 'esign-consent-v1').result?.status === 'recorded');
+  const adult = makeSigner('adult-1990', '1990-01-01');
+  const aConsent = recordConsent(adult.uid, 'agree_electronic', MV, 'esign-consent-v1');
+  const aSign = submitFor(adult, { otp: verifiedContractOtp(adult.uid), consent: aConsent.result?.consent_id });
+  check('成年人（1990）：同意＋簽署完全不受影響', aConsent.result?.status === 'recorded' && aSign.ok && aSign.result?.status === 'signed', { aConsent, aSign });
+  const chainAfterMinor = call(admin, 'public.admin_verify_contract_evidence_chain()').result;
+  check('新增三份簽署（corrected 重試、今天滿 18、成年）後證據鏈仍完整', chainAfterMinor?.ok === true && chainAfterMinor.checked === evidenceBefore + 3, chainAfterMinor);
+
+  // 出生日期防繞過：未成年講師不能自己把出生日期改成成年或清空
+  const flipAdult = exec(minor.uid, `UPDATE public.instructors SET birth_date = '1990-01-01' WHERE user_id = auth.uid()`);
+  check('未成年講師自己把出生日期改成成年 → BIRTH_DATE_ADMIN_ONLY（42501）', flipAdult?.ok === false && flipAdult.message === 'BIRTH_DATE_ADMIN_ONLY' && flipAdult.sqlstate === '42501', flipAdult);
+  const flipNull = exec(minor.uid, `UPDATE public.instructors SET birth_date = NULL WHERE user_id = auth.uid()`);
+  check('未成年講師自己清空出生日期 → BIRTH_DATE_ADMIN_ONLY', flipNull?.ok === false && flipNull.message === 'BIRTH_DATE_ADMIN_ONLY', flipNull);
+  check('被擋之後出生日期沒變、仍是未成年', suVal(`SELECT birth_date FROM public.instructors WHERE id = ${lit(minor.iid)}`) === turns18Tomorrow
+    && suVal(`SELECT private.instructor_is_minor(${lit(minor.uid)})`) === 't');
+  const keepMinor = exec(minor.uid, `UPDATE public.instructors SET birth_date = ${lit(birthRel(5))} WHERE user_id = auth.uid()`);
+  check('未成年講師把出生日期改成另一個（仍未成年的）日期 → 允許（更正筆誤）', keepMinor?.ok === true && keepMinor.rows === 1, keepMinor);
+  const resave = exec(minor.uid, `UPDATE public.instructors SET birth_date = birth_date, nickname = '暱稱改了' WHERE user_id = auth.uid()`);
+  check('未成年講師存檔其他欄位（出生日期沒變）→ 不受影響', resave?.ok === true && resave.rows === 1, resave);
+  const adultEdit = exec(adult.uid, `UPDATE public.instructors SET birth_date = '1985-05-05' WHERE user_id = auth.uid()`);
+  check('成年講師把出生日期改成另一個成年日期 → 允許', adultEdit?.ok === true && adultEdit.rows === 1, adultEdit);
+  const adultToMinor = exec(adult.uid, `UPDATE public.instructors SET birth_date = ${lit(turns18Tomorrow)} WHERE user_id = auth.uid()`);
+  check('成年講師把出生日期改成未成年日期 → 允許（誤填也不傷人；之後只有管理員能改回）', adultToMinor?.ok === true && adultToMinor.rows === 1, adultToMinor);
+  const adminFix = exec(admin, `UPDATE public.instructors SET birth_date = '1999-09-09' WHERE id = ${ulit(minor.iid)}`);
+  check('管理員可以更正未成年講師的出生日期（改成成年）', adminFix?.ok === true && adminFix.rows === 1
+    && suVal(`SELECT private.instructor_is_minor(${lit(minor.uid)})`) === 'f', adminFix);
+  check('管理員更正後，原本的未成年講師可以記錄 agree 同意', recordConsent(minor.uid, 'agree_electronic', MV, 'esign-consent-v1').result?.status === 'recorded');
+
+  // migration 可重複執行；文案種子 append-only
+  const textBefore = suVal(`SELECT content FROM public.esign_text_versions WHERE version_code = 'esign-minor-paper-v1'`);
+  const rerunMinor = db.psqlSync(null, { file: MINOR_MIGRATION, tuplesOnly: false, expectFail: true });
+  check('新 migration 第二次套用成功（可重複執行）、文案種子不變、trigger 不重複',
+    rerunMinor.ok && suVal(`SELECT content FROM public.esign_text_versions WHERE version_code = 'esign-minor-paper-v1'`) === textBefore
+    && !/WARNING/.test(rerunMinor.stderr || '')
+    && Number(suVal(`SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname LIKE 'trg_%minor%'`)) === 4, rerunMinor.stderr);
+  check('esign-minor-paper-v1 種入 esign_text_versions 且是 append-only（不能改內容）',
+    textBefore.startsWith('請改以紙本簽約') && suExec(`UPDATE public.esign_text_versions SET content = 'x' WHERE version_code = 'esign-minor-paper-v1'`)?.message === 'ESIGN_TEXT_IMMUTABLE');
 
   // ════════════════════════════════════════════════════════════════
   group('legal copy fidelity');

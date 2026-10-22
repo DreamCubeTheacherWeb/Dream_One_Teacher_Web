@@ -275,7 +275,9 @@ export async function makeReadyPendingTeacher(stack, api, admin, { emailPrefix =
 }
 
 // 用 REST 照前端同樣的步驟簽約（同意 → 簽約 OTP → 上傳簽名與成品 → submit v2），給「不是在測簽約畫面」的情境用
-export async function signViaRest(stack, api, user) {
+// beforeSubmit({ otp, consentId })：送出前的時機點（例如模擬出生日期被更正）；
+// allowFailure：送出被拒時不丟例外，回傳 { failed, result, params, otp, consentId } 讓呼叫端驗證拒絕原因。
+export async function signViaRest(stack, api, user, { beforeSubmit, allowFailure = false } = {}) {
   const docs = (await api.rest(user.token, 'GET', 'contract_documents?select=*&is_active=eq.true&doc_category=eq.contract&order=sort_order')).data;
   const docVersions = Object.fromEntries(docs.map((d) => [d.doc_type, d.version]));
   const consent = await api.rpc(user.token, 'record_contract_consent', { p_decision: 'agree_electronic', p_doc_versions: docVersions, p_consent_text_version: 'esign-consent-v1' });
@@ -306,7 +308,9 @@ export async function signViaRest(stack, api, user) {
     p_otp_challenge_id: otp.challenge_id, p_consent_id: consent.data.consent_id,
     p_document_sha256: documentSha, p_signed_pdf_sha256: { contract: sha256(pdf) },
   };
+  if (beforeSubmit) await beforeSubmit({ otp, consentId: consent.data.consent_id });
   const result = await api.rpc(user.token, 'submit_my_contract', params);
+  if (allowFailure) return { failed: result.data?.status !== 'signed', result, params, otp, consentId: consent.data.consent_id };
   if (result.data?.status !== 'signed') throw new Error(`submit failed ${result.status} ${JSON.stringify(result.data)}`);
   return { ...result.data, params };
 }

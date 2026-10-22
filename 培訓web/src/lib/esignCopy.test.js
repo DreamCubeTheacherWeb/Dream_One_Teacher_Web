@@ -10,6 +10,7 @@ import {
   buildConsentText,
   buildDeclineCopy,
   buildFinalConfirm,
+  buildMinorPaperCopy,
   buildPaperPendingCopy,
   buildPrivacyNotice,
   buildReadAck,
@@ -31,14 +32,18 @@ const allCopy = () => [
   ...Object.values(buildDeclineCopy({ docList: DOC_LIST })).flatMap((value) => (typeof value === 'string' ? [value] : Array.isArray(value) ? value : [])),
   ...Object.values(buildFinalConfirm({ instructorName: '王小明', docList: DOC_LIST })).flatMap((value) => (typeof value === 'string' ? [value] : Array.isArray(value) ? value : [])),
   ...buildPaperPendingCopy({ docList: DOC_LIST }).body,
+  ...buildPaperPendingCopy({ docList: DOC_LIST, minor: true }).body,
+  ...Object.values(buildMinorPaperCopy({ docList: DOC_LIST }))
+    .flatMap((value) => (typeof value === 'string' ? [value] : Array.isArray(value) ? value : [])),
   buildConsentText({ docList: DOC_LIST, maskedEmail: 'ab***@gmail.com', decision: 'decline_electronic' }),
 ];
 
-test('版本代碼就是法規顧問定稿的 7 個', () => {
+test('版本代碼就是法規顧問定稿的 7 個，加上未成年說明 esign-minor-paper-v1 共 8 個', () => {
   assert.deepEqual(Object.values(ESIGN_COPY_VERSIONS).sort(), [
     'esign-consent-v1',
     'esign-decline-paper-v1',
     'esign-final-confirm-v1',
+    'esign-minor-paper-v1',
     'esign-otp-email-v1',
     'esign-privacy-notice-v1',
     'esign-read-ack-v1',
@@ -138,6 +143,32 @@ test('consent_text 存講師當下實際看到的全文：同意版含同意頁�
   assert.ok(decline.length > agree.length);
 });
 
+test('未成年說明（esign-minor-paper-v1）：說明法定代理人、紙本簽約、行政人員聯繫；沒有同意按鈕，也不宣稱法律結論', () => {
+  const minor = buildMinorPaperCopy({ docList: DOC_LIST });
+  assert.equal(minor.version, 'esign-minor-paper-v1');
+  assert.equal(minor.title, '請改以紙本簽約');
+  assert.equal(minor.paperButton, '改以紙本簽約');
+  assert.ok(minor.paragraphs[0].includes(DOC_LIST));
+  const joined = minor.paragraphs.join('\n');
+  assert.ok(joined.includes('未滿 18 歲') && joined.includes('法定代理人（通常是父母）') && joined.includes('一起簽名'));
+  assert.ok(joined.includes('行政人員會和你聯繫'));
+  assert.ok(joined.includes(ESIGN_CONTACT_EMAIL));
+  // 沒有同意按鈕、沒有勾選句；不使用嚇人字眼或法律結論
+  assert.ok(!('agreeButton' in minor) && !('checkboxLabel' in minor));
+  assert.ok(!/無效|違法|不具(法律)?效力|法律責任|處罰/.test(joined), joined);
+  assert.equal(minor.privacy.version, 'esign-privacy-notice-v1');
+});
+
+test('紙本處理中畫面：未成年版提醒和法定代理人一起簽，且不再提「改變主意改用線上簽約」', () => {
+  const adult = buildPaperPendingCopy({ docList: DOC_LIST });
+  const minor = buildPaperPendingCopy({ docList: DOC_LIST, minor: true });
+  assert.ok(adult.body.some((line) => line.includes('改變主意')));
+  assert.ok(!minor.body.some((line) => line.includes('改變主意') || line.includes('改用線上簽約')));
+  assert.ok(minor.body.some((line) => line.includes('法定代理人')));
+  assert.ok(minor.body.some((line) => line.includes('紙本簽約處理中')));
+  assert.equal(minor.title, adult.title);
+});
+
 test('佔位符工具：缺值時保留原樣，粗體標記可切開', () => {
   assert.equal(fillPlaceholders('嗨 {{a}} 與 {{b}}', { a: 'X' }), '嗨 X 與 {{b}}');
   assert.deepEqual(splitEsignInline('前⟪粗⟫後'), [
@@ -157,12 +188,18 @@ test('簽約 OTP 驗證通過後的有效期為 15 分鐘（與規格一致）',
 // ── 與資料庫種入的文案核對 ─────────────────────────────────────
 // 同意紀錄的 consent_text 由資料庫依版本代碼抄入（esign_text_versions）；畫面顯示的是 esignCopy.js。
 // 兩邊任何一個字不同，就會變成「存證的文字不是講師看到的文字」。這裡逐字（忽略排版符號）核對。
-const MIGRATION_URL = new URL('../../supabase/migrations/20261020100000_claim_activation_esign_evidence.sql', import.meta.url);
+const MIGRATION_URLS = [
+  new URL('../../supabase/migrations/20261020100000_claim_activation_esign_evidence.sql', import.meta.url),
+  new URL('../../supabase/migrations/20261022120000_block_minor_online_signing.sql', import.meta.url),
+];
 const readSeeds = () => {
-  if (!existsSync(MIGRATION_URL)) return null;
-  const sql = readFileSync(MIGRATION_URL, 'utf8');
+  if (!existsSync(MIGRATION_URLS[0])) return null;
   const seeds = {};
-  for (const match of sql.matchAll(/\('(esign-[a-z-]+-v\d+)', \$t\$([\s\S]*?)\$t\$\)/g)) seeds[match[1]] = match[2];
+  for (const url of MIGRATION_URLS) {
+    if (!existsSync(url)) continue;
+    const sql = readFileSync(url, 'utf8');
+    for (const match of sql.matchAll(/\('(esign-[a-z-]+-v\d+)', \$t\$([\s\S]*?)\$t\$\)/g)) seeds[match[1]] = match[2];
+  }
   return seeds;
 };
 // 去掉排版：空白、項目符號、勾選框、按鈕括號、粗體標記、有序清單的編號
@@ -171,7 +208,7 @@ const normalize = (text) => String(text)
   .replace(/[\s⟪⟫*\-☐［］[\]]/g, '');
 const PLACEHOLDER_VALUES = { docList: '{{doc_list}}', maskedEmail: '{{masked_email}}', instructorName: '{{instructor_name}}' };
 
-test('畫面文案與資料庫種入的法規文案逐字一致（同意頁、紙本確認、最後確認句、個資告知、已閱讀勾選）', (t) => {
+test('畫面文案與資料庫種入的法規文案逐字一致（同意頁、紙本確認、未成年說明、最後確認句、個資告知、已閱讀勾選）', (t) => {
   const seeds = readSeeds();
   if (!seeds) { t.skip('找不到 migration 檔，略過'); return; }
 
@@ -180,6 +217,7 @@ test('畫面文案與資料庫種入的法規文案逐字一致（同意頁、�
   const finalConfirm = buildFinalConfirm(PLACEHOLDER_VALUES);
   const privacy = buildPrivacyNotice();
   const readAck = buildReadAck(PLACEHOLDER_VALUES);
+  const minor = buildMinorPaperCopy(PLACEHOLDER_VALUES);
 
   const screens = {
     'esign-consent-v1': [consent.title, ...consent.paragraphs, consent.checkboxLabel, consent.agreeButton, consent.declineButton],
@@ -187,6 +225,7 @@ test('畫面文案與資料庫種入的法規文案逐字一致（同意頁、�
     'esign-final-confirm-v1': [finalConfirm.lead, ...finalConfirm.items, finalConfirm.outro, finalConfirm.button],
     'esign-privacy-notice-v1': [privacy.title, privacy.intro, ...privacy.items, privacy.outro],
     'esign-read-ack-v1': [readAck.label],
+    'esign-minor-paper-v1': [minor.title, ...minor.paragraphs, minor.paperButton],
   };
 
   for (const [code, parts] of Object.entries(screens)) {

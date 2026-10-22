@@ -137,6 +137,10 @@ test('email guard errors are explained in Chinese; other errors keep their messa
     assert.doesNotMatch(text, /must match/);
   }
   assert.equal(describeInstructorSaveError({ message: 'network down' }), 'network down');
+  const birth = describeInstructorSaveError({ code: '42501', message: 'BIRTH_DATE_ADMIN_ONLY' });
+  assert.match(birth, /未滿 18 歲/);
+  assert.match(birth, /聯繫管理員/);
+  assert.doesNotMatch(birth, /BIRTH_DATE_ADMIN_ONLY/);
   assert.equal(
     describeInstructorSaveError({ message: 'instructor identity is not owned by the signed-in account' }),
     'instructor identity is not owned by the signed-in account',

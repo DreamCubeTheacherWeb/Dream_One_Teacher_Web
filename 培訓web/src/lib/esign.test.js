@@ -10,12 +10,14 @@ import {
   deliveryStatusLabel,
   describeContractRpcError,
   formatTaipeiTime,
+  isMinorOn,
   isSha256Hex,
   safeDownloadName,
   sha256Hex,
   sha256HexOfBlob,
   shortHash,
   summarizeIntegrity,
+  taipeiToday,
 } from './esign.js';
 
 test('SHA-256 與 Node crypto 算出的結果一致，輸出為 64 位小寫 hex', async () => {
@@ -55,6 +57,7 @@ test('簽約送出的錯誤代碼都有白話訊息與下一步', () => {
     FILE_NOT_UPLOADED: null,
     SIGNED_PDF_MISSING: null,
     NO_ACTIVE_DOCUMENTS: 'reload',
+    MINOR_REQUIRES_GUARDIAN: 'minor',
     INVALID_INPUT: null,
     CONSENT_TEXT_UNKNOWN: null,
   };
@@ -134,4 +137,65 @@ test('證據顯示用的白話標籤與雜湊縮寫', () => {
   assert.equal(shortHash(hash), `${'a'.repeat(10)}…${'b'.repeat(8)}`);
   assert.equal(shortHash('abc'), 'abc');
   assert.equal(shortHash(null), '');
+});
+
+test('未成年判斷：生日前一天、當天、隔天（出生日當天滿 18 歲）', () => {
+  // 2008-10-22 出生 → 2026-10-22 滿 18 歲
+  assert.equal(isMinorOn('2008-10-23', '2026-10-22'), true); // 差一天，還沒滿
+  assert.equal(isMinorOn('2008-10-22', '2026-10-22'), false); // 剛好今天滿 18
+  assert.equal(isMinorOn('2008-10-21', '2026-10-22'), false); // 昨天就滿了
+  // 換個角度：同一個人在 18 歲生日前一天、當天、隔天
+  assert.equal(isMinorOn('2008-10-22', '2026-10-21'), true);
+  assert.equal(isMinorOn('2008-10-22', '2026-10-22'), false);
+  assert.equal(isMinorOn('2008-10-22', '2026-10-23'), false);
+  // 年底與年初
+  assert.equal(isMinorOn('2008-12-31', '2026-12-30'), true);
+  assert.equal(isMinorOn('2008-12-31', '2026-12-31'), false);
+  assert.equal(isMinorOn('2009-01-01', '2026-12-31'), true);
+  assert.equal(isMinorOn('2009-01-01', '2027-01-01'), false);
+  // 明顯的成年與未成年
+  assert.equal(isMinorOn('1992-02-02', '2026-10-22'), false);
+  assert.equal(isMinorOn('2015-05-05', '2026-10-22'), true);
+});
+
+test('未成年判斷：閏年 2/29 出生者，滿 18 歲那年不是閏年，3/1 才算成年', () => {
+  // 2008-02-29 出生 → 2026 不是閏年
+  assert.equal(isMinorOn('2008-02-29', '2026-02-27'), true);
+  assert.equal(isMinorOn('2008-02-29', '2026-02-28'), true); // 2/28 還沒滿（保守）
+  assert.equal(isMinorOn('2008-02-29', '2026-03-01'), false); // 3/1 成年
+  assert.equal(isMinorOn('2008-02-29', '2026-03-02'), false);
+  // 閏日當天本身是合法日期；平年的 2/29 不存在 → 格式錯當成沒有出生日期
+  assert.equal(isMinorOn('2008-02-29', '2008-02-29'), true);
+  assert.equal(isMinorOn('2026-02-29', '2026-10-22'), false);
+  // 其他人在閏年當天滿 18 歲：2006-02-28 出生，2024-02-29（閏年）已成年
+  assert.equal(isMinorOn('2006-02-28', '2024-02-27'), true);
+  assert.equal(isMinorOn('2006-02-28', '2024-02-28'), false);
+  assert.equal(isMinorOn('2006-03-01', '2024-02-29'), true);
+  assert.equal(isMinorOn('2006-03-01', '2024-03-01'), false);
+});
+
+test('未成年判斷：沒有出生日期或格式不對一律當成年（資料完整度另外管），帶時間尾巴也能讀', () => {
+  assert.equal(isMinorOn(null, '2026-10-22'), false);
+  assert.equal(isMinorOn(undefined, '2026-10-22'), false);
+  assert.equal(isMinorOn('', '2026-10-22'), false);
+  assert.equal(isMinorOn('不是日期', '2026-10-22'), false);
+  assert.equal(isMinorOn('2010-13-40', '2026-10-22'), false);
+  assert.equal(isMinorOn('2010-06-15T00:00:00+00:00', '2026-10-22'), true);
+  assert.equal(isMinorOn('2008-10-22', null), false); // 今天的日期壞掉時不擋（資料庫才是防線）
+});
+
+test('台北今天：UTC 傍晚已經是台北隔天，預設用台北日期判斷', () => {
+  assert.equal(taipeiToday(new Date('2026-10-21T16:00:00Z')), '2026-10-22');
+  assert.equal(taipeiToday(new Date('2026-10-21T15:59:59Z')), '2026-10-21');
+  // 不給 today 時用台北今天：在台北 10/22 當天，2008-10-22 出生者剛好成年
+  assert.equal(isMinorOn('2008-10-22', taipeiToday(new Date('2026-10-21T16:00:00Z'))), false);
+  assert.equal(isMinorOn('2008-10-22', taipeiToday(new Date('2026-10-21T15:59:59Z'))), true);
+});
+
+test('未成年的錯誤代碼提示：不直接丟英文代碼，文字中性', () => {
+  const info = describeContractRpcError({ message: 'MINOR_REQUIRES_GUARDIAN' });
+  assert.equal(info.code, 'MINOR_REQUIRES_GUARDIAN');
+  assert.equal(info.action, 'minor');
+  assert.ok(info.message.includes('法定代理人') && info.message.includes('紙本簽約'));
+  assert.ok(!info.message.includes('MINOR_REQUIRES_GUARDIAN'));
 });
