@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { fetchInstructorDirectory } from '../../lib/instructorDirectory';
 import { MessageSquare, User, Calendar, Play, Search, Filter, ChevronDown, Star, GraduationCap, Send, Clock, Trash2 } from 'lucide-react';
 
-const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習', '職員': '職員', '工讀生': '工讀生' };
+const ROLE_LABELS = { S: 'S 級', 'A+': 'A+ 級', A: 'A 級', B: 'B 級', '實習': '實習' };
 
 const AssignmentReview = () => {
     const { user, profile } = useAuth();

@@ -7,15 +7,16 @@ import { generateFilledForm, loadFormTemplate } from '../../lib/formGenerator';
 import { REQUIRED_PROFILE_DOCUMENTS, hasInstructorDocument } from '../../lib/profileCompletion';
 import FilledFormPreviewModal from '../../components/FilledFormPreviewModal';
 import { fetchInstructorDirectory } from '../../lib/instructorDirectory';
-import { INSTRUCTOR_LEVEL_LABELS as ROLE_LABELS, SPEED_QUALIFICATION_LABELS, speedQualificationLabel } from '../../lib/constants';
+import {
+    COOPERATION_STATUS_LABELS, INSTRUCTOR_LEVEL_LABELS as ROLE_LABELS, PERSONNEL_TYPE_LABELS, PERSONNEL_TYPE_OPTIONS,
+    SPEED_QUALIFICATION_LABELS, isInstructorPersonnel, normalizeCooperationStatus, normalizePersonnelTypes, speedQualificationLabel,
+} from '../../lib/constants';
 
+// 合作狀態（employment_status）：只剩合作中／冷凍／已離職；NULL 視為合作中。身分另由人員類別（personnel_types）表達。
 const STATUS_OPTIONS = [
-    { key: 'active',    label: '講師',     color: 'bg-bauhaus-blue text-white' },
-    { key: 'staff',     label: '職員',     color: 'bg-bauhaus-black text-white' },
-    { key: 'assistant', label: '助教',     color: 'bg-white text-bauhaus-black' },
-    { key: 'part_time', label: '工讀生',   color: 'bg-bauhaus-muted text-bauhaus-black' },
-    { key: 'frozen',    label: '冷凍',     color: 'bg-bauhaus-yellow text-bauhaus-black' },
-    { key: 'cancelled', label: '已離職／停止合作', color: 'bg-bauhaus-red text-white' },
+    { key: 'active',    label: COOPERATION_STATUS_LABELS.active,    color: 'bg-bauhaus-blue text-white' },
+    { key: 'frozen',    label: COOPERATION_STATUS_LABELS.frozen,    color: 'bg-bauhaus-yellow text-bauhaus-black' },
+    { key: 'cancelled', label: COOPERATION_STATUS_LABELS.cancelled, color: 'bg-bauhaus-red text-white' },
 ];
 const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map(s => [s.key, s]));
 
@@ -51,6 +52,7 @@ const InstructorList = () => {
     const [statusFilter, setStatusFilter] = useState('');
     const [roleFilter, setRoleFilter] = useState('');
     const [speedFilter, setSpeedFilter] = useState('');
+    const [personnelFilter, setPersonnelFilter] = useState('');
     const [expandedId, setExpandedId] = useState(null);
     const [signedUrls, setSignedUrls] = useState({});
     const [showAddModal, setShowAddModal] = useState(false);
@@ -151,7 +153,10 @@ const InstructorList = () => {
     };
 
     const filtered = instructors.filter(i => {
-        if (statusFilter && i.employment_status !== statusFilter) return false;
+        if (statusFilter && normalizeCooperationStatus(i.employment_status) !== statusFilter) return false;
+        if (personnelFilter && !normalizePersonnelTypes(i.personnel_types).includes(personnelFilter)) return false;
+        // 等級／速解只對講師有意義：非講師畫面顯示「不適用」，也不出現在等級或速解的篩選結果
+        if ((roleFilter || speedFilter) && !isInstructorPersonnel(i.personnel_types)) return false;
         if (roleFilter && i.instructor_role !== roleFilter) return false;
         if (speedFilter === 'none' && i.speed_qualification) return false;
         if (speedFilter && speedFilter !== 'none' && i.speed_qualification !== speedFilter) return false;
@@ -167,7 +172,11 @@ const InstructorList = () => {
     });
 
     const statusCounts = STATUS_OPTIONS.reduce((acc, s) => {
-        acc[s.key] = instructors.filter(i => i.employment_status === s.key).length;
+        acc[s.key] = instructors.filter(i => normalizeCooperationStatus(i.employment_status) === s.key).length;
+        return acc;
+    }, {});
+    const personnelCounts = PERSONNEL_TYPE_OPTIONS.reduce((acc, p) => {
+        acc[p.value] = instructors.filter(i => normalizePersonnelTypes(i.personnel_types).includes(p.value)).length;
         return acc;
     }, {});
     const linkedCount = instructors.filter(i => i.user_id).length;
@@ -367,7 +376,7 @@ const InstructorList = () => {
                         !statusFilter ? 'bg-bauhaus-black text-white' : 'bg-white text-bauhaus-black/60 hover:bg-bauhaus-muted'
                     }`}
                 >
-                    全部狀態
+                    全部合作狀態
                 </button>
                 {STATUS_OPTIONS.map(s => (
                     <button
@@ -383,6 +392,17 @@ const InstructorList = () => {
                     </button>
                 ))}
                 <div className="border-l-2 border-bauhaus-black/20 mx-2"></div>
+                <select
+                    value={personnelFilter}
+                    onChange={e => setPersonnelFilter(e.target.value)}
+                    aria-label="人員類別篩選"
+                    className="bh-chip bg-white text-bauhaus-black cursor-pointer hover:bg-bauhaus-muted outline-none"
+                >
+                    <option value="">全部人員類別</option>
+                    {PERSONNEL_TYPE_OPTIONS.map(p => (
+                        <option key={p.value} value={p.value}>{p.label} {personnelCounts[p.value] || 0}</option>
+                    ))}
+                </select>
                 <select
                     value={roleFilter}
                     onChange={e => setRoleFilter(e.target.value)}
@@ -622,15 +642,29 @@ const InstructorExpandedContent = ({ inst, urls }) => (
 );
 
 const StatusBadge = ({ status }) => {
-    if (!status) return <span className="text-xs text-bauhaus-black/30">—</span>;
-    const s = STATUS_MAP[status];
-    if (!s) return <span className="text-xs text-bauhaus-black/40">{status}</span>;
+    const s = STATUS_MAP[normalizeCooperationStatus(status)];
     return (
         <span className={`bh-chip whitespace-nowrap ${s.color}`}>
             {s.label}
         </span>
     );
 };
+
+// 人員類別小標籤：只有講師（預設）不顯示；有職員／工讀計時時合成一顆（例：職員、講師・職員），表格才不會被撐寬
+const PersonnelTypeTags = ({ types }) => {
+    const list = normalizePersonnelTypes(types);
+    if (list.length === 1 && list[0] === 'instructor') return null;
+    return (
+        <span data-testid="personnel-tag" className="bh-chip whitespace-nowrap bg-white text-bauhaus-black">
+            {list.map(type => PERSONNEL_TYPE_LABELS[type] || type).join('・')}
+        </span>
+    );
+};
+
+// 人員類別沒有講師時，講師等級／速解資格顯示「不適用」（資料庫裡已存的值不清除）
+const NotApplicableText = () => (
+    <span data-testid="not-applicable" className="text-xs text-bauhaus-black/40 whitespace-nowrap">不適用</span>
+);
 
 const BioBlock = ({ label, text }) => (
     <div className="mt-2">
@@ -655,6 +689,7 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                 {isAdmin && <div className="text-sm text-bauhaus-black/60 mt-0.5 truncate">{inst.email_primary}</div>}
                 <div className="flex flex-wrap items-center gap-1.5 mt-2" onClick={e => e.stopPropagation()}>
                     <StatusBadge status={inst.employment_status} />
+                    <PersonnelTypeTags types={inst.personnel_types} />
                     <LinkBadge userId={inst.user_id} />
                     {isAdmin && (
                         inst.user_id ? (
@@ -663,7 +698,9 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                             <button onClick={onLink} className="text-xs font-bold text-bauhaus-blue hover:underline">綁定</button>
                         )
                     )}
-                    {isAdmin ? (
+                    {!isInstructorPersonnel(inst.personnel_types) ? (
+                        <NotApplicableText />
+                    ) : isAdmin ? (
                         <select
                             value={inst.instructor_role || ''}
                             onChange={e => onRoleChange(e.target.value)}
@@ -683,7 +720,9 @@ const InstructorCard = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onR
                     ) : (
                         <span className="text-xs text-bauhaus-black/40">未設定</span>
                     )}
-                    <SpeedQualificationBadge value={inst.speed_qualification} />
+                    {isInstructorPersonnel(inst.personnel_types)
+                        ? <SpeedQualificationBadge value={inst.speed_qualification} />
+                        : <NotApplicableText />}
                     <RegionSummary inst={inst} />
                     {isAdmin && (
                         <span className={`bh-chip whitespace-nowrap ${docCount === REQUIRED_PROFILE_DOCUMENTS.length ? 'bg-bauhaus-blue text-white' : docCount > 0 ? 'bg-bauhaus-yellow text-bauhaus-black' : 'bg-bauhaus-muted text-bauhaus-black/50'}`}>
@@ -732,9 +771,11 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
         <tr className="hover:bg-bauhaus-cream transition-colors cursor-pointer" onClick={onToggle}>
             {/* 姓名＋任職狀態一行、Email 在下面一行（Email 太長就截斷，滑過去看全文），省下一整欄 */}
             <td className={CELL_X}>
-                <div className="flex items-center gap-2">
+                {/* flex-wrap：姓名＋合作狀態＋人員類別標籤在 1024px 擠不下時整顆標籤換到下一行，不會把表格撐出外框 */}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-bold text-bauhaus-black whitespace-nowrap">{inst.full_name}</span>
                     <StatusBadge status={inst.employment_status} />
+                    <PersonnelTypeTags types={inst.personnel_types} />
                 </div>
                 {isAdmin && (
                     <div
@@ -762,7 +803,9 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                 </div>
             </td>
             <td className={CELL_X} onClick={e => e.stopPropagation()}>
-                {isAdmin ? (
+                {!isInstructorPersonnel(inst.personnel_types) ? (
+                    <NotApplicableText />
+                ) : isAdmin ? (
                     <select
                         value={inst.instructor_role || ''}
                         onChange={e => onRoleChange(e.target.value)}
@@ -785,7 +828,9 @@ const InstructorRow = ({ inst, expanded, onToggle, urls, docCount, isAdmin, onRo
                 )}
             </td>
             <td className={CELL_X} onClick={e => e.stopPropagation()}>
-                <SpeedQualificationBadge value={inst.speed_qualification} />
+                {isInstructorPersonnel(inst.personnel_types)
+                    ? <SpeedQualificationBadge value={inst.speed_qualification} />
+                    : <NotApplicableText />}
             </td>
             <td className={CELL_X}>
                 <RegionSummary inst={inst} />
@@ -880,6 +925,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
         email_primary: '',
         phone_mobile: '',
         employment_status: 'active',
+        personnel_types: ['instructor'],
         instructor_role: '',
         speed_qualification: '',
     });
@@ -891,6 +937,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
         setErr('');
         if (!form.full_name.trim()) return setErr('姓名為必填');
         if (!form.email_primary.trim()) return setErr('Email 為必填(用於登入後自動綁定)');
+        if (form.personnel_types.length === 0) return setErr('人員類別至少要選一個');
 
         setSaving(true);
         const payload = {
@@ -898,8 +945,9 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
             email_primary: form.email_primary.trim().toLowerCase(),
             phone_mobile: form.phone_mobile.trim() || null,
             employment_status: form.employment_status || null,
-            instructor_role: form.instructor_role || null,
-            speed_qualification: form.speed_qualification || null,
+            personnel_types: form.personnel_types,
+            instructor_role: isInstructorPersonnel(form.personnel_types) ? (form.instructor_role || null) : null,
+            speed_qualification: isInstructorPersonnel(form.personnel_types) ? (form.speed_qualification || null) : null,
         };
         const { error } = await supabase.from('instructors').insert(payload);
         setSaving(false);
@@ -943,8 +991,26 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
                             className={inputCls} placeholder="0912345678"
                         />
                     </Field>
+                    <div role="group" aria-label="人員類別" data-testid="add-personnel-types">
+                        <div className="bh-label mb-1">人員類別（可複選，至少一個）</div>
+                        <div className="flex flex-wrap gap-2">
+                            {PERSONNEL_TYPE_OPTIONS.map(p => (
+                                <label key={p.value} className={`bh-chip cursor-pointer min-h-[44px] ${form.personnel_types.includes(p.value) ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black'}`}>
+                                    <input
+                                        type="checkbox" className="sr-only" data-testid={`add-personnel-type-${p.value}`}
+                                        checked={form.personnel_types.includes(p.value)}
+                                        onChange={() => setForm(prev => ({
+                                            ...prev,
+                                            personnel_types: PERSONNEL_TYPE_OPTIONS.map(o => o.value)
+                                                .filter(v => (v === p.value ? !prev.personnel_types.includes(v) : prev.personnel_types.includes(v))),
+                                        }))}
+                                    />{p.label}
+                                </label>
+                            ))}
+                        </div>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <Field label="業務狀態">
+                        <Field label="合作狀態">
                             <select
                                 value={form.employment_status}
                                 onChange={e => setForm(p => ({ ...p, employment_status: e.target.value }))}
@@ -955,6 +1021,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
                                 ))}
                             </select>
                         </Field>
+                        {isInstructorPersonnel(form.personnel_types) && (<>
                         <Field label="講師等級">
                             <select
                                 value={form.instructor_role}
@@ -979,6 +1046,7 @@ const AddInstructorModal = ({ onClose, onCreated }) => {
                                 ))}
                             </select>
                         </Field>
+                        </>)}
                     </div>
 
                     {err && (

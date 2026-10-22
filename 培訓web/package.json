@@ -40,7 +40,9 @@
     "verify:salary-payout-schedule": "node scripts/verify-salary-payout-schedule.mjs",
     "verify:doc-edit-unlock": "node scripts/verify-doc-edit-unlock.mjs",
     "verify:doc-edit-unlock:admin-browser": "node scripts/verify-doc-edit-unlock-admin-browser.mjs",
-    "verify:doc-edit-unlock:profile-browser": "node scripts/verify-doc-edit-unlock-profile-browser.mjs"
+    "verify:doc-edit-unlock:profile-browser": "node scripts/verify-doc-edit-unlock-profile-browser.mjs",
+    "verify:personnel-types": "node scripts/verify-personnel-types.mjs",
+    "verify:personnel-types:ui": "node scripts/verify-personnel-types-ui.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "6.3.1",

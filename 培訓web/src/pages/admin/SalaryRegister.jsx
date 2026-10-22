@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { Search, Plus, AlertTriangle, X, CheckCircle2, Clock, Wallet, Edit3, MessageSquare, RefreshCw, ListChecks, ChevronDown } from 'lucide-react';
-import { COURSE_LABELS, ROLE_LABELS, TERM_PERIOD_LABELS, speedQualificationLabel } from '../../lib/constants';
+import { COURSE_LABELS, ROLE_LABELS, TERM_PERIOD_LABELS, isInstructorPersonnel, speedQualificationLabel } from '../../lib/constants';
 import { reportGroupFor } from '../../lib/salaryReportForm';
 import { extraFieldEntries } from '../../lib/salaryReportFields';
 import { getSalaryQuote, money, salaryErrorMessage, taipeiToday } from '../../lib/salary';
@@ -96,7 +96,7 @@ const SalaryRegister = () => {
         const requestId = ++overviewRequest.current;
         const today = taipeiToday();
         const results = await Promise.all([
-            supabase.from('instructors').select('id, full_name, instructor_role, speed_qualification').order('full_name'),
+            supabase.from('instructors').select('id, full_name, instructor_role, speed_qualification, personnel_types').order('full_name'),
             countSessions(),
             countSessions((query) => query.eq('status', 'pending')),
             countSessions((query) => query.eq('pricing_status', 'needs_review')),
@@ -104,6 +104,10 @@ const SalaryRegister = () => {
             supabase.from('class_sessions').select('session_date').order('session_date', { ascending: true }).limit(1),
             supabase.from('class_sessions').select('session_date').order('session_date', { ascending: false }).limit(1),
         ]);
+        // 資料庫還沒有人員類別欄位時退回舊查詢（全部當講師）
+        if (results[0].error) {
+            results[0] = await supabase.from('instructors').select('id, full_name, instructor_role, speed_qualification').order('full_name');
+        }
         // 連續核准時會同時送出好幾次，只採用最後一次，避免較晚到的舊回應把數字蓋回去
         if (requestId !== overviewRequest.current) return;
         const failed = results.find((result) => result.error);
@@ -753,7 +757,9 @@ const AddSalaryModal = ({ instructors, onClose, onSaved, profile }) => {
                             <option value="">請選擇</option>
                             {instructors.map(i => (
                                 <option key={i.id} value={i.id}>
-                                    {i.full_name}（一般：{i.instructor_role || '未設定'}／速解：{speedQualificationLabel(i.speed_qualification)}）
+                                    {i.full_name}（{isInstructorPersonnel(i.personnel_types)
+                                        ? `一般：${i.instructor_role || '未設定'}／速解：${speedQualificationLabel(i.speed_qualification)}`
+                                        : '講師等級、速解：不適用'}）
                                 </option>
                             ))}
                         </select>

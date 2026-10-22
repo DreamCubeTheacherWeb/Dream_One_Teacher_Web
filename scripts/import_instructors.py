@@ -37,6 +37,7 @@ from instructor_data_reconciliation import (
     derive_gender,
     load_financial_institutions,
     parse_legacy_bank_info,
+    resolve_employment_and_personnel,
 )
 
 # 使用系統 CA 驗證 Supabase 憑證與 hostname；若本機缺 CA，請設定 SSL_CERT_FILE，
@@ -199,6 +200,8 @@ print(f"\n📥 載入 {len(merged)} 筆合併資料")
 
 def to_row(r):
     regions = parse_regions(r.get("teaching_regions_raw"))
+    # 合作狀態與人員類別（Postgres text[]，PostgREST 收 JSON 陣列）
+    employment_status, personnel_types = resolve_employment_and_personnel(r)
     bank_fields = parse_legacy_bank_info(
         r.get("bank_info_raw"),
         r.get("full_name"),
@@ -208,7 +211,8 @@ def to_row(r):
         "full_name": r["full_name"],
         "nickname": r.get("line_name") or r["full_name"],
         "gender": r.get("gender") or derive_gender(r.get("id_number")),
-        "employment_status": r.get("employment_status"),
+        "employment_status": employment_status,
+        "personnel_types": personnel_types,
         "instructor_role": r.get("instructor_role"),
         "birth_date": parse_date(r.get("birth_date")),
         "id_number": r.get("id_number"),
@@ -267,9 +271,9 @@ for r in merged:
         matched_by = f"name={name}"
 
     if ex is not None:
-        # 主檔狀態與等級以匯入表為準；其餘欄位只補空值，避免之後重跑
+        # 主檔狀態、人員類別與等級以匯入表為準；其餘欄位只補空值，避免之後重跑
         # 匯入時覆蓋講師本人已在網站更新的資料。
-        authoritative_fields = {"employment_status", "instructor_role"}
+        authoritative_fields = {"employment_status", "personnel_types", "instructor_role"}
         missing_only = {
             key: value
             for key, value in row.items()

@@ -1,7 +1,44 @@
 # STATUS — 夢想一號培訓平台
 
 > 會變的進度狀態放這裡。不變的事實看 [CLAUDE.md](CLAUDE.md)，長期方向看 [ROADMAP.md](ROADMAP.md)。
-> 最後更新：2026-10-22（總指揮三批前端已上線：929715e 訪客登入鈕＋「關於我」、cae81f7 月結匯款匯出、0a1ce1e 輔導員權限收緊前端；**今日正式庫寫入全部待業主授權**，見下方「🚀 2026-10-22 總指揮發版」段）；2026-10-22（後台「月結匯款」銀行轉帳檔匯出第一版：分支 `feat/payout-bank-export` 已 commit、**未推 main**，交總指揮統一上線）；2026-10-22（講師端「關於我」總覽＋選單重排＋新手導覽：分支 `feat/teacher-dashboard-onboarding` 已 commit、**未推 main**，交總指揮統一上線）；2026-10-20（「我的報酬」黃卡改「X月累計報酬（上月 26 日～本月 25 日）＋下次匯款日」、後台可改匯款日：**已上線** cc24c88（兩網域 16:37 換版），migration `20261020160000` 已套正式庫；薪資登記中心整理已在正式庫完成：完全相同重複列 91 筆搬隔離區、9/26 前標已付款、異常規則只抓內容完全相同，後台異常 481→2、未付款→7,586；「我的報酬」新增站內「報酬確認區」取代外連試算表，**已上線** 129ffab（兩網域 10:51 換版）；回報選項管理改版在分支 `feat/report-options-v4`，待套 migration `20261020130000`；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段；講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」在分支 `feat/instructor-doc-edit-unlock`，待整合並套 migration `20261020120000`）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+> 最後更新：2026-10-22（「人員類別」拆分：分支 `feat/personnel-types` 已合併 main 90b632f＋本機驗證全過〔DB 95/95、UI 61/61、e2e 81/81〕，待業主授權套正式庫後上線，**須在 20261022010000 之後套**）；2026-10-22（總指揮三批前端已上線：929715e 訪客登入鈕＋「關於我」、cae81f7 月結匯款匯出、0a1ce1e 輔導員權限收緊前端；**今日正式庫寫入全部待業主授權**，見下方「🚀 2026-10-22 總指揮發版」段）；2026-10-22（後台「月結匯款」銀行轉帳檔匯出第一版：分支 `feat/payout-bank-export` 已 commit、**未推 main**，交總指揮統一上線）；2026-10-22（講師端「關於我」總覽＋選單重排＋新手導覽：分支 `feat/teacher-dashboard-onboarding` 已 commit、**未推 main**，交總指揮統一上線）；2026-10-20（「我的報酬」黃卡改「X月累計報酬（上月 26 日～本月 25 日）＋下次匯款日」、後台可改匯款日：**已上線** cc24c88（兩網域 16:37 換版），migration `20261020160000` 已套正式庫；薪資登記中心整理已在正式庫完成：完全相同重複列 91 筆搬隔離區、9/26 前標已付款、異常規則只抓內容完全相同，後台異常 481→2、未付款→7,586；「我的報酬」新增站內「報酬確認區」取代外連試算表，**已上線** 129ffab（兩網域 10:51 換版）；回報選項管理改版在分支 `feat/report-options-v4`，待套 migration `20261020130000`；總指揮統一整合上線，見下方「2026-10-20 總指揮發版」段；講師身分證／存摺／匯款「已有就鎖定＋後台開放修改一次＋修改紀錄」在分支 `feat/instructor-doc-edit-unlock`，待整合並套 migration `20261020120000`）；2026-10-19（表單新講師 10 位已在正式庫建檔；回報頁交通補助加業主備註（15 公里、事先和課程經理確認、交通方式提前報備）已上線；薪資總表換新已完成：舊 5 月匯入 9,532 筆搬隔離區、業主確認正確的 5,535 筆成為正式資料，另 25 筆推估更正已套用；後台薪資登記中心改伺服器端篩選＋分頁已上線；回報頁第二版：欄位與選項對齊兩份 Google 表單已上線；第一版三層選單已上線；講師簽約正式重開已上線，待業主真帳號端到端；本日三批皆已上線：課程回報對齊 Google 表單欄位、講師薪資可見範圍 2026-01 起＋參考表權限收緊、後台回報選項管理頁）。
+
+---
+
+## 👥 2026-10-22：「人員類別」拆分（🟡 分支完成＋本機驗證全過，待業主授權套正式庫後由總指揮上線；分支 `feat/personnel-types`，已合併 origin/main 90b632f，未推 main、未碰正式庫）
+
+**需求**：業主有純職員夥伴（不是講師、沒有等級），問身份欄位怎麼設計；拍板第三個欄位叫「人員類別」。10-22 總指揮轉達業主：「我不要看到有卡住的地方，你就直接下決定和判斷，明天和我報告就好。有疑慮的地方都可以先做明天再提出來討論」→ 六項預設照建議直接做。
+
+**正式庫唯讀查詢（2026-10-21，Supabase SQL Editor，只跑 SELECT）**：講師主檔 275 筆；業務狀態 active 269／cancelled 3／空白 3（三筆都是管理員帳號：侯宥圻、四張、黃冠鈞）；
+staff／assistant／part_time／frozen 皆 0 筆。等級 S14／A+16／A19／B41／實習160／空 25。速解資格 275 筆全空。有登入帳號只有 14 筆（admin 11、teacher 3）；2026 年有上課紀錄 115 位。
+讀 employment_status 的線上函式 13 個，12 個只看 frozen／cancelled（擋登入、擋回報、降權），沒有任何函式／政策／檢視表看 staff／part_time／assistant。
+
+**做法**：保留 `employment_status` 改當「合作狀態」，只准 active／frozen／cancelled（加 CHECK，3 筆空白補 active）；新增 `personnel_types text[]`（instructor 講師／staff 職員／part_time 工讀計時，可複選，既有全部預設講師）。
+→ 12 個擋存取的函式與並行分支 `feat/report-options-v4` 的 migration 20261020130000 都不用改。要改的函式只有：`guard_instructor_admin_fields`（新欄位講師不能自改）、
+`private.instructor_profile_is_complete`（非講師不檢查接課頻率／地區／經歷）、`ensure_my_contract_reminder`（非講師不發合約提醒）。上線順序：先套 migration 再推前端（反過來新編輯頁存檔會找不到欄位）。
+
+**六項預設（照建議直接做，明天跟業主確認）**：①誰是職員／工讀由業主上線後在編輯頁自己勾 ②助教從選項拿掉（0 人用；enum 值留著但 CHECK 禁用）③純職員／工讀免填接課頻率、接課地區、經歷 ④純職員課程可見範圍維持「全部講師」分類
+⑤速解名稱統一「速解老師／速解大師」（報酬表查價字串也是這組，原本只有 AdminInstructorEdit:42-43 用「速解講師／速解師傅」）⑥純職員不收講師合約提醒。
+
+**完成＋證據（2026-10-22 本機實跑，沙盒外；主對話親自重跑過下列每一項）**：
+- migration `培訓web/supabase/migrations/20261022100000_personnel_types.sql`（SHA-256 `1b3dd86cd8cde154fb6b7fc32f0cf31a538d3315de4929c5ee6167afee95daef`，BEGIN 後 `SET LOCAL lock_timeout='5s'`，可重跑）。
+- `npm run verify:personnel-types` **95/95**（temp PostgreSQL 三輪：先套 010000＋093700 再套本支 76/76、只套本支 69/69、反向對照 41 項新行為全 FAIL。涵蓋可重跑、以非超級使用者的表擁有者身分（模擬 SQL Editor）套用、回填不動 users.role、兩條 CHECK、非 admin 不能改 personnel_types、完整度與合約提醒新規則、舊前端並存、preflight 判讀、8/19 版包裝函式負向對照、鎖逾時整批回滾，以及 010000 新課程政策下：純職員缺接課四欄讀得到 all、讀不到 formal，冷凍讀不到，講師缺四欄讀不到）；既有 SQL 驗證 18 支（含 main 新帶的 rls-audience-mentor 16/16、payout-partner-no 38/38）改動前後通過數相同。
+- `npm run verify:personnel-types:ui` **61/61**（mock Supabase：編輯頁勾選／合作狀態 3 選項／不適用、總覽篩選與標籤、等級與速解篩選排除非講師、個人頁職員免填接課欄位且無合約區塊、課程列表提示、合約管理不計未簽約且更新通知不寄職員、「關於我」職員顯示人員類別、我的報酬與薪資登記新增報酬「不適用」（歷史快照不動）、職員進 `/contract` 看到說明而講師與 admin 照常、舊資料無欄位當講師）。截圖 `培訓web/docs/verification/2026-10-22-personnel-types/`。
+- `npm run e2e:profile-save` **81/81**（真 PostgreSQL＋PostgREST＋瀏覽器，套全部 migration 含本支與 010000／093700；含兩個舊版 ProfilePage 與新資料庫並存的 P6／P10）。
+- 合併 main 後回歸（主對話依序單獨跑）：verify-about-me-dashboard 69/69、verify-nav-breakpoints 124/124、verify-code-split 187/187（第一次跑在 P1「換版後自動重整」那步以 `Execution context was destroyed` 中斷，連續重跑兩次皆 187/187，判定為時序抖動）、verify-contract-feature-enabled 40/40、verify-mentor-access-ui 9/9、verify-payout-bank-export-browser 125/125、verify-instructor-list-layout 49/49、verify-complete-gate 37/37、verify-profile-draft 34/34；`npm test` 192/192、build 通過、全專案 ESLint 0 問題；根目錄 `python3 -m unittest scripts.test_instructor_data_reconciliation` 13/13。
+- 獨立審查（opus、未參與實作）：程式必修 0；唯一必修是 preflight 要確認 `is_my_instructor_profile_complete()`／`approve_new_instructor_account()` 已委派給 private helper（已補第 7 段＋負向對照）；可後修 5 項中 3 項已修（等級篩選排除非講師、個人頁不顯示合約區、合約更新通知不寄職員）。
+- 合併後追加修正（原疑慮 ④⑤⑥⑦）：AboutMe 職員顯示人員類別、MySalaryNew／SalaryRegister 目前等級顯示不適用（Leaderboard 本來就不顯示個人等級）、`/contract` 對非 admin 非講師顯示說明（App.jsx `ContractSigningGate`）、根目錄匯入腳本改成合作狀態＋人員類別。
+
+**上線順序（套正式庫需業主口頭授權）**：⚠️ **必須先套 `20261022010000_tighten_course_audience_and_mentor_access.sql`，再套本支**——反過來，舊的 "Complete teachers can view published …" 政策（不看受眾）還在時，缺接課四欄的純職員會被判完成，讀得到 formal／intern 課程（由政策內容推得，未實跑）。`20261022093700` 先後皆可（檔名順序本來就在前）。
+① 正式庫逐段跑唯讀 `培訓web/scripts/preflight-personnel-types.sql`（8 段；預期：會違反 CHECK 0 筆、NULL 3 筆皆 admin、新欄位／約束皆 false、三函式 verdict＝OK、第 7 段全 true、第 6 段 trigger 皆 known、第 8 段顯示 010000 已套）→ 任一不符就停。
+② 套 migration（比對上面 SHA-256）→ ③ 再跑 preflight，三函式應判「已套用」、NULL 0 筆；REST 查 `instructors?select=personnel_types&limit=1` 確認 schema cache 已更新 → ④ 才推前端。反過來（前端先上）後台編輯與新增人員會 400。
+
+**明天跟業主討論的疑慮**：①六項預設是否都同意（尤其「助教」拿掉、純職員課程可見範圍維持依等級）②上線後要請業主到編輯頁把職員／工讀改勾（目前 275 筆全是講師）③被改成職員之前已收到、未讀的合約提醒不會自動清掉
+④職員若自己用 Google 註冊，`guard_instructor_role` 會把等級強制設成「實習」，在管理員改掉前看得到實習課程 ⑤輔導員名冊函式 `mentor_instructor_directory` 沒回傳 personnel_types，輔導員畫面分不出職員（要改回傳欄位得 DROP 重建該函式，屬 010000 範圍）
+⑥其他仍顯示目前等級的地方未改：DownloadCenter.jsx:718 逐位講師「X級」標籤、SalaryVendorExport 的等級篩選／欄、formGenerator.js:104 自動填表 PDF、LessonDetail、ContractSigningFlow、ContractView ⑦`/contract` 只擋入口，簽約 RPC 本身不拒絕非講師。
+
+**地雷**：ProfilePage、AssignmentReview 的等級選項裡原有「職員」「工讀生」死選項（instructor_role enum 沒這兩值，本次已移除）。跑瀏覽器回歸會覆蓋其他功能的已追蹤截圖，commit 前要 `git restore` 回去。
+已解：先前發現的 "Complete teachers can view published …" 三條舊政策，已由 main 的 20261022010000 DROP（待套）。速解資格 275 筆全空、速解課回報全進待核薪仍待業主處理。
 
 ---
 

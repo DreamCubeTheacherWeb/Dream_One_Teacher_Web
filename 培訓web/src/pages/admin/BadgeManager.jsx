@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { BADGE_CATEGORIES, CATEGORY_ORDER } from '../../lib/badges';
 import BadgeVisual from '../../components/BadgeVisual';
 import { compressImage } from '../../lib/imageCompress';
+import { COOPERATION_STATUS_LABELS, normalizeCooperationStatus } from '../../lib/constants';
 import {
     Award, Plus, Edit2, Trash2, Eye, EyeOff, X, Save, Search, ChevronDown,
     CircleCheck, CircleX, RotateCcw, Sparkles, ImageUp, ImageOff,
@@ -471,9 +472,7 @@ const BadgeManager = () => {
                                         className="w-full text-left px-4 py-3 hover:bg-bauhaus-cream transition-colors border-b border-bauhaus-black/10 last:border-b-0"
                                     >
                                         <span className="font-bold text-bauhaus-black">{inst.full_name}</span>
-                                        {inst.employment_status && (
-                                            <span className="ml-2 text-xs text-bauhaus-black/40">{inst.employment_status}</span>
-                                        )}
+                                        <span className="ml-2 text-xs text-bauhaus-black/40">{COOPERATION_STATUS_LABELS[normalizeCooperationStatus(inst.employment_status)]}</span>
                                     </button>
                                 ))}
                             </div>

@@ -93,6 +93,37 @@ export const SPEED_QUALIFICATION_LABELS = {
 export const speedQualificationLabel = (value) =>
     SPEED_QUALIFICATION_LABELS[value] || '未取得';
 
+// 人員類別（instructors.personnel_types，text 陣列，可複選、至少一個，預設只有講師）。
+// 講師等級、速解資格、接課資料只對含「講師」的人有意義；純職員／工讀計時不適用。
+export const PERSONNEL_TYPE_LABELS = {
+    instructor: '講師',
+    staff: '職員',
+    part_time: '工讀計時',
+};
+export const PERSONNEL_TYPE_OPTIONS = Object.entries(PERSONNEL_TYPE_LABELS)
+    .map(([value, label]) => ({ value, label }));
+export const DEFAULT_PERSONNEL_TYPES = ['instructor'];
+
+// 向下相容：沒有 personnel_types 欄位（資料庫尚未更新）、空陣列或不是陣列的資料，一律當作講師。
+export const isInstructorPersonnel = (types) => (
+    !Array.isArray(types) || types.length === 0 || types.includes('instructor')
+);
+export const normalizePersonnelTypes = (types) => (
+    Array.isArray(types) && types.length ? [...types] : [...DEFAULT_PERSONNEL_TYPES]
+);
+
+// 合作狀態（instructors.employment_status）：只剩合作中／冷凍／已離職；NULL 與舊的身分代碼都視為合作中。
+export const COOPERATION_STATUS_LABELS = {
+    active: '合作中',
+    frozen: '冷凍',
+    cancelled: '已離職／停止合作',
+};
+export const COOPERATION_STATUS_OPTIONS = Object.entries(COOPERATION_STATUS_LABELS)
+    .map(([value, label]) => ({ value, label }));
+export const normalizeCooperationStatus = (value) => (
+    value === 'frozen' || value === 'cancelled' ? value : 'active'
+);
+
 // 合作課「教學課程期間」（class_sessions.term_period）
 export const TERM_PERIOD_LABELS = {
     winter_break: '寒假',

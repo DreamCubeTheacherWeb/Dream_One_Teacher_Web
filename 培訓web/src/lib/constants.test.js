@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     COURSE_CATEGORIES, COURSE_LABELS, REPORT_CHANNELS, TEACHER_REPORT_HIDDEN_TYPES,
-    categoriesInChannel, courseCategoryFor, courseTypesInCategory, reportChannelFor, reportItemLabel, teacherCourseItems,
+    COOPERATION_STATUS_LABELS, PERSONNEL_TYPE_LABELS, SPEED_QUALIFICATION_LABELS,
+    categoriesInChannel, courseCategoryFor, courseTypesInCategory, isInstructorPersonnel, normalizeCooperationStatus,
+    normalizePersonnelTypes, reportChannelFor, reportItemLabel, teacherCourseItems,
 } from './constants.js';
 
 test('回報類別為 B2C 直營、B2B 合作單位、其他課程，各有備註', () => {
@@ -52,4 +54,28 @@ test('查詢函式', () => {
     assert.equal(courseCategoryFor('nope'), 'misc');
     assert.deepEqual(courseTypesInCategory('onsite'), ['onsite_2hr', 'onsite_1_5hr']);
     assert.deepEqual(courseTypesInCategory('nope'), []);
+});
+
+test('人員類別：沒有欄位、空陣列、非陣列一律當講師；只有職員或工讀計時才是非講師', () => {
+    assert.equal(isInstructorPersonnel(undefined), true);
+    assert.equal(isInstructorPersonnel(null), true);
+    assert.equal(isInstructorPersonnel([]), true);
+    assert.equal(isInstructorPersonnel(['instructor']), true);
+    assert.equal(isInstructorPersonnel(['staff', 'instructor']), true);
+    assert.equal(isInstructorPersonnel(['staff']), false);
+    assert.equal(isInstructorPersonnel(['part_time', 'staff']), false);
+    assert.deepEqual(normalizePersonnelTypes(undefined), ['instructor']);
+    assert.deepEqual(normalizePersonnelTypes([]), ['instructor']);
+    assert.deepEqual(normalizePersonnelTypes(['staff']), ['staff']);
+    assert.deepEqual(PERSONNEL_TYPE_LABELS, { instructor: '講師', staff: '職員', part_time: '工讀計時' });
+});
+
+test('合作狀態只剩三個；NULL 與舊的身分代碼視為合作中；速解資格統一用速解老師／速解大師', () => {
+    assert.deepEqual(Object.keys(COOPERATION_STATUS_LABELS), ['active', 'frozen', 'cancelled']);
+    assert.equal(normalizeCooperationStatus(null), 'active');
+    assert.equal(normalizeCooperationStatus(''), 'active');
+    assert.equal(normalizeCooperationStatus('staff'), 'active');
+    assert.equal(normalizeCooperationStatus('frozen'), 'frozen');
+    assert.equal(normalizeCooperationStatus('cancelled'), 'cancelled');
+    assert.deepEqual(SPEED_QUALIFICATION_LABELS, { speed_teacher: '速解老師', speed_master: '速解大師' });
 });
