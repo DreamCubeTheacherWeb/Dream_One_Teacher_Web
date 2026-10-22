@@ -4,6 +4,7 @@ import {
   describeInstructorSaveError,
   omitUnchangedDocumentFields,
   pickInstructorDocumentFields,
+  pickInstructorProfileDraftFields,
   stripAdminManagedInstructorFields,
   toInstructorUpdatePayload,
 } from './instructorProfile.js';
@@ -146,4 +147,9 @@ test('email guard errors are explained in Chinese; other errors keep their messa
     'instructor identity is not owned by the signed-in account',
   );
   assert.doesNotMatch(describeInstructorSaveError({ message: 'new instructor email must match the signed-in Google account' }), /（/);
+});
+
+test('人員類別是管理員專屬欄位，講師本人的儲存內容與草稿都不帶它', () => {
+  assert.equal(Object.hasOwn(stripAdminManagedInstructorFields({ full_name: '林', personnel_types: ['staff'] }), 'personnel_types'), false);
+  assert.equal(Object.hasOwn(pickInstructorProfileDraftFields({ full_name: '林', personnel_types: ['staff'] }), 'personnel_types'), false);
 });

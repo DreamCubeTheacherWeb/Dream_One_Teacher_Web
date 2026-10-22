@@ -17,6 +17,8 @@ import re
 from pathlib import Path
 from collections import OrderedDict
 
+from instructor_data_reconciliation import map_management_level
+
 BASE = Path(__file__).resolve().parent.parent
 TEACHER_CSV = BASE / "講師 資料總表 23年啟用永久版 - 老師資料表.csv"
 FORM_CSV = BASE / "講師 資料總表 23年啟用永久版 - 表單回應 1.csv"
@@ -45,15 +47,9 @@ def is_valid_name(name):
     return bool(re.fullmatch(r"[一-鿿·]+", s))
 
 
-# 「管理層級」→ employment_status 對應
-EMPLOYMENT_MAP = {
-    "老師": "active",
-    "職員": "staff",
-    "助教": "assistant",
-    "冷凍": "frozen",
-    "取消合作": "cancelled",
-    "工讀生": "part_time",
-}
+# 「管理層級」→ (employment_status, personnel_types) 對應：見 instructor_data_reconciliation.MANAGEMENT_LEVEL_MAP
+# 老師→active＋['instructor']、職員→active＋['staff']、工讀生→active＋['part_time']、助教→active＋['instructor']、
+# 冷凍→frozen＋['instructor']、取消合作→cancelled＋['instructor']、空白／未知→None＋['instructor']
 
 # 「老師等級」→ instructor_role 對應(原 enum 只有 S/A+/A/B/實習)
 # C 級是早期分類,實質等同實習
@@ -117,9 +113,9 @@ form_only = set(form_rows.keys()) - set(teacher_rows.keys())
 for name, t in teacher_rows.items():
     f = form_rows.get(name, {})
 
-    # employment_status 從老師資料表的「管理層級」推斷
+    # employment_status（合作狀態）與 personnel_types（人員類別）從老師資料表的「管理層級」推斷
     management = clean(t.get("管理層級"))
-    employment_status = EMPLOYMENT_MAP.get(management) if management else None
+    employment_status, personnel_types = map_management_level(management)
 
     # instructor_role(等級)
     role_raw = clean(t.get("老師等級"))
@@ -128,6 +124,7 @@ for name, t in teacher_rows.items():
     record = OrderedDict([
         ("full_name", name),
         ("employment_status", employment_status),
+        ("personnel_types", personnel_types),
         ("employment_status_raw", management),  # 保留原始字串以便檢查
         ("instructor_role", instructor_role),
         ("instructor_role_raw", role_raw),
@@ -189,6 +186,7 @@ for name, t in teacher_rows.items():
 MANUAL_OVERRIDES = {
     "洪紹恆": {
         "employment_status": "cancelled",
+        "personnel_types": ["instructor"],
         "employment_status_raw": "取消合作(手動標註)",
         "email_primary_clear": True,  # 清掉 "早就寫了"
         "note_internal": "已開除:對學生不當體罰",
@@ -201,6 +199,7 @@ for name in form_only:
     record = OrderedDict([
         ("full_name", name),
         ("employment_status", None),
+        ("personnel_types", ["instructor"]),
         ("employment_status_raw", None),
         ("instructor_role", normalize_role(clean(f.get("講師身分")))),
         ("instructor_role_raw", clean(f.get("講師身分"))),

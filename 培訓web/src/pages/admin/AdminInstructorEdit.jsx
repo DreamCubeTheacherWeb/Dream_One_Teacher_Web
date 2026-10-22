@@ -9,6 +9,10 @@ import {
     DOCUMENT_CHANGE_ITEM_LABELS, LOCKABLE_DOCUMENT_KEYS, UNLOCK_SCOPES, UNLOCK_SCOPE_LABELS,
     describeBankAccountChange, hasSubmittedBankAccount, hasSubmittedDocument,
 } from '../../lib/instructorDocumentLocks';
+import {
+    COOPERATION_STATUS_OPTIONS, DEFAULT_PERSONNEL_TYPES, PERSONNEL_TYPE_OPTIONS, SPEED_QUALIFICATION_LABELS,
+    isInstructorPersonnel, normalizeCooperationStatus, normalizePersonnelTypes,
+} from '../../lib/constants';
 
 const TW_REGIONS = {
     '北部': ['臺北市', '新北市', '基隆市', '桃園市', '新竹市', '新竹縣', '宜蘭縣'],
@@ -27,20 +31,9 @@ const ROLE_OPTIONS = [
     { value: '實習', label: '實習' },
 ];
 
-const STATUS_OPTIONS = [
-    { value: '', label: '未設定' },
-    { value: 'active', label: '講師' },
-    { value: 'staff', label: '職員' },
-    { value: 'assistant', label: '助教' },
-    { value: 'part_time', label: '工讀生' },
-    { value: 'frozen', label: '冷凍' },
-    { value: 'cancelled', label: '已離職／停止合作' },
-];
-
 const SPEED_OPTIONS = [
     { value: '', label: '未設定' },
-    { value: 'speed_teacher', label: '速解講師' },
-    { value: 'speed_master', label: '速解師傅' },
+    ...Object.entries(SPEED_QUALIFICATION_LABELS).map(([value, label]) => ({ value, label })),
 ];
 
 const DOCUMENT_TYPES = [
@@ -59,7 +52,7 @@ const EDITABLE_FIELDS = [
     'household_address', 'email_primary', 'email_secondary', 'facebook_url',
     'school_info', 'shirt_size', 'convenience_store_code',
     'convenience_store_family', 'convenience_store_711',
-    'employment_status', 'instructor_role', 'speed_qualification',
+    'employment_status', 'personnel_types', 'instructor_role', 'speed_qualification',
     'teaching_freq_semester', 'teaching_freq_vacation', 'teaching_regions',
     'teaching_regions_raw', 'bio_personal_experience', 'bio_teaching_experience',
     'teaching_philosophy', 'bio_notes', 'note_to_team', 'note_internal',
@@ -74,7 +67,7 @@ const EDITABLE_FIELDS = [
 
 const emptyForm = () => Object.fromEntries(EDITABLE_FIELDS.map((field) => [
     field,
-    field === 'teaching_regions' ? [] : field === 'hide_from_leaderboard' ? false : '',
+    field === 'teaching_regions' ? [] : field === 'personnel_types' ? [...DEFAULT_PERSONNEL_TYPES] : field === 'hide_from_leaderboard' ? false : '',
 ]));
 
 const toDateTimeLocal = (value) => {
@@ -90,6 +83,9 @@ const normalizeForm = (row) => {
     EDITABLE_FIELDS.forEach((field) => {
         if (field === 'form_submitted_at') next[field] = toDateTimeLocal(row[field]);
         else if (field === 'teaching_regions') next[field] = row[field] || [];
+        // 舊資料沒有人員類別（資料庫尚未更新或空陣列）一律當作講師；合作狀態 NULL 視為合作中
+        else if (field === 'personnel_types') next[field] = normalizePersonnelTypes(row[field]);
+        else if (field === 'employment_status') next[field] = normalizeCooperationStatus(row[field]);
         else if (field === 'hide_from_leaderboard') next[field] = Boolean(row[field]);
         else next[field] = row[field] ?? '';
     });
@@ -280,6 +276,18 @@ const AdminInstructorEdit = () => {
         setSuccess('');
     };
 
+    const togglePersonnelType = (type) => {
+        setForm((current) => ({
+            ...current,
+            personnel_types: current.personnel_types.includes(type)
+                ? current.personnel_types.filter((value) => value !== type)
+                : PERSONNEL_TYPE_OPTIONS.map((option) => option.value)
+                    .filter((value) => value === type || current.personnel_types.includes(value)),
+        }));
+        setError('');
+        setSuccess('');
+    };
+
     const chooseDocument = (key, file) => {
         if (!file) return;
         if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
@@ -351,6 +359,10 @@ const AdminInstructorEdit = () => {
             setError('姓名不可留白。');
             return;
         }
+        if (!form.personnel_types.length) {
+            setError('人員類別至少要選一個（講師、職員或工讀計時）。');
+            return;
+        }
         if (form.bank_code && !/^\d{6,7}$/.test(form.bank_code)) {
             setError('銀行代碼若有填寫，必須是 6 或 7 碼數字。');
             return;
@@ -385,7 +397,7 @@ const AdminInstructorEdit = () => {
 
             const payload = {};
             EDITABLE_FIELDS.forEach((field) => {
-                if (field === 'teaching_regions') payload[field] = next[field] || [];
+                if (field === 'teaching_regions' || field === 'personnel_types') payload[field] = next[field] || [];
                 else if (field === 'hide_from_leaderboard') payload[field] = Boolean(next[field]);
                 else if (field === 'form_submitted_at') payload[field] = next[field] ? new Date(next[field]).toISOString() : null;
                 else if (field === 'email_primary') payload[field] = next[field]?.trim().toLowerCase() || null;
@@ -545,9 +557,29 @@ const AdminInstructorEdit = () => {
                         <ReadOnly label="最近更新" value={instructor.updated_at || '—'} />
                         <ReadOnly label="WCA 最近同步" value={instructor.wca_synced_at || '尚未同步'} />
                         <Field label="原表單提交時間"><input type="datetime-local" value={form.form_submitted_at} onChange={(event) => updateField('form_submitted_at', event.target.value)} className="bh-input" /></Field>
-                        <Field label="業務狀態" hint="設為冷凍或已離職時，既有講師帳號會停止內容存取。"><Select value={form.employment_status} options={STATUS_OPTIONS} onChange={(value) => updateField('employment_status', value)} /></Field>
-                        <Field label="講師等級"><Select value={form.instructor_role} options={ROLE_OPTIONS} onChange={(value) => updateField('instructor_role', value)} /></Field>
-                        <Field label="速解資格"><Select value={form.speed_qualification} options={SPEED_OPTIONS} onChange={(value) => updateField('speed_qualification', value)} /></Field>
+                        <div className="md:col-span-3" role="group" aria-labelledby="personnel-types-label" data-testid="personnel-types-group">
+                            <div id="personnel-types-label" className="bh-label mb-1">人員類別（可複選，至少一個）</div>
+                            <div className="flex flex-wrap gap-2">
+                                {PERSONNEL_TYPE_OPTIONS.map(({ value, label }) => (
+                                    <label key={value} className={`bh-chip cursor-pointer min-h-[44px] ${form.personnel_types.includes(value) ? 'bg-bauhaus-blue text-white' : 'bg-white text-bauhaus-black'}`}>
+                                        <input type="checkbox" className="sr-only" data-testid={`personnel-type-${value}`} checked={form.personnel_types.includes(value)} onChange={() => togglePersonnelType(value)} />{label}
+                                    </label>
+                                ))}
+                            </div>
+                            <span className="block mt-1 text-xs font-medium leading-relaxed text-bauhaus-black/50">沒有勾選「講師」時，講師等級、速解資格與接課資料不適用，也不要求講師本人填寫（已存的值不會清除）。</span>
+                        </div>
+                        <Field label="合作狀態" hint="設為冷凍或已離職時，既有講師帳號會停止內容存取。"><Select value={form.employment_status} options={COOPERATION_STATUS_OPTIONS} onChange={(value) => updateField('employment_status', value)} /></Field>
+                        {isInstructorPersonnel(form.personnel_types) ? (
+                            <>
+                                <Field label="講師等級"><Select value={form.instructor_role} options={ROLE_OPTIONS} onChange={(value) => updateField('instructor_role', value)} /></Field>
+                                <Field label="速解資格"><Select value={form.speed_qualification} options={SPEED_OPTIONS} onChange={(value) => updateField('speed_qualification', value)} /></Field>
+                            </>
+                        ) : (
+                            <>
+                                <NotApplicable label="講師等級" testId="instructor-role-not-applicable" />
+                                <NotApplicable label="速解資格" testId="speed-qualification-not-applicable" />
+                            </>
+                        )}
                     </div>
                     <label className="mt-4 flex items-center gap-3 border-2 border-bauhaus-black rounded-xl bg-white px-4 py-3 min-h-[48px] cursor-pointer">
                         <input type="checkbox" checked={form.hide_from_leaderboard} onChange={(event) => updateField('hide_from_leaderboard', event.target.checked)} className="w-5 h-5 accent-bauhaus-blue" />
@@ -759,6 +791,13 @@ const Select = ({ value, options, onChange }) => (
     <select value={value || ''} onChange={(event) => onChange(event.target.value)} className="bh-input bg-white">
         {options.map((option) => <option key={option.value || 'empty'} value={option.value}>{option.label}</option>)}
     </select>
+);
+
+const NotApplicable = ({ label, testId }) => (
+    <div data-testid={testId}>
+        <div className="bh-label mb-1">{label}</div>
+        <div className="min-h-[48px] border-2 border-bauhaus-black/30 rounded-xl bg-bauhaus-muted px-3 py-3 text-sm font-bold text-bauhaus-black/50">不適用</div>
+    </div>
 );
 
 const ReadOnly = ({ label, value }) => (

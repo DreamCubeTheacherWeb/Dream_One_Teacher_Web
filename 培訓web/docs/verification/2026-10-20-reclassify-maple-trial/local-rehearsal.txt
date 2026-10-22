@@ -1,0 +1,59 @@
+PASS  模擬 10/19 晚上狀態：總表匯入 5,535 筆
+PASS  [10/19 狀態] 07 區塊 1：分組項目與 CSV 相同  []
+PASS  [10/19 狀態] 07 區塊 1「其他」數字與 CSV 相同  228 筆、薪資 1972591、已付款 0 筆
+PASS  [10/19 狀態] 07 區塊 1「楓葉體驗課」數字與 CSV 相同  12 筆、薪資 800、已付款 0 筆
+PASS  [10/19 狀態] 07 區塊 1「（總表空白）」數字與 CSV 相同  9 筆、薪資 800、已付款 0 筆
+PASS  [10/19 狀態] 07 區塊 1「＝ 合計」數字與 CSV 相同  249 筆、薪資 1974191、已付款 0 筆
+PASS  [10/19 狀態] 07 區塊 2：課程名稱項目與 CSV 相同  []
+PASS  [10/19 狀態] 07 區塊 2：39 個課程名稱數字全部相同  []
+PASS  [10/19 狀態] 07 區塊 3：類型被改過 0、非 legacy 0、對不到暫存列 0、2026 前與暫存列筆數相同  {'匯入後課程類型已被改過的總表列（2026 起）': 0, '上面「其他」列中 pricing_status 不是 legacy': 0, '上面「其他」列中目前標記為異常（is_anomaly）': 9, '上面「其他」列中對不到總表暫存列': 0, '2026 年以前的總表「其他」列（講師端看不到）': 170, '總表暫存列筆數（batch 2026-10-19）': 5535}
+PASS  [10/19 狀態] 07 是唯讀：再跑一次後 class_sessions 逐欄不變
+PASS  模擬正式庫現況：06 後總表 5,444 筆
+PASS  [正式庫現況] 07 區塊 1：分組項目與 CSV 相同  []
+PASS  [正式庫現況] 07 區塊 1「其他」數字與 CSV 相同  228 筆、薪資 1972591、已付款 224 筆
+PASS  [正式庫現況] 07 區塊 1「楓葉體驗課」數字與 CSV 相同  11 筆、薪資 750、已付款 11 筆
+PASS  [正式庫現況] 07 區塊 1「（總表空白）」數字與 CSV 相同  9 筆、薪資 800、已付款 7 筆
+PASS  [正式庫現況] 07 區塊 1「＝ 合計」數字與 CSV 相同  248 筆、薪資 1974141、已付款 242 筆
+PASS  [正式庫現況] 07 區塊 2：課程名稱項目與 CSV 相同  []
+PASS  [正式庫現況] 07 區塊 2：39 個課程名稱數字全部相同  []
+PASS  [正式庫現況] 07 區塊 3：類型被改過 0、非 legacy 0、對不到暫存列 0、2026 前與暫存列筆數相同  {'匯入後課程類型已被改過的總表列（2026 起）': 0, '上面「其他」列中 pricing_status 不是 legacy': 0, '上面「其他」列中目前標記為異常（is_anomaly）': 0, '上面「其他」列中對不到總表暫存列': 0, '2026 年以前的總表「其他」列（講師端看不到）': 170, '總表暫存列筆數（batch 2026-10-19）': 5535}
+PASS  [正式庫現況] 07 是唯讀：再跑一次後 class_sessions 逐欄不變
+PASS  正式庫現況：楓葉體驗課剩 11 筆 other（第 2543 列在隔離區）
+PASS  擋下：class_sessions 有版控外的 trigger，資料不動  CONTEXT:  PL/pgSQL function inline_code_block line 29 at RAISE
+PASS  擋下：執行前有 trigger 被關掉（不會默默打開），資料不動  CONTEXT:  PL/pgSQL function inline_code_block line 36 at RAISE
+PASS  擋下：有一筆楓葉被改成人工定價（非 legacy），資料不動  CONTEXT:  PL/pgSQL function inline_code_block line 60 at RAISE
+PASS  擋下：有一筆楓葉已被改成別的課程類型，資料不動  CONTEXT:  PL/pgSQL function inline_code_block line 57 at RAISE
+PASS  擋下：有一列楓葉既不在 class_sessions 也不在隔離區，資料不動  CONTEXT:  PL/pgSQL function inline_code_block line 54 at RAISE
+PASS  [正式庫現況] 執行前三個 trigger 都是啟用狀態  trg_class_sessions_updated_at=O,trg_guard_class_session_pricing=O,trg_session_anomaly=O
+PASS  [正式庫現況] 08 執行成功  ipts/salary_master_import/08_reclassify_maple_trial.sql:152: NOTICE:  完成：11 筆楓葉體驗課改成體驗課（另 1 列在隔離區未動）；只改課程類型，其他欄位與其他資料都不變
+PASS  [正式庫現況] 08 結果摘要顯示 trial 11 筆  08 楓葉體驗課|trial|11|750.00|0.00|750.00|11|0|0|2026-01-01～2026-01-24
+PASS  [正式庫現況] 楓葉體驗課 11 筆都是 trial、沒有 other  {'trial': 11}
+PASS  [正式庫現況] 除了課程類型，整張表逐欄不變（含楓葉列的更新時間、異常標記）
+PASS  [正式庫現況] 三個 trigger 都已恢復啟用  trg_class_sessions_updated_at=O,trg_guard_class_session_pricing=O,trg_session_anomaly=O
+PASS  [正式庫現況] 楓葉以外的列連更新時間都不變
+PASS  [正式庫現況] 整張表筆數、薪資、獎金、總計、已領、各狀態筆數不變  5447/10198290.00/453547.00/10651837.00/10642401.00/5438/9/0
+PASS  [正式庫現況] 異常標記 0 筆變動  0
+PASS  [正式庫現況] 恢復後更新時間 trigger 真的有作用（試改一筆，交易回滾）  t
+PASS  [正式庫現況] 08 重跑：不做任何變更（連更新時間都不動）  port/08_reclassify_maple_trial.sql:152: NOTICE:  已經是體驗課（11 筆，另 1 列在隔離區），本次不做任何變更
+PASS  08 之後跑 96（預設模式）仍成功：楓葉 12 筆都回到 06 前的未付款，課程類型維持體驗課  ('12/12/11', 'pts/salary_master_import/96_rollback_dedupe_and_mark_paid.sql:95: NOTICE:  ROLLBACK_OK 搬回 91 筆、還原 5444 筆、06 之後被改過而略過 0 筆')
+PASS  96 之後再跑一次 08：搬回的第 2543 列也改成體驗課（12 筆 trial）  {'trial': 12}
+PASS  反向對照：審查前的 08（會改到更新時間）之後跑 96 會被擋「06 之後有 11 筆被改過」  付款等），預設不還原；確認要略過它們請改用 skip-changed 模式
+CONTEXT:  PL/pgSQL function inline_code_block line 33 at RAISE
+PASS  08 後 07 區塊 1：楓葉體驗課不再出現、合計少 11 筆  (248, '237')
+PASS  98 還原執行成功、摘要顯示 other 11 筆  ('98 還原楓葉體驗課|other|11|750.00|0.00|750.00|11|0|0', 'ify-other/scripts/salary_master_import/98_rollback_reclassify_maple_trial.sql:129: NOTICE:  還原完成：11 筆改回「其他」；金額、狀態與其他資料不變')
+PASS  98 還原後：整張表逐欄回到 08 之前（含更新時間、異常標記）、trigger 都已恢復
+PASS  98 重跑：不做任何變更
+PASS  還原後可再次執行 08
+PASS  [06 之前的狀態] 執行前三個 trigger 都是啟用狀態  trg_class_sessions_updated_at=O,trg_guard_class_session_pricing=O,trg_session_anomaly=O
+PASS  [06 之前的狀態] 08 執行成功  ipts/salary_master_import/08_reclassify_maple_trial.sql:152: NOTICE:  完成：12 筆楓葉體驗課改成體驗課（另 0 列在隔離區未動）；只改課程類型，其他欄位與其他資料都不變
+PASS  [06 之前的狀態] 08 結果摘要顯示 trial 12 筆  08 楓葉體驗課|trial|12|800.00|0.00|0.00|0|12|1|2026-01-01～2026-01-24
+PASS  [06 之前的狀態] 楓葉體驗課 12 筆都是 trial、沒有 other  {'trial': 12}
+PASS  [06 之前的狀態] 除了課程類型，整張表逐欄不變（含楓葉列的更新時間、異常標記）
+PASS  [06 之前的狀態] 三個 trigger 都已恢復啟用  trg_class_sessions_updated_at=O,trg_guard_class_session_pricing=O,trg_session_anomaly=O
+PASS  [06 之前的狀態] 楓葉以外的列連更新時間都不變
+PASS  [06 之前的狀態] 整張表筆數、薪資、獎金、總計、已領、各狀態筆數不變  5538/10272911.00/453547.00/10726458.00/6000.00/3/5535/0
+PASS  [06 之前的狀態] 異常標記 0 筆變動  0
+PASS  [06 之前的狀態] 恢復後更新時間 trigger 真的有作用（試改一筆，交易回滾）  t
+PASS  [06 之前的狀態] 08 重跑：不做任何變更（連更新時間都不動）  port/08_reclassify_maple_trial.sql:152: NOTICE:  已經是體驗課（12 筆，另 0 列在隔離區），本次不做任何變更
+
+56/56 PASS

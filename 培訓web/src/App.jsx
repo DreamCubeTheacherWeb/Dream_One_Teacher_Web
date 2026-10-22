@@ -1,5 +1,5 @@
-import { Component, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Component, lazy, Suspense, useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import HomePage from './pages/HomePage';
@@ -7,6 +7,8 @@ import PendingApproval from './pages/PendingApproval';
 import NotFound from './pages/NotFound';
 import { canAccessInstructorContracts } from './lib/featureFlags';
 import { isApprovedUser } from './lib/roles';
+import { isInstructorPersonnel } from './lib/constants';
+import { supabase } from './lib/supabaseClient';
 
 // 路由頁面依需求才下載：首頁、登入後導向的待審頁、Layout 與守衛留在入口 chunk，
 // 其餘（含 pdf-lib／react-pdf／quill／jszip 等大型套件）各自成 chunk，講師手機首次開啟不必下載全站。
@@ -67,6 +69,43 @@ const InstructorContractRoute = ({ children }) => {
     return <Navigate to="/profile" replace />;
   }
 
+  return children;
+};
+
+// 純職員／工讀計時（人員類別不含講師）不需簽講師合約：進簽約流程（/contract）時改顯示說明。
+// 管理員照常可進（測試用）；人員類別從本人的講師主檔讀，沒有主檔、查不到或資料庫還沒有該欄位時當作講師。
+// 只包簽約流程；/contract/view/:id 查看既有合約不擋。
+const ContractSigningGate = ({ children }) => {
+  const { user, profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
+  const [instructorPersonnel, setInstructorPersonnel] = useState(null); // null = 查詢中
+
+  useEffect(() => {
+    if (isAdmin || !user?.id) return undefined;
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('instructors')
+        .select('personnel_types')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (active) setInstructorPersonnel(error ? true : isInstructorPersonnel(data?.personnel_types));
+    })();
+    return () => { active = false; };
+  }, [isAdmin, user?.id]);
+
+  if (isAdmin) return children;
+  if (instructorPersonnel === null) return <div className="p-12 text-center text-slate-500 text-lg">載入中...</div>;
+  if (!instructorPersonnel) {
+    return (
+      <div className="p-4 sm:p-8 max-w-xl mx-auto">
+        <div data-testid="contract-not-required-notice" className="bh-card p-6 sm:p-8 text-center">
+          <p className="font-bold text-bauhaus-black">你的人員類別不是講師，不需要簽署講師合約。</p>
+          <Link to="/profile" className="bh-btn bh-btn-blue px-5 py-2.5 mt-5 text-sm">回個人資料頁</Link>
+        </div>
+      </div>
+    );
+  }
   return children;
 };
 
@@ -270,7 +309,7 @@ function App() {
             element={
               <ProtectedRoute>
                 <InstructorContractRoute>
-                  <PageLayout><ContractSigningFlow /></PageLayout>
+                  <PageLayout><ContractSigningGate><ContractSigningFlow /></ContractSigningGate></PageLayout>
                 </InstructorContractRoute>
               </ProtectedRoute>
             }

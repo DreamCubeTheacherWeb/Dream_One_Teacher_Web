@@ -9,6 +9,7 @@ import {
     categoriesInChannel,
     courseCategoryConfig,
     courseCategoryFor,
+    isInstructorPersonnel,
     reportChannelFor,
     reportItemLabel,
     speedQualificationLabel,
@@ -83,11 +84,19 @@ const MySalaryNew = () => {
         if (!user) return undefined;
         let active = true;
         (async () => {
-            const { data, error: loadError } = await supabase
+            let { data, error: loadError } = await supabase
                 .from('instructors')
-                .select('id, full_name, instructor_role, speed_qualification')
+                .select('id, full_name, instructor_role, speed_qualification, personnel_types')
                 .eq('user_id', user.id)
                 .maybeSingle();
+            // 資料庫還沒有人員類別欄位時退回舊查詢（全部當講師）
+            if (loadError) {
+                ({ data, error: loadError } = await supabase
+                    .from('instructors')
+                    .select('id, full_name, instructor_role, speed_qualification')
+                    .eq('user_id', user.id)
+                    .maybeSingle());
+            }
             if (!active) return;
             setInstructor(data);
             if (loadError) setError('講師資料載入失敗，請重新整理頁面或聯絡管理員。');
@@ -465,8 +474,9 @@ const MySalaryNew = () => {
                 {instructor && (
                     <div className="flex flex-wrap gap-2 mt-3 text-xs font-bold">
                         {instructor.full_name && <span className="bh-chip bg-bauhaus-black text-white">回報人：{instructor.full_name}</span>}
-                        <span className="bh-chip bg-bauhaus-blue text-white">講師級別：{instructor.instructor_role || '未設定'}</span>
-                        <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">速解資格：{speedQualificationLabel(instructor.speed_qualification)}</span>
+                        {/* 人員類別不含講師的人，目前的講師級別／速解資格不適用（歷史課程紀錄上的快照另計，不受影響） */}
+                        <span data-testid="report-level-chip" className="bh-chip bg-bauhaus-blue text-white">講師級別：{isInstructorPersonnel(instructor.personnel_types) ? (instructor.instructor_role || '未設定') : '不適用'}</span>
+                        <span data-testid="report-speed-chip" className="bh-chip bg-bauhaus-yellow text-bauhaus-black">速解資格：{isInstructorPersonnel(instructor.personnel_types) ? speedQualificationLabel(instructor.speed_qualification) : '不適用'}</span>
                     </div>
                 )}
             </div>

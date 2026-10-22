@@ -8,6 +8,7 @@ import { INSTRUCTOR_CONTRACTS_ENABLED } from '../../lib/featureFlags';
 import { fetchContractFileBytes } from '../../lib/contractFiles';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { contractStatusLabel, formatTaipeiTime, isSha256Hex, sha256Hex, shortHash } from '../../lib/esign';
+import { isInstructorPersonnel } from '../../lib/constants';
 import {
   Upload, FileText, CheckCircle2, XCircle, Eye, Plus,
   AlertTriangle, Clock, Users, Search, ChevronUp, ChevronDown,
@@ -86,16 +87,26 @@ const ContractAdmin = () => {
         .select('id, email, name, role')
         .neq('role', 'pending');
 
-      const { data: instrData } = await supabase
+      let { data: instrData, error: instrError } = await supabase
         .from('instructors')
-        .select('user_id, full_name');
+        .select('user_id, full_name, personnel_types');
+      // 資料庫尚未有人員類別欄位時退回舊查詢（全部當講師）
+      if (instrError) {
+        ({ data: instrData } = await supabase.from('instructors').select('user_id, full_name'));
+      }
 
       const instrMap = {};
-      (instrData || []).forEach(i => { instrMap[i.user_id] = i.full_name; });
+      const nonInstructorIds = new Set();
+      (instrData || []).forEach(i => {
+        instrMap[i.user_id] = i.full_name;
+        if (!isInstructorPersonnel(i.personnel_types)) nonInstructorIds.add(i.user_id);
+      });
 
       const enriched = (usersData || []).map(u => ({
         ...u,
         fullName: instrMap[u.id] || u.name || u.email,
+        // 純職員／工讀計時不是講師，不需簽講師合約
+        needsContract: !nonInstructorIds.has(u.id),
       }));
       setAllUsers(enriched);
     } catch (e) {
@@ -230,8 +241,11 @@ const ContractAdmin = () => {
           .select('id')
           .neq('role', 'pending');
 
-        if (nonPendingUsers?.length) {
-          const notifications = nonPendingUsers.map(u => ({
+        // 純職員／工讀計時不需簽講師合約，不發「合約文件已更新」通知
+        const skipIds = new Set(allUsers.filter(u => u.needsContract === false).map(u => u.id));
+        const recipients = (nonPendingUsers || []).filter(u => !skipIds.has(u.id));
+        if (recipients.length) {
+          const notifications = recipients.map(u => ({
             user_id: u.id,
             type: 'contract',
             title: '合約文件已更新',
@@ -340,7 +354,7 @@ const ContractAdmin = () => {
   });
 
   const signedCount = allUsers.filter(u => getContractForUser(u.id)).length;
-  const unsignedCount = allUsers.length - signedCount;
+  const unsignedCount = allUsers.filter(u => u.needsContract && !getContractForUser(u.id)).length;
 
   if (loading) return <div className="p-12 text-center text-bauhaus-black/60 font-bold">載入中...</div>;
 
@@ -616,6 +630,10 @@ const ContractAdmin = () => {
                         <span className="bh-chip bg-bauhaus-blue text-white">
                           <CheckCircle2 className="w-3 h-3" /> 已簽約
                         </span>
+                      ) : !u.needsContract ? (
+                        <span data-testid="contract-not-required" className="bh-chip bg-bauhaus-muted text-bauhaus-black">
+                          非講師，不需簽約
+                        </span>
                       ) : (
                         <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black">
                           <Clock className="w-3 h-3" /> 未簽約
@@ -680,6 +698,10 @@ const ContractAdmin = () => {
                   {c ? (
                     <span className="bh-chip bg-bauhaus-blue text-white shrink-0">
                       <CheckCircle2 className="w-3 h-3" /> 已簽約
+                    </span>
+                  ) : !u.needsContract ? (
+                    <span data-testid="contract-not-required" className="bh-chip bg-bauhaus-muted text-bauhaus-black shrink-0">
+                      非講師，不需簽約
                     </span>
                   ) : (
                     <span className="bh-chip bg-bauhaus-yellow text-bauhaus-black shrink-0">

@@ -7,6 +7,7 @@ import { taipeiToday } from '../lib/salary';
 import { monthNameOf, payoutScheduleFromResponse, resolvePayout, shortDateOf, summarizePayrollPeriod } from '../lib/salaryPayday';
 import { toHours } from '../lib/leaderboard';
 import { fetchTeacherBadges } from '../lib/badges';
+import { PERSONNEL_TYPE_LABELS, isInstructorPersonnel, normalizePersonnelTypes } from '../lib/constants';
 import { OPEN_TOUR_EVENT } from '../lib/onboarding';
 import BadgeVisual from '../components/BadgeVisual';
 import ProfileAvatar from '../components/ProfileAvatar';
@@ -30,11 +31,19 @@ const useOwnInstructor = (userId) => {
         if (!userId) return undefined;
         let active = true;
         (async () => {
-            const { data, error } = await supabase
+            let { data, error } = await supabase
                 .from('instructors')
-                .select('id, instructor_role')
+                .select('id, instructor_role, personnel_types')
                 .eq('user_id', userId)
                 .maybeSingle();
+            // 資料庫還沒有人員類別欄位時退回舊查詢（全部當講師），畫面維持原樣
+            if (error) {
+                ({ data, error } = await supabase
+                    .from('instructors')
+                    .select('id, instructor_role')
+                    .eq('user_id', userId)
+                    .maybeSingle());
+            }
             if (!active) return;
             if (error) console.error('讀取講師主檔失敗：', error.message);
             setState({ loading: false, instructor: data || null, error: Boolean(error) });
@@ -418,6 +427,10 @@ const AboutMe = () => {
     const instructorState = useOwnInstructor(user?.id);
     const displayName = instructorProfile?.nickname || instructorProfile?.full_name || profile?.name || user?.email?.split('@')[0] || '';
     const level = instructorState.instructor?.instructor_role;
+    // 純職員／工讀計時沒有講師等級：改顯示人員類別（舊資料沒有人員類別欄位時當作講師）
+    const isInstructor = isInstructorPersonnel(instructorState.instructor?.personnel_types);
+    const personnelLabel = normalizePersonnelTypes(instructorState.instructor?.personnel_types)
+        .map(type => PERSONNEL_TYPE_LABELS[type] || type).join('・');
 
     return (
         <div className="p-4 sm:p-8 pb-12 sm:pb-12 max-w-6xl mx-auto">
@@ -431,7 +444,9 @@ const AboutMe = () => {
                         <p className="text-bauhaus-black/60 font-medium truncate">嗨，{displayName}！這是你的講師總覽。</p>
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
                             <span className="bh-chip bg-bauhaus-black text-white">{ROLE_LABELS[profile?.role] || profile?.role}</span>
-                            {level && <span className="bh-chip bg-white text-bauhaus-black">講師等級：{LEVEL_LABELS[level] || level}</span>}
+                            {isInstructor
+                                ? level && <span className="bh-chip bg-white text-bauhaus-black">講師等級：{LEVEL_LABELS[level] || level}</span>
+                                : instructorState.instructor && <span data-testid="about-personnel-types" className="bh-chip bg-white text-bauhaus-black">人員類別：{personnelLabel}</span>}
                         </div>
                     </div>
                 </div>

@@ -7,6 +7,7 @@ import {
     trainingVisibilityLabel,
 } from '../lib/courseCategories';
 import { supabase } from '../lib/supabaseClient';
+import { isInstructorPersonnel } from '../lib/constants';
 
 const CORNER_DECOS = [
     { shape: 'circle', color: 'bg-bauhaus-red' },
@@ -36,7 +37,7 @@ const EmptyState = ({ children }) => (
     </div>
 );
 
-export const CourseCatalog = ({ categories, courses, instructorRole, profile, loadError, selectedCategoryId }) => {
+export const CourseCatalog = ({ categories, courses, instructorRole, isInstructor = true, profile, loadError, selectedCategoryId }) => {
     const selectedCategory = categories.find(category => category.id === selectedCategoryId) || null;
     const categoryCourses = selectedCategory
         ? courses.filter(course => course.category_id === selectedCategory.id)
@@ -88,7 +89,9 @@ export const CourseCatalog = ({ categories, courses, instructorRole, profile, lo
                 <div className="mb-6 bg-bauhaus-yellow/20 border-2 border-bauhaus-black rounded-2xl p-5 flex items-center gap-3">
                     <Lock className="w-5 h-5 text-bauhaus-black shrink-0" />
                     <p className="text-bauhaus-black text-sm font-bold">
-                        您的講師等級尚未設定，目前僅能瀏覽公開給全部講師的分類。請先完成個人資料填寫，並通知管理員審核。
+                        {isInstructor
+                            ? '您的講師等級尚未設定，目前僅能瀏覽公開給全部講師的分類。請先完成個人資料填寫，並通知管理員審核。'
+                            : '你的人員類別不是講師，僅能瀏覽開放給全部人員的課程分類。'}
                     </p>
                 </div>
             )}
@@ -189,6 +192,7 @@ const CourseList = () => {
     const [categories, setCategories] = useState([]);
     const [courses, setCourses] = useState([]);
     const [instructorRole, setInstructorRole] = useState(null);
+    const [isInstructor, setIsInstructor] = useState(true);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
 
@@ -211,13 +215,23 @@ const CourseList = () => {
             ]);
 
             let role = null;
+            let instructorPersonnel = true;
             if (user) {
-                const { data: instructor } = await supabase
+                let { data: instructor, error: instructorError } = await supabase
                     .from('instructors')
-                    .select('instructor_role')
+                    .select('instructor_role, personnel_types')
                     .eq('user_id', user.id)
                     .maybeSingle();
+                // 資料庫尚未有人員類別欄位時退回只讀等級（當作講師），畫面維持原樣
+                if (instructorError) {
+                    ({ data: instructor } = await supabase
+                        .from('instructors')
+                        .select('instructor_role')
+                        .eq('user_id', user.id)
+                        .maybeSingle());
+                }
                 role = instructor?.instructor_role || null;
+                instructorPersonnel = isInstructorPersonnel(instructor?.personnel_types);
             }
 
             if (categoryError || courseError) {
@@ -226,6 +240,7 @@ const CourseList = () => {
             setCategories(categoryData || []);
             setCourses(courseData || []);
             setInstructorRole(role);
+            setIsInstructor(instructorPersonnel);
             setLoading(false);
         };
 
@@ -239,6 +254,7 @@ const CourseList = () => {
             categories={categories}
             courses={courses}
             instructorRole={instructorRole}
+            isInstructor={isInstructor}
             profile={profile}
             loadError={loadError}
             selectedCategoryId={searchParams.get('category')}
