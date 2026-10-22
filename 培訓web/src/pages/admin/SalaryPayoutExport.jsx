@@ -1,7 +1,7 @@
 // 後台「月結匯款」（2026-10-22 第一版，admin 限定）：把某一期已核准、未付款的講師報酬匯出成財務部的銀行批次轉帳檔。
 // 計算與檢查全部在 src/lib/payoutBankExport.js（有單元測試）；這頁只負責讀資料、收集調整、顯示與下載。
-// 寫入只有兩種：admin 匯入／修改講師的夥伴號碼；匯款完成後「標記為已付款」（只標下載的那份轉帳檔納入的課，
-// 見 components/admin/PayoutMarkPaidPanel.jsx 與資料庫函式 mark_salary_sessions_paid）。
+// 寫入：admin 匯入／修改講師的夥伴號碼；按下載時先存一筆「匯出紀錄」（record_salary_payout_export，存下這份檔案納入的課、
+// 講師與金額，拿到編號才產生檔案）；匯款完成後對某一份匯出「標記為已付款」（見 components/admin/PayoutMarkPaidPanel.jsx）。
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -45,7 +45,7 @@ import {
     sessionPayableCents,
     validatePayoutExport,
 } from '../../lib/payoutBankExport';
-import { buildMarkPaidPlan } from '../../lib/payoutMarkPaid';
+import { MIGRATION_NEEDED_TEXT, buildExportPayload, classifyRpcFailure, mismatchLines } from '../../lib/payoutMarkPaid';
 import PayoutMarkPaidPanel from '../../components/admin/PayoutMarkPaidPanel';
 
 const PAGE_SIZE = 1000;
@@ -171,8 +171,10 @@ const SalaryPayoutExport = () => {
     const [partnerDrafts, setPartnerDrafts] = useState({});
     const [partnerSaving, setPartnerSaving] = useState({});
     const [partnerMessages, setPartnerMessages] = useState({});
-    // 最後一次成功下載的轉帳檔納入哪些課（「標記為已付款」只標這一份）
-    const [exportSnapshot, setExportSnapshot] = useState(null);
+    const [downloading, setDownloading] = useState('');       // '' | 'csv' | 'xlsx'：建立匯出紀錄與產生檔案中
+    const downloadBusy = useRef(false);                       // 連點第二下直接忽略（state 還沒更新前也擋得住）
+    const [exportNotice, setExportNotice] = useState('');     // 資料庫還沒更新：這次下載沒有建立匯出紀錄
+    const [exportsRefresh, setExportsRefresh] = useState(0);  // 匯出紀錄有變動 → 通知下方「匯款完成」區重讀
 
     const loadInstructors = useCallback(async () => {
         const result = await fetchInstructors();
@@ -263,10 +265,7 @@ const SalaryPayoutExport = () => {
     const computed = useMemo(() => computePayoutPeople({
         sessions, instructors, periodMonth, memoTemplate: settings.memoTemplate, edits,
     }), [edits, instructors, periodMonth, sessions, settings.memoTemplate]);
-    const markPlan = useMemo(() => buildMarkPaidPlan(computed), [computed]);
-    const rememberExport = (kind) => setExportSnapshot({
-        periodMonth, fingerprint: markPlan.fingerprint, plan: markPlan, payDate: settings.payDate, kind, at: Date.now(),
-    });
+    const exportPayload = useMemo(() => buildExportPayload(computed), [computed]);
 
     const hasEdits = edits.excludedSessionIds.size > 0
         || edits.includedAnomalySessionIds.size > 0
@@ -349,34 +348,68 @@ const SalaryPayoutExport = () => {
         if (dataChanged) return [`${DATA_CHANGED_MESSAGE}後再匯出`];
         return validatePayoutExport({ settings, people: computed.people });
     };
-    const onDownloadCsv = () => {
+    // 下載前先在資料庫存一筆匯出紀錄（逐筆核對已核准、期別、講師、金額），拿到編號才下載；
+    // 資料庫還沒套這次的更新 → 照舊下載（檔名沒有編號），並提示這份無法在系統標記已付款
+    const recordExport = async (kind) => {
+        const range = periodRange(periodMonth);
+        const { data, error, status } = await supabase.rpc('record_salary_payout_export', {
+            p_period_start: range.periodStart,
+            p_period_end: range.periodEnd,
+            p_items: exportPayload.items,
+            p_people: exportPayload.people,
+            p_expected_total: exportPayload.transferCents / 100,
+            p_pay_date: settings.payDate || null,
+            p_file_kind: kind,
+            p_exclusions: exportPayload.exclusionLines,
+        });
+        if (!error && data?.ok === true && Number.isInteger(data.export_id)) return { exportId: data.export_id };
+        if (!error && data?.ok === false) {
+            return {
+                errors: [`這份檔案有 ${Number(data.mismatch_count || 0)} 筆和資料庫目前不符，沒有建立匯出紀錄，也沒有下載。請按「重新整理」後再下載：`, ...mismatchLines(data.mismatches)],
+            };
+        }
+        const failure = classifyRpcFailure({ error, status });
+        if (failure.kind === 'missing') return { exportId: null, degraded: true };
+        if (failure.kind === 'uncertain') {
+            return { uncertain: true, errors: ['建立匯出紀錄的結果不確定（網路或伺服器沒有正常回應），這次沒有下載。請看下方「匯款完成」區重新讀取匯出紀錄，確認後再下載一次（多出來、沒標記的匯出紀錄不影響任何報酬資料）。'] };
+        }
+        return { errors: [`沒有建立匯出紀錄，也沒有下載：${failure.text}`] };
+    };
+    const runDownload = async (kind) => {
+        if (downloadBusy.current) return;
         const errors = exportErrors();
-        setDownloadErrors({ csv: errors, xlsx: [] });
+        setDownloadErrors({ csv: [], xlsx: [], [kind]: errors });
         if (errors.length) return;
+        downloadBusy.current = true;
+        setDownloading(kind);
+        setDownloadMessage('');
+        setExportNotice('');
         try {
-            const csv = buildTransferCsv({ people: computed.people, settings });
-            downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'csv' }));
+            // 先產生檔案內容（欄位有問題會在這裡擋下，不會留下沒用的匯出紀錄），再存匯出紀錄，成功才下載
+            const blob = kind === 'csv'
+                ? new Blob([buildTransferCsv({ people: computed.people, settings })], { type: 'text/csv;charset=utf-8' })
+                : new Blob([await buildPayoutWorkbook({ people: computed.people, settings })], { type: XLSX_MIME });
+            const record = await recordExport(kind);
+            if (record.errors) {
+                setDownloadErrors({ csv: [], xlsx: [], [kind]: record.errors });
+                if (record.uncertain) setExportsRefresh((v) => v + 1);
+                return;
+            }
+            downloadBlob(blob, payoutFilename({ periodMonth, payDate: settings.payDate, ext: kind, exportId: record.exportId }));
             setExportedVersion(editsVersion);
-            rememberExport('CSV');
-            setDownloadMessage(`已下載轉帳檔 CSV：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
+            const label = kind === 'csv' ? '轉帳檔 CSV' : '完整 Excel';
+            setDownloadMessage(`已下載${label}${record.exportId ? `（匯出 #${record.exportId}）` : ''}：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
+            if (record.degraded) setExportNotice(`${MIGRATION_NEEDED_TEXT}這次下載沒有建立匯出紀錄，之後無法在系統對這份標記已付款；套用更新後請重新下載。`);
+            else setExportsRefresh((v) => v + 1);
         } catch (error) {
-            setDownloadErrors({ csv: [error.message], xlsx: [] });
+            setDownloadErrors({ csv: [], xlsx: [], [kind]: [error.message] });
+        } finally {
+            downloadBusy.current = false;
+            setDownloading('');
         }
     };
-    const onDownloadXlsx = async () => {
-        const errors = exportErrors();
-        setDownloadErrors({ csv: [], xlsx: errors });
-        if (errors.length) return;
-        try {
-            const bytes = await buildPayoutWorkbook({ people: computed.people, settings });
-            downloadBlob(new Blob([bytes], { type: XLSX_MIME }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'xlsx' }));
-            setExportedVersion(editsVersion);
-            rememberExport('Excel');
-            setDownloadMessage(`已下載完整 Excel：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
-        } catch (error) {
-            setDownloadErrors({ csv: [], xlsx: [error.message] });
-        }
-    };
+    const onDownloadCsv = () => runDownload('csv');
+    const onDownloadXlsx = () => runDownload('xlsx');
 
     // ── 夥伴號碼匯入
     const onImportFile = async (event) => {
@@ -466,7 +499,7 @@ const SalaryPayoutExport = () => {
                 <AlertTriangle className="w-6 h-6 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="text-sm sm:text-base font-medium leading-relaxed min-w-0">
                     <p className="font-black text-base sm:text-lg">第一版：格式待財務確認。正式匯款前，請財務先用小額或試算核對。</p>
-                    <p className="mt-1">檔案含身分證字號與銀行帳號，只能提供財務作業使用。銀行匯款完成後，請在本頁下方「匯款完成，標記為已付款」標記：只會標記你下載的那份轉帳檔裡的課。</p>
+                    <p className="mt-1">檔案含身分證字號與銀行帳號，只能提供財務作業使用。每次下載都會存一份匯出紀錄（檔名的「匯出N」）。銀行匯款完成後，請在本頁下方「匯款完成，標記為已付款」對交給銀行的那一份標記：只會標記那份檔案裡的課。</p>
                 </div>
             </div>
 
@@ -763,8 +796,8 @@ const SalaryPayoutExport = () => {
                 </p>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="border-2 border-bauhaus-black rounded-xl p-4">
-                        <button type="button" onClick={onDownloadCsv} className="bh-btn bh-btn-blue px-5 py-3 min-h-[44px] w-full sm:w-auto">
-                            <Download className="w-5 h-5" /> 轉帳檔 CSV
+                        <button type="button" onClick={onDownloadCsv} disabled={Boolean(downloading)} className="bh-btn bh-btn-blue px-5 py-3 min-h-[44px] w-full sm:w-auto disabled:opacity-60">
+                            <Download className="w-5 h-5" /> {downloading === 'csv' ? '建立匯出紀錄中…' : '轉帳檔 CSV'}
                         </button>
                         <p className="mt-3 text-xs font-bold text-bauhaus-black/70 leading-relaxed">
                             CSV 請直接上傳網銀；若要用 Excel 看，請用『資料→從文字/CSV』匯入並把帳號欄設為文字，不要直接雙擊開啟，否則開頭的 0 會不見。要用 Excel 看請下載 Excel 版。
@@ -776,8 +809,8 @@ const SalaryPayoutExport = () => {
                         )}
                     </div>
                     <div className="border-2 border-bauhaus-black rounded-xl p-4">
-                        <button type="button" onClick={onDownloadXlsx} className="bh-btn bh-btn-outline px-5 py-3 min-h-[44px] w-full sm:w-auto">
-                            <FileSpreadsheet className="w-5 h-5" /> 完整 Excel（四分頁）
+                        <button type="button" onClick={onDownloadXlsx} disabled={Boolean(downloading)} className="bh-btn bh-btn-outline px-5 py-3 min-h-[44px] w-full sm:w-auto disabled:opacity-60">
+                            <FileSpreadsheet className="w-5 h-5" /> {downloading === 'xlsx' ? '建立匯出紀錄中…' : '完整 Excel（四分頁）'}
                         </button>
                         <p className="mt-3 text-xs font-bold text-bauhaus-black/70 leading-relaxed">
                             分頁：轉帳檔案、薪資明細、薪資總計、供應商。代碼與帳號都存成文字，開頭的 0 不會不見。
@@ -790,19 +823,16 @@ const SalaryPayoutExport = () => {
                     </div>
                 </div>
                 {downloadMessage && <p role="status" data-testid="payout-download-message" className="mt-4 text-sm font-black text-bauhaus-blue">{downloadMessage}</p>}
+                {exportNotice && <p role="status" data-testid="payout-export-degraded" className="mt-2 text-sm font-black text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl p-3">{exportNotice}</p>}
                 {dirty && <p className="mt-2 text-xs font-bold text-bauhaus-red">有調整或排除尚未匯出；離開頁面前會提醒。</p>}
             </section>
 
-            {/* ── 匯款完成，標記為已付款（只標下載的那份轉帳檔） */}
+            {/* ── 匯款完成，標記為已付款（對某一份匯出紀錄） */}
             <PayoutMarkPaidPanel
-                periodMonth={periodMonth}
                 range={periodRange(periodMonth)}
                 today={today}
-                plan={markPlan}
-                snapshot={exportSnapshot}
-                blockReason={loading ? '資料還在讀取中，請稍候。' : loadError ? '資料讀取失敗，請先按「重新整理」。' : dataChanged ? `${DATA_CHANGED_MESSAGE}，再重新下載轉帳檔後標記。` : ''}
-                onMarked={() => { setExportSnapshot(null); loadPeriod(periodMonth); }}
-                onReverted={() => loadPeriod(periodMonth)}
+                refreshKey={exportsRefresh}
+                onChanged={() => loadPeriod(periodMonth)}
             />
 
             {/* ── 夥伴號碼匯入 */}

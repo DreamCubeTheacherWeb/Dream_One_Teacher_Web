@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { buildTransferRows, computePayoutPeople } from './payoutBankExport.js';
 import {
     MIGRATION_NEEDED_TEXT,
-    batchStatusText,
-    buildMarkPaidPlan,
-    exclusionLines,
-    markPaidErrorText,
+    UNCERTAIN_TEXT,
+    buildExportPayload,
+    canRevertExport,
+    classifyRpcFailure,
+    exportStatusText,
     mismatchLines,
+    negativeAdjustments,
 } from './payoutMarkPaid.js';
 
 const ok = (id, name, overrides = {}) => ({
@@ -20,9 +22,9 @@ const INSTRUCTORS = [
     ok('i-lin', '林三', { bank_account_number: '' }),       // 缺帳號 → 擋下
     ok('i-chen', '陳四', { partner_no: 'A4' }),             // 管理員取消勾選
 ];
-const s = (id, instructorId, total, { paid = 0, anomaly = false, base } = {}) => ({
+const s = (id, instructorId, total, { paid = 0, anomaly = false } = {}) => ({
     id, instructor_id: instructorId, instructor_name: 'x', session_date: '2026-09-10', course_type: 'regular_basic', course_name: id,
-    base_salary: base ?? total, bonus: 0, total_salary: total, paid_amount: paid, status: 'approved', pricing_status: 'quoted',
+    base_salary: total, bonus: 0, total_salary: total, paid_amount: paid, status: 'approved', pricing_status: 'quoted',
     is_anomaly: anomaly, anomaly_reasons: anomaly ? ['疑似重複'] : [],
 });
 const SESSIONS = [
@@ -43,9 +45,10 @@ const EDITS = {
 };
 const compute = (edits = EDITS) => computePayoutPeople({ sessions: SESSIONS, instructors: INSTRUCTORS, periodMonth: '2026/09', edits });
 
-test('只收轉帳檔實際納入的課：納入講師底下沒被排除的課，金額＝本次應付', () => {
-    const plan = buildMarkPaidPlan(compute());
-    assert.deepEqual(plan.items.map((item) => `${item.id}:${item.amount}`).sort(), ['s-ding-1:1000', 's-ding-2:500', 's-ding-over:0', 's-wang-1:1200']);
+test('清單只收轉帳檔實際納入的課（連同講師），金額＝本次應付', () => {
+    const plan = buildExportPayload(compute());
+    assert.deepEqual(plan.items.map((item) => `${item.id}:${item.instructor_id}:${item.amount}`).sort(),
+        ['s-ding-1:i-ding:1000', 's-ding-2:i-ding:500', 's-ding-over:i-ding:0', 's-wang-1:i-wang:1200']);
     assert.equal(plan.itemCount, 4);
     assert.equal(plan.peopleCount, 2);
     assert.equal(plan.sessionCents, 270000);
@@ -53,75 +56,75 @@ test('只收轉帳檔實際納入的課：納入講師底下沒被排除的課�
     assert.equal(plan.overpaidCount, 1);
 });
 
-test('清單與轉帳檔同一份資料：清單的人＝轉帳檔的人，課程應付＋人工調整＝轉帳檔總額', () => {
+test('每位講師的實付＝轉帳檔那一列；實付＝他的課加總＋人工調整；合計＝轉帳檔總額', () => {
     const computed = compute();
-    const plan = buildMarkPaidPlan(computed);
+    const plan = buildExportPayload(computed);
     const rows = buildTransferRows({ people: computed.people, settings: { payDate: '2026-10-10', payerAccount: '1', payerBranch: '0001', noticeMethod: '3', feeBearer: '2' } });
-    const fileCents = rows.reduce((sum, row) => sum + Math.round(Number(row[7]) * 100), 0);
-    assert.equal(rows.length, plan.peopleCount);
-    assert.equal(plan.transferCents, fileCents);
-    assert.equal(plan.sessionCents + plan.adjustmentCents, fileCents);
-    assert.deepEqual(plan.adjustments, [{ instructor_id: 'i-wang', name: '王二', amount: -200, reason: '扣回溢付' }]);
+    assert.deepEqual(plan.people.map((p) => `${p.name}:${p.amount}`), rows.map((row) => `${row[6]}:${row[7]}`));
+    assert.deepEqual(plan.people, [
+        { instructor_id: 'i-ding', name: '丁一', amount: 1500, adjustment: 0, adjustment_reason: null },
+        { instructor_id: 'i-wang', name: '王二', amount: 1000, adjustment: -200, adjustment_reason: '扣回溢付' },
+    ]);
+    for (const person of plan.people) {
+        const sessions = plan.items.filter((item) => item.instructor_id === person.instructor_id).reduce((sum, item) => sum + item.amount * 100, 0);
+        assert.equal(Math.round(person.amount * 100), sessions + Math.round(person.adjustment * 100));
+    }
+    assert.equal(plan.transferCents, plan.people.reduce((sum, p) => sum + Math.round(p.amount * 100), 0));
+    assert.equal(plan.transferCents, 250000);
 });
 
-test('被排除的課分類互斥、筆數與金額正確，確認框逐行列出原因', () => {
-    const plan = buildMarkPaidPlan(compute());
-    assert.deepEqual(plan.excluded.anomaly, { count: 1, cents: 100000 });
-    assert.deepEqual(plan.excluded.manual, { count: 1, cents: 65000 });
-    assert.deepEqual(plan.excluded.unmatched, { count: 1, cents: 35000 });
-    assert.equal(plan.excluded.blocked.people, 1);
-    assert.equal(plan.excluded.blocked.count, 1);
-    assert.deepEqual(plan.excluded.blocked.reasons, [{ tag: '缺帳號', people: 1 }]);
-    assert.equal(plan.excluded.unchecked.people, 1);
+test('被排除的課分類互斥、筆數與金額正確，摘要逐行列出原因', () => {
+    const plan = buildExportPayload(compute());
     assert.equal(plan.excludedCount, 5);
-    assert.deepEqual(exclusionLines(plan), [
+    assert.deepEqual(plan.exclusionLines, [
         '異常標記預設排除 1 筆（$1,000）',
         '手動排除的課 1 筆（$650）',
         '對不到講師 1 筆（$350）',
         '資料不全被擋下的講師 1 位、1 筆（$900）：缺帳號 1 位',
         '取消勾選的講師 1 位、1 筆（$700）',
     ]);
-    // 每一堂課剛好落在一個地方：納入＋各種排除＝全部
     assert.equal(plan.itemCount + plan.excludedCount, SESSIONS.length);
 });
 
-test('勾回異常課、改調整金額、取消勾選，指紋都會變（下載後有變動就要重新下載）', () => {
-    const base = buildMarkPaidPlan(compute()).fingerprint;
-    assert.equal(buildMarkPaidPlan(compute()).fingerprint, base, '同一份資料指紋相同');
-    const withAnomaly = buildMarkPaidPlan(compute({ ...EDITS, includedAnomalySessionIds: new Set(['s-ding-dup']) }));
-    assert.notEqual(withAnomaly.fingerprint, base);
+test('勾回異常課就會進清單；沒有資料時回空', () => {
+    const withAnomaly = buildExportPayload(compute({ ...EDITS, includedAnomalySessionIds: new Set(['s-ding-dup']) }));
     assert.ok(withAnomaly.items.some((item) => item.id === 's-ding-dup'));
-    const newAdjustment = buildMarkPaidPlan(compute({ ...EDITS, adjustments: { 'i-wang': { amount: '-300', reason: '扣回溢付' } } }));
-    assert.notEqual(newAdjustment.fingerprint, base);
-    const unchecked = buildMarkPaidPlan(compute({ ...EDITS, excludedInstructorIds: new Set(['i-chen', 'i-ding']) }));
-    assert.notEqual(unchecked.fingerprint, base);
-    assert.ok(!unchecked.items.some((item) => item.id.startsWith('s-ding')));
+    const empty = buildExportPayload(null);
+    assert.equal(empty.itemCount, 0);
+    assert.deepEqual(empty.exclusionLines, []);
 });
 
-test('沒有資料時回空清單', () => {
-    const plan = buildMarkPaidPlan(null);
-    assert.equal(plan.itemCount, 0);
-    assert.equal(plan.excludedCount, 0);
-    assert.deepEqual(exclusionLines(plan), []);
+test('負數人工調整列出姓名、金額、原因', () => {
+    const plan = buildExportPayload(compute());
+    assert.deepEqual(negativeAdjustments(plan.people), [{ name: '王二', cents: -20000, reason: '扣回溢付' }]);
+    assert.deepEqual(negativeAdjustments([{ name: 'x', adjustment: 300 }]), []);
 });
 
-test('錯誤訊息：函式或表不存在→需先套用資料庫更新；42501；22023 原文', () => {
-    assert.equal(markPaidErrorText({ code: 'PGRST202', message: 'Could not find the function public.mark_salary_sessions_paid' }), MIGRATION_NEEDED_TEXT);
-    assert.equal(markPaidErrorText({ code: '404', message: 'Could not find the function x' }), MIGRATION_NEEDED_TEXT);
-    assert.equal(markPaidErrorText({ code: 'PGRST205', message: 'table' }), MIGRATION_NEEDED_TEXT);
+test('失敗分類：函式／表不存在＝需先更新；4xx 帶代碼＝確定沒改；斷線、5xx、看不懂＝結果不確定', () => {
+    assert.deepEqual(classifyRpcFailure({ error: { code: 'PGRST202', message: 'Could not find the function' }, status: 404 }), { kind: 'missing', text: MIGRATION_NEEDED_TEXT });
+    assert.equal(classifyRpcFailure({ error: { code: 'PGRST205', message: 'table' }, status: 404 }).kind, 'missing');
     assert.match(MIGRATION_NEEDED_TEXT, /20261022140000_mark_salary_sessions_paid\.sql/);
-    assert.equal(markPaidErrorText({ code: '42501', message: 'x' }), '只有管理員可以標記或還原已付款。');
-    assert.equal(markPaidErrorText({ code: '22023', message: '這一期到 10/25 才結束，結束後才能標記已付款。' }), '這一期到 10/25 才結束，結束後才能標記已付款。');
-    assert.match(markPaidErrorText({ code: 'XX000', message: 'boom' }), /操作失敗：boom/);
+    assert.deepEqual(classifyRpcFailure({ error: { code: '22023', message: '這一期到 10/25 才結束，結束後才能標記已付款。' }, status: 400 }),
+        { kind: 'definite', text: '這一期到 10/25 才結束，結束後才能標記已付款。' });
+    assert.equal(classifyRpcFailure({ error: { code: '42501', message: 'x' }, status: 403 }).kind, 'definite');
+    assert.match(classifyRpcFailure({ error: { code: 'P0001', message: 'boom' }, status: 400 }).text, /沒有改任何紀錄/);
+    assert.deepEqual(classifyRpcFailure({ error: { message: 'TypeError: Failed to fetch', code: '' }, status: 0 }), { kind: 'uncertain', text: UNCERTAIN_TEXT });
+    assert.equal(classifyRpcFailure({ error: { code: '57014', message: 'canceling statement due to statement timeout' }, status: 500 }).kind, 'uncertain');
+    assert.equal(classifyRpcFailure({ error: { message: '<html>502 Bad Gateway</html>' }, status: 502 }).kind, 'uncertain');
+    assert.equal(classifyRpcFailure({ error: null, status: 200 }).kind, 'uncertain', '成功但回應看不懂也算不確定');
 });
 
-test('不符明細最多列 10 筆，其餘只講筆數；批次狀態文字', () => {
+test('不符明細最多列 10 筆；匯出紀錄的狀態與能不能還原', () => {
     const list = Array.from({ length: 12 }, (_, i) => ({ instructor_name: `講師${i}`, session_date: '2026-09-01', message: '狀態已不是「已核准」（現在：已付款）' }));
     const lines = mismatchLines(list);
     assert.equal(lines.length, 11);
     assert.equal(lines[0], '講師0・2026-09-01：狀態已不是「已核准」（現在：已付款）');
     assert.equal(lines[10], '…另有 2 筆');
-    assert.equal(batchStatusText({ item_count: 8, reverted_count: 0 }), '有效');
-    assert.equal(batchStatusText({ item_count: 8, reverted_count: 7 }), '已還原 7/8 筆');
-    assert.equal(batchStatusText({ item_count: 8, reverted_count: 8 }), '已全部還原');
+    assert.equal(exportStatusText({ marked_at: null, item_count: 8 }), '未標記');
+    assert.equal(exportStatusText({ marked_at: 'x', marked_count: 8, reverted_count: 0 }), '已標記');
+    assert.equal(exportStatusText({ marked_at: 'x', marked_count: 8, reverted_count: 7 }), '已還原 7/8 筆');
+    assert.equal(exportStatusText({ marked_at: 'x', marked_count: 8, reverted_count: 8 }), '已還原');
+    assert.equal(canRevertExport({ marked_at: null, item_count: 8 }), false);
+    assert.equal(canRevertExport({ marked_at: 'x', marked_count: 8, reverted_count: 7 }), true);
+    assert.equal(canRevertExport({ marked_at: 'x', marked_count: 8, reverted_count: 8 }), false);
 });

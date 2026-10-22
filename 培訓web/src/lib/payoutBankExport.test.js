@@ -406,6 +406,8 @@ test('完整 Excel：四個分頁、代碼帳號身分證日期夥伴號碼是�
 test('檔名、遮罩', () => {
     assert.equal(payoutFilename({ periodMonth: '2026/10', payDate: '2026-11-10', ext: 'csv' }), '202610夢想講師轉帳檔_20261110.csv');
     assert.equal(payoutFilename({ periodMonth: '2026/10', payDate: '2026-11-10', ext: 'xlsx' }), '202610夢想講師轉帳檔_20261110.xlsx');
+    assert.equal(payoutFilename({ periodMonth: '2026/10', payDate: '2026-11-10', ext: 'csv', exportId: 12 }), '202610夢想講師轉帳檔_20261110_匯出12.csv');
+    assert.equal(payoutFilename({ periodMonth: '2026/10', payDate: '2026-11-10', ext: 'csv', exportId: null }), '202610夢想講師轉帳檔_20261110.csv');
     assert.equal(maskAccount('0029-1234-5678'), '••••5678');
     assert.equal(maskIdNumber('z100000001'), 'Z••••••001');
     assert.equal(maskAccount(''), '');
