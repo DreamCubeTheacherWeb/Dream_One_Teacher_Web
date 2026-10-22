@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-// 月結匯款「匯款完成，標記為已付款」：在隔離 PostgreSQL 實跑 migration 與 RPC，斷言寫在程式裡，stdout 就是證據。
+// 月結匯款「下載時存匯出紀錄 → 對某一份匯出標記已付款 → 可還原」：在隔離 PostgreSQL 實跑 migration 與 RPC，
+// 斷言寫在程式裡，stdout 就是證據。
 //
 //   第 0 段（重現舊問題）：把被審查擋下的舊函式 mark_salary_period_paid（從 git 歷史 f907616 取出原文）套到另一個資料庫，
 //     證明它會把轉帳檔沒有納入的列（異常課、缺帳號講師、管理員取消勾選的人、手動排除的課、對不到講師、匯出後才核准的晚到紀錄）
 //     一起標成已付款＝永久漏匯。
 //   之後各段：migration 20261022140000_mark_salary_sessions_paid.sql
-//     → mark_salary_sessions_paid（只標清單內、任一不符整批取消、晚到不標、溢付不改小、批次紀錄）
-//     → revert_salary_payout_batch（只還原沒被改過的列、可重跑）
-//     → 權限（只有 admin、anon 無權、兩張紀錄表只有 admin 讀得到、沒有直接寫入權）、可重跑、兩人同時送。
+//     → record_salary_payout_export（下載時存清單；逐筆核對已核准／期別／講師／金額，不符不存）
+//     → mark_salary_payout_export_paid（清單從資料庫拿；匯出後才核准的不標、匯出後換講師整份擋、另一個連線隔天標也行、
+//        同期兩份重疊後標的整份擋、溢付不改小、舊值留底）
+//     → revert_salary_payout_export（只還原該份、只還原沒被改過的列、可重跑）
+//     → 權限（只有 admin、anon 無權、mentor 碰不到、兩張紀錄表只有 admin 讀、沒有直接寫入權）、可重跑、兩人同時按。
 //
 // class_sessions 用 repo 裡真的建表 SQL＋migration 建（含 trg_session_anomaly、trg_class_sessions_updated_at、
 // trg_guard_class_session_pricing 三個 trigger），不是手刻的假表。
@@ -16,6 +19,7 @@
 // 只連本機臨時 PostgreSQL（Unix socket，不開 TCP），不碰任何正式環境。
 //
 // 用法：cd 培訓web && npm run verify:salary-sessions-paid
+// 突變測試：SESSIONS_PAID_MIGRATION_SQL=<故意改壞的 migration 副本> 再跑一次，應該要有 FAIL。
 // 注意：PostgreSQL 需要 System V 共享記憶體；在 Claude Code 的 Bash 沙盒內 initdb 會被擋
 // （shmget: Operation not permitted），要在沙盒外跑（一般終端機直接跑即可）。
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -155,10 +159,11 @@ const I1 = '10000000-0000-4000-8000-000000000001';  // 資料齊全
 const I2 = '10000000-0000-4000-8000-000000000002';  // 資料齊全
 const I3 = '10000000-0000-4000-8000-000000000003';  // 缺收款帳號 → 轉帳檔擋下
 const I4 = '10000000-0000-4000-8000-000000000004';  // 管理員在月結匯款頁取消勾選
+const NAMES = { [I1]: '測試講師一', [I2]: '測試講師二', [I3]: '缺帳號講師', [I4]: '取消勾選講師' };
 const authed = (uid) => ({ role: 'authenticated', uid });
 const ANON = { role: 'anon' };
 
-// 目標期別 P＝2026-08-26～2026-09-25（9 月期，一定已結束）；Q＝2026-07-26～2026-08-25（8 月期，給「同時送」用）
+// P＝2026-08-26～2026-09-25（9 月期）；Q＝2026-07-26～2026-08-25（8 月期）；R＝2026-06-26～2026-07-25（7 月期，給「兩份重疊」用）
 // key → [session_date, status, pricing_status, base_salary, bonus, paid_amount, 講師, source]
 const ROWS = {
   f_start: ['2026-08-26', 'approved', 'legacy', 1000, 0, 0, I1, 'manual'],          // 檔案內：P 起點（26 日）
@@ -181,39 +186,63 @@ const ROWS = {
   q_start: ['2026-07-26', 'approved', 'legacy', 210, 0, 0, I1, 'manual'],           // Q 起點
   q_mid: ['2026-08-10', 'approved', 'legacy', 320, 0, 0, I2, 'manual'],
   q_end: ['2026-08-25', 'approved', 'legacy', 5000, 0, 0, I1, 'manual'],            // Q 終點＝P 前一天
+  r_a: ['2026-07-01', 'approved', 'legacy', 100, 0, 0, I1, 'manual'],               // R：只在第一份
+  r_b: ['2026-07-02', 'approved', 'legacy', 200, 0, 0, I1, 'manual'],               // R：兩份都有（重疊）
+  r_c: ['2026-07-03', 'approved', 'legacy', 300, 0, 0, I2, 'manual'],               // R：只在第二份
 };
 // 匯出之後才核准的晚到紀錄（P 期內）：不在轉帳檔裡
 const LATE = ['2026-09-22', 'approved', 'legacy', 450, 0, 0, I1, 'manual'];
 const idOf = (key) => (key === 'x_late'
   ? '20000000-0000-4000-8000-000000000999'
   : `20000000-0000-4000-8000-${String(Object.keys(ROWS).indexOf(key) + 1).padStart(12, '0')}`);
+const instOf = (key) => (key === 'x_late' ? LATE[6] : ROWS[key]?.[6]);
 const idList = (keys) => keys.map((k) => `'${idOf(k)}'`).join(',');
 const FILE = { f_start: 1000, f_bonus: 850, f_partial: 500, f_over: 0, f_other: 1200, f_quoted: 450, f_dup1: 200, f_end: 300 };
 const FILE_KEYS = Object.keys(FILE);
 const FILE_TOTAL = Object.values(FILE).reduce((a, b) => a + b, 0); // 4500
+const FILE_ADJ = { [I1]: { amount: -500, reason: '扣回上期溢付' } };  // 轉帳檔總額 4000
 const EXCLUDED_KEYS = ['x_dup2', 'x_noacct', 'x_person', 'x_session', 'x_unmatched', 'x_late'];
 const Q_FILE = { q_start: 210, q_mid: 320, q_end: 5000 };
 
 const DB = 'pp';
 const DB_OLD = 'old';
-const FN_MARK = 'public.mark_salary_sessions_paid(date, date, jsonb, numeric, date, numeric, jsonb)';
-const FN_REVERT = 'public.revert_salary_payout_batch(bigint)';
-const itemsJson = (entries) => JSON.stringify(Object.entries(entries).map(([key, amount]) => ({ id: idOf(key), amount })));
+const P = ["DATE '2026-08-26'", "DATE '2026-09-25'"];
+const Q = ["DATE '2026-07-26'", "DATE '2026-08-25'"];
+const R = ["DATE '2026-06-26'", "DATE '2026-07-25'"];
+const FN = {
+  record: 'public.record_salary_payout_export(date, date, jsonb, jsonb, numeric, date, text, jsonb)',
+  mark: 'public.mark_salary_payout_export_paid(bigint, integer, numeric)',
+  revert: 'public.revert_salary_payout_export(bigint)',
+};
+const HELPER = 'public.salary_payout_item_mismatches(jsonb, date, date)';
 const sqlText = (s) => `'${String(s).replaceAll("'", "''")}'`;
-const mark = (start, end, items, expected, { payDate = 'NULL', transfer = 'NULL', adjustments = "'[]'::jsonb" } = {}) => (
-  `SELECT public.mark_salary_sessions_paid(${start}, ${end}, ${items}, ${expected}, ${payDate}, ${transfer}, ${adjustments})::text;`
+const jsonArg = (v) => `${sqlText(JSON.stringify(v))}::jsonb`;
+// 轉帳檔內容 → { items, people, total }（每位講師實付＝他的課加總＋人工調整，跟前端 buildMarkPaidPlan 一樣）
+function payload(entries, { adjustments = {}, instructorOverride = {} } = {}) {
+  const items = Object.entries(entries).map(([key, amount]) => ({ id: key.startsWith('ghost') ? '20000000-0000-4000-8000-00000000dead' : idOf(key),
+    instructor_id: instructorOverride[key] ?? instOf(key) ?? I1, amount }));
+  const cents = new Map();
+  for (const item of items) cents.set(item.instructor_id, (cents.get(item.instructor_id) || 0) + Math.round(item.amount * 100));
+  for (const inst of Object.keys(adjustments)) if (!cents.has(inst)) cents.set(inst, 0);
+  const people = [...cents].map(([inst, sum]) => {
+    const adj = adjustments[inst]?.amount ?? 0;
+    return { instructor_id: inst, name: NAMES[inst] || '講師', amount: (sum + adj * 100) / 100, adjustment: adj, adjustment_reason: adjustments[inst]?.reason ?? null };
+  });
+  return { items, people, total: people.reduce((sum, p) => sum + Math.round(p.amount * 100), 0) / 100 };
+}
+const record = ([start, end], pl, { expected = pl.total, payDate = 'NULL', kind = "'csv'", exclusions = "'[]'::jsonb", items, people } = {}) => (
+  `SELECT public.record_salary_payout_export(${start}, ${end}, ${items ?? jsonArg(pl.items)}, ${people ?? jsonArg(pl.people)}, ${expected}, ${payDate}, ${kind}, ${exclusions})::text;`
 );
-const markP = (entries, expected = Object.values(entries).reduce((a, b) => a + b, 0), extra) => mark(
-  "DATE '2026-08-26'", "DATE '2026-09-25'", `${sqlText(itemsJson(entries))}::jsonb`, expected, extra,
-);
-const revert = (id) => `SELECT public.revert_salary_payout_batch(${id})::text;`;
+const mark = (id, count, amount) => `SELECT public.mark_salary_payout_export_paid(${id}, ${count}, ${amount})::text;`;
+const revert = (id) => `SELECT public.revert_salary_payout_export(${id})::text;`;
 const parse = (r) => { try { return JSON.parse(r.out.split('\n').filter((l) => l.startsWith('{')).pop()); } catch { return null; } };
 const rowsMd5 = (db, keys) => must(db, `SELECT md5(string_agg(to_jsonb(cs)::text, E'\\n' ORDER BY id)) FROM public.class_sessions cs WHERE id IN (${idList(keys)})`);
 const tableMd5 = (db = DB) => must(db, `SELECT md5(string_agg(to_jsonb(cs)::text, E'\\n' ORDER BY id)) FROM public.class_sessions cs`);
-const auditMd5 = () => must(DB, `SELECT md5(COALESCE((SELECT string_agg(to_jsonb(b)::text, E'\\n' ORDER BY id) FROM public.salary_payout_batches b), '')
-  || COALESCE((SELECT string_agg(to_jsonb(i)::text, E'\\n' ORDER BY batch_id, session_id) FROM public.salary_payout_batch_items i), ''))`);
+const auditMd5 = () => must(DB, `SELECT md5(COALESCE((SELECT string_agg(to_jsonb(e)::text, E'\\n' ORDER BY id) FROM public.salary_payout_exports e), '')
+  || COALESCE((SELECT string_agg(to_jsonb(i)::text, E'\\n' ORDER BY export_id, session_id) FROM public.salary_payout_export_items i), ''))`);
 const statusOf = (db, key) => must(db, `SELECT status || '|' || paid_amount || '|' || total_salary FROM public.class_sessions WHERE id = '${idOf(key)}'`);
-const batchCount = () => Number(must(DB, 'SELECT count(*) FROM public.salary_payout_batches'));
+const exportCount = () => Number(must(DB, 'SELECT count(*) FROM public.salary_payout_exports'));
+const asAdmin = (sql) => asRole(DB, authed(U.admin), sql);
 
 function seed(db) {
   must(db, BOOT);
@@ -242,14 +271,16 @@ function seed(db) {
       VALUES ('30000000-0000-4000-8000-000000000001', 'regular_basic', 'hourly', 300);
   `);
   insertRows(db, Object.entries(ROWS));
+  freezeUpdatedAt(db);
+}
+function freezeUpdatedAt(db, where = 'true') {
   must(db, `
     ALTER TABLE public.class_sessions DISABLE TRIGGER trg_class_sessions_updated_at;
     ALTER TABLE public.class_sessions DISABLE TRIGGER trg_session_anomaly;
-    UPDATE public.class_sessions SET updated_at = TIMESTAMPTZ '2026-10-01 09:00+08';
+    UPDATE public.class_sessions SET updated_at = TIMESTAMPTZ '2026-10-01 09:00+08' WHERE ${where};
     ALTER TABLE public.class_sessions ENABLE TRIGGER trg_session_anomaly;
     ALTER TABLE public.class_sessions ENABLE TRIGGER trg_class_sessions_updated_at;`);
 }
-const NAMES = { [I1]: '測試講師一', [I2]: '測試講師二', [I3]: '缺帳號講師', [I4]: '取消勾選講師' };
 function insertRows(db, entries) {
   const values = entries.map(([key, [date, status, pricing, base, bonus, paid, inst, source]]) => `(
     '${idOf(key)}', 'regular_basic', '同一堂課', ${inst ? `'${inst}'` : 'NULL'}, '${inst ? NAMES[inst] : '對不到測試'}', DATE '${date}', 1.5, 3,
@@ -316,10 +347,12 @@ try {
       triggers === 'trg_class_sessions_updated_at,trg_guard_class_session_pricing,trg_session_anomaly', triggers);
     const flags = must(DB, `SELECT string_agg(is_anomaly::text, ',' ORDER BY id) FROM public.class_sessions WHERE id IN (${idList(['f_dup1', 'x_dup2'])})`);
     check('S2 一模一樣的兩筆：先登記那筆沒標異常、後登記那筆有標（轉帳檔預設排除異常那筆）', flags === 'false,true', flags);
-    // 模擬舊函式曾被套進這個資料庫：新 migration 要把它移除
+    // 模擬舊函式（整期標）與第一版（吃前端清單）曾被套進這個資料庫：新 migration 要把它們移除
     must(DB, `CREATE FUNCTION public.mark_salary_period_paid(p_period_start date, p_period_end date, p_expected_count integer DEFAULT NULL, p_expected_amount numeric DEFAULT NULL)
       RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
-      CREATE FUNCTION public.mark_salary_period_paid(p_period_start date, p_period_end date) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;`, 'sbadmin');
+      CREATE FUNCTION public.mark_salary_period_paid(p_period_start date, p_period_end date) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
+      CREATE FUNCTION public.mark_salary_sessions_paid(date, date, jsonb, numeric, date, numeric, jsonb) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
+      CREATE FUNCTION public.revert_salary_payout_batch(bigint) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;`, 'sbadmin');
   });
 
   section('migration 20261022140000_mark_salary_sessions_paid.sql');
@@ -328,16 +361,16 @@ try {
     check('M1a migration 第一次套用成功（非 superuser 表擁有者身分）', r1.ok, r1.err);
     const r2 = psql(DB, { file: MIG, user: 'sbadmin' });
     check('M1b migration 連續第二次套用成功（可重跑）', r2.ok, r2.err);
-    check('M1c 舊的「整期一起標」函式 mark_salary_period_paid 兩個版本都被移除',
-      must(DB, "SELECT count(*) FROM pg_proc WHERE proname = 'mark_salary_period_paid'") === '0');
+    check('M1c 舊的「整期一起標」與第一版「吃前端清單」的函式全部被移除',
+      must(DB, "SELECT count(*) FROM pg_proc WHERE proname IN ('mark_salary_period_paid', 'mark_salary_sessions_paid', 'revert_salary_payout_batch')") === '0');
     check('M1d 新函式各只有一個版本',
-      must(DB, "SELECT string_agg(proname || '/' || pronargs, ',' ORDER BY proname) FROM pg_proc WHERE proname IN ('mark_salary_sessions_paid', 'revert_salary_payout_batch')")
-        === 'mark_salary_sessions_paid/7,revert_salary_payout_batch/1');
+      must(DB, "SELECT string_agg(proname || '/' || pronargs, ',' ORDER BY proname) FROM pg_proc WHERE proname IN ('record_salary_payout_export', 'mark_salary_payout_export_paid', 'revert_salary_payout_export', 'salary_payout_item_mismatches')")
+        === 'mark_salary_payout_export_paid/3,record_salary_payout_export/8,revert_salary_payout_export/1,salary_payout_item_mismatches/3');
   });
 
   await step('M2 catalog', () => {
     const q = (s) => must(DB, s);
-    for (const fn of [FN_MARK, FN_REVERT]) {
+    for (const fn of Object.values(FN)) {
       const short = fn.split('(')[0].replace('public.', '');
       check(`M2a ${short}：SECURITY DEFINER、擁有者 sbadmin（非 superuser）`,
         q(`SELECT prosecdef || '|' || pg_get_userbyid(proowner) FROM pg_proc WHERE oid = '${fn}'::regprocedure`) === 'true|sbadmin');
@@ -347,241 +380,306 @@ try {
       check(`M2d ${short}：PUBLIC 沒有執行權（ACL 裡沒有 =X/）`, !/(^|[{,])=X\//.test(acl), acl);
       check(`M2e ${short}：authenticated 可以呼叫（是否 admin 由函式內檢查）`, q(`SELECT has_function_privilege('authenticated', '${fn}', 'EXECUTE')`) === 't');
     }
-    for (const table of ['salary_payout_batches', 'salary_payout_batch_items']) {
+    check('M2f 內部核對函式 salary_payout_item_mismatches：anon、authenticated 都不能直接呼叫，search_path 固定為空字串',
+      q(`SELECT has_function_privilege('anon', '${HELPER}', 'EXECUTE') OR has_function_privilege('authenticated', '${HELPER}', 'EXECUTE')`) === 'f'
+        && q(`SELECT array_to_string(proconfig, ',') FROM pg_proc WHERE oid = '${HELPER}'::regprocedure`) === 'search_path=""');
+    for (const table of ['salary_payout_exports', 'salary_payout_export_items']) {
       check(`M3a ${table}：RLS 已啟用`, q(`SELECT relrowsecurity FROM pg_class WHERE oid = 'public.${table}'::regclass`) === 't');
       check(`M3b ${table}：anon 沒有任何權限`,
         q(`SELECT bool_or(has_table_privilege('anon', 'public.${table}', p)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) p`) === 'f');
       check(`M3c ${table}：authenticated 只有 SELECT（沒有 INSERT／UPDATE／DELETE）`,
         q(`SELECT string_agg(p, ',') FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) p WHERE has_table_privilege('authenticated', 'public.${table}', p)`) === 'SELECT');
     }
-    const seq = q("SELECT pg_get_serial_sequence('public.salary_payout_batches', 'id')");
-    check('M3d 批次編號序列：anon／authenticated 都不能用（不能自己 nextval）',
+    const seq = q("SELECT pg_get_serial_sequence('public.salary_payout_exports', 'id')");
+    check('M3d 匯出編號序列：anon／authenticated 都不能用（不能自己 nextval）',
       q(`SELECT has_sequence_privilege('anon', '${seq}', 'USAGE') OR has_sequence_privilege('authenticated', '${seq}', 'USAGE')`) === 'f', seq);
   });
 
+  const filePayload = payload(FILE, { adjustments: FILE_ADJ });
   section('權限：只有 admin');
   await step('R non-admin', () => {
     const before = tableMd5();
-    const a1 = asRole(DB, ANON, markP(FILE));
-    check('R1 anon 呼叫標記被拒（permission denied for function）', deniedMsg(a1), firstLine(a1.err));
-    const a2 = asRole(DB, ANON, revert(1));
-    check('R2 anon 呼叫還原被拒（permission denied for function）', deniedMsg(a2), firstLine(a2.err));
-    for (const [label, uid] of [['teacher', U.teacher], ['mentor', U.mentor], ['pending', U.pending], ['ghost（沒有 users 列）', U.ghost]]) {
-      const r = asRole(DB, authed(uid), markP(FILE));
-      check(`R3 ${label} 標記 → 42501「只有管理員可以標記已付款。」`, sqlstate(r, '42501') && /只有管理員可以標記已付款/.test(r.err), firstLine(r.err) || r.out);
-      const v = asRole(DB, authed(uid), revert(1));
-      check(`R4 ${label} 還原 → 42501`, sqlstate(v, '42501'), firstLine(v.err) || v.out);
+    for (const [label, sql] of [['存匯出', record(P, filePayload)], ['標記', mark(1, 8, FILE_TOTAL)], ['還原', revert(1)]]) {
+      const a = asRole(DB, ANON, sql);
+      check(`R1 anon 呼叫${label}被拒（permission denied for function）`, deniedMsg(a), firstLine(a.err));
     }
-    const ins = asRole(DB, authed(U.admin), "INSERT INTO public.salary_payout_batches (period_start, period_end, item_count, total_amount) VALUES ('2026-08-26', '2026-09-25', 1, 1);");
-    check('R5 admin 也不能直接寫批次紀錄表（只能經函式）', deniedMsg(ins), firstLine(ins.err));
-    check('R6 以上被拒之後整張表完全沒變（含 updated_at）、沒有任何批次紀錄', tableMd5() === before && batchCount() === 0);
+    for (const [label, uid] of [['teacher', U.teacher], ['mentor', U.mentor], ['pending', U.pending], ['ghost（沒有 users 列）', U.ghost]]) {
+      const r1 = asRole(DB, authed(uid), record(P, filePayload));
+      const r2 = asRole(DB, authed(uid), mark(1, 8, FILE_TOTAL));
+      const r3 = asRole(DB, authed(uid), revert(1));
+      check(`R2 ${label}：存匯出／標記／還原都回 42501`, sqlstate(r1, '42501') && sqlstate(r2, '42501') && sqlstate(r3, '42501')
+        && /只有管理員可以建立匯出紀錄/.test(r1.err) && /只有管理員可以標記已付款/.test(r2.err), `${firstLine(r1.err)} / ${firstLine(r2.err)} / ${firstLine(r3.err)}`);
+    }
+    const ins = asAdmin("INSERT INTO public.salary_payout_exports (period_start, period_end, item_count, people_count, total_amount, transfer_total, people) VALUES ('2026-08-26', '2026-09-25', 0, 1, 0, 0, '[]');");
+    check('R3 admin 也不能直接寫匯出紀錄表（只能經函式）', deniedMsg(ins), firstLine(ins.err));
+    const helper = asAdmin(`SELECT public.salary_payout_item_mismatches('[]'::jsonb, DATE '2026-08-26', DATE '2026-09-25');`);
+    check('R4 admin 也不能直接呼叫內部核對函式', deniedMsg(helper), firstLine(helper.err));
+    check('R5 以上被拒之後整張表完全沒變（含 updated_at）、沒有任何匯出紀錄', tableMd5() === before && exportCount() === 0);
   });
 
-  section('參數檢查（admin 也擋，22023，什麼都不改）');
+  section('存匯出：參數檢查（admin 也擋，22023，什麼都不存）');
   await step('V validation', () => {
     const before = tableMd5();
-    const P = ["DATE '2026-08-26'", "DATE '2026-09-25'"];
-    const items = `${sqlText(itemsJson(FILE))}::jsonb`;
-    const one = (obj) => `${sqlText(JSON.stringify(obj))}::jsonb`;
-    const id1 = idOf('f_start');
+    const pl = filePayload;
+    const firstItem = pl.items[0];
+    const person = (overrides) => [{ ...pl.people.find((p) => p.instructor_id === I1), ...overrides }, ...pl.people.filter((p) => p.instructor_id !== I1)];
     const cases = [
-      ['起日 NULL', mark('NULL', P[1], items, FILE_TOTAL), /期間起訖日不正確/],
-      ['迄日早於起日', mark(P[1], P[0], items, FILE_TOTAL), /期間起訖日不正確/],
-      ['區間 32 天（比最長的一期多一天）', mark("DATE '2026-01-25'", "DATE '2026-02-25'", items, FILE_TOTAL), /一次只能標記一期/],
-      ['迄日＝台北今天（這期還沒結束）', mark("(now() AT TIME ZONE 'Asia/Taipei')::date - 20", "(now() AT TIME ZONE 'Asia/Taipei')::date", items, FILE_TOTAL), /結束後才能標記已付款/],
-      ['清單 NULL', mark(P[0], P[1], 'NULL', 0), /沒有要標記的紀錄/],
-      ['清單是空陣列', mark(P[0], P[1], "'[]'::jsonb", 0), /沒有要標記的紀錄/],
-      ['清單不是陣列', mark(P[0], P[1], one({ id: id1, amount: 1000 }), 1000), /沒有要標記的紀錄/],
-      ['id 不是 uuid', mark(P[0], P[1], one([{ id: 'abc', amount: 1000 }]), 1000), /清單格式不正確（1 筆）/],
-      ['金額是字串', mark(P[0], P[1], one([{ id: id1, amount: '1000' }]), 1000), /清單格式不正確/],
-      ['金額負數', mark(P[0], P[1], one([{ id: id1, amount: -1 }]), -1), /清單格式不正確/],
-      ['金額三位小數', mark(P[0], P[1], one([{ id: id1, amount: 1000.001 }]), 1000.001), /清單格式不正確/],
-      ['同一筆出現兩次', mark(P[0], P[1], one([{ id: id1, amount: 1000 }, { id: id1, amount: 1000 }]), 2000), /清單裡有重複的紀錄/],
-      ['確認金額與清單合計不同', mark(P[0], P[1], items, FILE_TOTAL - 1), /清單金額合計（\$4,500）與確認金額（\$4,499）不同/],
-      ['確認金額 NULL', mark(P[0], P[1], items, 'NULL'), /與確認金額（\$\?）不同/],
-      ['人工調整不是陣列', mark(P[0], P[1], items, FILE_TOTAL, { adjustments: "'{}'::jsonb" }), /人工調整紀錄格式不正確/],
+      ['起日 NULL', record(['NULL', P[1]], pl), /期間起訖日不正確/],
+      ['迄日早於起日', record([P[1], P[0]], pl), /期間起訖日不正確/],
+      ['區間 32 天', record(["DATE '2026-01-25'", "DATE '2026-02-25'"], pl), /一次只能匯出一期/],
+      ['檔案類型不是 csv／xlsx', record(P, pl, { kind: "'pdf'" }), /檔案類型不正確/],
+      ['課的清單不是陣列', record(P, pl, { items: jsonArg(firstItem) }), /課的清單格式不正確/],
+      ['某一筆 id 不是 uuid', record(P, pl, { items: jsonArg([{ ...firstItem, id: 'abc' }, ...pl.items.slice(1)]) }), /課的清單格式不正確（1 筆）/],
+      ['某一筆缺講師', record(P, pl, { items: jsonArg([{ id: firstItem.id, amount: firstItem.amount }, ...pl.items.slice(1)]) }), /課的清單格式不正確（1 筆）/],
+      ['某一筆金額是字串', record(P, pl, { items: jsonArg([{ ...firstItem, amount: '1000' }, ...pl.items.slice(1)]) }), /課的清單格式不正確/],
+      ['某一筆金額負數', record(P, pl, { items: jsonArg([{ ...firstItem, amount: -1 }, ...pl.items.slice(1)]) }), /課的清單格式不正確/],
+      ['某一筆金額三位小數', record(P, pl, { items: jsonArg([{ ...firstItem, amount: 1000.001 }, ...pl.items.slice(1)]) }), /課的清單格式不正確/],
+      ['同一堂出現兩次', record(P, pl, { items: jsonArg([...pl.items, firstItem]) }), /課的清單裡有重複的紀錄/],
+      ['講師清單空白', record(P, pl, { people: "'[]'::jsonb" }), /這份檔案沒有任何講師/],
+      ['講師實付 0', record(P, pl, { people: jsonArg(person({ amount: 0 })) }), /講師清單格式不正確（1 位）/],
+      ['有人工調整但沒寫原因', record(P, pl, { people: jsonArg(person({ adjustment_reason: '' })) }), /講師清單格式不正確（1 位）/],
+      ['同一位講師出現兩次', record(P, pl, { people: jsonArg([...pl.people, pl.people[0]]) }), /講師清單裡有重複的講師/],
+      ['有課的講師不在講師清單', record(P, pl, { people: jsonArg(pl.people.filter((p) => p.instructor_id === I1)) }), /有課的講師不在講師清單裡/],
+      ['講師實付≠他的課加總＋人工調整', record(P, pl, { people: jsonArg(person({ amount: 3001 })) }), /講師實付和他的課加總＋人工調整不一致/],
+      ['轉帳檔總額和講師實付合計不同', record(P, pl, { expected: 3999 }), /講師實付合計（\$4,000）與轉帳檔總額（\$3,999）不同/],
+      ['排除摘要不是文字陣列', record(P, pl, { exclusions: "'[1]'::jsonb" }), /排除摘要格式不正確/],
     ];
     for (const [label, sql, pattern] of cases) {
-      const r = asRole(DB, authed(U.admin), sql);
+      const r = asAdmin(sql);
       check(`V ${label} → 22023`, sqlstate(r, '22023') && pattern.test(r.err), firstLine(r.err) || r.out);
     }
-    const hnl = asRole(DB, authed(U.admin), `SET TIME ZONE 'Pacific/Honolulu';\n${mark("(now() AT TIME ZONE 'Asia/Taipei')::date - 20", "(now() AT TIME ZONE 'Asia/Taipei')::date", items, FILE_TOTAL)}`);
-    check('V 連線時區是檀香山也照台北日期判斷（迄日＝台北今天仍擋）', sqlstate(hnl, '22023'), firstLine(hnl.err) || hnl.out);
-    check('V 以上全部被擋：整張表完全沒變、沒有任何批次紀錄', tableMd5() === before && batchCount() === 0);
+    check('V 以上全部被擋：整張表完全沒變、沒有任何匯出紀錄', tableMd5() === before && exportCount() === 0);
   });
 
-  section('清單和資料庫不符 → 整批取消（ok=false，逐筆列原因，什麼都不改）');
-  await step('E mismatch', () => {
+  section('存匯出：清單和資料庫不符 → 不存（ok=false，逐筆列原因）');
+  await step('E record mismatch', () => {
     const before = tableMd5();
     const cases = [
-      ['清單混進待核准的列', { ...FILE, x_pending: 700 }, 'status', /狀態已不是「已核准」（現在：待核准）/],
-      ['清單混進已付款的列', { ...FILE, x_paid: 0 }, 'status', /現在：已付款/],
-      ['清單混進別期的列（9/26）', { ...FILE, x_after: 4000 }, 'period', /日期 2026-09-26 不在這一期/],
-      ['清單混進對不到講師的列', { ...FILE, x_unmatched: 350 }, 'no_instructor', /沒有連到講師主檔/],
-      ['某一筆金額和現在不同（下載後被改價）', { ...FILE, f_start: 999 }, 'amount', /應付金額已變動（下載時 \$999，現在 \$1,000）/],
-      ['某一筆已不存在', { ...FILE, ghost: 100 }, 'not_found', /找不到這筆紀錄/],
+      ['混進待核准的列', { ...FILE, x_pending: 700 }, {}, 'status', /狀態已不是「已核准」（現在：待核准）/],
+      ['混進已付款的列', { ...FILE, x_paid: 0 }, {}, 'status', /現在：已付款/],
+      ['混進別期的列（9/26）', { ...FILE, x_after: 4000 }, {}, 'period', /日期 2026-09-26 不在這一期/],
+      ['混進對不到講師的列', { ...FILE, x_unmatched: 350 }, { instructorOverride: { x_unmatched: I1 } }, 'instructor', /已沒有連到講師主檔/],
+      ['某一堂的講師和資料庫不同', FILE, { instructorOverride: { f_start: I2 } }, 'instructor', /講師和下載時不同（現在：測試講師一）/],
+      ['某一筆金額和現在不同', { ...FILE, f_start: 999 }, {}, 'amount', /應付金額已變動（下載時 \$999，現在 \$1,000）/],
+      ['某一筆已不存在', { ...FILE, ghost: 100 }, {}, 'not_found', /找不到這筆紀錄/],
     ];
-    for (const [label, entries, reason, pattern] of cases) {
-      const items = Object.entries(entries).map(([key, amount]) => ({ id: key === 'ghost' ? '20000000-0000-4000-8000-00000000dead' : idOf(key), amount }));
-      const total = items.reduce((sum, item) => sum + item.amount, 0);
-      const r = asRole(DB, authed(U.admin), mark("DATE '2026-08-26'", "DATE '2026-09-25'", `${sqlText(JSON.stringify(items))}::jsonb`, total));
+    for (const [label, entries, opts, reason, pattern] of cases) {
+      const r = asAdmin(record(P, payload(entries, { adjustments: FILE_ADJ, ...opts })));
       const result = parse(r);
       const hit = result?.mismatches?.[0];
-      check(`E ${label} → ok=false、1 筆不符（${reason}）、0 筆標記`,
-        r.ok && result?.ok === false && result?.marked_count === 0 && result?.mismatch_count === 1 && hit?.reason === reason && pattern.test(hit?.message || ''),
-        r.err || r.out);
+      check(`E ${label} → ok=false、1 筆不符（${reason}）`,
+        r.ok && result?.ok === false && result?.mismatch_count === 1 && hit?.reason === reason && pattern.test(hit?.message || ''), r.err || r.out);
     }
-    const multi = asRole(DB, authed(U.admin), markP({ ...FILE, x_pending: 700, x_after: 4000, f_bonus: 1 }));
-    const m = parse(multi);
-    check('E 一次有 3 筆不符：3 筆都列出來（照清單順序），每筆附講師、日期、目前金額',
-      m?.ok === false && m?.mismatch_count === 3 && m.mismatches.map((x) => x.reason).join(',') === 'amount,status,period'
-        && m.mismatches[0].instructor_name === '測試講師一' && m.mismatches[0].session_date === '2026-09-10' && Number(m.mismatches[0].current_amount) === 850,
-      multi.err || multi.out);
-    check('E 以上全部整批取消：整張表完全沒變（含 updated_at）、沒有任何批次紀錄', tableMd5() === before && batchCount() === 0);
-    check('E 不符的呼叫結束後沒有殘留鎖（另一個連線可以馬上改這些列）',
-      must(DB, `SET lock_timeout = '1s'; BEGIN; UPDATE public.class_sessions SET notes = notes WHERE id IN (${idList(FILE_KEYS)}); ROLLBACK; SELECT 'ok';`).endsWith('ok'));
+    check('E 以上全部沒存：整張表完全沒變、沒有任何匯出紀錄', tableMd5() === before && exportCount() === 0);
   });
 
-  let batch1;
-  let paidAt1;
-  section('admin 標記 9 月期這份轉帳檔（8 筆、課程應付 $4,500）；匯出後又核准了一筆晚到的');
+  let e1;
+  section('存匯出 #1（9 月期：2 位講師的課 8 筆、課程應付 $4,500、人工調整 -$500、轉帳檔總額 $4,000）');
+  await step('X record', () => {
+    const before = tableMd5();
+    const exclusions = jsonArg(['異常標記預設排除 1 筆（$200）', '資料不全被擋下的講師 1 位、1 筆（$900）：缺帳號 1 位']);
+    const r = asAdmin(record(P, filePayload, { payDate: "DATE '2026-10-10'", exclusions }));
+    const result = parse(r);
+    e1 = result?.export_id;
+    check('X1 回傳 ok、匯出編號、8 筆、2 位講師、課程應付 $4,500、轉帳檔總額 $4,000',
+      r.ok && result?.ok === true && Number.isInteger(e1) && result.item_count === 8 && result.people_count === 2
+        && Number(result.total_amount) === FILE_TOTAL && Number(result.transfer_total) === 4000, r.err || r.out);
+    check('X2 存匯出不會改任何報酬紀錄（整張表含 updated_at 完全沒變）', tableMd5() === before);
+    const row = must(DB, `SELECT period_start || '|' || period_end || '|' || item_count || '|' || people_count || '|' || total_amount || '|' || transfer_total
+        || '|' || pay_date || '|' || file_kind || '|' || exported_by || '|' || exported_by_name || '|' || (marked_at IS NULL) || '|' || jsonb_array_length(exclusions)
+        || '|' || (SELECT string_agg((p ->> 'name') || ':' || (p ->> 'amount') || ':' || (p ->> 'adjustment'), ',' ORDER BY p ->> 'name') FROM jsonb_array_elements(people) p)
+      FROM public.salary_payout_exports WHERE id = ${e1}`);
+    check('X3 匯出紀錄：期別、筆數、人數、金額、付款日、檔案類型、誰下載（id＋姓名）、還沒標記、排除摘要、每位講師實付與人工調整',
+      row === `2026-08-26|2026-09-25|8|2|4500.00|4000.00|2026-10-10|csv|${U.admin}|管理員一|true|2|測試講師一:2600:-500,測試講師二:1400:0`, row);
+    const items = must(DB, `SELECT count(*) || '|' || sum(amount) || '|' || bool_and(old_status IS NULL AND new_paid_at IS NULL)
+        || '|' || count(*) FILTER (WHERE instructor_id = '${I2}') FROM public.salary_payout_export_items WHERE export_id = ${e1}`);
+    check('X4 清單 8 筆存進資料庫（含每堂的講師與應付金額），還沒有標記前後的值', items === '8|4500.00|true|2', items);
+  });
+
+  section('紀錄表只有 admin 讀得到（mentor 也碰不到）');
+  await step('L read access', () => {
+    const t = asRole(DB, authed(U.teacher), 'SELECT count(*) FROM public.salary_payout_exports; SELECT count(*) FROM public.salary_payout_export_items;');
+    check('L1 講師查兩張表都是 0 筆（RLS 擋掉）', t.ok && t.out.split('\n').join(',') === '0,0', t.err || t.out);
+    const m = asRole(DB, authed(U.mentor), 'SELECT count(*) FROM public.salary_payout_exports; SELECT count(*) FROM public.salary_payout_export_items;');
+    check('L2 輔導員查兩張表都是 0 筆', m.ok && m.out.split('\n').join(',') === '0,0', m.err || m.out);
+    const a = asRole(DB, ANON, 'SELECT count(*) FROM public.salary_payout_exports;');
+    check('L3 anon 查匯出紀錄被拒（permission denied）', deniedMsg(a), firstLine(a.err));
+    const ad = asAdmin('SELECT count(*) FROM public.salary_payout_exports; SELECT count(*) FROM public.salary_payout_export_items;');
+    check('L4 admin 看得到 1 份匯出、8 筆清單', ad.ok && ad.out.split('\n').join(',') === '1,8', ad.err || ad.out);
+  });
+
+  section('標記：確認值不對 → 擋下');
+  await step('K mark guards', () => {
+    const before = tableMd5();
+    const audit = auditMd5();
+    const cases = [
+      ['確認筆數不同（7 筆）', mark(e1, 7, FILE_TOTAL), /確認的筆數／金額（7 筆、\$4,500）和匯出 #\d+（8 筆、\$4,500）不同/],
+      ['確認金額不同（$4,499）', mark(e1, 8, 4499), /確認的筆數／金額（8 筆、\$4,499）/],
+      ['匯出編號不存在', mark(999999, 8, FILE_TOTAL), /找不到匯出 #999999/],
+    ];
+    for (const [label, sql, pattern] of cases) {
+      const r = asAdmin(sql);
+      check(`K ${label} → 22023、沒有標記`, sqlstate(r, '22023') && pattern.test(r.err), firstLine(r.err) || r.out);
+    }
+    const future = psql(DB, { sql: `\\set VERBOSITY verbose
+BEGIN;
+UPDATE public.salary_payout_exports SET period_end = (now() AT TIME ZONE 'Asia/Taipei')::date WHERE id = ${e1};
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claims = '${JSON.stringify({ sub: U.admin, role: 'authenticated' })}';
+${mark(e1, 8, FILE_TOTAL)}
+ROLLBACK;` });
+    check('K 這一期還沒結束（迄日＝台北今天）→ 22023「結束後才能標記已付款」', sqlstate(future, '22023') && /結束後才能標記已付款/.test(future.err), firstLine(future.err) || future.out);
+    check('K 以上全部擋下：報酬紀錄與匯出紀錄完全沒變', tableMd5() === before && auditMd5() === audit);
+  });
+
+  section('隔天、另一個連線、另一位管理員直接標記昨天那份（之間又核准了一筆晚到的）');
   await step('A mark', () => {
-    insertRows(DB, [['x_late', LATE]]);  // 匯出之後才核准：不在轉帳檔裡
-    must(DB, `ALTER TABLE public.class_sessions DISABLE TRIGGER trg_class_sessions_updated_at;
-      UPDATE public.class_sessions SET updated_at = TIMESTAMPTZ '2026-10-01 09:00+08' WHERE id = '${idOf('x_late')}';
-      ALTER TABLE public.class_sessions ENABLE TRIGGER trg_class_sessions_updated_at;`);
+    insertRows(DB, [['x_late', LATE]]);  // 匯出之後才核准：不在匯出 #1 裡
+    freezeUpdatedAt(DB, `id = '${idOf('x_late')}'`);
     const untouchedKeys = [...Object.keys(ROWS).filter((k) => !FILE_KEYS.includes(k)), 'x_late'];
     const untouchedBefore = rowsMd5(DB, untouchedKeys);
-    const adjustments = JSON.stringify([{ instructor_id: I1, name: '測試講師一', amount: -500, reason: '扣回上期溢付' }]);
-    const r = asRole(DB, authed(U.admin), markP(FILE, FILE_TOTAL, { payDate: "DATE '2026-10-10'", transfer: FILE_TOTAL - 500, adjustments: `${sqlText(adjustments)}::jsonb` }));
+    const r = asRole(DB, authed(U.admin2), mark(e1, 8, FILE_TOTAL));
     const result = parse(r);
-    batch1 = result?.batch_id;
-    paidAt1 = result?.paid_at;
-    check(`A1 回傳 ok、批次編號、${FILE_KEYS.length} 筆、$${FILE_TOTAL}`, r.ok && result?.ok === true && Number.isInteger(batch1)
-      && result?.marked_count === FILE_KEYS.length && Number(result?.marked_amount) === FILE_TOTAL, r.err || r.out);
+    check('A1 管理員二（不同連線）只用匯出編號＋確認值就標記成功：8 筆、$4,500', r.ok && result?.ok === true && result.export_id === e1
+      && result.marked_count === 8 && Number(result.marked_amount) === FILE_TOTAL, r.err || r.out);
     const marked = must(DB, `SELECT count(*) FILTER (WHERE status = 'paid') || '|' || count(DISTINCT paid_at) || '|' || bool_and(updated_at > TIMESTAMPTZ '2026-10-01 09:00+08')
-        || '|' || bool_and(paid_at = '${paidAt1}'::timestamptz)
-      FROM public.class_sessions WHERE id IN (${idList(FILE_KEYS)})`);
-    check('A2 清單內 8 筆都變成已付款、paid_at 同一個時間（＝回傳的 paid_at）、updated_at 有更新', marked === '8|1|true|true', marked);
-    check('A3 一般列：已領＝總額（有獎金那筆 850）', statusOf(DB, 'f_bonus') === 'paid|850.00|850.00' && statusOf(DB, 'f_start') === 'paid|1000.00|1000.00',
-      `${statusOf(DB, 'f_bonus')} / ${statusOf(DB, 'f_start')}`);
-    check('A4 先付過 100 的那筆：已領改成總額 600（本次匯 500＝付清）', statusOf(DB, 'f_partial') === 'paid|600.00|600.00', statusOf(DB, 'f_partial'));
+        || '|' || bool_and(paid_at = '${result?.paid_at}'::timestamptz) FROM public.class_sessions WHERE id IN (${idList(FILE_KEYS)})`);
+    check('A2 匯出 #1 裡的 8 筆都變成已付款、paid_at 同一個時間、updated_at 有更新', marked === '8|1|true|true', marked);
+    check('A3 一般列：已領＝總額（有獎金那筆 850）', statusOf(DB, 'f_bonus') === 'paid|850.00|850.00' && statusOf(DB, 'f_start') === 'paid|1000.00|1000.00');
+    check('A4 先付過 100 的那筆：已領改成總額 600', statusOf(DB, 'f_partial') === 'paid|600.00|600.00', statusOf(DB, 'f_partial'));
     check('A5 已領 500 超過總額 300 的那筆：已領維持 500，沒有被改小', statusOf(DB, 'f_over') === 'paid|500.00|300.00', statusOf(DB, 'f_over'));
-    check('A6 轉帳檔沒納入的列（異常課、缺帳號講師、取消勾選的人、手動排除的課、對不到講師、晚到的已核准）與其他期別、待核准、已付款的列：整列（含 updated_at）完全沒變',
+    check('A6 匯出 #1 沒納入的列（異常課、缺帳號講師、取消勾選的人、手動排除的課、對不到講師）、匯出之後才核准的那筆、其他期別：整列完全沒變',
       rowsMd5(DB, untouchedKeys) === untouchedBefore);
-    check('A7 晚到的已核准那筆仍是「已核准」，下次匯款檔會出現', statusOf(DB, 'x_late') === 'approved|0.00|450.00', statusOf(DB, 'x_late'));
-    const batch = must(DB, `SELECT period_start || '|' || period_end || '|' || item_count || '|' || total_amount || '|' || pay_date || '|' || transfer_total
-        || '|' || marked_by || '|' || marked_by_name || '|' || (marked_at = '${paidAt1}'::timestamptz) || '|' || (adjustments -> 0 ->> 'reason') || '|' || reverted_count
-      FROM public.salary_payout_batches WHERE id = ${batch1}`);
-    check('A8 批次紀錄：期別、8 筆、$4,500、付款日、轉帳檔總額 $4,000、誰（id＋姓名）、何時、人工調整原因、尚未還原',
-      batch === `2026-08-26|2026-09-25|8|4500.00|2026-10-10|4000.00|${U.admin}|管理員一|true|扣回上期溢付|0`, batch);
+    check('A7 匯出之後才核准的那筆仍是「已核准」', statusOf(DB, 'x_late') === 'approved|0.00|450.00', statusOf(DB, 'x_late'));
+    const row = must(DB, `SELECT marked_by || '|' || marked_by_name || '|' || marked_count || '|' || marked_amount || '|' || (marked_at = '${result?.paid_at}'::timestamptz)
+      FROM public.salary_payout_exports WHERE id = ${e1}`);
+    check('A8 匯出紀錄記上標記人（管理員二）、筆數、金額、時間', row === `${U.admin2}|管理員二|8|4500.00|true`, row);
     const items = must(DB, `SELECT string_agg(s.k || ':' || i.amount || ':' || i.old_status || ':' || i.old_paid_amount || ':' || COALESCE(i.old_paid_at::text, '-') || ':' || i.new_paid_amount
           || ':' || (i.new_updated_at = cs.updated_at), ',' ORDER BY s.k)
-      FROM public.salary_payout_batch_items i
+      FROM public.salary_payout_export_items i
       JOIN public.class_sessions cs ON cs.id = i.session_id
       JOIN (VALUES ${FILE_KEYS.map((k) => `('${idOf(k)}'::uuid, '${k}')`).join(',')}) AS s(id, k) ON s.id = i.session_id
-      WHERE i.batch_id = ${batch1}`);
+      WHERE i.export_id = ${e1}`);
     const expectedItems = ['f_bonus:850.00:approved:0.00:-:850.00:true', 'f_dup1:200.00:approved:0.00:-:200.00:true', 'f_end:300.00:approved:0.00:-:300.00:true',
       'f_other:1200.00:approved:0.00:-:1200.00:true', 'f_over:0.00:approved:500.00:-:500.00:true', 'f_partial:500.00:approved:100.00:-:600.00:true',
       'f_quoted:450.00:approved:0.00:-:450.00:true', 'f_start:1000.00:approved:0.00:-:1000.00:true'].join(',');
-    check('A9 每列批次明細：當時應付、舊狀態／舊已領／舊付款時間、新已領、標完當下的 updated_at', items === expectedItems, items);
-    check('A10 三個 trigger 仍是啟用狀態（函式沒有停用 trigger）',
-      must(DB, `SELECT string_agg(tgenabled::text, '' ORDER BY tgname) FROM pg_trigger WHERE tgrelid = 'public.class_sessions'::regclass AND NOT tgisinternal`) === 'OOO');
+    check('A9 清單每筆補上：當時應付、舊狀態／舊已領／舊付款時間、新已領、標完當下的 updated_at', items === expectedItems, items);
+    check('A10 三個 trigger 仍是啟用狀態', must(DB, `SELECT string_agg(tgenabled::text, '' ORDER BY tgname) FROM pg_trigger WHERE tgrelid = 'public.class_sessions'::regclass AND NOT tgisinternal`) === 'OOO');
   });
 
-  section('紀錄表只有 admin 讀得到');
-  await step('L read access', () => {
-    const t = asRole(DB, authed(U.teacher), 'SELECT count(*) FROM public.salary_payout_batches; SELECT count(*) FROM public.salary_payout_batch_items;');
-    check('L1 講師查兩張表都是 0 筆（RLS 擋掉）', t.ok && t.out.split('\n').join(',') === '0,0', t.err || t.out);
-    const m = asRole(DB, authed(U.mentor), 'SELECT count(*) FROM public.salary_payout_batches;');
-    check('L2 輔導員查批次表 0 筆', m.ok && m.out === '0', m.err || m.out);
-    const a = asRole(DB, ANON, 'SELECT count(*) FROM public.salary_payout_batches;');
-    check('L3 anon 查批次表被拒（permission denied）', deniedMsg(a), firstLine(a.err));
-    const ad = asRole(DB, authed(U.admin), 'SELECT count(*) FROM public.salary_payout_batches; SELECT count(*) FROM public.salary_payout_batch_items;');
-    check('L4 admin 看得到 1 批、8 筆明細', ad.ok && ad.out.split('\n').join(',') === '1,8', ad.err || ad.out);
-  });
-
-  section('重送同一份清單（已標過）→ 整批取消');
+  section('同一份再標一次 → 擋下');
   await step('B rerun', () => {
     const before = tableMd5();
     const audit = auditMd5();
-    const r = asRole(DB, authed(U.admin), markP(FILE));
-    const result = parse(r);
-    check('B1 同一份再送一次 → ok=false、8 筆都是「現在：已付款」、0 筆標記',
-      r.ok && result?.ok === false && result?.mismatch_count === 8 && result.mismatches.every((x) => x.reason === 'status'), r.err || r.out);
-    check('B2 整張表與批次紀錄完全沒變（沒有多一批）', tableMd5() === before && auditMd5() === audit);
+    const r = asAdmin(mark(e1, 8, FILE_TOTAL));
+    check('B1 匯出 #1 再標一次 → 22023「已經標記過已付款，不能再標一次」', sqlstate(r, '22023') && /已經標記過已付款/.test(r.err), firstLine(r.err) || r.out);
+    check('B2 報酬紀錄與匯出紀錄完全沒變', tableMd5() === before && auditMd5() === audit);
   });
 
-  section('兩位管理員同時送 8 月期同一份清單（3 筆、$5,530）');
+  let e2;
+  section('匯出後把課從講師 A 改到講師 B（金額不變）→ 標記整份被擋');
+  await step('I instructor changed', () => {
+    const r = parse(asAdmin(record(Q, payload(Q_FILE))));
+    e2 = r?.export_id;
+    check('I1 存 8 月期匯出 #2（3 筆、$5,530）', r?.ok === true && r.item_count === 3, JSON.stringify(r));
+    must(DB, `UPDATE public.class_sessions SET instructor_id = '${I1}', instructor_name = '測試講師一' WHERE id = '${idOf('q_mid')}'`);
+    const before = tableMd5();
+    const audit = auditMd5();
+    const m = asAdmin(mark(e2, 3, 5530));
+    const result = parse(m);
+    check('I2 標記 → ok=false、1 筆不符（instructor：講師和下載時不同）、0 筆標記',
+      m.ok && result?.ok === false && result.marked_count === 0 && result.mismatch_count === 1 && result.mismatches[0].reason === 'instructor'
+        && result.mismatches[0].id === idOf('q_mid') && /講師和下載時不同（現在：測試講師一）/.test(result.mismatches[0].message), m.err || m.out);
+    check('I3 整份被擋：同一份另外 2 筆也沒被標、匯出紀錄仍是「未標記」', tableMd5() === before && auditMd5() === audit
+      && statusOf(DB, 'q_start').startsWith('approved|') && statusOf(DB, 'q_end').startsWith('approved|'));
+    check('I4 擋完沒有殘留鎖（另一個連線馬上可以改這些列）',
+      must(DB, `SET lock_timeout = '1s'; BEGIN; UPDATE public.class_sessions SET notes = notes WHERE id IN (${idList(Object.keys(Q_FILE))}); ROLLBACK; SELECT 'ok';`).endsWith('ok'));
+    must(DB, `UPDATE public.class_sessions SET instructor_id = '${I2}', instructor_name = '測試講師二' WHERE id = '${idOf('q_mid')}'`);
+  });
+
+  section('兩位管理員同時標記同一份（匯出 #2，講師已改回）');
   await step('C concurrent', async () => {
-    const qSql = mark("DATE '2026-07-26'", "DATE '2026-08-25'", `${sqlText(itemsJson(Q_FILE))}::jsonb`, 5530);
-    const first = psqlAsync(DB, `${roleCtx(authed(U.admin))}BEGIN;\n${qSql}\nSELECT pg_sleep(1.5);\nCOMMIT;`);
+    const first = psqlAsync(DB, `${roleCtx(authed(U.admin))}BEGIN;\n${mark(e2, 3, 5530)}\nSELECT pg_sleep(1.5);\nCOMMIT;`);
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const second = await psqlAsync(DB, roleCtx(authed(U.admin2)) + qSql);
+    const second = await psqlAsync(DB, roleCtx(authed(U.admin2)) + mark(e2, 3, 5530));
     const firstResult = await first;
     const a = JSON.parse(firstResult.out.split('\n').find((l) => l.startsWith('{')) || 'null');
-    const b = JSON.parse(second.out.split('\n').find((l) => l.startsWith('{')) || 'null');
-    check('C1 先送的那位標到 3 筆、$5,530', firstResult.ok && a?.ok === true && a?.marked_count === 3 && Number(a?.marked_amount) === 5530, firstResult.err || firstResult.out);
-    check('C2 後送的那位等前一位完成後 → ok=false（3 筆都已付款）、不會重複標', second.ok && b?.ok === false && b?.mismatch_count === 3 && second.ms >= 700,
+    check('C1 先按的那位標到 3 筆、$5,530', firstResult.ok && a?.ok === true && a.marked_count === 3 && Number(a.marked_amount) === 5530, firstResult.err || firstResult.out);
+    check('C2 後按的那位等前一位完成後 → 22023「已經標記過」、不會重複標', !second.ok && /22023/.test(second.err) && /已經標記過已付款/.test(second.err) && second.ms >= 700,
       `ms=${second.ms} ${second.err || second.out}`);
-    check('C3 8 月期只有 1 批、3 筆 paid_at 只有一個',
-      must(DB, "SELECT count(*) FROM public.salary_payout_batches WHERE period_start = '2026-07-26'") === '1'
-        && must(DB, `SELECT count(DISTINCT paid_at) FROM public.class_sessions WHERE id IN (${idList(Object.keys(Q_FILE))})`) === '1');
+    check('C3 3 筆 paid_at 只有一個', must(DB, `SELECT count(DISTINCT paid_at) FROM public.class_sessions WHERE id IN (${idList(Object.keys(Q_FILE))})`) === '1');
   });
 
-  section('還原一批：只還原沒被改過的列');
+  let e3;
+  let e4;
+  section('同一期兩份匯出有重疊的課（7 月期：#3＝a＋b、#4＝b＋c）');
+  await step('O overlap', () => {
+    const r3 = parse(asAdmin(record(R, payload({ r_a: 100, r_b: 200 }))));
+    const r4 = parse(asAdmin(record(R, payload({ r_b: 200, r_c: 300 }))));
+    e3 = r3?.export_id;
+    e4 = r4?.export_id;
+    check('O1 兩份都存得進去（存的當下 3 筆都是已核准）', r3?.ok === true && r4?.ok === true && e4 > e3, `${JSON.stringify(r3)} ${JSON.stringify(r4)}`);
+    const m3 = parse(asAdmin(mark(e3, 2, 300)));
+    check('O2 先標 #3 成功（a、b 變已付款）', m3?.ok === true && statusOf(DB, 'r_a').startsWith('paid|') && statusOf(DB, 'r_b').startsWith('paid|'), JSON.stringify(m3));
+    const before = tableMd5();
+    const m4 = parse(asAdmin(mark(e4, 2, 500)));
+    check('O3 再標 #4 → ok=false（b 已是已付款）、整份被擋：c 仍是已核准', m4?.ok === false && m4.mismatch_count === 1 && m4.mismatches[0].id === idOf('r_b')
+      && m4.mismatches[0].reason === 'status' && tableMd5() === before && statusOf(DB, 'r_c') === 'approved|0.00|300.00', JSON.stringify(m4));
+    check('O4 #4 仍是「未標記」', must(DB, `SELECT marked_at IS NULL FROM public.salary_payout_exports WHERE id = ${e4}`) === 't');
+  });
+
+  section('還原：只還原該份、只還原沒被改過的列');
   await step('D revert', () => {
-    // 標記後有人改了 f_bonus 的備註（updated_at 會變）→ 這筆不該被還原
-    must(DB, `UPDATE public.class_sessions SET notes = '標記後補的備註' WHERE id = '${idOf('f_bonus')}'`);
-    const beforeOthers = rowsMd5(DB, ['x_late', 'x_dup2', 'x_noacct', 'q_start']);
-    const r = asRole(DB, authed(U.admin), revert(batch1));
+    must(DB, `UPDATE public.class_sessions SET notes = '標記後補的備註' WHERE id = '${idOf('f_bonus')}'`);  // 標記後有人改了這筆
+    const othersBefore = rowsMd5(DB, ['x_late', 'x_dup2', 'x_noacct', 'q_start', 'r_a', 'r_b']);
+    const r = asAdmin(revert(e1));
     const result = parse(r);
-    check('D1 還原回 7 筆、$3,650，1 筆（標記後被改過）沒還原、列出原因',
-      r.ok && result?.reverted_count === 7 && Number(result?.reverted_amount) === 3650 && result?.skipped_count === 1
-        && result.skipped[0].id === idOf('f_bonus') && result.skipped[0].reason === 'changed' && /標記後被改過/.test(result.skipped[0].message) && result.remaining_count === 1,
-      r.err || r.out);
+    check('D1 還原匯出 #1：7 筆、$3,650，1 筆（標記後被改過）沒還原、列出原因',
+      r.ok && result?.reverted_count === 7 && Number(result.reverted_amount) === 3650 && result.skipped_count === 1
+        && result.skipped[0].id === idOf('f_bonus') && result.skipped[0].reason === 'changed' && result.remaining_count === 1, r.err || r.out);
     const restored = ['f_start', 'f_partial', 'f_over', 'f_other', 'f_quoted', 'f_dup1', 'f_end'].map((k) => `${k}=${statusOf(DB, k)}`).join(' ');
     check('D2 被還原的 7 筆回到標記前：已核准、已領原值（先付 100 那筆回 100、溢付那筆仍 500）',
       restored === 'f_start=approved|0.00|1000.00 f_partial=approved|100.00|600.00 f_over=approved|500.00|300.00 f_other=approved|0.00|1200.00 f_quoted=approved|0.00|450.00 f_dup1=approved|0.00|200.00 f_end=approved|0.00|300.00',
       restored);
     check('D3 被還原的列 paid_at 回到 NULL', must(DB, `SELECT bool_and(paid_at IS NULL) FROM public.class_sessions WHERE id IN (${idList(['f_start', 'f_partial', 'f_over', 'f_end'])})`) === 't');
-    check('D4 被改過的那筆維持已付款（沒被還原）', statusOf(DB, 'f_bonus') === 'paid|850.00|850.00', statusOf(DB, 'f_bonus'));
-    check('D5 不屬於這批的列完全沒動', rowsMd5(DB, ['x_late', 'x_dup2', 'x_noacct', 'q_start']) === beforeOthers);
-    const batch = must(DB, `SELECT reverted_count || '|' || reverted_amount || '|' || reverted_by_name || '|' || (reverted_at IS NOT NULL) FROM public.salary_payout_batches WHERE id = ${batch1}`);
-    check('D6 批次紀錄：已還原 7 筆、$3,650、還原者姓名、還原時間', batch === '7|3650.00|管理員一|true', batch);
-    check('D7 明細：7 筆有還原時間、被改過那筆沒有',
-      must(DB, `SELECT count(*) FILTER (WHERE reverted_at IS NOT NULL) || '|' || count(*) FILTER (WHERE reverted_at IS NULL AND session_id = '${idOf('f_bonus')}') FROM public.salary_payout_batch_items WHERE batch_id = ${batch1}`) === '7|1');
+    check('D4 被改過的那筆維持已付款', statusOf(DB, 'f_bonus') === 'paid|850.00|850.00', statusOf(DB, 'f_bonus'));
+    check('D5 只還原該份：匯出 #3 標的 a、b 與其他列完全沒動', rowsMd5(DB, ['x_late', 'x_dup2', 'x_noacct', 'q_start', 'r_a', 'r_b']) === othersBefore);
+    const row = must(DB, `SELECT reverted_count || '|' || reverted_amount || '|' || reverted_by_name || '|' || (reverted_at IS NOT NULL) || '|' || (marked_at IS NOT NULL) FROM public.salary_payout_exports WHERE id = ${e1}`);
+    check('D6 匯出紀錄：已還原 7 筆、$3,650、還原者、還原時間（標記紀錄保留）', row === '7|3650.00|管理員一|true|true', row);
     const before = tableMd5();
-    const again = parse(asRole(DB, authed(U.admin), revert(batch1)));
-    check('D8 再按一次還原（可重跑）：0 筆還原、仍回報那 1 筆、資料完全沒變',
-      again?.reverted_count === 0 && again?.skipped_count === 1 && again?.remaining_count === 1 && tableMd5() === before, JSON.stringify(again));
-    const missing = asRole(DB, authed(U.admin), revert(999999));
-    check('D9 還原不存在的批次 → 22023「找不到批次 #999999。」', sqlstate(missing, '22023') && /找不到批次 #999999/.test(missing.err), firstLine(missing.err));
+    const again = parse(asAdmin(revert(e1)));
+    check('D7 再按一次還原（可重跑）：0 筆還原、仍回報那 1 筆、資料完全沒變',
+      again?.reverted_count === 0 && again.skipped_count === 1 && again.remaining_count === 1 && tableMd5() === before, JSON.stringify(again));
+    const unmarked = asAdmin(revert(e4));
+    check('D8 還原「未標記」的匯出 #4 → 22023「還沒標記已付款，不需要還原」', sqlstate(unmarked, '22023') && /還沒標記已付款/.test(unmarked.err), firstLine(unmarked.err));
+    const missing = asAdmin(revert(999999));
+    check('D9 還原不存在的匯出 → 22023', sqlstate(missing, '22023') && /找不到匯出 #999999/.test(missing.err), firstLine(missing.err));
+    const remark = asAdmin(mark(e1, 8, FILE_TOTAL));
+    check('D10 還原過的匯出不能再標一次（要重新下載一份）', sqlstate(remark, '22023') && /已經標記過/.test(remark.err), firstLine(remark.err));
   });
 
-  section('還原後重新標記、刪除列的還原');
-  await step('F re-mark', () => {
-    const remark = { f_start: 1000, f_partial: 500, f_end: 300 };
-    const r = parse(asRole(DB, authed(U.admin), markP(remark)));
-    check('F1 還原的列回到「已核准」後可以再標一批（3 筆、$1,800）', r?.ok === true && r?.marked_count === 3 && r?.batch_id > batch1, JSON.stringify(r));
-    const batch3 = r?.batch_id;
+  section('還原後重新下載再標、刪除列的還原');
+  await step('F re-export', () => {
+    const r = parse(asAdmin(record(P, payload({ f_start: 1000, f_partial: 500, f_end: 300 }))));
+    const m = parse(asAdmin(mark(r?.export_id, 3, 1800)));
+    check('F1 重新下載（新匯出）→ 標記成功（3 筆、$1,800）', r?.ok === true && m?.ok === true && m.marked_count === 3, `${JSON.stringify(r)} ${JSON.stringify(m)}`);
     const before = tableMd5();
-    const old = parse(asRole(DB, authed(U.admin), revert(batch1)));
-    check('F2 再還原第一批：不會碰到第二次標記的列（它們屬於新的一批）', old?.reverted_count === 0 && tableMd5() === before, JSON.stringify(old));
+    const old = parse(asAdmin(revert(e1)));
+    check('F2 再還原匯出 #1：不會碰到新匯出標的列', old?.reverted_count === 0 && tableMd5() === before, JSON.stringify(old));
     must(DB, `DELETE FROM public.class_sessions WHERE id = '${idOf('f_end')}'`);
-    const del = parse(asRole(DB, authed(U.admin), revert(batch3)));
+    const del = parse(asAdmin(revert(r?.export_id)));
     check('F3 標記後被刪掉的列：還原時回報「這筆紀錄已不存在」，其他 2 筆照常還原',
-      del?.reverted_count === 2 && del?.skipped_count === 1 && del.skipped[0].reason === 'not_found' && /已不存在/.test(del.skipped[0].message), JSON.stringify(del));
-    check('F4 批次明細仍保留被刪除那筆的紀錄（沒有外鍵連帶刪除）',
-      must(DB, `SELECT count(*) FROM public.salary_payout_batch_items WHERE batch_id = ${batch3} AND session_id = '${idOf('f_end')}'`) === '1');
+      del?.reverted_count === 2 && del.skipped_count === 1 && del.skipped[0].reason === 'not_found', JSON.stringify(del));
+    check('F4 匯出清單仍保留被刪除那筆（沒有外鍵連帶刪除）',
+      must(DB, `SELECT count(*) FROM public.salary_payout_export_items WHERE export_id = ${r?.export_id} AND session_id = '${idOf('f_end')}'`) === '1');
   });
 
   section('用過之後再重套 migration');
   await step('G reapply', () => {
     const audit = auditMd5();
     const r = psql(DB, { file: MIG, user: 'sbadmin' });
-    check('G1 已有批次紀錄時重套 migration 仍成功、紀錄完全保留、anon 仍不能執行',
-      r.ok && auditMd5() === audit && must(DB, `SELECT has_function_privilege('anon', '${FN_MARK}', 'EXECUTE')`) === 'f', r.err);
+    check('G1 已有匯出紀錄時重套 migration 仍成功、紀錄完全保留、anon 仍不能執行',
+      r.ok && auditMd5() === audit && must(DB, `SELECT has_function_privilege('anon', '${FN.mark}', 'EXECUTE')`) === 'f', r.err);
   });
 } catch (error) {
   check('腳本本身執行中斷', false, error.stack || error.message);
@@ -600,5 +698,5 @@ if (failCount > 0) {
   for (const f of failures) console.log(`  - ${f}`);
   process.exitCode = 1;
 } else {
-  console.log('ALL PASS: mark_salary_sessions_paid / revert_salary_payout_batch verified on isolated PostgreSQL');
+  console.log('ALL PASS: record / mark / revert salary payout export verified on isolated PostgreSQL');
 }
