@@ -363,3 +363,33 @@ test('篩選列的階段：讀不到的資訊對應的階段不顯示', () => {
     'unclaimed', 'pending_review', 'awaiting_email_verify', 'incomplete', 'awaiting_contract', 'complete', 'disabled',
   ]);
 });
+
+test('人員類別：純職員／工讀計時免填接課欄位、不需簽約；兼任講師照講師規則', () => {
+  const staffOnly = (overrides = {}) => completeInstructor({
+    personnel_types: ['staff'],
+    teaching_freq_semester: null,
+    teaching_freq_vacation: '',
+    bio_notes: null,
+    teaching_regions: [],
+    ...overrides,
+  });
+  const noContracts = new Set();
+  // 缺的只有講師專屬欄位：不算資料未完整；沒簽約也不算待簽約
+  assert.equal(getInstructorProgress(staffOnly(), { userRole: 'teacher', signedUserIds: noContracts }).key, 'complete');
+  assert.equal(getInstructorProgress(completeInstructor({ personnel_types: ['part_time'] }), { userRole: 'teacher', signedUserIds: noContracts }).key, 'complete');
+  // 簽約狀態讀不到時照舊是「資料已完整」
+  assert.equal(getInstructorProgress(staffOnly(), { userRole: 'teacher', signedUserIds: null }).key, 'profile_ready');
+  // 職員缺共同必填（例如身分證）仍是資料未完整
+  const missingId = getInstructorProgress(staffOnly({ id_number: '' }), { userRole: 'teacher', signedUserIds: noContracts });
+  assert.equal(missingId.key, 'incomplete');
+  assert.deepEqual(missingId.missingItems, ['身分證字號']);
+  // 職員也要先啟用帳號（啟用不分人員類別）
+  const activations = new Map([[UID, { user_id: UID, status: 'pending' }]]);
+  assert.equal(getInstructorProgress(staffOnly({ confirmed_email: 'a@b.tw' }), { userRole: 'pending', activationsByUserId: activations }).key, 'awaiting_email_verify');
+  // 講師＋職員兼任、舊資料沒有人員類別：都照講師規則
+  assert.equal(getInstructorProgress(completeInstructor({ personnel_types: ['instructor', 'staff'] }), { userRole: 'teacher', signedUserIds: noContracts }).key, 'awaiting_contract');
+  assert.equal(getInstructorProgress(staffOnly({ personnel_types: ['instructor', 'staff'] }), { userRole: 'teacher', signedUserIds: noContracts }).key, 'incomplete');
+  assert.equal(getInstructorProgress(completeInstructor(), { userRole: 'teacher', signedUserIds: noContracts }).key, 'awaiting_contract');
+  // 後台首頁的輕量查詢要帶人員類別，完整度才會用對規則
+  assert.ok(INSTRUCTOR_PROGRESS_COLUMNS.includes('personnel_types'));
+});

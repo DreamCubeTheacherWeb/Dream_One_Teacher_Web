@@ -3,6 +3,7 @@ import {
   REQUIRED_PROFILE_FIELDS,
   getInstructorProfileCompletion,
 } from './profileCompletion.js';
+import { isInstructorPersonnel } from './constants.js';
 
 /*
  * 老師「資料進度」：一路追到簽完約。
@@ -29,6 +30,11 @@ import {
  *
  * 簽約紀錄只有管理員讀得到（RLS），讀不到時 signedUserIds 傳 null：
  *   資料完整的人會顯示「資料已完整」（簽約狀態未知），不會被誤判成待簽約或已完成。
+ *
+ * 人員類別（2026-10-22 起，instructors.personnel_types；employment_status 只代表合作狀態）：
+ *   不含「講師」的純職員／工讀計時：資料完整度照 profileCompletion 的規則免填接課頻率、地區、經歷；
+ *   不需簽講師合約，資料完整就算「已完成」，不會出現在「待簽約」。
+ *   啟用（待確認 Email／待信箱驗證）照常適用，那是帳號安全，不分人員類別。
  */
 
 export const DISABLED_EMPLOYMENT_STATUSES = ['frozen', 'cancelled'];
@@ -42,7 +48,7 @@ export const PROGRESS_STAGES = [
   { key: 'awaiting_email_verify', label: '待信箱驗證', todo: true, description: 'Email 已確認，等老師補齊資料並輸入信箱驗證碼啟用帳號' },
   { key: 'incomplete', label: '資料未完整', todo: true, description: '已開通，但必填資料或文件還沒補齊' },
   { key: 'awaiting_contract', label: '待簽約', todo: true, description: '資料完整，但還沒完成簽約' },
-  { key: 'complete', label: '已完成', todo: false, description: '資料完整且已簽約' },
+  { key: 'complete', label: '已完成', todo: false, description: '資料完整且已簽約（職員／工讀計時不需簽約）' },
   { key: 'disabled', label: '已停用', todo: false, description: '已凍結或已離職／停止合作' },
 ];
 
@@ -74,6 +80,7 @@ export const INSTRUCTOR_PROGRESS_COLUMNS = [...new Set([
   'email_primary',
   'confirmed_email',
   'employment_status',
+  'personnel_types',
   'name_slot',
   'teaching_regions',
   ...REQUIRED_PROFILE_FIELDS.map(({ key }) => key),
@@ -159,6 +166,8 @@ export const getInstructorProgress = (
   }
   if (!completion.complete) return makeProgress(STAGE_BY_KEY.incomplete, completion);
   if (!(signedUserIds instanceof Set)) return makeProgress(PROFILE_READY_STAGE, completion);
+  // 純職員／工讀計時不需簽講師合約（與合約管理頁「非講師，不需簽約」一致）
+  if (!isInstructorPersonnel(instructor?.personnel_types)) return makeProgress(STAGE_BY_KEY.complete, completion);
   return makeProgress(
     signedUserIds.has(instructor.user_id) ? STAGE_BY_KEY.complete : STAGE_BY_KEY.awaiting_contract,
     completion,
