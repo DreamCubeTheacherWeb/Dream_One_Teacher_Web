@@ -1,0 +1,14 @@
+verify-code-split P1 競態：先證明成因，再修測試（2026-10-22）
+## 修之前加觀測（暫時插入的 PROBE_P1 記錄，跑 3 次）
+run1: PROBE_P1 {"matchesBeforePushState":true,"matchedText":"我的課程","documentLoadsWhenWaitResolved":2,"chunkRequestsWhenWaitResolved":2} 
+run2: PROBE_P1 {"matchesBeforePushState":true,"matchedText":"我的課程","documentLoadsWhenWaitResolved":1,"chunkRequestsWhenWaitResolved":1} Execution context was destroyed
+run3: PROBE_P1 {"matchesBeforePushState":true,"matchedText":"我的課程","documentLoadsWhenWaitResolved":2,"chunkRequestsWhenWaitResolved":2} 
+→ 舊頁（/leaderboard）在 pushState 之前文字就符合（導覽列「我的課程」）；等待在文件載入 1 次時成立的那次就撞上重新整理而中斷。
+## 修之後（先等第 2 次文件載入＋新頁 load，再檢查課程頁內容；斷言仍要文件載入剛好 2 次）連跑 5 次
+run1 exit=0 === 187/187 PASS === FAIL=0  文件載入 2 次（頁面恢復時 2 次）、頁面檔請求 2 次、旗標=有) 191s
+run2 exit=0 === 187/187 PASS === FAIL=0  文件載入 2 次（頁面恢復時 2 次）、頁面檔請求 2 次、旗標=有) 192s
+run3 exit=0 === 187/187 PASS === FAIL=0  文件載入 2 次（頁面恢復時 2 次）、頁面檔請求 2 次、旗標=有) 190s
+run4 exit=0 === 187/187 PASS === FAIL=0  文件載入 2 次（頁面恢復時 2 次）、頁面檔請求 2 次、旗標=有) 191s
+run5 exit=0 === 187/187 PASS === FAIL=0  文件載入 2 次（頁面恢復時 2 次）、頁面檔請求 2 次、旗標=有) 190s
+
+[exited with code 0]
