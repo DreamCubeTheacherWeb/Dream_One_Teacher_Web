@@ -487,20 +487,23 @@ async function run() {
                 await list.page.setViewportSize({ width, height: 1000 });
                 await list.page.waitForTimeout(150);
                 const m = await measureLayout(list.page);
+                await shot(list.page, `list-${width}.png`);
                 ok(m.tableVisible, '表格沒顯示');
-                ok(m.headers.length === 7 && m.headers.every((h) => h.lines === 1), `表頭：${m.headers.map((h) => `${h.text}=${h.lines}`).join('、')}`);
+                // 電子簽約線（2026-10-20）多一欄「資料進度」，共 8 欄
+                ok(m.headers.length === 8 && m.headers.every((h) => h.lines === 1), `表頭：${m.headers.map((h) => `${h.text}=${h.lines}`).join('、')}`);
                 ok(m.chips.length > 0 && m.chips.every((c) => c.lines === 1), `標籤換行：${m.chips.filter((c) => c.lines !== 1).map((c) => c.text).join('、')}`);
                 ok(m.notApplicable.length === 6 && m.notApplicable.every((n) => n === 1), `不適用：${m.notApplicable.join('/')}`);
                 ok(m.names.every((n) => n === 1), '姓名換行');
                 ok(m.buttons.every((b) => b.lines === 1 && !b.clipped), `按鈕換行或被切掉（表格超出外框 ${m.wrapperOverflow}px）`);
                 ok(m.wrapperOverflow <= 0, `表格超出外框 ${m.wrapperOverflow}px`);
                 ok(m.docOverflow <= 0, `整頁橫向溢出 ${m.docOverflow}px`);
-                // 最極端的一列（長姓名＋已離職＋兩個人員類別）在 1024px 允許標籤換到第二行，其餘列高仍須一致
+                // 最極端的一列（長姓名＋已離職＋兩個人員類別）允許標籤換行，其餘列高仍須一致。
+                // 電子簽約線多了「資料進度」欄，講師欄變窄：1024px 兩顆標籤各換一行（三行）、1280px 換到第二行；
+                // 原本 7 欄時的上限是 1024px 110／1280px 80。
                 const heights = m.rows.filter((r) => r.name !== WORST_CASE_NAME).map((r) => r.height);
                 ok(Math.max(...heights) <= 80 && Math.max(...heights) - Math.min(...heights) <= 4, `列高：${m.rows.map((r) => `${r.name}=${r.height}`).join('/')}`);
                 const worst = m.rows.find((r) => r.name === WORST_CASE_NAME).height;
-                ok(width === 1024 ? worst <= 110 : worst <= 80, `最極端列高 ${worst}px`);
-                await shot(list.page, `list-${width}.png`);
+                ok(width === 1024 ? worst <= 130 : worst <= 110, `最極端列高 ${worst}px`);
             });
         }
         await check('B10 900px 卡片版：職員卡片有標籤與「不適用」，整頁無橫向捲軸', async () => {
@@ -518,8 +521,13 @@ async function run() {
             await list.page.setViewportSize({ width: 1280, height: 1000 });
         });
 
-        await check('B11 新增人員表單：人員類別預設講師、合作狀態預設合作中；取消講師後等級／速解收起', async () => {
+        // 電子簽約線（2026-10-20）的新增視窗分「只填姓名」「填完整資料」兩個分頁，人員類別在「填完整資料」
+        const openFullAddForm = async () => {
             await list.page.getByRole('button', { name: /新增講師/ }).click();
+            await list.page.getByRole('tab', { name: /填完整資料/ }).click();
+        };
+        await check('B11 新增人員表單：人員類別預設講師、合作狀態預設合作中；取消講師後等級／速解收起', async () => {
+            await openFullAddForm();
             const modal = list.page.locator('form');
             equal(await list.page.getByTestId('add-personnel-type-instructor').isChecked(), true, '講師預設勾');
             equal(await list.page.getByTestId('add-personnel-type-staff').isChecked(), false, '職員預設不勾');
@@ -545,7 +553,7 @@ async function run() {
             equal(payload.full_name, '新進職員', '姓名');
         });
         await check('B13 新增表單人員類別全不勾：顯示訊息、沒有送出請求', async () => {
-            await list.page.getByRole('button', { name: /新增講師/ }).click();
+            await openFullAddForm();
             const modal = list.page.locator('form');
             await clickChip(list.page, 'add-personnel-type-instructor');
             await modal.locator('input[type=text]').first().fill('沒有類別的人');
