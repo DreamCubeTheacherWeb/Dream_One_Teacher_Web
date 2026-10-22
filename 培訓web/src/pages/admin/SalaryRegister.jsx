@@ -298,6 +298,17 @@ const SalaryRegister = () => {
             </div>
 
             {profile?.role === 'admin' && <SalaryPaydaySetting />}
+            {/* 「標記已付款」只在月結匯款頁做（只標實際下載的轉帳檔裡的紀錄）；這裡不再有整期一鍵標的入口 */}
+            {profile?.role === 'admin' && (
+                <div role="note" data-testid="salary-mark-paid-hint" className="bh-card p-4 sm:p-5 mb-6 flex items-start gap-3">
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-sm font-medium text-bauhaus-black/80 leading-relaxed">
+                        <span className="font-black text-bauhaus-black">本期匯款完成，要標「已付款」？</span>
+                        請到<Link to="/admin/salary/payout" className="underline font-black text-bauhaus-blue mx-1">月結匯款</Link>下載轉帳檔，
+                        銀行匯款完成後在同一頁標記：只會標記轉帳檔裡的紀錄，被排除或被擋下的講師不會被標，標錯可以整批還原。
+                    </p>
+                </div>
+            )}
 
             {(pendingCount > 0 || anomalyCount > 0) && (
                 <div className="flex flex-wrap gap-2 mb-6" aria-label="快速篩選">

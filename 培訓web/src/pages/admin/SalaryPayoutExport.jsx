@@ -1,6 +1,7 @@
 // 後台「月結匯款」（2026-10-22 第一版，admin 限定）：把某一期已核准、未付款的講師報酬匯出成財務部的銀行批次轉帳檔。
 // 計算與檢查全部在 src/lib/payoutBankExport.js（有單元測試）；這頁只負責讀資料、收集調整、顯示與下載。
-// 本頁不寫任何報酬資料（不標記已付款，那是另一個功能）；唯一的寫入是 admin 匯入／修改講師的夥伴號碼。
+// 寫入只有兩種：admin 匯入／修改講師的夥伴號碼；匯款完成後「標記為已付款」（只標下載的那份轉帳檔納入的課，
+// 見 components/admin/PayoutMarkPaidPanel.jsx 與資料庫函式 mark_salary_sessions_paid）。
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -44,6 +45,8 @@ import {
     sessionPayableCents,
     validatePayoutExport,
 } from '../../lib/payoutBankExport';
+import { buildMarkPaidPlan } from '../../lib/payoutMarkPaid';
+import PayoutMarkPaidPanel from '../../components/admin/PayoutMarkPaidPanel';
 
 const PAGE_SIZE = 1000;
 const BASE_INSTRUCTOR_COLUMNS = 'id,full_name,bank_code,bank_account_number,bank_account_name,id_number,email_primary,household_address,address,phone_mobile';
@@ -168,6 +171,8 @@ const SalaryPayoutExport = () => {
     const [partnerDrafts, setPartnerDrafts] = useState({});
     const [partnerSaving, setPartnerSaving] = useState({});
     const [partnerMessages, setPartnerMessages] = useState({});
+    // 最後一次成功下載的轉帳檔納入哪些課（「標記為已付款」只標這一份）
+    const [exportSnapshot, setExportSnapshot] = useState(null);
 
     const loadInstructors = useCallback(async () => {
         const result = await fetchInstructors();
@@ -258,6 +263,10 @@ const SalaryPayoutExport = () => {
     const computed = useMemo(() => computePayoutPeople({
         sessions, instructors, periodMonth, memoTemplate: settings.memoTemplate, edits,
     }), [edits, instructors, periodMonth, sessions, settings.memoTemplate]);
+    const markPlan = useMemo(() => buildMarkPaidPlan(computed), [computed]);
+    const rememberExport = (kind) => setExportSnapshot({
+        periodMonth, fingerprint: markPlan.fingerprint, plan: markPlan, payDate: settings.payDate, kind, at: Date.now(),
+    });
 
     const hasEdits = edits.excludedSessionIds.size > 0
         || edits.includedAnomalySessionIds.size > 0
@@ -348,6 +357,7 @@ const SalaryPayoutExport = () => {
             const csv = buildTransferCsv({ people: computed.people, settings });
             downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'csv' }));
             setExportedVersion(editsVersion);
+            rememberExport('CSV');
             setDownloadMessage(`已下載轉帳檔 CSV：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
         } catch (error) {
             setDownloadErrors({ csv: [error.message], xlsx: [] });
@@ -361,6 +371,7 @@ const SalaryPayoutExport = () => {
             const bytes = await buildPayoutWorkbook({ people: computed.people, settings });
             downloadBlob(new Blob([bytes], { type: XLSX_MIME }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'xlsx' }));
             setExportedVersion(editsVersion);
+            rememberExport('Excel');
             setDownloadMessage(`已下載完整 Excel：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
         } catch (error) {
             setDownloadErrors({ csv: [], xlsx: [error.message] });
@@ -455,7 +466,7 @@ const SalaryPayoutExport = () => {
                 <AlertTriangle className="w-6 h-6 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="text-sm sm:text-base font-medium leading-relaxed min-w-0">
                     <p className="font-black text-base sm:text-lg">第一版：格式待財務確認。正式匯款前，請財務先用小額或試算核對。</p>
-                    <p className="mt-1">檔案含身分證字號與銀行帳號，只能提供財務作業使用。匯款完成後，請在<Link to="/admin/salary" className="underline font-black">報酬登記中心</Link>把本期標為已付款（本頁不會改任何報酬資料）。</p>
+                    <p className="mt-1">檔案含身分證字號與銀行帳號，只能提供財務作業使用。銀行匯款完成後，請在本頁下方「匯款完成，標記為已付款」標記：只會標記你下載的那份轉帳檔裡的課。</p>
                 </div>
             </div>
 
@@ -781,6 +792,18 @@ const SalaryPayoutExport = () => {
                 {downloadMessage && <p role="status" data-testid="payout-download-message" className="mt-4 text-sm font-black text-bauhaus-blue">{downloadMessage}</p>}
                 {dirty && <p className="mt-2 text-xs font-bold text-bauhaus-red">有調整或排除尚未匯出；離開頁面前會提醒。</p>}
             </section>
+
+            {/* ── 匯款完成，標記為已付款（只標下載的那份轉帳檔） */}
+            <PayoutMarkPaidPanel
+                periodMonth={periodMonth}
+                range={periodRange(periodMonth)}
+                today={today}
+                plan={markPlan}
+                snapshot={exportSnapshot}
+                blockReason={loading ? '資料還在讀取中，請稍候。' : loadError ? '資料讀取失敗，請先按「重新整理」。' : dataChanged ? `${DATA_CHANGED_MESSAGE}，再重新下載轉帳檔後標記。` : ''}
+                onMarked={() => { setExportSnapshot(null); loadPeriod(periodMonth); }}
+                onReverted={() => loadPeriod(periodMonth)}
+            />
 
             {/* ── 夥伴號碼匯入 */}
             <section className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard p-4 sm:p-6" aria-labelledby="payout-partner-heading">

@@ -229,8 +229,9 @@ async function handleSupabase(route, request, url) {
         }
         return json(route, page, 200, { 'content-range': `${page.length ? `${offset}-${offset + page.length - 1}` : '*'}/${wantsCount ? rows.length : '*'}` });
     }
-    // 首頁（輔導員被導回 / 時）會讀公告
-    if (['site_links', 'notifications', 'salary_report_options', 'announcements'].includes(table) && ['GET', 'HEAD'].includes(method)) {
+    // 首頁（輔導員被導回 / 時）會讀公告；salary_payout_batches＝頁面下方「標記為已付款」讀這一期的標記紀錄（本腳本不測標記，回空；
+    // 標記與還原另由 verify-salary-sessions-paid-browser.mjs 驗）
+    if (['site_links', 'notifications', 'salary_report_options', 'announcements', 'salary_payout_batches'].includes(table) && ['GET', 'HEAD'].includes(method)) {
         if (method === 'HEAD') return route.fulfill({ status: 200, headers: { ...CORS, 'content-range': '*/0' }, body: '' });
         return json(route, acceptsObject ? null : []);
     }
