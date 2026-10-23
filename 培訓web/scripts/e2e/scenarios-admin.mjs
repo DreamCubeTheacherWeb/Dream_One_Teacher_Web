@@ -39,13 +39,18 @@ export async function scenarioAdminSlots(ctx) {
     r.check('ADM 一次輸入兩位 → 顯示「將新增 2 位空位」', (await dialog.getByTestId('name-slot-count').innerText()).includes('將新增 2 位空位'));
     r.check('ADM 講師等級預設「實習」', (await dialog.getByLabel('講師等級').inputValue()) === '實習');
     const hint = await dialog.getByText(/^建好後，/).innerText();
-    r.check('ADM「只填姓名」提示改成「先確認 Email → 認領綁定 → 驗證碼啟用」，不再寫「直接綁定並開通」（bf18fc4，嚴格斷言）',
-      hint.includes('按「確認 Email」登錄老師的 Email') && hint.includes('再用寄到該 Email 的驗證碼啟用') && !hint.includes('開通'), hint);
+    // 2026-10-23 第二輪資安審查建議 4 之後順序是「認領綁定 → 確認 Email → 驗證碼啟用」：認領前先確認 Email 的空位不能再用姓名認領
+    r.check('ADM「只填姓名」提示順序是「認領綁定 → 確認 Email → 驗證碼啟用」，並提醒認領前不要先確認 Email，不再寫「開通」',
+      hint.indexOf('認領帳號') > -1 && hint.indexOf('認領帳號') < hint.indexOf('按「確認 Email」') && hint.includes('認領前請不要先確認 Email')
+        && hint.includes('寄到該 Email 的驗證碼啟用') && !hint.includes('開通'), hint);
     await dualShot(ctx, admin, 'ADM-01-add-slots-modal', { fullPage: false });
     await dialog.getByRole('button', { name: '新增 2 位' }).click();
     const created = page.getByText(/已新增 2 位空位：新增甲老師、新增乙老師/);
-    r.check('ADM 送出後顯示「已新增 2 位空位」並提示下一步要確認 Email、用驗證碼啟用', await visible(created, 10000)
-      && (await created.first().innerText()).includes('下一步：在列表上按「確認 Email」'));
+    const createdText = (await visible(created, 10000)) ? await created.first().innerText() : '';
+    r.check('ADM 送出後顯示「已新增 2 位空位」，下一步順序是「老師認領 → 確認 Email → 驗證碼啟用」並提醒認領前別先確認 Email',
+      createdText.includes('下一步：請老師用 Google 登入、選「認領帳號」')
+        && createdText.indexOf('認領帳號') < createdText.indexOf('按「確認 Email」')
+        && createdText.includes('老師認領前請不要先確認 Email'), createdText);
     const rows = ctx.api.json(`SELECT coalesce(json_agg(row_to_json(i)), '[]') FROM public.instructors i WHERE full_name IN ('新增甲老師', '新增乙老師')`);
     r.check('ADM 資料庫建立兩個空位（name_slot、未綁定、active、實習）', rows.length === 2
       && rows.every((x) => x.name_slot && !x.user_id && x.employment_status === 'active' && x.instructor_role === '實習'));

@@ -1254,7 +1254,8 @@ const InfoRow = ({ label, value }) => {
 // 新增講師 Modal
 //   模式一（預設）「只填姓名」：一行一個姓名，建立 name_slot 空位；老師用 Google 登入後，
 //   在待審核頁選「認領帳號」輸入同一個姓名就綁定（資料庫函式 claim_instructor_name_slot），
-//   再用寄到「已確認 Email」的驗證碼啟用；空位要先由管理員按「確認 Email」登錄。
+//   老師認領後，管理員再按「確認 Email」登錄，老師用寄到「已確認 Email」的驗證碼啟用。
+//   順序不能反：空位在認領前就有已確認 Email 或任何聯絡資料時，不能再用姓名認領，只能後台綁定（2026-10-23 第二輪資安審查）。
 //   模式二「填完整資料」：原本的做法，用 Email 登入自動對應。
 // ═══════════════════════════════════════════════════════════════
 const AddInstructorModal = ({ instructors, onClose, onCreated }) => {
@@ -1336,7 +1337,7 @@ const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
             setErr('新增失敗:' + error.message);
             return;
         }
-        onCreated(`已新增 ${rows.length} 位空位：${parsed.names.join('、')}。下一步：在列表上按「確認 Email」登錄老師的 Email，再請老師用 Google 登入、選「認領帳號」輸入相同姓名，並用寄到該 Email 的驗證碼啟用。`);
+        onCreated(`已新增 ${rows.length} 位空位：${parsed.names.join('、')}。下一步：請老師用 Google 登入、選「認領帳號」輸入相同姓名。老師認領後，列表會顯示「待確認 Email」，請透過原有管道（例如 LINE）跟老師確認 Email，再按「確認 Email」登錄，老師就能用寄到該 Email 的驗證碼啟用。注意：老師認領前請不要先確認 Email，否則空位就不能用姓名認領，只能由後台綁定。`);
     };
 
     return (
@@ -1344,7 +1345,7 @@ const NameOnlyForm = ({ instructors, onClose, onCreated }) => {
             <Field
                 label="姓名（一行一個）"
                 required
-                hint="建好後，在列表上按「確認 Email」登錄老師的 Email。老師用 Google 登入、選「認領帳號」輸入同一個姓名就會綁定，再用寄到該 Email 的驗證碼啟用。同名同姓可建立多個空位，各自被認領。"
+                hint="建好後，請老師用 Google 登入、選「認領帳號」輸入同一個姓名綁定；老師認領後，再按「確認 Email」登錄老師的 Email，老師就能用寄到該 Email 的驗證碼啟用（認領前請不要先確認 Email）。同名同姓可建立多個空位，各自被認領。"
             >
                 <textarea
                     value={text}
