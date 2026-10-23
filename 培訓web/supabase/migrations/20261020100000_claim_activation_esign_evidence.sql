@@ -272,6 +272,21 @@ CREATE INDEX IF NOT EXISTS idx_email_otp_challenges_user_purpose
 ALTER TABLE private.email_otp_challenges ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE private.email_otp_challenges FROM PUBLIC, anon, authenticated;
 
+-- 3.2b 驗證碼寄送暫停（2026-10-23 資安審查建議 5）：24 小時內被鎖（錯 5 次）的 challenge 累計 3 個 →
+--      暫停寄碼 24 小時，request_email_otp 回 locked_contact_admin；行政用 admin_reset_email_otp_lock 解除。
+--      解除時記 reset_at，之前被鎖的 challenge 不再計入（解除後重新累計）。
+CREATE TABLE IF NOT EXISTS private.email_otp_send_locks (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  locked_at timestamptz,
+  locked_until timestamptz,
+  locked_challenge_count integer NOT NULL DEFAULT 0 CHECK (locked_challenge_count >= 0),
+  reset_at timestamptz,
+  reset_by uuid
+);
+
+ALTER TABLE private.email_otp_send_locks ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE private.email_otp_send_locks FROM PUBLIC, anon, authenticated;
+
 -- 3.3 寄送紀錄（信件內文不入庫，OTP 信尤其不可）
 CREATE TABLE IF NOT EXISTS public.email_delivery_log (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1333,6 +1348,40 @@ END;
 $$;
 
 -- 6.2 寄送 OTP
+-- 某人某 challenge 剛被鎖（錯第 5 次）時呼叫：24 小時內（且在最近一次行政解除之後）被鎖的 challenge 累計 3 個，
+-- 就暫停寄碼 24 小時。回傳是否進入暫停。只由 verify_email_otp 呼叫。
+CREATE OR REPLACE FUNCTION private.note_email_otp_lockout(p_uid uuid, p_now timestamptz)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_reset timestamptz;
+  v_locked integer;
+BEGIN
+  SELECT l.reset_at INTO v_reset FROM private.email_otp_send_locks l WHERE l.user_id = p_uid;
+  SELECT count(*) INTO v_locked
+    FROM private.email_otp_challenges c
+   WHERE c.user_id = p_uid
+     AND c.attempts >= c.max_attempts
+     AND c.created_at > p_now - interval '24 hours'
+     AND (v_reset IS NULL OR c.created_at > v_reset);
+  IF v_locked < 3 THEN
+    RETURN false;
+  END IF;
+  INSERT INTO private.email_otp_send_locks AS l (user_id, locked_at, locked_until, locked_challenge_count)
+  VALUES (p_uid, p_now, p_now + interval '24 hours', v_locked)
+  ON CONFLICT (user_id) DO UPDATE
+    SET locked_at = EXCLUDED.locked_at,
+        locked_until = EXCLUDED.locked_until,
+        locked_challenge_count = EXCLUDED.locked_challenge_count;
+  RETURN true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.note_email_otp_lockout(uuid, timestamptz) FROM PUBLIC, anon, authenticated;
+
 CREATE OR REPLACE FUNCTION public.request_email_otp(p_purpose text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -1350,6 +1399,7 @@ DECLARE
   v_signing_active boolean;
   v_last timestamptz;
   v_recent integer;
+  v_daily integer;
   v_kind text;
   v_rand bigint;
   v_code text;
@@ -1421,6 +1471,14 @@ BEGIN
       '這組驗證碼用來確認是你本人要簽署夢想一號的講師合作文件，5 分鐘內有效。請不要把驗證碼告訴任何人。');
   END IF;
 
+  -- 連續輸錯被暫停（2026-10-23 資安審查建議 5）：先於冷卻判斷，暫停期間也不帶回進行中的 challenge
+  IF EXISTS (
+    SELECT 1 FROM private.email_otp_send_locks l
+     WHERE l.user_id = v_uid AND l.locked_until > v_now
+  ) THEN
+    RETURN jsonb_build_object('status', 'locked_contact_admin');
+  END IF;
+
   -- 同目的 60 秒冷卻
   SELECT max(c.created_at) INTO v_last
     FROM private.email_otp_challenges c
@@ -1445,6 +1503,14 @@ BEGIN
       || CASE WHEN v_challenge_id IS NULL THEN '{}'::jsonb
               ELSE jsonb_build_object('challenge_id', v_challenge_id, 'expires_at', v_expires,
                                       'masked_email', private.mask_email(v_pending_email)) END;
+  END IF;
+
+  -- 每人每 24 小時最多 10 封（兩種目的合計；2026-10-23 資安審查建議 5），先於每小時上限判斷（訊息請他明天再試）
+  SELECT count(*) INTO v_daily
+    FROM private.email_otp_challenges c
+   WHERE c.user_id = v_uid AND c.created_at > v_now - interval '24 hours';
+  IF v_daily >= 10 THEN
+    RETURN jsonb_build_object('status', 'daily_limit_reached');
   END IF;
 
   -- 每人每小時最多 5 封（兩種目的合計）
@@ -1583,6 +1649,10 @@ BEGIN
     v_attempts := v_ch.attempts + 1;
     UPDATE private.email_otp_challenges c SET attempts = v_attempts WHERE c.id = v_ch.id;
     IF v_attempts >= v_ch.max_attempts THEN
+      -- 這一組剛被鎖：24 小時內累計 3 組 → 暫停寄碼 24 小時（2026-10-23 資安審查建議 5）
+      IF private.note_email_otp_lockout(v_uid, v_now) THEN
+        RETURN jsonb_build_object('status', 'locked', 'sending_suspended', true);
+      END IF;
       RETURN jsonb_build_object('status', 'locked');
     END IF;
     RETURN jsonb_build_object('status', 'invalid', 'attempts_remaining', v_ch.max_attempts - v_attempts);
@@ -2177,6 +2247,40 @@ END;
 $$;
 
 -- 6.7 管理員補登範本雜湊（只能補 NULL）
+-- 行政解除「連續輸錯暫停寄碼」（2026-10-23 資安審查建議 5）。解除後之前被鎖的 challenge 不再計入。
+-- 不影響 60 秒冷卻、每小時 5 封、每 24 小時 10 封的上限。
+CREATE OR REPLACE FUNCTION public.admin_reset_email_otp_lock(p_user_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_now timestamptz := pg_catalog.now();
+  v_was_locked boolean;
+BEGIN
+  IF v_uid IS NULL OR NOT private.current_user_is_admin() THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'admin only';
+  END IF;
+  IF p_user_id IS NULL OR NOT EXISTS (SELECT 1 FROM auth.users au WHERE au.id = p_user_id) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'USER_NOT_FOUND';
+  END IF;
+
+  SELECT COALESCE(l.locked_until > v_now, false) INTO v_was_locked
+    FROM private.email_otp_send_locks l WHERE l.user_id = p_user_id;
+
+  INSERT INTO private.email_otp_send_locks AS l (user_id, locked_until, reset_at, reset_by)
+  VALUES (p_user_id, NULL, v_now, v_uid)
+  ON CONFLICT (user_id) DO UPDATE
+    SET locked_until = NULL,
+        reset_at = EXCLUDED.reset_at,
+        reset_by = EXCLUDED.reset_by;
+
+  RETURN jsonb_build_object('status', 'reset', 'was_locked', COALESCE(v_was_locked, false));
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.admin_set_document_hash(p_document_id uuid, p_sha256 text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -2312,7 +2416,8 @@ BEGIN
     'public.submit_my_contract(text, text, text, text, text, text, jsonb, jsonb, text, uuid, uuid, jsonb, jsonb)',
     'public.admin_confirm_instructor_email(uuid, text, text)',
     'public.admin_set_document_hash(uuid, text)',
-    'public.admin_verify_contract_evidence_chain()'
+    'public.admin_verify_contract_evidence_chain()',
+    'public.admin_reset_email_otp_lock(uuid)'
   ] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, service_role', fn);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', fn);

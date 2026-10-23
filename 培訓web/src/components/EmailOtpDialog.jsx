@@ -164,6 +164,8 @@ const EmailOtpDialog = ({ purpose, onClose, onVerified }) => {
       if (result.kind === 'dead') {
         setChallenge((current) => (current ? { ...current, dead: true } : current));
       }
+      // 暫停寄碼（24 小時內第 3 組被鎖）：不再顯示重寄，請他聯絡行政
+      if (result.sendingSuspended) setPhase('blocked');
     } catch (error) {
       if (!aliveRef.current) return;
       setNotice({ type: 'error', text: describeOtpRpcError(error) });

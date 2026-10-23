@@ -5,6 +5,7 @@ import {
   ACTIVATION_STATES,
   describeConfirmEmailError,
   describeConfirmedEmailMethod,
+  initialConfirmEmail,
   interpretActivationStatus,
   normalizeEmail,
   validateEmailConfirmation,
@@ -92,4 +93,13 @@ test('確認 Email 失敗訊息', () => {
   assert.match(describeConfirmEmailError({ message: 'INVALID_EMAIL' }), /格式不正確/);
   assert.match(describeConfirmEmailError({ message: 'INSTRUCTOR_NOT_FOUND' }), /找不到這位講師/);
   assert.match(describeConfirmEmailError({ message: 'boom' }), /確認失敗：boom/);
+});
+
+test('確認 Email 視窗預填：姓名空位一律空白（不採用認領者自填的 email_primary），其他列照舊', () => {
+  assert.equal(initialConfirmEmail({ name_slot: true, email_primary: 'squatter@evil.test', confirmed_email: null }), '');
+  assert.equal(initialConfirmEmail({ name_slot: true, email_primary: 'x@y.test', confirmed_email: 'ok@y.test' }), '');
+  assert.equal(initialConfirmEmail({ name_slot: false, email_primary: 'teacher@y.test', confirmed_email: null }), 'teacher@y.test');
+  assert.equal(initialConfirmEmail({ name_slot: false, email_primary: 'teacher@y.test', confirmed_email: 'ok@y.test' }), 'ok@y.test');
+  assert.equal(initialConfirmEmail({}), '');
+  assert.equal(initialConfirmEmail(null), '');
 });

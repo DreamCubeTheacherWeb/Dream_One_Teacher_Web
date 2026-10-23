@@ -141,9 +141,9 @@ function verifyOtp(uid, challengeId, code) {
   const r = call(uid, `public.verify_email_otp(${ulit(challengeId)}, ${lit(code)})`);
   return r?.ok ? r.result : r;
 }
-// 把這個人的舊 challenge 往前推 2 小時（跳過 60 秒冷卻與每小時上限），再寄一封新的並回傳 challenge
+// 把這個人的舊 challenge 往前推 25 小時（跳過 60 秒冷卻、每小時 5 封與每 24 小時 10 封的上限），再寄一封新的並回傳 challenge
 function freshOtp(uid, purpose) {
-  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '2 hours' WHERE user_id = ${lit(uid)}`);
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '25 hours' WHERE user_id = ${lit(uid)}`);
   const sent = requestOtp(uid, purpose);
   if (sent?.status !== 'sent') throw new Error(`freshOtp(${purpose}) failed: ${JSON.stringify(sent)}`);
   return { id: sent.challenge_id, code: codeOf(sent.challenge_id), sent };
@@ -251,14 +251,15 @@ try {
     'public.admin_confirm_instructor_email(uuid,text,text)',
     'public.admin_set_document_hash(uuid,text)',
     'public.admin_verify_contract_evidence_chain()',
+    'public.admin_reset_email_otp_lock(uuid)',
   ];
   const fnInfo = suJson(`SELECT jsonb_agg(jsonb_build_object('fn', f, 'definer', p.prosecdef, 'path', p.proconfig,
       'anon', has_function_privilege('anon', f::regprocedure, 'EXECUTE'),
       'auth', has_function_privilege('authenticated', f::regprocedure, 'EXECUTE'),
       'service', has_function_privilege('service_role', f::regprocedure, 'EXECUTE')))
     FROM unnest(ARRAY[${rpcs.map(lit).join(',')}]) AS f JOIN pg_proc p ON p.oid = f::regprocedure`);
-  check('8 個新 RPC 都是 SECURITY DEFINER＋search_path=\'\'', fnInfo.length === 8 && fnInfo.every((f) => f.definer && JSON.stringify(f.path) === '["search_path=\\"\\""]'), fnInfo);
-  check('8 個新 RPC：anon／service_role 無 EXECUTE、authenticated 有', fnInfo.every((f) => !f.anon && !f.service && f.auth), fnInfo);
+  check('9 個新 RPC 都是 SECURITY DEFINER＋search_path=\'\'', fnInfo.length === 9 && fnInfo.every((f) => f.definer && JSON.stringify(f.path) === '["search_path=\\"\\""]'), fnInfo);
+  check('9 個新 RPC：anon／service_role 無 EXECUTE、authenticated 有', fnInfo.every((f) => !f.anon && !f.service && f.auth), fnInfo);
   check('submit_my_contract 只剩一個多載（v2）', suVal(`SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'submit_my_contract'`) === '1');
   const privAnon = suVal(`SELECT has_schema_privilege('anon', 'private', 'USAGE') OR has_table_privilege('authenticated', 'private.email_otp_challenges', 'SELECT')`);
   check('private.email_otp_challenges：authenticated 沒有任何讀取權、anon 沒有 private schema', privAnon === 'f');
@@ -1230,6 +1231,87 @@ try {
     const missing = lines.filter((line) => !content.includes(line));
     check(`${code}：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（${lines.length} 句）`, content && lines.length > 0 && missing.length === 0, missing);
   }
+
+  // ════════════════════════════════════════════════════════════════
+  // 2026-10-23 資安審查建議 5：驗證碼每 24 小時 10 封、24 小時內被鎖 3 組 → 暫停寄碼 24 小時（行政可解除）
+  group('OTP abuse limits (建議 5)');
+  const readyPending = (tag, phone, idNumber) => {
+    const iid = makeInstructor(`${tag}老師`, `${tag}@t.test`, { phone, idNumber });
+    const uid = createAuthUser(`${tag}@t.test`, `${tag} Google`);
+    const confirmed = call(admin, `public.admin_confirm_instructor_email(${ulit(iid)}, ${lit(`${tag}@t.test`)}, '10/23 電話確認')`);
+    if (instructorOf(uid)?.id !== iid || confirmed?.result?.status !== 'confirmed') throw new Error(`readyPending ${tag} failed`);
+    return { uid, iid };
+  };
+  const challengeCount = (uid) => Number(suVal(`SELECT count(*) FROM private.email_otp_challenges WHERE user_id = ${lit(uid)}`));
+  // 每 24 小時 10 封：每寄一封就把這個人所有 challenge 往前推 2 小時（跳過冷卻與每小時 5 封），10 封都還在 24 小時內
+  const daily = readyPending('daily', '0988000211', 'H223450011');
+  const dailyStatuses = [];
+  for (let i = 0; i < 10; i += 1) {
+    dailyStatuses.push(requestOtp(daily.uid, 'account_activation').status);
+    su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '2 hours' WHERE user_id = ${lit(daily.uid)}`);
+  }
+  check('前提：10 封啟用碼都寄出，最舊一封仍在 24 小時內',
+    challengeCount(daily.uid) === 10 && dailyStatuses.every((x) => x === 'sent')
+    && suVal(`SELECT min(created_at) > now() - interval '24 hours' FROM private.email_otp_challenges WHERE user_id = ${lit(daily.uid)}`) === 't', dailyStatuses);
+  const reqsBeforeDaily = Number(suVal(`SELECT count(*) FROM net._e2e_http_requests`));
+  const dailyEleventh = requestOtp(daily.uid, 'account_activation');
+  check('第 11 封 → daily_limit_reached（不產生驗證碼、不寄信）',
+    dailyEleventh?.status === 'daily_limit_reached' && challengeCount(daily.uid) === 10
+    && Number(suVal(`SELECT count(*) FROM net._e2e_http_requests`)) === reqsBeforeDaily, dailyEleventh);
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '5 hours' WHERE user_id = ${lit(daily.uid)}`);
+  check('最舊一封超過 24 小時後恢復可寄', requestOtp(daily.uid, 'account_activation')?.status === 'sent');
+
+  // 連續輸錯：24 小時內被鎖 3 組 → 暫停寄碼
+  const lockU = readyPending('lockout', '0988000212', 'H223450012');
+  const lockOne = () => {
+    su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(lockU.uid)}`);
+    const sent = requestOtp(lockU.uid, 'account_activation');
+    if (sent?.status !== 'sent') return { sent };
+    const wrongCode = codeOf(sent.challenge_id) === '000000' ? '111111' : '000000';
+    let last = null;
+    for (let i = 0; i < 5; i += 1) last = verifyOtp(lockU.uid, sent.challenge_id, wrongCode);
+    return { sent, last };
+  };
+  const lock1 = lockOne();
+  const lock2 = lockOne();
+  check('第 1、2 組錯 5 次 → locked（還沒暫停寄碼）',
+    lock1.last?.status === 'locked' && !lock1.last.sending_suspended && lock2.last?.status === 'locked' && !lock2.last.sending_suspended, { lock1, lock2 });
+  const lock3 = lockOne();
+  check('第 3 組錯 5 次 → locked＋sending_suspended:true', lock3.last?.status === 'locked' && lock3.last.sending_suspended === true, lock3);
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(lockU.uid)}`);
+  const beforeSuspended = challengeCount(lockU.uid);
+  const suspended = requestOtp(lockU.uid, 'account_activation');
+  check('暫停中要驗證碼 → locked_contact_admin（不產生驗證碼）', suspended?.status === 'locked_contact_admin' && challengeCount(lockU.uid) === beforeSuspended, suspended);
+  const lockRow = suJson(`SELECT to_jsonb(l) FROM private.email_otp_send_locks l WHERE user_id = ${lit(lockU.uid)}`);
+  const lockHours = Number(suVal(`SELECT round(extract(epoch FROM (locked_until - locked_at)) / 3600) FROM private.email_otp_send_locks WHERE user_id = ${lit(lockU.uid)}`));
+  check('暫停紀錄：暫停 24 小時、記錄被鎖的組數 3', lockRow?.locked_challenge_count === 3 && lockHours === 24, lockRow);
+  check('暫停中冷卻期內也不帶回任何 challenge', !('challenge_id' in (requestOtp(lockU.uid, 'account_activation') || {})));
+  check('講師不能自己呼叫 admin_reset_email_otp_lock（42501）', call(lockU.uid, `public.admin_reset_email_otp_lock(${ulit(lockU.uid)})`)?.sqlstate === '42501'
+    && call(uEmail, `public.admin_reset_email_otp_lock(${ulit(lockU.uid)})`)?.sqlstate === '42501');
+  check('admin_reset_email_otp_lock：帳號不存在 → USER_NOT_FOUND', errOf(call(admin, `public.admin_reset_email_otp_lock(${ulit(randomUUID())})`)) === 'USER_NOT_FOUND');
+  const resetResult = call(admin, `public.admin_reset_email_otp_lock(${ulit(lockU.uid)})`);
+  check('行政解除 → {status:reset, was_locked:true}，記錄解除者', resetResult.result?.status === 'reset' && resetResult.result.was_locked === true
+    && suVal(`SELECT reset_by FROM private.email_otp_send_locks WHERE user_id = ${lit(lockU.uid)}`) === admin, resetResult);
+  const afterReset = lockOne();
+  check('解除後可再寄碼；解除前的 3 組不再計入（再鎖 1 組不會立刻又暫停）',
+    afterReset.sent?.status === 'sent' && afterReset.last?.status === 'locked' && !afterReset.last.sending_suspended, afterReset);
+  check('解除後再寄一次照常 sent', (() => {
+    su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(lockU.uid)}`);
+    return requestOtp(lockU.uid, 'account_activation')?.status === 'sent';
+  })());
+  check('沒被暫停時解除 → was_locked:false', call(admin, `public.admin_reset_email_otp_lock(${ulit(daily.uid)})`).result?.was_locked === false);
+  // 暫停到期自動恢復；超過 24 小時的鎖定不計入
+  const autoU = readyPending('autounlock', '0988000213', 'H223450013');
+  for (let k = 0; k < 3; k += 1) {
+    su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(autoU.uid)}`);
+    const sent = requestOtp(autoU.uid, 'account_activation');
+    for (let i = 0; i < 5; i += 1) verifyOtp(autoU.uid, sent.challenge_id, codeOf(sent.challenge_id) === '000000' ? '111111' : '000000');
+  }
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(autoU.uid)}`);
+  check('另一位講師鎖滿 3 組 → 暫停', requestOtp(autoU.uid, 'account_activation')?.status === 'locked_contact_admin');
+  su(`UPDATE private.email_otp_send_locks SET locked_at = locked_at - interval '25 hours', locked_until = locked_until - interval '25 hours' WHERE user_id = ${lit(autoU.uid)};
+      UPDATE private.email_otp_challenges SET created_at = created_at - interval '25 hours' WHERE user_id = ${lit(autoU.uid)};`);
+  check('暫停 24 小時到期 → 自動恢復可寄', requestOtp(autoU.uid, 'account_activation')?.status === 'sent');
 
   // ════════════════════════════════════════════════════════════════
   // 2026-10-23 資安審查建議 3：record_contract_consent 每人每小時上限、紙本通知不帶自填文字

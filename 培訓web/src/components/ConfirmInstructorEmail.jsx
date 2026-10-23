@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import {
   describeConfirmEmailError,
   describeConfirmedEmailMethod,
+  initialConfirmEmail,
   validateEmailConfirmation,
 } from '../lib/accountActivation';
 import { hasConfirmedEmail } from '../lib/instructorProgress';
@@ -13,9 +14,14 @@ import { Loader2, Mail, X } from 'lucide-react';
  * 後台「確認 Email」：管理員透過可信管道（LINE、電話、當面…）與老師本人確認 Email 後登錄。
  * 老師之後收帳號啟用與簽約的驗證碼，只會寄到這裡登錄的 Email（不是 Google 登入信箱）。
  * 呼叫 admin_confirm_instructor_email(p_instructor_id, p_email, p_note)。
+ *
+ * 姓名空位（name_slot）不預填（2026-10-23 資安審查建議 5）：主檔的 email_primary 是認領者自己填的欄位，
+ * 冒認者可能已改成自己的信箱，直接採用就等於把驗證碼寄給他。改成空白讓行政自己輸入查證過的信箱，
+ * 旁邊只用小字列出認領者填的 Email 供對照。非空位的列維持原本的預填。
  */
 export const ConfirmInstructorEmailModal = ({ inst, onClose, onConfirmed }) => {
-  const [email, setEmail] = useState(inst.confirmed_email || inst.email_primary || '');
+  const [email, setEmail] = useState(() => initialConfirmEmail(inst));
+  const claimantEmail = inst.name_slot ? String(inst.email_primary || '').trim() : '';
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -83,6 +89,11 @@ export const ConfirmInstructorEmailModal = ({ inst, onClose, onConfirmed }) => {
               autoFocus
             />
             {errors.email && <p role="alert" className="text-xs font-bold text-bauhaus-red mt-1">{errors.email}</p>}
+            {claimantEmail && (
+              <p data-testid="claimant-email-hint" className="text-xs text-bauhaus-black/60 mt-1 break-all">
+                認領者填的 Email：{claimantEmail}（請勿直接採用，請與老師透過原有管道確認）
+              </p>
+            )}
           </div>
 
           <div>

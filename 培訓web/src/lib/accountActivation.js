@@ -112,3 +112,12 @@ export const describeConfirmEmailError = (error) => {
   if (/INSTRUCTOR_NOT_FOUND/i.test(raw)) return '找不到這位講師，請重新整理頁面。';
   return `確認失敗：${raw || '未知錯誤'}`;
 };
+
+/**
+ * 後台「確認 Email」視窗的預填值（2026-10-23 資安審查建議 5）。
+ * 姓名空位（name_slot）一律空白：email_primary 是認領者自己填的，冒認者可能改成自己的信箱，行政要自己輸入查證過的信箱。
+ * 其他列照舊：已確認 Email → 主檔 Email → 空白。
+ */
+export const initialConfirmEmail = (inst) => (
+  inst?.name_slot ? '' : (inst?.confirmed_email || inst?.email_primary || '')
+);

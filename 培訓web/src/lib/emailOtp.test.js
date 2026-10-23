@@ -97,6 +97,34 @@ test('寄送結果：所有不能寄的狀態都有白話訊息，且指出是�
   assert.equal(interpretRequestResult(null).kind, 'error');
 });
 
+test('寄送結果：每日上限與連續輸錯暫停（2026-10-23）都請他找行政人員，不顯示英文代碼', () => {
+  const daily = interpretRequestResult({ status: 'daily_limit_reached' });
+  assert.equal(daily.kind, 'blocked');
+  assert.equal(daily.needsAdmin, true);
+  assert.match(daily.message, /今天寄送次數已達上限/);
+  assert.match(daily.message, /明天再試或聯絡行政/);
+  assert.ok(!daily.message.includes('daily_limit_reached'));
+
+  const locked = interpretRequestResult({ status: 'locked_contact_admin' });
+  assert.equal(locked.kind, 'blocked');
+  assert.equal(locked.needsAdmin, true);
+  assert.match(locked.message, /驗證錯誤次數過多，已暫停/);
+  assert.match(locked.message, /請聯絡行政人員協助/);
+  assert.ok(!locked.message.includes('locked_contact_admin'));
+});
+
+test('驗證結果：第 3 組被鎖（sending_suspended）→ 不再叫他重寄，改請他聯絡行政人員', () => {
+  const suspended = interpretVerifyResult({ status: 'locked', sending_suspended: true });
+  assert.equal(suspended.kind, 'dead');
+  assert.equal(suspended.needsNewCode, false);
+  assert.equal(suspended.sendingSuspended, true);
+  assert.match(suspended.message, /已暫停寄送驗證碼。請聯絡行政人員協助/);
+
+  const plain = interpretVerifyResult({ status: 'locked' });
+  assert.equal(plain.needsNewCode, true);
+  assert.ok(!plain.sendingSuspended);
+});
+
 test('驗證結果：verified 帶 activated 與驗證時間', () => {
   const ok = interpretVerifyResult({ status: 'verified', verified_at: '2026-10-20T06:01:00Z', activated: true });
   assert.equal(ok.kind, 'verified');

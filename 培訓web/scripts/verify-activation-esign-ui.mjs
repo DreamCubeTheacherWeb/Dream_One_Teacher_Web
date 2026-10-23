@@ -496,11 +496,22 @@ async function main() {
         await page.locator('[data-progress-filter="all"][aria-pressed="true"]').waitFor();
       });
 
-      await step('B2 每列有「確認 Email」；開啟視窗預填主檔 Email，空白送出時顯示必填提示且不呼叫 RPC', async () => {
+      await step('B2a 非姓名空位的列：「確認 Email」視窗照舊預填主檔 Email、沒有認領者提示', async () => {
+        await rowOf(page, '李新建').getByRole('button', { name: '確認 Email' }).click();
+        const modal = page.getByTestId('confirm-email-modal');
+        await modal.waitFor();
+        assert.equal(await modal.locator('#confirm-email-input').inputValue(), 'new@example.com');
+        assert.equal(await modal.getByTestId('claimant-email-hint').count(), 0);
+        await modal.getByRole('button', { name: '取消' }).click();
+        await modal.waitFor({ state: 'detached' });
+      });
+      await step('B2 姓名空位的列：視窗不預填（認領者可能改過主檔 Email），旁邊小字列出認領者填的 Email；空白送出顯示必填提示且不呼叫 RPC', async () => {
         await rowOf(page, '黃待確認').getByRole('button', { name: '確認 Email' }).click();
         const modal = page.getByTestId('confirm-email-modal');
         await modal.waitFor();
-        assert.equal(await modal.locator('#confirm-email-input').inputValue(), 'huang@example.com');
+        assert.equal(await modal.locator('#confirm-email-input').inputValue(), '');
+        assert.equal(await modal.getByTestId('claimant-email-hint').innerText(),
+          '認領者填的 Email：huang@example.com（請勿直接採用，請與老師透過原有管道確認）');
         await modal.locator('#confirm-email-input').fill('');
         await modal.getByTestId('confirm-email-submit').click();
         const errors = await modal.getByRole('alert').allInnerTexts();

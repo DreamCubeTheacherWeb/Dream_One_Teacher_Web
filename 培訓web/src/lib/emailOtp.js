@@ -1,9 +1,11 @@
 /*
  * Email 一次性驗證碼（OTP）的純函式：訊息對應、倒數計算、輸入清理。
  * 對應資料庫 RPC（見 docs/specs/2026-10-20-claim-activation-esign.md §1.4）：
- *   request_email_otp(p_purpose)            → status: sent | cooldown | rate_limited | no_confirmed_email
+ *   request_email_otp(p_purpose)            → status: sent | cooldown | rate_limited | daily_limit_reached
+ *                                              | locked_contact_admin | no_confirmed_email
  *                                              | profile_incomplete | not_allowed | email_not_configured
  *   verify_email_otp(p_challenge_id, p_code) → status: verified | invalid | expired | used | locked | superseded
+ *                                              （locked 可能帶 sending_suspended:true＝24 小時內第 3 組被鎖，已暫停寄碼）
  * 畫面與 Supabase 呼叫在 components/EmailOtpDialog.jsx，這裡不碰網路，方便單獨測試。
  */
 
@@ -13,11 +15,13 @@ export const OTP_PURPOSES = Object.freeze({
 });
 
 export const OTP_LENGTH = 6;
-// 規格：5 分鐘有效、同目的 60 秒冷卻、每人每小時 5 封、錯 5 次鎖定
+// 規格：5 分鐘有效、同目的 60 秒冷卻、每人每小時 5 封、每 24 小時 10 封、錯 5 次鎖定；
+// 24 小時內被鎖 3 組 → 暫停寄碼 24 小時，要請行政解除（2026-10-23）
 export const OTP_VALID_SECONDS = 300;
 export const OTP_RESEND_SECONDS = 60;
 export const OTP_MAX_ATTEMPTS = 5;
 export const OTP_MAX_PER_HOUR = 5;
+export const OTP_MAX_PER_DAY = 10;
 
 const PURPOSE_TEXT = {
   [OTP_PURPOSES.ACTIVATION]: {
@@ -109,6 +113,20 @@ export const interpretRequestResult = (result) => {
         kind: 'blocked',
         message: `驗證碼寄送次數已達上限（每小時最多 ${OTP_MAX_PER_HOUR} 封），請稍後再試。若急需處理請聯絡行政人員。`,
       };
+    case 'daily_limit_reached':
+      return {
+        ...base,
+        kind: 'blocked',
+        needsAdmin: true,
+        message: `今天寄送次數已達上限（24 小時內最多 ${OTP_MAX_PER_DAY} 封），請明天再試或聯絡行政人員。`,
+      };
+    case 'locked_contact_admin':
+      return {
+        ...base,
+        kind: 'blocked',
+        needsAdmin: true,
+        message: '驗證錯誤次數過多，已暫停寄送驗證碼。請聯絡行政人員協助。',
+      };
     case 'no_confirmed_email':
       return {
         ...base,
@@ -198,6 +216,14 @@ export const interpretVerifyResult = (result) => {
         message: '這組驗證碼已經用過了。請重新寄送新的驗證碼。',
       };
     case 'locked':
+      if (result?.sending_suspended) {
+        // 24 小時內第 3 組被鎖：資料庫已暫停寄碼，重寄也寄不出去，請他找行政
+        return {
+          status, kind: 'dead', activated: false, verifiedAt: null, attemptsRemaining: 0, needsNewCode: false,
+          sendingSuspended: true,
+          message: '驗證錯誤次數過多，已暫停寄送驗證碼。請聯絡行政人員協助。',
+        };
+      }
       return {
         status, kind: 'dead', activated: false, verifiedAt: null, attemptsRemaining: 0, needsNewCode: true,
         message: '驗證碼輸入錯誤次數過多（最多 5 次），這組已鎖定。請重新寄送新的驗證碼。',
