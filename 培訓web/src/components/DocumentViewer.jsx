@@ -10,7 +10,57 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-const DocumentViewer = ({ fileUrl, fileData, onFinishReading, finishButtonText = '我已完整看完且清楚這份文件的所有內容' }) => {
+const PDF_TYPE = 'application/pdf';
+
+// 先把整份 PDF 下載完，再交給 PDF.js（react-pdf 的 file 收 Blob，會自己讀成位元組）。
+// 為什麼不讓 PDF.js 直接用網址下載：那樣它的 worker 會「邊下載邊等資料」，文件還沒載完就被拆掉
+// （換到下一份文件、進入簽約同意頁、離開頁面）時，PDF.js worker 內部會丟出沒有人接住的
+// 「Worker was terminated」。改成下載完才交給 PDF.js 後，worker 收到的是完整位元組、在同一輪就解析完，
+// 拆掉時不會停在半路；還在下載時拆掉，就用 AbortController 取消這次下載。
+// 動態產生的表單（fileData）同樣包成 Blob：不經過 blob: 網址，正式站 CSP 不會擋；
+// 每個 <Document> 各自讀一份位元組，PDF.js 把位元組轉交 worker 後，放大檢視那份也還能用。
+const usePdfFile = (fileUrl, fileData) => {
+  const dataBlob = useMemo(() => (fileData ? new Blob([fileData], { type: PDF_TYPE }) : null), [fileData]);
+  const [download, setDownload] = useState({ url: null, blob: null, failed: false });
+
+  useEffect(() => {
+    if (dataBlob || !fileUrl) return undefined;
+    const controller = new AbortController();
+    fetch(fileUrl, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.blob();
+      })
+      .then((blob) => setDownload({ url: fileUrl, blob, failed: false }))
+      .catch((error) => {
+        // 元件已拆掉或換了文件：這次下載是我們自己取消的，畫面也已不需要它
+        if (controller.signal.aborted) return;
+        console.error('[DocumentViewer] 文件下載失敗：', error);
+        setDownload({ url: fileUrl, blob: null, failed: true });
+      });
+    return () => controller.abort();
+  }, [dataBlob, fileUrl]);
+
+  if (dataBlob) return { status: 'ready', file: dataBlob };
+  if (!fileUrl) return { status: 'empty', file: null };
+  if (download.url !== fileUrl) return { status: 'loading', file: null };
+  if (download.failed) return { status: 'error', file: null };
+  return { status: 'ready', file: download.blob };
+};
+
+const DocumentLoading = () => (
+  <div className="flex items-center justify-center h-[500px] w-full">
+    <div className="animate-spin w-8 h-8 border-4 border-bauhaus-black border-t-transparent rounded-full" />
+  </div>
+);
+
+// 每份文件一份閱讀狀態：換文件（fileUrl 不同）就整個重新掛載，
+// 「已讀到最後一頁」不會沿用上一份文件，下一份還沒載入前「看完」按鈕不會先亮起來。
+const DocumentViewer = (props) => (
+  <DocumentViewerBody key={props.fileUrl || (props.fileData ? 'file-data' : 'empty')} {...props} />
+);
+
+const DocumentViewerBody = ({ fileUrl, fileData, onFinishReading, finishButtonText = '我已完整看完且清楚這份文件的所有內容' }) => {
   const [numPages, setNumPages] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasReachedEnd, setHasReachedEnd] = useState(false);
@@ -21,11 +71,7 @@ const DocumentViewer = ({ fileUrl, fileData, onFinishReading, finishButtonText =
   const [pageHeight, setPageHeight] = useState(null);
   const containerRef = useRef(null);
   const pdfBoxRef = useRef(null);
-  // 動態產生的表單直接交給 PDF.js bytes，避免正式站 CSP 阻擋 blob: URL 的 fetch。
-  // 一般已上傳文件仍沿用既有 URL 載入流程。
-  const pdfSource = useMemo(() => (
-    fileData ? { data: fileData } : fileUrl
-  ), [fileData, fileUrl]);
+  const pdf = usePdfFile(fileUrl, fileData);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -61,7 +107,7 @@ const DocumentViewer = ({ fileUrl, fileData, onFinishReading, finishButtonText =
     });
   };
 
-  if (!pdfSource) {
+  if (pdf.status === 'empty') {
     return (
       <div className="flex items-center justify-center h-64 text-bauhaus-black/40 font-medium">
         尚未上傳文件
@@ -101,21 +147,25 @@ const DocumentViewer = ({ fileUrl, fileData, onFinishReading, finishButtonText =
           ref={pdfBoxRef}
           className="relative overflow-hidden border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard bg-white cursor-pointer group"
           style={pageHeight ? { minHeight: pageHeight, scrollMarginTop: 16 } : { scrollMarginTop: 16 }}
-          onClick={() => setZoomPage(currentPage)}
+          onClick={() => { if (pdf.status === 'ready') setZoomPage(currentPage); }}
         >
-          <Document file={pdfSource} onLoadSuccess={onDocumentLoadSuccess} loading={
-            <div className="flex items-center justify-center h-[500px] w-full">
-              <div className="animate-spin w-8 h-8 border-4 border-bauhaus-black border-t-transparent rounded-full" />
+          {pdf.status === 'loading' && <DocumentLoading />}
+          {pdf.status === 'error' && (
+            <div role="alert" className="flex items-center justify-center h-64 w-full px-6 text-center text-sm font-bold text-bauhaus-red">
+              文件載入失敗，請重新整理頁面再試一次；仍無法開啟請聯繫管理員。
             </div>
-          }>
-            <Page
-              pageNumber={currentPage}
-              width={pageWidth}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-              onRenderSuccess={onPageRenderSuccess}
-            />
-          </Document>
+          )}
+          {pdf.status === 'ready' && (
+            <Document file={pdf.file} onLoadSuccess={onDocumentLoadSuccess} loading={<DocumentLoading />}>
+              <Page
+                pageNumber={currentPage}
+                width={pageWidth}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+                onRenderSuccess={onPageRenderSuccess}
+              />
+            </Document>
+          )}
 
           {/* Zoom hint overlay */}
           <div className="absolute inset-0 bg-bauhaus-black/0 group-hover:bg-bauhaus-black/10 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -174,7 +224,7 @@ const DocumentViewer = ({ fileUrl, fileData, onFinishReading, finishButtonText =
               <X className="w-5 h-5" />
             </button>
             <div className="p-2 overflow-auto max-h-[90dvh]">
-              <Document file={pdfSource}>
+              <Document file={pdf.file}>
                 <Page
                   pageNumber={zoomPage}
                   width={Math.min(window.innerWidth - 48, 1200)}
