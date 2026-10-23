@@ -28,14 +28,26 @@
 
 BEGIN;
 
+-- 整支在同一個交易裡；拿不到表鎖 5 秒就放棄（整批回滾），不讓線上查詢排隊等我們
+-- （2026-10-23 資安審查建議 6：區段 8 會 ALTER TABLE … DISABLE TRIGGER，要 ACCESS EXCLUSIVE 鎖；比照 20261022120000）
+SET LOCAL lock_timeout = '5s';
+
 -- ──────────────────────────────────────────────────────────────────
 -- 0. 擴充
 -- ──────────────────────────────────────────────────────────────────
+-- pg_net 依 Supabase 文件寫法登記在 extensions schema（https://supabase.com/docs/guides/database/extensions/pg_net：
+-- `create extension pg_net with schema "extensions";`）。pg_net 不可搬移（relocatable = false），函式與資料表固定建在
+-- 它自己的 net schema（net.http_post、net._http_response），WITH SCHEMA 只決定擴充本身登記在哪，不影響下面的呼叫。
+-- CREATE EXTENSION 可以在交易內執行（Supabase CLI 的 migration 也是整支包在交易裡）；請求要等交易 commit 後才會真的送出。
 DO $$
 BEGIN
   IF pg_catalog.to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') IS NULL THEN
     BEGIN
-      CREATE EXTENSION IF NOT EXISTS pg_net;
+      IF pg_catalog.to_regnamespace('extensions') IS NOT NULL THEN
+        CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
+      ELSE
+        CREATE EXTENSION IF NOT EXISTS pg_net;
+      END IF;
     EXCEPTION WHEN OTHERS THEN
       RAISE NOTICE 'pg_net 無法啟用（%）；寄信會記錄為 not_configured，直到啟用 pg_net 並設定 Vault。', SQLERRM;
     END;
