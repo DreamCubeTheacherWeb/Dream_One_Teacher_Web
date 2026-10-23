@@ -7,6 +7,21 @@
 
 ## 🪪 2026-10-20：講師「姓名空位＋Email 驗證碼啟用」＋電子簽約證據與防竄改（🛠 本機全測通過；⚠️ 未上線，需業主先設定 Resend 並套 migration）
 
+**2026-10-23 晚：`verify:contract-download-fixes` 偶發「Worker was terminated」查清＋修好（分支 `fix/esign-pdf-worker-terminated`，從 075d12d 開；未推、未碰正式庫）**：
+- 成因：PDF.js 用網址自己下載 PDF 時，文件還在載入就被拆掉，PDF.js worker 內 `setupDoc` 的 `onFailure` 再呼叫 `ensureNotTerminated()` 丟錯、沒人接
+  （`pdfjs-dist/build/pdf.worker.mjs:58306-58307`，`.then(pdfManagerReady, onFailure)` 在 :58351；Playwright 把 worker 內未處理的錯誤算成 pageerror）。
+  簽約線把閱讀改成獨立步驟（`ContractSigningFlow.jsx:783` `phase === 'read'`），讀完立刻整個換到同意頁：契約步驟的「前往選擇簽約方式」（:825）不等 PDF 載完；
+  唯讀文件的「看完」又沿用上一份的已讀狀態（DocumentViewer 換文件不重設），下一份還沒載入就能按 → 拆掉時機常落在載入中。main 的簽約表單和 PDF 同頁、不拆，所以少見。
+- 影響判定：**只有 console／pageerror，簽約證據不受影響**。雜湊用送出時另外下載的範本位元組（`fetchContractFileBytes`）＋WebCrypto，成品由 pdf-lib 產生、
+  雜湊與上傳同一份 bytes；PDF.js 只負責顯示。實測：075d12d 上帶 worker 錯誤的回合（診斷腳本逐輪 4 輪＋新回歸 9 輪），`p_document_sha256` 每份都等於實際範本位元組、
+  `p_signed_pdf_sha256` 等於實際上傳的簽署 PDF、上傳完成才送 RPC，全部相符。
+- 修正（`src/components/DocumentViewer.jsx`）：已上傳文件先在主執行緒整份下載（AbortController，拆掉就取消）再以 Blob 交給 PDF.js；每份文件重新掛載閱讀狀態，
+  下一份載入前「看完」不可按。動態表單（fileData）路徑不變。新回歸 `npm run verify:esign-pdf-teardown`（PDF 延遲、隨機時間點換步驟、雜湊比對、閱讀門檻）。
+- 證據：`verify:esign-pdf-teardown` 075d12d 6/10（T1/T2 每輪都出錯、T4 載入中可按）→ 修正後 10/10（--rounds=5）；`verify:contract-download-fixes` 修正後 22/22 次全過
+  （其中 8 次加 CPU 壓力），075d12d 在這台 16/16 次全過（含 8 次壓力，總指揮那台 4 次失敗 2 次）；`verify:contract-signing:browser` 112/112；
+  `verify-activation-esign-ui` 18/18；`e2e:onboarding --runs=1` PASS 294／FAIL 0（console 無錯誤）；`npm test` 287/287；build、eslint 0 錯。
+- 地雷：後台 `FieldPositionEditor.jsx`（定位欄位）仍直接讓 react-pdf 用網址載入，同型 console 錯誤理論上還在（只在後台，沒改）。
+
 **2026-10-23 深夜：第二輪資安審查「必修 1、建議 3」全部修好（同分支，未推 main、未碰正式庫）**：
 - 必修：`20261023100000` 重寫 `get_teaching_leaderboard_v2` 時誤拿 `2026-07-09_leaderboard_hide.sql` 當底版，會讓排行榜「線上／速解／幼兒」三個分頁變空白。
   總指揮在正式庫比對 md5(prosrc)：v2＝7793d208（`2026-07-09_gamify_compute.sql`）、v1＝8a6745a6（`2026-07-08_teaching_leaderboard.sql`）、
