@@ -155,9 +155,11 @@ export async function secDecline(ctx) {
     const consent = ctx.api.json(`SELECT row_to_json(x) FROM public.contract_consent_records x WHERE x.user_id = :'uid' ORDER BY created_at DESC LIMIT 1`, { uid: user.id });
     r.check('SEC 資料庫記錄 decline_electronic（含不同意文案與個資告知全文、IP、UA）',
       consent?.decision === 'decline_electronic' && consent.consent_text_version === 'esign-decline-paper-v1' && String(consent.privacy_notice_text).length > 50 && consent.ip_address);
+    // 2026-10-23 資安審查建議 3：通知內文不帶講師自填的姓名，改用 Google 登入信箱辨識
     const notified = ctx.api.json(`SELECT coalesce(json_agg(row_to_json(n)), '[]') FROM public.notifications n WHERE n.user_id = :'admin' AND n.title = '講師選擇改以紙本簽約' AND n.body LIKE :'who'`,
-      { admin: ctx.base.admin.id, who: '%紙本簽約老師%' });
-    r.check('SEC 管理員收到「講師選擇改以紙本簽約」通知', notified.length === 1, notified[0]?.body?.slice(0, 60));
+      { admin: ctx.base.admin.id, who: `%${user.email.toLowerCase()}%` });
+    r.check('SEC 管理員收到「講師選擇改以紙本簽約」通知（以登入信箱辨識、不含講師自填的姓名）',
+      notified.length === 1 && !notified[0].body.includes('紙本簽約老師'), notified[0]?.body?.slice(0, 80));
     r.check('SEC 沒有任何簽約紀錄', contractsOf(ctx, user.id).length === 0 && evidenceCount(ctx, user.id) === 0);
     await goto(ctx, s, '/profile');
     r.check('SEC 個人資料頁顯示「紙本簽約處理中」', await visible(s.page.getByTestId('paper-pending'), 10000));
@@ -462,8 +464,9 @@ export async function minorPaperOnly(ctx) {
       consent?.decision === 'decline_electronic' && consent.consent_text_version === 'esign-minor-paper-v1'
       && String(consent.consent_text).includes('法定代理人') && !String(consent.consent_text).includes('{{')
       && String(consent.privacy_notice_text).length > 50 && Boolean(consent.ip_address), JSON.stringify(consent).slice(0, 200));
+    // 通知以 Google 登入信箱辨識（2026-10-23 起不帶講師自填的姓名）
     const notices = ctx.api.json(`SELECT coalesce(json_agg(n.title ORDER BY n.title), '[]') FROM public.notifications n WHERE n.user_id = :'admin' AND n.body LIKE :'who'`,
-      { admin: ctx.base.admin.id, who: '%未成年畫面講師%' });
+      { admin: ctx.base.admin.id, who: `%${ui.email.toLowerCase()}%` });
     r.check('MINOR 資料庫：管理員收到「講師選擇改以紙本簽約」與「未滿 18 歲的講師需由法定代理人一起簽紙本契約」兩則通知',
       notices.includes('講師選擇改以紙本簽約') && notices.includes('未滿 18 歲的講師需由法定代理人一起簽紙本契約'), JSON.stringify(notices));
     r.check('MINOR 資料庫：沒有任何簽約紀錄或證據', contractsOf(ctx, ui.id).length === 0 && evidenceCount(ctx, ui.id) === 0);

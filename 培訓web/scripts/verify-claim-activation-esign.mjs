@@ -494,7 +494,9 @@ try {
   const lateVerify = lateOtp?.challenge_id ? verifyOtp(uLate, lateOtp.challenge_id, codeOf(lateOtp.challenge_id)) : null;
   check('T-legacy-1 簽約碼可驗證（verified）', lateVerify?.status === 'verified', lateVerify);
   const lateConsent = recordConsent(uLate, 'agree_electronic', { rules: 1, contract: 1 });
-  check('T-legacy-1 可記錄電子簽約同意（不再 ACCOUNT_NOT_ACTIVE）', lateConsent?.result?.status === 'recorded', lateConsent);
+  // 此時測試庫還沒有任何啟用中的契約文件；2026-10-23 起 doc_versions 只收啟用中的文件類型，所以回 DOC_VERSION_MISMATCH——
+  // 重點是已通過帳號檢查（不是 ACCOUNT_NOT_ACTIVE）。文件建立後的實際記錄在「consent hardening」組再驗一次。
+  check('T-legacy-1 記同意已通過帳號檢查（不再 ACCOUNT_NOT_ACTIVE；尚無啟用中文件 → DOC_VERSION_MISMATCH）', errOf(lateConsent) === 'DOC_VERSION_MISMATCH', lateConsent);
 
   // T-legacy-1b：新進講師自建主檔後，被行政用角色下拉直接改成 teacher（沒走核准 RPC，所以沒有啟用紀錄）
   const uDropdown = createAuthUser('dropdown@t.test', '下拉改角色');
@@ -742,8 +744,17 @@ try {
   check('同意 id 不存在 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: randomUUID() })) === 'CONSENT_REQUIRED');
   const declineForSubmit = recordConsent(uEmail, 'decline_electronic', V, 'esign-decline-paper-v1').result.consent_id;
   check('用「不同意」紀錄送出 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: declineForSubmit })) === 'CONSENT_REQUIRED');
-  const consentOtherVersions = recordConsent(uEmail, 'agree_electronic', { rules: 1, contract: 1, extra: 1 }).result.consent_id;
+  const consentOtherVersions = recordConsent(uEmail, 'agree_electronic', { rules: 1 }).result.consent_id;
   check('同意的 doc_versions 與送出不一致 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentOtherVersions })) === 'CONSENT_REQUIRED');
+  // 2026-10-23 資安審查建議 3：doc_versions 只接受目前啟用中的契約文件類型、版本必須是正整數
+  const consentCountBefore = Number(suVal(`SELECT count(*) FROM public.contract_consent_records WHERE user_id = ${lit(uEmail)}`));
+  check('同意的 doc_versions 有未知的鍵（extra）→ DOC_VERSION_MISMATCH', errOf(recordConsent(uEmail, 'agree_electronic', { rules: 1, contract: 1, extra: 1 })) === 'DOC_VERSION_MISMATCH');
+  check('同意的 doc_versions 含停用中的文件類型（misc）→ DOC_VERSION_MISMATCH', errOf(recordConsent(uEmail, 'agree_electronic', { rules: 1, contract: 1, misc: 1 })) === 'DOC_VERSION_MISMATCH');
+  check('同意的 doc_versions 版本不是正整數（文字、0、小數）→ DOC_VERSION_MISMATCH',
+    ['<b>x</b>', 0, '1.5', -1].every((bad) => errOf(recordConsent(uEmail, 'decline_electronic', { rules: 1, contract: bad }, 'esign-decline-paper-v1')) === 'DOC_VERSION_MISMATCH'));
+  check('同意的 doc_versions 是空物件 → INVALID_INPUT', errOf(recordConsent(uEmail, 'agree_electronic', {})) === 'INVALID_INPUT');
+  check('版本用字串數字也接受（"1"）', recordConsent(uEmail, 'agree_electronic', { rules: '1', contract: '1' }).result?.status === 'recorded');
+  check('被拒的 doc_versions 一筆都沒寫進同意紀錄', Number(suVal(`SELECT count(*) FROM public.contract_consent_records WHERE user_id = ${lit(uEmail)}`)) === consentCountBefore + 1);
   const consentOld = recordConsent(uEmail, 'agree_electronic', V).result.consent_id;
   su(`SET session_replication_role = replica; UPDATE public.contract_consent_records SET created_at = now() - interval '2 hours 1 minute' WHERE id = ${ulit(consentOld)}; RESET session_replication_role;`);
   check('同意超過 2 小時 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentOld })) === 'CONSENT_REQUIRED');
@@ -851,7 +862,8 @@ try {
   const notif = suJson(`SELECT to_jsonb(n) FROM public.notifications n WHERE user_id = ${lit(admin)} AND type = 'contract' ORDER BY created_at DESC LIMIT 1`);
   check('decline 紀錄 → recorded，並通知 admin（type contract）',
     decline.result?.status === 'recorded' && Number(suVal(`SELECT count(*) FROM public.notifications WHERE user_id = ${lit(admin)} AND type = 'contract'`)) === notifBefore + 1
-    && notif.title === '講師選擇改以紙本簽約' && notif.body.includes('後建檔老師'), notif);
+    && notif.title === '講師選擇改以紙本簽約' && notif.body.includes('pre@t.test') && notif.body.includes('講師管理辦法（第 1 版）、委任契約書（第 1 版）'), notif);
+  check('紙本通知內文不帶講師自填的姓名（只用資料庫文件名稱＋Google 登入信箱）', !notif.body.includes('後建檔老師'), notif.body);
   const declineRow = suJson(`SELECT to_jsonb(r) FROM public.contract_consent_records r WHERE id = ${ulit(decline.result.consent_id)}`);
   check('decline 紀錄存 esign-decline-paper-v1 全文', declineRow.decision === 'decline_electronic' && declineRow.consent_text.startsWith('改以紙本簽約') && declineRow.consent_text.includes('講師管理辦法（第 1 版）'), declineRow.consent_text);
   check('decline 紀錄也存個資告知版本與全文', declineRow.privacy_notice_version === 'esign-privacy-notice-v1' && declineRow.privacy_notice_text === privacySeed, declineRow);
@@ -1202,6 +1214,38 @@ try {
     const missing = lines.filter((line) => !content.includes(line));
     check(`${code}：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（${lines.length} 句）`, content && lines.length > 0 && missing.length === 0, missing);
   }
+
+  // ════════════════════════════════════════════════════════════════
+  // 2026-10-23 資安審查建議 3：record_contract_consent 每人每小時上限、紙本通知不帶自填文字
+  group('consent hardening (建議 3)');
+  const uFlood = createAuthUser('flood@t.test', '洗通知');
+  const floodInstructor = makeInstructor('洗通知老師', 'flood@t.test', { phone: '0988000111', idNumber: 'H223450001', userId: uFlood });
+  su(`UPDATE public.users SET role = 'teacher' WHERE id = ${lit(uFlood)}`);
+  // 本人可改的姓名欄塞入釣魚文字：管理員通知不得出現
+  const evilName = '請立刻點 http://evil.example/pay 更新';
+  const nameEdit = exec(uFlood, `UPDATE public.instructors SET full_name = ${lit(evilName)} WHERE user_id = auth.uid()`);
+  check('前提：講師可以改自己的姓名欄（自填文字）', nameEdit?.ok && nameEdit.rows === 1 && instructorOf(uFlood)?.id === floodInstructor, nameEdit);
+  const adminNotifCount = () => Number(suVal(`SELECT count(*) FROM public.notifications WHERE user_id = ${lit(admin)} AND title = '講師選擇改以紙本簽約'`));
+  const floodBefore = adminNotifCount();
+  const floodResults = [];
+  for (let i = 0; i < 10; i += 1) {
+    floodResults.push(recordConsent(uFlood, i % 2 ? 'agree_electronic' : 'decline_electronic', V, i % 2 ? 'esign-consent-v1' : 'esign-decline-paper-v1').result?.status);
+  }
+  check('一小時內第 1～10 筆同意／不同意都記錄成功', floodResults.every((x) => x === 'recorded'), floodResults);
+  const floodNotif = suJson(`SELECT to_jsonb(n) FROM public.notifications n WHERE n.user_id = ${lit(admin)} AND n.title = '講師選擇改以紙本簽約' ORDER BY n.created_at DESC LIMIT 1`);
+  check('紙本通知內文沒有講師自填的姓名，只有資料庫文件名稱與 Google 登入信箱',
+    !floodNotif.body.includes('evil') && !floodNotif.body.includes('洗通知') && floodNotif.body.includes('flood@t.test')
+    && floodNotif.body.includes('講師管理辦法（第 1 版）、委任契約書（第 1 版）') && floodNotif.link === '/admin/contracts', floodNotif.body);
+  const eleventh = recordConsent(uFlood, 'decline_electronic', V, 'esign-decline-paper-v1');
+  check('第 11 筆 → CONSENT_RATE_LIMITED，不再通知管理員、不寫紀錄',
+    errOf(eleventh) === 'CONSENT_RATE_LIMITED' && adminNotifCount() === floodBefore + 5
+    && Number(suVal(`SELECT count(*) FROM public.contract_consent_records WHERE user_id = ${lit(uFlood)}`)) === 10, { eleventh, notif: adminNotifCount() - floodBefore });
+  check('同意（agree）也一起受上限', errOf(recordConsent(uFlood, 'agree_electronic', V)) === 'CONSENT_RATE_LIMITED');
+  su(`SET session_replication_role = replica;
+      UPDATE public.contract_consent_records SET created_at = created_at - interval '61 minutes' WHERE user_id = ${lit(uFlood)};
+      RESET session_replication_role;`);
+  check('超過一小時後恢復可記錄', recordConsent(uFlood, 'agree_electronic', V).result?.status === 'recorded');
+  check('T-legacy-1 續：沒有啟用紀錄的 teacher 在有啟用中文件後可記錄電子簽約同意', recordConsent(uLate, 'agree_electronic', V).result?.status === 'recorded');
 
   // ════════════════════════════════════════════════════════════════
   // 2026-10-23 資安審查必修 1：綁定講師主檔但還沒用驗證碼啟用（role 仍是 pending）的帳號，

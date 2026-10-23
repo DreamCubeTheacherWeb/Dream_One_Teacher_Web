@@ -60,6 +60,7 @@ test('簽約送出的錯誤代碼都有白話訊息與下一步', () => {
     MINOR_REQUIRES_GUARDIAN: 'minor',
     INVALID_INPUT: null,
     CONSENT_TEXT_UNKNOWN: null,
+    CONSENT_RATE_LIMITED: null,
   };
   for (const [code, action] of Object.entries(expectations)) {
     const result = describeContractRpcError({ message: `${code}` });

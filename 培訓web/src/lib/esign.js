@@ -41,6 +41,7 @@ const SUBMIT_ERRORS = [
   { code: 'OTP_EXPIRED', action: 'otp', message: 'Email 驗證已逾時（驗證後需在 15 分鐘內送出），請重新驗證後再按「確認簽署」。' },
   { code: 'OTP_ALREADY_USED', action: 'otp', message: '這組 Email 驗證碼已經使用過，請重新驗證後再簽署。' },
   { code: 'EMAIL_VERIFICATION_REQUIRED', action: 'otp', message: '請先完成 Email 身分驗證後再送出。' },
+  { code: 'CONSENT_RATE_LIMITED', action: null, message: '這一小時內選擇簽約方式的次數太多，這次沒有記錄。請過一小時再試；若急需處理請聯絡行政人員。' },
   { code: 'CONSENT_REQUIRED', action: 'consent', message: '電子簽約同意已失效或逾時（同意後需在 2 小時內完成），請重新選擇簽約方式。' },
   { code: 'DOC_VERSION_MISMATCH', action: 'reload', message: '契約剛更新版本，請重新閱讀後再簽。' },
   { code: 'NO_ACTIVE_DOCUMENTS', action: 'reload', message: '合約文件已更新，請重新整理頁面後再簽署。' },

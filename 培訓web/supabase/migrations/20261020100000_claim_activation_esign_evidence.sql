@@ -1654,7 +1654,8 @@ DECLARE
   v_id uuid;
   v_created timestamptz;
   v_prev text;
-  v_user_name text;
+  v_login_email text;
+  v_recent integer;
   -- 同意頁上同時顯示的個資告知：前端參數不變，由資料庫固定帶入目前版本（改版時改這裡並新增 -v2 文案）
   v_privacy_version constant text := 'esign-privacy-notice-v1';
   v_privacy_content text;
@@ -1673,9 +1674,38 @@ BEGIN
 
   IF v_decision NOT IN ('agree_electronic', 'decline_electronic')
      OR p_doc_versions IS NULL OR jsonb_typeof(p_doc_versions) <> 'object'
+     OR p_doc_versions = '{}'::jsonb
      OR char_length(p_doc_versions::text) > 4000
      OR v_version = '' OR char_length(v_version) > 64 THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'INVALID_INPUT';
+  END IF;
+
+  -- 每人每小時最多 10 筆（同意與不同意合計；2026-10-23 資安審查建議 3）。不同意會通知全部管理員，沒有上限就能洗通知。
+  -- 同一人同時只處理一筆，避免併發繞過上限（與 request_email_otp 相同做法）。
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('record_contract_consent'), pg_catalog.hashtext(v_uid::text));
+  SELECT count(*) INTO v_recent
+    FROM public.contract_consent_records r
+   WHERE r.user_id = v_uid AND r.created_at > pg_catalog.now() - interval '1 hour';
+  IF v_recent >= 10 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONSENT_RATE_LIMITED';
+  END IF;
+
+  -- 文件清單只接受「目前啟用中的契約文件類型」（與 submit_my_contract 同一個定義：is_active、行政表單 form 除外），
+  -- 版本必須是正整數；有任何未知的鍵就整筆拒絕（2026-10-23 資安審查建議 3）。
+  -- 這樣同意文案與管理員通知裡的文件清單（esign_doc_list）只會出現資料庫裡的文件名稱與數字版本，不會帶入使用者自填的文字。
+  IF EXISTS (
+    SELECT 1
+      FROM jsonb_each(p_doc_versions) AS v(key, value)
+     WHERE jsonb_typeof(v.value) NOT IN ('number', 'string')
+        OR (v.value #>> '{}') !~ '^[1-9][0-9]{0,8}$'
+        OR NOT EXISTS (
+          SELECT 1 FROM public.contract_documents document_row
+           WHERE document_row.doc_type = v.key
+             AND document_row.is_active = true
+             AND COALESCE(to_jsonb(document_row) ->> 'doc_category', 'contract') <> 'form'
+        )
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'DOC_VERSION_MISMATCH';
   END IF;
 
   SELECT t.content INTO v_content FROM public.esign_text_versions t WHERE t.version_code = v_version;
@@ -1713,13 +1743,17 @@ BEGIN
   PERFORM private.internal_write_end(v_prev);
 
   IF v_decision = 'decline_electronic' THEN
-    SELECT COALESCE(NULLIF(btrim(v_full_name), ''), NULLIF(btrim(u.name), ''), u.email)
-      INTO v_user_name
-      FROM public.users u WHERE u.id = v_uid;
+    -- 通知內文不帶任何使用者自填的文字（2026-10-23 資安審查建議 3）：講師姓名、暱稱都是本人可改的欄位，
+    -- 拿來當通知內文等於讓任何人寫字給全部管理員看。只用資料庫裡的文件名稱（上面已驗過鍵），
+    -- 加上辨識用的 Google 登入信箱（auth.users，由 Google 驗證，本人在本系統改不了；格式不對就不顯示）。
+    SELECT lower(btrim(au.email)) INTO v_login_email FROM auth.users au WHERE au.id = v_uid;
+    IF v_login_email IS NULL OR v_login_email !~ '^[a-z0-9._%+-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$' OR char_length(v_login_email) > 254 THEN
+      v_login_email := NULL;
+    END IF;
     INSERT INTO public.notifications (user_id, type, title, body, link)
     SELECT admin_row.id, 'contract', '講師選擇改以紙本簽約',
-           COALESCE(v_user_name, '一位講師') || ' 不同意以電子方式簽署（'
-             || COALESCE(private.esign_doc_list(p_doc_versions), '本次文件') || '），請安排紙本簽約。',
+           '一位講師' || COALESCE('（登入帳號 ' || v_login_email || '）', '') || '不同意以電子方式簽署（'
+             || COALESCE(private.esign_doc_list(p_doc_versions), '本次文件') || '），請到合約管理安排紙本簽約。',
            '/admin/contracts'
       FROM public.users admin_row
      WHERE admin_row.role = 'admin';

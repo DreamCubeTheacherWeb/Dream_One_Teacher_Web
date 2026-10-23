@@ -159,21 +159,23 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_name text;
+  v_login_email text;
 BEGIN
   IF NEW.decision IS DISTINCT FROM 'decline_electronic' OR NOT private.instructor_is_minor(NEW.user_id) THEN
     RETURN NEW;
   END IF;
 
-  SELECT COALESCE(NULLIF(btrim(i.full_name), ''), NULLIF(btrim(u.name), ''), u.email, '一位講師')
-    INTO v_name
-    FROM public.users u
-    LEFT JOIN public.instructors i ON i.user_id = u.id
-   WHERE u.id = NEW.user_id;
+  -- 通知內文不帶任何使用者自填的文字（2026-10-23 資安審查建議 3，與 record_contract_consent 的紙本通知相同）：
+  -- 不用講師姓名，只用辨識用的 Google 登入信箱（auth.users，本人在本系統改不了；格式不對就不顯示）。
+  SELECT lower(btrim(au.email)) INTO v_login_email FROM auth.users au WHERE au.id = NEW.user_id;
+  IF v_login_email IS NULL OR v_login_email !~ '^[a-z0-9._%+-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$' OR char_length(v_login_email) > 254 THEN
+    v_login_email := NULL;
+  END IF;
 
   INSERT INTO public.notifications (user_id, type, title, body, link)
   SELECT admin_row.id, 'contract', '未滿 18 歲的講師需由法定代理人一起簽紙本契約',
-         COALESCE(v_name, '一位講師') || ' 依出生日期判斷未滿 18 歲，不能線上簽約，請安排紙本簽約，並請法定代理人（通常是父母）一起簽名。',
+         '一位講師' || COALESCE('（登入帳號 ' || v_login_email || '）', '')
+           || '依出生日期判斷未滿 18 歲，不能線上簽約，請安排紙本簽約，並請法定代理人（通常是父母）一起簽名。',
          '/admin/contracts'
     FROM public.users admin_row
    WHERE admin_row.role = 'admin';
