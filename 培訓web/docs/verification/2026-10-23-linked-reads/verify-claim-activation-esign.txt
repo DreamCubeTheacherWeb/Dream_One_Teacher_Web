@@ -1,6 +1,6 @@
 
 ── setup ──
-temporary PostgreSQL pid=65071 port=65501
+temporary PostgreSQL pid=38735 port=55698
 PASS: [setup] 全部 SQL 套用成功（77 個檔，含新 migration）
 PASS: [setup] 9 個新 RPC 都是 SECURITY DEFINER＋search_path=''
 PASS: [setup] 9 個新 RPC：anon／service_role 無 EXECUTE、authenticated 有
@@ -311,17 +311,21 @@ PASS: [legal copy fidelity] esign-otp-email-v1：種入的全文逐句等於 doc
 PASS: [OTP abuse limits (建議 5)] 前提：10 封啟用碼都寄出，最舊一封仍在 24 小時內
 PASS: [OTP abuse limits (建議 5)] 第 11 封 → daily_limit_reached（不產生驗證碼、不寄信）
 PASS: [OTP abuse limits (建議 5)] 最舊一封超過 24 小時後恢復可寄
-PASS: [OTP abuse limits (建議 5)] 第 1、2 組錯 5 次 → locked（還沒暫停寄碼）
-PASS: [OTP abuse limits (建議 5)] 第 3 組錯 5 次 → locked＋sending_suspended:true
+PASS: [OTP abuse limits (建議 5)] 第 1、2 組錯 5 次 → locked（累計 10 次，還沒暫停寄碼）
+PASS: [OTP abuse limits (建議 5)] 第 3 組錯 5 次（累計 15 次）→ locked＋sending_suspended:true
 PASS: [OTP abuse limits (建議 5)] 暫停中要驗證碼 → locked_contact_admin（不產生驗證碼）
-PASS: [OTP abuse limits (建議 5)] 暫停紀錄：暫停 24 小時、記錄被鎖的組數 3
+PASS: [OTP abuse limits (建議 5)] 暫停紀錄：暫停 24 小時、記錄累計答錯 15 次
 PASS: [OTP abuse limits (建議 5)] 暫停中冷卻期內也不帶回任何 challenge
 PASS: [OTP abuse limits (建議 5)] 講師不能自己呼叫 admin_reset_email_otp_lock（42501）
 PASS: [OTP abuse limits (建議 5)] admin_reset_email_otp_lock：帳號不存在 → USER_NOT_FOUND
 PASS: [OTP abuse limits (建議 5)] 行政解除 → {status:reset, was_locked:true}，記錄解除者
-PASS: [OTP abuse limits (建議 5)] 解除後可再寄碼；解除前的 3 組不再計入（再鎖 1 組不會立刻又暫停）
+PASS: [OTP abuse limits (建議 5)] 解除後可再寄碼；解除前的答錯次數不再計入（再錯 5 次不會立刻又暫停）
 PASS: [OTP abuse limits (建議 5)] 解除後再寄一次照常 sent
 PASS: [OTP abuse limits (建議 5)] 沒被暫停時解除 → was_locked:false
+PASS: [OTP abuse limits (建議 5)] 每組錯 4 次就換碼（舊的被作廢、沒有一組被鎖滿 5 次），第 4 輪累計到第 15 次答錯 → locked＋sending_suspended
+PASS: [OTP abuse limits (建議 5)] 換碼 4 輪後要驗證碼 → locked_contact_admin
+PASS: [OTP abuse limits (建議 5)] 暫停中手上那組（即使是正確的碼）也不能驗證 → locked＋sending_suspended、帳號仍是 pending
+PASS: [OTP abuse limits (建議 5)] admin_reset_email_otp_lock 可以解除換碼繞過的暫停，解除後照常可寄
 PASS: [OTP abuse limits (建議 5)] 另一位講師鎖滿 3 組 → 暫停
 PASS: [OTP abuse limits (建議 5)] 暫停 24 小時到期 → 自動恢復可寄
 
@@ -336,11 +340,22 @@ PASS: [consent hardening (建議 3)] T-legacy-1 續：沒有啟用紀錄的 teac
 
 ── linked reads require activated account (必修 1, 20261023100000) ──
 PASS: [linked reads require activated account (必修 1, 20261023100000)] 新 migration 已被套用（chain 包含 20261023100000_linked_reads_require_active_account.sql）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 底版比對：get_teaching_leaderboard_v2 正式版來源 supabase/2026-07-09_gamify_compute.sql 的內文 md5 前 8 碼＝正式庫 7793d208
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 底版比對：20261023100000 的 get_teaching_leaderboard_v2 只多一段 pending 判斷，其餘與 supabase/2026-07-09_gamify_compute.sql 完全相同
+PASS: [linked reads require activated account (必修 1, 20261023100000)] get_teaching_leaderboard_v2：套完後資料庫裡的內文就是 20261023100000 的版本；SECURITY DEFINER、search_path=public、anon 不能執行、authenticated 可以
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 底版比對：get_teaching_leaderboard 正式版來源 supabase/2026-07-08_teaching_leaderboard.sql 的內文 md5 前 8 碼＝正式庫 8a6745a6
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 底版比對：20261023100000 的 get_teaching_leaderboard 只多一段 pending 判斷，其餘與 supabase/2026-07-08_teaching_leaderboard.sql 完全相同
+PASS: [linked reads require activated account (必修 1, 20261023100000)] get_teaching_leaderboard：套完後資料庫裡的內文就是 20261023100000 的版本；SECURITY DEFINER、search_path=public、anon 不能執行、authenticated 可以
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 底版比對：get_teacher_badge_stats 正式版來源 supabase/2026-07-09_gamify_compute.sql 的內文 md5 前 8 碼＝正式庫 94435c44
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 底版比對：20261023100000 的 get_teacher_badge_stats 只多一段 pending 判斷，其餘與 supabase/2026-07-09_gamify_compute.sql 完全相同
+PASS: [linked reads require activated account (必修 1, 20261023100000)] get_teacher_badge_stats：套完後資料庫裡的內文就是 20261023100000 的版本；SECURITY DEFINER、search_path=public、anon 不能執行、authenticated 可以
 PASS: [linked reads require activated account (必修 1, 20261023100000)] R1 前提：name_slot＝true、user_id 空、email／身分證／手機／銀行帳號全空，但有 3 筆上課紀錄
 PASS: [linked reads require activated account (必修 1, 20261023100000)] R1 有上課紀錄的姓名空位：輸入同名認領 → not_found（不透露名冊有這個姓名）
 PASS: [linked reads require activated account (必修 1, 20261023100000)] R1 認領被擋後：空位仍未綁定、認領者沒有主檔、沒有啟用紀錄、角色仍是 pending
 PASS: [linked reads require activated account (必修 1, 20261023100000)] R1 認領被擋的人讀不到該空位任何上課紀錄
 PASS: [linked reads require activated account (必修 1, 20261023100000)] R2 只剩隔離區上課紀錄的姓名空位 → not_found
+PASS: [linked reads require activated account (必修 1, 20261023100000)] R3 已確認 Email／主 Email／第二 Email／市話／LINE 任一有值的姓名空位 → not_found、空位仍未綁定
+PASS: [linked reads require activated account (必修 1, 20261023100000)] R3 這類空位改由後台手動綁定：admin_link_instructor 成功、只綁不開通（pending＋admin_link 啟用紀錄）
 PASS: [linked reads require activated account (必修 1, 20261023100000)] 對照組：沒有上課／報酬紀錄的姓名空位照舊可認領（claimed、只綁不開通）
 PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 前提：徽章頒發寫入 1 筆
 PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending＋已綁定：讀不到該空位的上課紀錄（class_sessions 0 筆、報酬金額 0）
@@ -364,6 +379,8 @@ PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 啟
 PASS: [linked reads require activated account (必修 1, 20261023100000)] P3 前提：Email 對應自動綁定、role pending、主檔有 2 筆上課紀錄
 PASS: [linked reads require activated account (必修 1, 20261023100000)] P3 pending（email_match）讀不到主檔的上課紀錄、報酬彙總為 0、成就統計空、匯入的影像讀不到
 PASS: [linked reads require activated account (必修 1, 20261023100000)] P3 pending 仍讀得到自己的主檔（啟用前確認資料）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] teacher 呼叫排行榜 v2 的線上、速解、幼兒三類都有資料（各含這位老師）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] pending 呼叫排行榜 v2 的線上、速解、幼兒三類都是空的
 PASS: [linked reads require activated account (必修 1, 20261023100000)] admin 讀得到全部上課紀錄（含空位與未啟用者的）
 PASS: [linked reads require activated account (必修 1, 20261023100000)] admin 讀得到任一主檔的成就統計、排行榜、徽章頒發
 PASS: [linked reads require activated account (必修 1, 20261023100000)] mentor 讀得到自己綁定主檔的上課紀錄（照舊）
@@ -385,7 +402,7 @@ tamper resistance: 49/49
 RLS reads: 7/7
 minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）: 44/44
 legal copy fidelity: 7/7
-OTP abuse limits (建議 5): 16/16
+OTP abuse limits (建議 5): 20/20
 consent hardening (建議 3): 7/7
-linked reads require activated account (必修 1, 20261023100000): 38/38
-TOTAL: 348/348 PASS
+linked reads require activated account (必修 1, 20261023100000): 51/51
+TOTAL: 365/365 PASS

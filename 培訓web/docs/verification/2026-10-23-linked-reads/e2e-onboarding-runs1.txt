@@ -4,11 +4,11 @@
 
 
 ════════ RUN 1/1（全新資料庫） ════════
-[stack] PostgreSQL 65147（PID 57055）已套 78 個 SQL 檔（1237 ms）
-[stack] PostgREST 65148（PID 58366）ready
-[stack] 閘道 http://127.0.0.1:65152
-[stack] vite build 完成（2649 ms）
-[stack] Vite（preview）http://127.0.0.1:65153（PID 58371）
+[stack] PostgreSQL 56353（PID 87568）已套 78 個 SQL 檔（1213 ms）
+[stack] PostgREST 56354（PID 88868）ready
+[stack] 閘道 http://127.0.0.1:56358
+[stack] vite build 完成（2620 ms）
+[stack] Vite（preview）http://127.0.0.1:56359（PID 88875）
 PASS  [run 1] 套用 repo 全部 SQL（77 個檔） — 文字修補 3 處：supabase/2025_salary_system.sql, supabase/2026-07-09_salary_reminder_cron.sql, supabase/2026-07-09_notification_center.sql
 
 ── 底座自檢 ──
@@ -32,10 +32,10 @@ PASS  [run 1] A-02-pending-review（390px）無水平溢出 — docWidth=390
 PASS  [run 1] A-03-admin-approve（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] A 管理員在 /admin/teachers 按「核准新講師」
 PASS  [run 1] A 核准後角色變 teacher
-PASS  [run 1] A instructor_account_activations 欄位齊全（new_instructor_approved、active、時間與驗證碼識別都有） — {"id":"b5f897e1-3048-45f6-8440-59d8699ad6b1","instructor_id":"1e42dc86-332c-46e7-900b-5d5d8195f88e","user_id":"4dc96dfe-c6d8-400a-b4a3-b40f675d90fb","claim_method":"new_instructor_approved","claimed_at":"2026-10-23T16:40:13.165245+08:00","activation_email":"a-
+PASS  [run 1] A instructor_account_activations 欄位齊全（new_instructor_approved、active、時間與驗證碼識別都有） — {"id":"b0e5b095-ec0b-4ddb-aabd-fdf5d11c6205","instructor_id":"b5203407-c8d7-4d39-895b-df3a80ccaa27","user_id":"a27309f4-8b76-40b6-a19b-0b8440d74b1a","claim_method":"new_instructor_approved","claimed_at":"2026-10-23T17:18:08.298691+08:00","activation_email":"a-
 PASS  [run 1] A 核准時把 Google 信箱登錄為已確認 Email（google_login_new_instructor）並登錄身分已核驗
 PASS  [run 1] A 按「重新檢查狀態」後到 /courses 並看到課程
-PASS  [run 1] A 已核准老師整頁重新整理 /pending → 直接到 /courses（cf62bf9 修正，嚴格斷言） — http://127.0.0.1:65153/courses
+PASS  [run 1] A 已核准老師整頁重新整理 /pending → 直接到 /courses（cf62bf9 修正，嚴格斷言） — http://127.0.0.1:56359/courses
 PASS  [run 1] A 閱讀完文件後進到「選擇簽約方式」同意頁（含個資告知）
 PASS  [run 1] A-consent（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] A 簽署頁沒有「講師等級尚未設定」
@@ -46,14 +46,14 @@ PASS  [run 1] A 簽約驗證碼通過「本人身分已驗證」
 PASS  [run 1] A 確認簽署前顯示最後確認文字
 PASS  [run 1] A 畫面顯示「簽約完成！」、伺服器簽署時間與副本通知信箱 — 簽署完成通知已寄到 a-***@e2e.test。信中的連結需登入你的帳號才能開啟並下載已簽署文件。
 PASS  [run 1] A-signed（390px）無水平溢出 — docWidth=390 
-PASS  [run 1] A instructor_contracts：status='signed'，bound_email／consent_id／otp／雜湊／evidence_id／instructor_id 齊全 — {"bound_email":"a-new-mvkpyw8u-2@e2e.test","evidence_id":"e8a51d7a-3f63-41f0-bf8b-41802b73db90","verify_method":"email_otp"}
+PASS  [run 1] A instructor_contracts：status='signed'，bound_email／consent_id／otp／雜湊／evidence_id／instructor_id 齊全 — {"bound_email":"a-new-mvkrbozx-2@e2e.test","evidence_id":"9ece74b4-f203-4f52-b8c8-1338739aeecf","verify_method":"email_otp"}
 PASS  [run 1] A contract_signing_evidence：本筆雜湊、前一筆雜湊、IP、UA、OTP 驗證時間、同意時間都在 — {"ip":"127.0.0.1","ua":"Mozilla/5.0 (Macintosh; Intel ","prev":"null"}
 PASS  [run 1] A contract_consent_records：agree_electronic，同意全文與個資告知全文（privacy_notice_text）都有存 — consent=600字 privacy=623字
-PASS  [run 1] A 簽署 PDF 的 SHA-256＝證據記錄，且第 1 頁嵌入簽名與欄位影像 — 20329 bytes
+PASS  [run 1] A 簽署 PDF 的 SHA-256＝證據記錄，且第 1 頁嵌入簽名與欄位影像 — 20297 bytes
 PASS  [run 1] A email_delivery_log：OTP 信有紀錄但不含驗證碼；簽署完成通知已排入（queued，寄到 bound_email） — otp 紀錄 1 筆、洩漏=false、副本=queued
 PASS  [run 1] A 簽署完成通知信內含 /contract/view/<契約編號> 連結
 PASS  [run 1] A 契約查閱頁可開啟（登入後可查看自己的已簽契約）
-   （A 用時 15.8 秒）
+   （A 用時 14.9 秒）
 
 ── 情境 B ──
 PASS  [run 1] B 管理員用「新增講師」建立空位：name_slot、未綁定、預設等級「實習」（cf62bf9，嚴格斷言）
@@ -72,10 +72,10 @@ PASS  [run 1] B-03 管理員用畫面確認 Email 成功
 PASS  [run 1] B 資料庫登錄已確認 Email（admin_trusted_channel，含確認者與註記）
 PASS  [run 1] B 啟用卡顯示「確認資料無誤，驗證信箱啟用帳號」按鈕
 PASS  [run 1] B-activation-card（390px）無水平溢出 — docWidth=390 
-PASS  [run 1] B 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 b-***@e2e.test，請查收（含垃圾郵件匣）。｜寄到 b-slot-mvkpyw8u-3@e2e.test
+PASS  [run 1] B 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 b-***@e2e.test，請查收（含垃圾郵件匣）。｜寄到 b-slot-mvkrbozx-3@e2e.test
 PASS  [run 1] B-activation-otp（390px）無水平溢出 — docWidth=390 
-PASS  [run 1] B 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:65153/courses role=teacher
-PASS  [run 1] B instructor_account_activations 欄位齊全（name_slot、active、時間與驗證碼識別都有） — {"id":"eb4020f8-f542-41fb-b5c0-c9196eb20288","instructor_id":"7ccf1f00-7bda-466c-8aed-732384e67a31","user_id":"459ac41c-fc75-480b-bb57-2b74c98533a7","claim_method":"name_slot","claimed_at":"2026-10-23T16:40:25.623324+08:00","activation_email":"b-slot-mvkpyw8u-
+PASS  [run 1] B 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:56359/courses role=teacher
+PASS  [run 1] B instructor_account_activations 欄位齊全（name_slot、active、時間與驗證碼識別都有） — {"id":"1fa88a22-0f71-4926-b55e-8bb88dc57c30","instructor_id":"30ea3334-c9d6-4ae8-9b21-803079ad29df","user_id":"d08d9f34-4bc7-4680-815f-59b0cdab42eb","claim_method":"name_slot","claimed_at":"2026-10-23T17:18:20.165777+08:00","activation_email":"b-slot-mvkrbozx-
 PASS  [run 1] B 啟用後能進 /courses 看到課程
 PASS  [run 1] B 閱讀完文件後進到「選擇簽約方式」同意頁（含個資告知）
 PASS  [run 1] B 簽署頁沒有「講師等級尚未設定」
@@ -83,22 +83,22 @@ PASS  [run 1] B 簽約驗證碼寄到已確認信箱 — 驗證碼已寄到 b-**
 PASS  [run 1] B 簽約驗證碼通過「本人身分已驗證」
 PASS  [run 1] B 確認簽署前顯示最後確認文字
 PASS  [run 1] B 畫面顯示「簽約完成！」、伺服器簽署時間與副本通知信箱 — 簽署完成通知已寄到 b-***@e2e.test。信中的連結需登入你的帳號才能開啟並下載已簽署文件。
-PASS  [run 1] B instructor_contracts：status='signed'，bound_email／consent_id／otp／雜湊／evidence_id／instructor_id 齊全 — {"bound_email":"b-slot-mvkpyw8u-3@e2e.test","evidence_id":"91573b6c-1823-4b05-873b-32ad5cad765b","verify_method":"email_otp"}
-PASS  [run 1] B contract_signing_evidence：本筆雜湊、前一筆雜湊、IP、UA、OTP 驗證時間、同意時間都在 — {"ip":"127.0.0.1","ua":"Mozilla/5.0 (Macintosh; Intel ","prev":"2fba4cbd"}
+PASS  [run 1] B instructor_contracts：status='signed'，bound_email／consent_id／otp／雜湊／evidence_id／instructor_id 齊全 — {"bound_email":"b-slot-mvkrbozx-3@e2e.test","evidence_id":"93bf1ab3-7bf3-43d4-a951-1487c2f42cac","verify_method":"email_otp"}
+PASS  [run 1] B contract_signing_evidence：本筆雜湊、前一筆雜湊、IP、UA、OTP 驗證時間、同意時間都在 — {"ip":"127.0.0.1","ua":"Mozilla/5.0 (Macintosh; Intel ","prev":"0393d99c"}
 PASS  [run 1] B contract_consent_records：agree_electronic，同意全文與個資告知全文（privacy_notice_text）都有存 — consent=600字 privacy=623字
-PASS  [run 1] B 簽署 PDF 的 SHA-256＝證據記錄，且第 1 頁嵌入簽名與欄位影像 — 19052 bytes
+PASS  [run 1] B 簽署 PDF 的 SHA-256＝證據記錄，且第 1 頁嵌入簽名與欄位影像 — 19830 bytes
 PASS  [run 1] B email_delivery_log：OTP 信有紀錄但不含驗證碼；簽署完成通知已排入（queued，寄到 bound_email） — otp 紀錄 2 筆、洩漏=false、副本=queued
 PASS  [run 1] B 簽署完成通知信內含 /contract/view/<契約編號> 連結
-   （B 用時 16.5 秒）
+   （B 用時 16.1 秒）
 
 ── 情境 C ──
 PASS  [run 1] C 第 1 個同名帳號綁定成功（待啟用、仍 pending）
 PASS  [run 1] C 第 2 個同名帳號綁定成功（待啟用、仍 pending）
-PASS  [run 1] C 兩個帳號綁到不同列，且依建立先後 — ["d108e307-8251-411e-8e73-34a8640cfba3","0f3e086f-e4a6-4d90-bc5e-952a6cedcd80"]
+PASS  [run 1] C 兩個帳號綁到不同列，且依建立先後 — ["4c0a30c7-542a-404d-80e1-fa6d4f27f657","44764bef-e3e1-47bc-86cf-2f4712b1df0c"]
 PASS  [run 1] C 第三個同名帳號回 not_found，畫面出現手機與身分證末四碼欄
 PASS  [run 1] C 第三個帳號仍是 pending、沒有綁定、沒有啟用紀錄
 PASS  [run 1] C-01-claim-identity-step（390px）無水平溢出 — docWidth=390 
-   （C 用時 2.5 秒）
+   （C 用時 3.6 秒）
 
 ── 情境 D ──
 PASS  [run 1] D 舊講師（非空位、有個資）用姓名認領回 not_found、進第二步
@@ -109,16 +109,16 @@ PASS  [run 1] D /profile 帶入舊資料（暱稱、手機、身分證）
 PASS  [run 1] D 主要 Email 保持舊信箱也能儲存個人資料（cf62bf9 修正 upsert 403，嚴格斷言） — 個人資料已儲存！
 PASS  [run 1] D 舊信箱仍是主要 Email，資料寫回同一列
 PASS  [run 1] D 啟用卡顯示「確認資料無誤，驗證信箱啟用帳號」按鈕
-PASS  [run 1] D 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 le***@old-mail.example，請查收（含垃圾郵件匣）。｜寄到 legacy-chen-mvkpyw8u@old-mail.example
-PASS  [run 1] D 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:65153/courses role=teacher
-PASS  [run 1] D 啟用驗證碼寄到公司既有資料的 Email（不是 Google 登入信箱） — legacy-chen-mvkpyw8u@old-mail.example
-PASS  [run 1] D instructor_account_activations 欄位齊全（identity_check、active、時間與驗證碼識別都有） — {"id":"1ed390c5-b5f0-4272-891f-a9546b4291f6","instructor_id":"91bfc327-7a87-429c-94aa-f9574de67bc1","user_id":"a06866b6-8757-40d1-9b0b-8d7426cc0ebf","claim_method":"identity_check","claimed_at":"2026-10-23T16:40:42.292511+08:00","activation_email":"legacy-chen
-   （D 用時 3.0 秒）
+PASS  [run 1] D 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 le***@old-mail.example，請查收（含垃圾郵件匣）。｜寄到 legacy-chen-mvkrbozx@old-mail.example
+PASS  [run 1] D 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:56359/courses role=teacher
+PASS  [run 1] D 啟用驗證碼寄到公司既有資料的 Email（不是 Google 登入信箱） — legacy-chen-mvkrbozx@old-mail.example
+PASS  [run 1] D instructor_account_activations 欄位齊全（identity_check、active、時間與驗證碼識別都有） — {"id":"c8783a69-3a6d-47d8-8cdf-ff6bfd070144","instructor_id":"139a7fca-3c88-4b97-a8e8-74513be1d892","user_id":"94f7bca8-060d-47d7-9c9c-6c9ae0fa4f02","claim_method":"identity_check","claimed_at":"2026-10-23T17:18:38.096973+08:00","activation_email":"legacy-chen
+   （D 用時 3.1 秒）
 
 ── 情境 E ──
 PASS  [run 1] E「填完整資料」預設勾選「這個 Email 已和老師確認是本人的」（bf18fc4，嚴格斷言）
 PASS  [run 1] E 新增成功訊息說明「自動綁定，再用寄到這個 Email 的驗證碼啟用」
-PASS  [run 1] E 管理員用「填完整資料」建立的講師，Email 同時登錄為已確認（admin_trusted_channel，bf18fc4，嚴格斷言） — {"confirmed_email":"e-auto-mvkpyw8u-8@e2e.test","method":"admin_trusted_channel"}
+PASS  [run 1] E 管理員用「填完整資料」建立的講師，Email 同時登錄為已確認（admin_trusted_channel，bf18fc4，嚴格斷言） — {"confirmed_email":"e-auto-mvkrbozx-8@e2e.test","method":"admin_trusted_channel"}
 PASS  [run 1] E Before-User-Created hook 允許後台已建立的 Email — {}
 PASS  [run 1] E 帳號建立當下自動綁定主檔，但只綁不開通（pending、email_match 待啟用）
 PASS  [run 1] E 不經 /pending 選擇卡，直接到 /profile、帶入後台姓名
@@ -127,12 +127,12 @@ PASS  [run 1] E 這時直接要驗證碼只差資料未完整（profile_incomple
 PASS  [run 1] E-01-auto-linked-needs-profile（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] E 補資料儲存成功
 PASS  [run 1] E 啟用卡顯示「確認資料無誤，驗證信箱啟用帳號」按鈕
-PASS  [run 1] E 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 e-***@e2e.test，請查收（含垃圾郵件匣）。｜寄到 e-auto-mvkpyw8u-8@e2e.test
-PASS  [run 1] E 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:65153/courses role=teacher
+PASS  [run 1] E 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 e-***@e2e.test，請查收（含垃圾郵件匣）。｜寄到 e-auto-mvkrbozx-8@e2e.test
+PASS  [run 1] E 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:56359/courses role=teacher
 PASS  [run 1] E 補完資料就能直接要驗證碼並啟用（中間沒有管理員再確認 Email）
-PASS  [run 1] E instructor_account_activations 欄位齊全（email_match、active、時間與驗證碼識別都有） — {"id":"735e7bc2-1001-4c28-aa69-e11cda2f8037","instructor_id":"ddaddf61-0c2d-4535-be05-a63c275cd2b1","user_id":"c99b3196-bfc0-40b2-ba2b-bb35be391e70","claim_method":"email_match","claimed_at":"2026-10-23T16:40:44.886766+08:00","activation_email":"e-auto-mvkpyw8
+PASS  [run 1] E instructor_account_activations 欄位齊全（email_match、active、時間與驗證碼識別都有） — {"id":"5f64a2c5-aad4-4979-8847-5843cc3b0b8c","instructor_id":"32744579-4aea-43ce-a6f5-46f166e4bdbe","user_id":"84b1e5cd-aabd-4be7-aa8d-bcb434467551","claim_method":"email_match","claimed_at":"2026-10-23T17:18:44.459346+08:00","activation_email":"e-auto-mvkrboz
 PASS  [run 1] E 同 Email（大小寫不同）第二次註冊被 hook 拒絕 — {"message":"此講師資料已由其他帳號認領，請聯繫管理員。","http_code":409}
-   （E 用時 4.9 秒）
+   （E 用時 8.6 秒）
 
 ── 情境 F ──
 PASS  [run 1] F 有 phone_mobile 的空位不能用姓名認領 — {"reason":"名冊裡沒有可直接認領的這個姓名。","status":"not_found"}
@@ -143,7 +143,7 @@ PASS  [run 1] F 有 id_front_path 的空位不能用姓名認領 — {"reason":"
 PASS  [run 1] F frozen 空位不能認領 — {"reason":"名冊裡沒有可直接認領的這個姓名。","status":"not_found"}
 PASS  [run 1] F cancelled 空位不能認領 — {"reason":"名冊裡沒有可直接認領的這個姓名。","status":"not_found"}
 PASS  [run 1] F 已啟用的 teacher 呼叫 claim_instructor_name_slot 被拒（42501），空位不被綁 — HTTP 403 {"code":"42501","details":null,"hint":null,"message":"pending account required"}
-PASS  [run 1] F 已綁定待啟用的帳號再呼叫回 already_linked（activation_required），不綁第二筆 — {"status":"claimed","claimed_now":true,"instructor_id":"6781d27a-915f-4782-bb72-ed0688127638","activation_required":true} → {"status":"already_linked","claimed_now":false,"activation_required":true}
+PASS  [run 1] F 已綁定待啟用的帳號再呼叫回 already_linked（activation_required），不綁第二筆 — {"status":"claimed","claimed_now":true,"instructor_id":"642a02bc-74df-4186-a068-9f07d1cd57fc","activation_required":true} → {"status":"already_linked","claimed_now":false,"activation_required":true}
 PASS  [run 1] F 未登入（anon key）呼叫被拒 — HTTP 401
 PASS  [run 1] F 講師 PATCH 自己的 name_slot（設 true／清 false）都被拒 — HTTP 403/403
 PASS  [run 1] F 待啟用的人不能自己把 Email 改成「已確認」（PATCH 與 admin RPC 都被拒） — HTTP 403/403
@@ -153,17 +153,20 @@ PASS  [run 1] F 講師不能直接寫同意紀錄、簽署證據、寄送紀錄 
 PASS  [run 1] F 講師讀不到別人的寄送紀錄與啟用紀錄；OTP 表（private）完全不對外 — OTP 表 HTTP 404
 PASS  [run 1] F 未啟用帳號不能簽約：記錄同意回 ACCOUNT_NOT_ACTIVE、要簽約碼回 not_allowed — {"code":"P0001","details":null,"hint":null,"message":"ACCOUNT_NOT_ACTIVE"} {"reason":"account_not_active","status":"not_allowed"}
 PASS  [run 1] F 講師只看得到自己那一列、pending 讀不到任何空位
-PASS  [run 1] F 同時認領同一空位：每輪剛好一人綁定待啟用、其他 not_found、沒有人變 teacher — not_found/claimed | claimed/not_found | claimed/not_found | claimed/not_found | not_found/not_found/claimed
+PASS  [run 1] F 同時認領同一空位：每輪剛好一人綁定待啟用、其他 not_found、沒有人變 teacher — not_found/claimed | not_found/claimed | claimed/not_found | claimed/not_found | not_found/claimed/not_found
 PASS  [run 1] F 本人可上傳到自己的證件資料夾
 PASS  [run 1] F 別人不能上傳到他人的證件資料夾
 PASS  [run 1] F 別人讀不到他人的證件檔（對照組：管理員讀得到） — 400/200
 PASS  [run 1] F 老師不能上傳合約範本、也不能把檔案放進別人的 signed/<uid>/
-   （F 用時 1.1 秒）
+   （F 用時 1.0 秒）
 
 ── 情境 G ──
-PASS  [run 1] G 管理員事先登錄真老師的已確認 Email
+PASS  [run 1] G0 管理員事先登錄真老師的已確認 Email
+PASS  [run 1] G0 已有已確認 Email 的空位不能用姓名認領：畫面改請他核對手機＋末四碼、空位仍未綁定、冒認者沒有主檔
+PASS  [run 1] G-00-confirmed-slot-not-claimable（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] G 冒認者用姓名綁到空位（待啟用）
-PASS  [run 1] G 驗證碼寄到公司確認的真老師信箱，冒認者畫面只看到遮罩 — 驗證碼已寄到 g-***@e2e.test，請查收（含垃圾郵件匣）。｜g-real-mvkpyw8u@e2e.test
+PASS  [run 1] G 管理員登錄真老師的已確認 Email
+PASS  [run 1] G 驗證碼寄到公司確認的真老師信箱，冒認者畫面只看到遮罩 — 驗證碼已寄到 g-***@e2e.test，請查收（含垃圾郵件匣）。｜g-real-mvkrbozx@e2e.test
 PASS  [run 1] G 冒認者猜錯驗證碼 → 不能啟用、仍 pending
 PASS  [run 1] G-01-impostor-cannot-activate（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] G 講師總覽在已認領空位旁顯示解除綁定說明
@@ -171,15 +174,16 @@ PASS  [run 1] G 畫面顯示「已解除綁定並清除資料」
 PASS  [run 1] G 解除綁定時先確認解綁，再問要不要清除認領者資料（認領錯人按確定） — 確定要解除 被冒認老師甲 的帳號認領嗎?
 若認領錯人：按解除 | 要同時清除認領者填寫的個人資料，讓「被冒認老師甲」恢復成只有
 PASS  [run 1] G-02-admin-unlink-and-clear（390px）無水平溢出 — docWidth=390 
-PASS  [run 1] G 解除綁定：空位釋出、冒認者的啟用紀錄改 revoked、冒認者仍 pending — {"id":"edf15e45-9cf8-4d16-afb0-2f7d1375b13a","instructor_id":"513721c1-8c8d-4794-bc39-71994412ae52","user_id":"be2576b7-b856-4edd-a093-203b0a3cce6a","claim_meth
+PASS  [run 1] G 解除綁定：空位釋出、冒認者的啟用紀錄改 revoked、冒認者仍 pending — {"id":"6c3b4ebb-8a33-4df3-80b5-02d4c51fcd88","instructor_id":"e25698fc-a6ea-4d3b-86d3-805d7996d58b","user_id":"e4492722-b654-4ccb-a44f-ae8a46d39973","claim_meth
 PASS  [run 1] G 冒認者填的個資全部清空，空位回到只有姓名（已確認 Email 與等級保留）
-PASS  [run 1] G 真老師用姓名認領成功
+PASS  [run 1] G 解綁後空位仍有已確認 Email：真老師用姓名也認領不到（改由後台綁定）
+PASS  [run 1] G 管理員後台綁定真老師：綁定成功、只綁不開通（pending＋admin_link） — 204 null
 PASS  [run 1] G 真老師補完資料
 PASS  [run 1] G 啟用卡顯示「確認資料無誤，驗證信箱啟用帳號」按鈕
-PASS  [run 1] G 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 g-***@e2e.test，請查收（含垃圾郵件匣）。｜寄到 g-real-mvkpyw8u@e2e.test
-PASS  [run 1] G 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:65153/courses role=teacher
+PASS  [run 1] G 啟用驗證碼已寄到公司已確認的信箱（畫面只顯示遮罩信箱） — 驗證碼已寄到 g-***@e2e.test，請查收（含垃圾郵件匣）。｜寄到 g-real-mvkrbozx@e2e.test
+PASS  [run 1] G 輸入正確驗證碼後帳號啟用、自動導到 /courses — url=http://127.0.0.1:56359/courses role=teacher
 PASS  [run 1] G 真老師收到寄到自己信箱的碼並啟用
-   （G 用時 7.0 秒）
+   （G 用時 8.9 秒）
 
 ── 情境 H ──
 PASS  [run 1] H 前提：role = teacher、沒有講師主檔、沒有任何啟用紀錄
@@ -193,14 +197,14 @@ PASS  [run 1] H 簽約驗證碼寄到已確認信箱 — 驗證碼已寄到 h-**
 PASS  [run 1] H 簽約驗證碼通過「本人身分已驗證」
 PASS  [run 1] H 確認簽署前顯示最後確認文字
 PASS  [run 1] H 畫面顯示「簽約完成！」、伺服器簽署時間與副本通知信箱 — 簽署完成通知已寄到 h-***@e2e.test。信中的連結需登入你的帳號才能開啟並下載已簽署文件。
-PASS  [run 1] H instructor_contracts：status='signed'，bound_email／consent_id／otp／雜湊／evidence_id／instructor_id 齊全 — {"bound_email":"h-legacy-mvkpyw8u-33@e2e.test","evidence_id":"691565e4-cf97-4cfd-b251-1c0d8cca4bcc","verify_method":"email_otp"}
-PASS  [run 1] H contract_signing_evidence：本筆雜湊、前一筆雜湊、IP、UA、OTP 驗證時間、同意時間都在 — {"ip":"127.0.0.1","ua":"Mozilla/5.0 (Macintosh; Intel ","prev":"3f6b6bb7"}
+PASS  [run 1] H instructor_contracts：status='signed'，bound_email／consent_id／otp／雜湊／evidence_id／instructor_id 齊全 — {"bound_email":"h-legacy-mvkrbozx-34@e2e.test","evidence_id":"1853deb2-c867-4323-9321-0872ec18445d","verify_method":"email_otp"}
+PASS  [run 1] H contract_signing_evidence：本筆雜湊、前一筆雜湊、IP、UA、OTP 驗證時間、同意時間都在 — {"ip":"127.0.0.1","ua":"Mozilla/5.0 (Macintosh; Intel ","prev":"4422078c"}
 PASS  [run 1] H contract_consent_records：agree_electronic，同意全文與個資告知全文（privacy_notice_text）都有存 — consent=600字 privacy=623字
-PASS  [run 1] H 簽署 PDF 的 SHA-256＝證據記錄，且第 1 頁嵌入簽名與欄位影像 — 20365 bytes
+PASS  [run 1] H 簽署 PDF 的 SHA-256＝證據記錄，且第 1 頁嵌入簽名與欄位影像 — 20808 bytes
 PASS  [run 1] H email_delivery_log：OTP 信有紀錄但不含驗證碼；簽署完成通知已排入（queued，寄到 bound_email） — otp 紀錄 1 筆、洩漏=false、副本=queued
 PASS  [run 1] H 簽署完成通知信內含 /contract/view/<契約編號> 連結
 PASS  [run 1] H 簽約全程沒有出現 account_not_active／「還沒有啟用」
-   （H 用時 5.2 秒）
+   （H 用時 5.1 秒）
 
 ── 情境 ADM1 ──
 PASS  [run 1] ADM 新增講師 modal 預設是「只填姓名」分頁
@@ -216,10 +220,10 @@ PASS  [run 1] ADM 勾選確認後才能送出
 PASS  [run 1] ADM 同名空位確認後建立成功（共 2 個「新增甲老師」）
 PASS  [run 1] ADM 刪除空位成功、畫面顯示通知
 PASS  [run 1] ADM 已被認領的空位不提供「刪除空位」
-   （ADM1 用時 4.1 秒）
+   （ADM1 用時 3.8 秒）
 
 ── 情境 ADM2 ──
-PASS  [run 1] ADM 進度：後台剛建空位 → 標籤「未認領」，篩選「未認領」看得到他，人數正確 — 標籤=未認領 篩選=未認領 9
+PASS  [run 1] ADM 進度：後台剛建空位 → 標籤「未認領」，篩選「未認領」看得到他，人數正確 — 標籤=未認領 篩選=未認領 10
 PASS  [run 1] ADM 進度：老師用姓名認領（claimed） → 標籤「待確認 Email」，篩選「待確認 Email」看得到他，人數 +1（上一階段 −1） — 標籤=待確認 Email缺 21 項 篩選=待確認 Email 9（之前 待確認 Email 8）
 PASS  [run 1] ADM-03-progress-awaiting-email-confirm（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] ADM 帳號審核頁：待啟用帳號顯示「待確認 Email」、沒有「核准新講師」、改給「到講師主檔確認 Email」
@@ -231,20 +235,20 @@ PASS  [run 1] ADM 進度：已啟用老師把必填的 Line ID 清空 → 標籤
 PASS  [run 1] ADM 進度：補回 Line ID → 標籤「待簽約」，篩選「待簽約」看得到他，人數 +1（上一階段 −1） — 標籤=待簽約 篩選=待簽約 5（之前 待簽約 4）
 PASS  [run 1] ADM 進度：老師完成簽約 → 標籤「已完成」，篩選「已完成」看得到他，人數 +1（上一階段 −1） — 標籤=已完成 篩選=已完成 4（之前 已完成 3）
 PASS  [run 1] ADM-04-progress-complete（390px）無水平溢出 — docWidth=390 
-   （ADM2 用時 11.7 秒）
+   （ADM2 用時 11.3 秒）
 
 ── 情境 ADM3 ──
 PASS  [run 1] ADM 後台首頁「待審核作業」＝ 3 份作業扣掉 1 份已有回饋 ＝ 2 — 畫面 2／資料庫 2
-PASS  [run 1] ADM「老師資料追蹤」數字＝講師總覽「還沒完成」人數，並列出各階段（含待確認 Email、待信箱驗證） — 首頁 21／總覽 還沒完成 21
+PASS  [run 1] ADM「老師資料追蹤」數字＝講師總覽「還沒完成」人數，並列出各階段（含待確認 Email、待信箱驗證） — 首頁 22／總覽 還沒完成 22
 PASS  [run 1] ADM-05-dashboard（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] ADM 點「老師資料追蹤」直接到「還沒完成」名單
-   （ADM3 用時 3.1 秒）
+   （ADM3 用時 4.1 秒）
 
 ── 情境 ADM4 ──
 PASS  [run 1] ADM 帳號審核頁：新建帳號與未認領空位同名 → 顯示同名空位警示
 PASS  [run 1] ADM 新建帳號（沒有啟用紀錄）仍走「核准新講師」，資料未完整時按鈕停用
 PASS  [run 1] ADM-06-teacher-manager（390px）無水平溢出 — docWidth=390 
-   （ADM4 用時 2.3 秒）
+   （ADM4 用時 2.8 秒）
 
 ── 情境 ADM5 ──
 PASS  [run 1] ADM 名單上的 mentor Email 登入後角色是 mentor
@@ -252,14 +256,14 @@ PASS  [run 1] ADM 輔導員看不到資料進度篩選／進度欄（輔導員�
 PASS  [run 1] ADM 輔導員用 REST 直接讀講師主檔拿不到任何列 — []
 PASS  [run 1] ADM 輔導員走名冊函式拿得到講師，且只有非敏感欄位 — employment_status,full_name,id,instructor_role,nickname,speed_qualification,teaching_regions,user_id
 PASS  [run 1] ADM-07-mentor-progress（390px）無水平溢出 — docWidth=390 
-PASS  [run 1] ADM 輔導員開 /admin/contracts 被導走（合約管理只限管理員） — http://127.0.0.1:65153/
+PASS  [run 1] ADM 輔導員開 /admin/contracts 被導走（合約管理只限管理員） — http://127.0.0.1:56359/
 PASS  [run 1] ADM 輔導員用 REST 也讀不到簽約紀錄、簽署證據、同意紀錄
-PASS  [run 1] ADM 輔導員直接下載別人的已簽契約檔被擋 — path=signed/4dc96dfe-c6d8-400a-b4a3-b40f675d90fb/contract_1792744819563.pdf HTTP 400
-PASS  [run 1] ADM 輔導員仍讀得到契約範本（表單預覽與下載要用） — path=templates/rules_v1_mvkpyw8u.pdf HTTP 200
-   （ADM5 用時 4.5 秒）
+PASS  [run 1] ADM 輔導員直接下載別人的已簽契約檔被擋 — path=signed/a27309f4-8b76-40b6-a19b-0b8440d74b1a/contract_1792747094586.pdf HTTP 400
+PASS  [run 1] ADM 輔導員仍讀得到契約範本（表單預覽與下載要用） — path=templates/rules_v1_mvkrbozx.pdf HTTP 200
+   （ADM5 用時 4.6 秒）
 
 ── 情境 ADM6 ──
-PASS  [run 1] ADM 證據面板顯示簽署紀錄、同意與 Email 驗證、檔案指紋與證據鏈、通知信寄送紀錄 — 簽署紀錄 契約狀態 有效 簽署時間（伺服器） 2026-10-23 16:40:19（台北時間） 綁定 Email a-new-mvkpyw8u-2@e2e.test IP 位址 127.0.0.1 裝置／瀏覽器 Mozilla/5.0 (
+PASS  [run 1] ADM 證據面板顯示簽署紀錄、同意與 Email 驗證、檔案指紋與證據鏈、通知信寄送紀錄 — 簽署紀錄 契約狀態 有效 簽署時間（伺服器） 2026-10-23 17:18:14（台北時間） 綁定 Email a-new-mvkrbozx-2@e2e.test IP 位址 127.0.0.1 裝置／瀏覽器 Mozilla/5.0 (
 PASS  [run 1] ADM「驗證檔案完整性」：重新下載算 SHA-256 → 一致 — 檔案完整性：一致（4 項檢查全部通過）
 
 一致・講師合約書・已簽署成品
@@ -270,7 +274,7 @@ PASS  [run 1] ADM「驗證證據鏈」：完整、沒有被改動 — 證據鏈�
 
 證據鏈驗證的是全部簽署證據，不只這一份。
 PASS  [run 1] ADM-08-evidence-panel（390px）無水平溢出 — docWidth=390 
-   （ADM6 用時 2.7 秒）
+   （ADM6 用時 2.8 秒）
 
 ── 情境 SEC1 ──
 PASS  [run 1] SEC OTP 過期：輸入正確碼也顯示「驗證碼已過期」，帳號不啟用 — 驗證碼已過期（有效時間 5 分鐘）。請重新寄送新的驗證碼。
@@ -280,27 +284,27 @@ PASS  [run 1] SEC 重新寄送後是新的一組碼，舊的作廢
 PASS  [run 1] SEC 新碼驗證成功 → 啟用
 PASS  [run 1] SEC OTP 重複使用：同一組啟用碼再驗一次回 used — {"status":"used"}
 PASS  [run 1] SEC 被新碼取代的舊碼再驗回 superseded — {"status":"superseded"}
-   （SEC1 用時 2.5 秒）
+   （SEC1 用時 2.6 秒）
 
 ── 情境 SEC2 ──
 PASS  [run 1] SEC 錯 1～4 次各顯示「還可以再試 4／3／2／1 次」 — 4,3,2,1
 PASS  [run 1] SEC 第 5 次錯 → 「錯誤次數過多，這組已鎖定」，輸入框停用 — 驗證碼輸入錯誤次數過多（最多 5 次），這組已鎖定。請重新寄送新的驗證碼。
 PASS  [run 1] SEC-02-otp-locked（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] SEC 鎖定後就算輸入正確碼也回 locked，帳號不啟用 — {"status":"locked"}
-   （SEC2 用時 2.8 秒）
+   （SEC2 用時 2.6 秒）
 
 ── 情境 SEC3 ──
 PASS  [run 1] SEC 剛寄出時「重新寄送」按鈕在倒數、不能按
-PASS  [run 1] SEC 60 秒內再要碼：REST 回 cooldown＋同一個 challenge_id，沒有多寄一封 — {"status":"cooldown","expires_at":"2026-10-23T16:46:36.651655+08:00","challenge_id":"e6294bef-ff81-4d1f-8733-2d23cddab7da","masked_email":"se***@e2e.test","retry_after_seconds":60}
+PASS  [run 1] SEC 60 秒內再要碼：REST 回 cooldown＋同一個 challenge_id，沒有多寄一封 — {"status":"cooldown","expires_at":"2026-10-23T17:24:40.03233+08:00","challenge_id":"96473d61-317a-4440-81c0-baa0ea15c220","masked_email":"se***@e2e.test","retry_after_seconds":60}
 PASS  [run 1] SEC 關掉再打開視窗：顯示「剛剛已經寄出驗證碼…秒後才能重新寄送」，輸入框可接續輸入 — 剛剛已經寄出驗證碼，請先查看信箱（含垃圾郵件匣）。60 秒後才能重新寄送。
 PASS  [run 1] SEC-03-otp-cooldown（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] SEC 冷卻中輸入第一封信的碼 → 啟用成功
-   （SEC3 用時 2.4 秒）
+   （SEC3 用時 4.3 秒）
 
 ── 情境 SEC4 ──
 PASS  [run 1] SEC 拿別人的 challenge_id＋正確碼驗證 → 回 invalid（當作不存在），攻擊者不啟用 — {"status":"invalid","attempts_remaining":0}
 PASS  [run 1] SEC 冒用不會累計本人那組的錯誤次數、也不會用掉它
-PASS  [run 1] SEC 本人隨後仍可用自己的碼啟用 — {"status":"verified","activated":true,"verified_at":"2026-10-23T16:41:38.098329+08:00"}
+PASS  [run 1] SEC 本人隨後仍可用自己的碼啟用 — {"status":"verified","activated":true,"verified_at":"2026-10-23T17:19:42.153006+08:00"}
    （SEC4 用時 0.1 秒）
 
 ── 情境 SEC5 ──
@@ -308,10 +312,10 @@ PASS  [run 1] SEC-04-decline-dialog（390px）無水平溢出 — docWidth=390
 PASS  [run 1] SEC 不同意 → 顯示「已記錄：改以紙本簽約」畫面
 PASS  [run 1] SEC-05-paper-flow（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] SEC 資料庫記錄 decline_electronic（含不同意文案與個資告知全文、IP、UA）
-PASS  [run 1] SEC 管理員收到「講師選擇改以紙本簽約」通知（以登入信箱辨識、不含講師自填的姓名） — 一位講師（登入帳號 sec-decline-mvkq0wfu-8@e2e.test）不同意以電子方式簽署（講師守則（第 1 版）、講師合約書（第 1 版）），請
+PASS  [run 1] SEC 管理員收到「講師選擇改以紙本簽約」通知（以登入信箱辨識、不含講師自填的姓名） — 一位講師（登入帳號 sec-decline-mvkrdutt-8@e2e.test）不同意以電子方式簽署（講師守則（第 1 版）、講師合約書（第 1 版）），請
 PASS  [run 1] SEC 沒有任何簽約紀錄
 PASS  [run 1] SEC 個人資料頁顯示「紙本簽約處理中」
-   （SEC5 用時 4.5 秒）
+   （SEC5 用時 4.8 秒）
 
 ── 情境 SEC6 ──
 PASS  [run 1] SEC 中斷前 簽約驗證碼寄到已確認信箱 — 驗證碼已寄到 se***@e2e.test，請查收（含垃圾郵件匣）。
@@ -321,7 +325,7 @@ PASS  [run 1] SEC 重新打開 /contract 從閱讀文件開始
 PASS  [run 1] SEC 60 秒內回來再要簽約碼：顯示冷卻提示（已驗證過的碼不會再給輸入） — 剛剛已經寄出驗證碼，請先查看信箱（含垃圾郵件匣）。59 秒後才能重新寄送。
 KNOWN-ISSUE  [run 1] SEC 簽署中斷後 60 秒內要等冷卻
 PASS  [run 1] SEC 回來後重新完成簽署：剛好 1 份契約＋1 筆證據，用的是第二組碼，第一組被作廢不是被消耗 — contracts=1 consents=2
-   （SEC6 用時 4.4 秒）
+   （SEC6 用時 4.2 秒）
 
 ── 情境 SEC7 ──
 PASS  [run 1] SEC 改版前 簽約驗證碼寄到已確認信箱 — 驗證碼已寄到 se***@e2e.test，請查收（含垃圾郵件匣）。
@@ -331,7 +335,7 @@ PASS  [run 1] SEC 送出時顯示「契約剛更新版本，請重新閱讀後�
 PASS  [run 1] SEC 改版被擋的那次沒有寫入任何契約或證據
 PASS  [run 1] SEC-06-version-changed（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] SEC 重新閱讀後簽成功，契約記錄新版版本與新版範本雜湊 — {"rules":1,"contract":2}
-   （SEC7 用時 6.4 秒）
+   （SEC7 用時 5.9 秒）
 
 ── 情境 SEC8 ──
 PASS  [run 1] SEC 連點 簽約驗證碼寄到已確認信箱 — 驗證碼已寄到 se***@e2e.test，請查收（含垃圾郵件匣）。
@@ -343,11 +347,11 @@ PASS  [run 1] SEC 重新簽約：舊約改 voided 並指向新約，新約 signe
 PASS  [run 1] SEC 契約查閱頁列出所有簽署版本（含已作廢）
 PASS  [run 1] SEC 開舊版契約顯示「已作廢」橫幅
 PASS  [run 1] SEC-07-contract-history（390px）無水平溢出 — docWidth=390 
-   （SEC8 用時 5.7 秒）
+   （SEC8 用時 6.0 秒）
 
 ── 情境 SEC9 ──
 PASS  [run 1] SEC 拿掉 Vault resend_api_key → 視窗顯示「系統目前尚未設定寄信功能」，沒有輸入框 — 系統目前尚未設定寄信功能，沒辦法寄出驗證碼。這不是你的操作問題，請聯絡行政人員處理。
-PASS  [run 1] SEC 寄送紀錄記成 not_configured、沒有產生驗證碼 — {"id":"91752b02-a54c-4623-bd2d-433d3390d770","kind":"otp_activation","to_email":"sec-nomail-mvkq1cme-12@e2e.test","subje
+PASS  [run 1] SEC 寄送紀錄記成 not_configured、沒有產生驗證碼 — {"id":"e1860b29-afb1-4b59-8873-fcf5346a659a","kind":"otp_activation","to_email":"sec-nomail-mvkreb0k-12@e2e.test","subje
 PASS  [run 1] SEC-08-email-not-configured（390px）無水平溢出 — docWidth=390 
 PASS  [run 1] SEC 關掉視窗後頁面正常（啟用卡還在、沒有前端錯誤）
 PASS  [run 1] SEC 補回寄信設定後馬上可以寄碼並啟用（不受冷卻影響）
@@ -355,7 +359,7 @@ PASS  [run 1] SEC 補回寄信設定後馬上可以寄碼並啟用（不受冷�
 
 ── 情境 MINOR1 ──
 PASS  [run 1] MINOR REST：成年時完成同意＋簽約 OTP，送出前出生日期變未成年 → 400 MINOR_REQUIRES_GUARDIAN — 400 {"code":"P0001","details":"未滿 18 歲不能線上簽約，請改以紙本簽約，由本人和法定代理人一起簽名。","hint":null,"message":"MINOR_REQUIRES_GUARDIAN"}
-PASS  [run 1] MINOR REST：被擋之後簽約 OTP 沒有被消耗（verified_at 在、consumed_at 空） — {"id":"82511db1-33fa-4d41-a175-ad151837b4d2","user_id":"3fcbb8b7-6d94-4ed5-9788-359046ae2feb","purpose":"contract_sign","target_email":"minor-rest-mvkq1em8-13@e2e.test","code_hash":"729dffe48d325bfafd9381e4db1e28b6d98c5158b1c5f67c327e084681af9fa1","salt":"63f0bf15b4f64da18ab935844e519fcad706c9cbd5a7422987d3374ef7ca52ac","created_at":"2026-10-23T16:42:01.709388+08:00","expires_at":"2026-10-23T16:47:01.709388+08:00","attempts":0,"max_attempts":5,"verified_at":"2026-10-23T16:42:01.719513+08:00","consumed_at":null,"superseded_at":null,"delivery_id":"eb60d67c-13ea-45d0-a0a0-a1cdc1f5fb6f"}
+PASS  [run 1] MINOR REST：被擋之後簽約 OTP 沒有被消耗（verified_at 在、consumed_at 空） — {"id":"c6a66419-a323-428e-a7b9-d3fd487eb34d","user_id":"26405312-fd11-4aec-b09b-d4ae7eb61964","purpose":"contract_sign","target_email":"minor-rest-mvkred1m-13@e2e.test","code_hash":"f2758330e98550809c3d1aa74c2f3bcde3c414a92698a862b3e7c19bad5aa6fc","salt":"9b921cb86ab64502b36a6e54539005aae77d0cffd22647e4872600cfac1fa354","created_at":"2026-10-23T17:20:05.813838+08:00","expires_at":"2026-10-23T17:25:05.813838+08:00","attempts":0,"max_attempts":5,"verified_at":"2026-10-23T17:20:05.822245+08:00","consumed_at":null,"superseded_at":null,"delivery_id":"a825f1dc-c472-42a0-a2bc-5e9e4222d8aa"}
 PASS  [run 1] MINOR REST：沒有半套紀錄（沒有契約、沒有證據）
 PASS  [run 1] MINOR REST：未成年再記錄 agree 同意也被擋（400 MINOR_REQUIRES_GUARDIAN） — {"code":"P0001","details":"未滿 18 歲不能同意線上簽約，請改以紙本簽約，由本人和法定代理人一起簽名。","hint":null,"message":"MINOR_REQUIRES_GUARDIAN"}
 PASS  [run 1] MINOR 畫面：未成年進簽約頁 → 同意頁換成未成年說明，沒有同意按鈕、勾選框與「不同意」按鈕
@@ -390,7 +394,7 @@ PASS  [run 1] MINOR 畫面：處理中畫面提醒和法定代理人一起簽，
 
 返回個人資料
 PASS  [run 1] MINOR-02-paper-flow（390px）無水平溢出 — docWidth=390 
-PASS  [run 1] MINOR 資料庫：記錄 decline_electronic、版本 esign-minor-paper-v1、存未成年說明全文＋個資告知＋IP — {"id":"4c156820-4091-4df1-9cbd-fb2ba0164c24","user_id":"927f6af9-2203-4258-96d0-db1f31a3e228","instructor_id":"cfa5a071-3c18-46c9-b0d1-813245bcf333","decision":"decline_electronic","consent_text_versi
+PASS  [run 1] MINOR 資料庫：記錄 decline_electronic、版本 esign-minor-paper-v1、存未成年說明全文＋個資告知＋IP — {"id":"19e0cf25-4b36-42b5-9f87-36d3cb43a542","user_id":"f6a58a0a-6519-4dd7-9401-e61f089bd003","instructor_id":"c320f2a7-e8d2-463b-97fd-546b8cf2e54c","decision":"decline_electronic","consent_text_versi
 PASS  [run 1] MINOR 資料庫：管理員收到「講師選擇改以紙本簽約」與「未滿 18 歲的講師需由法定代理人一起簽紙本契約」兩則通知 — ["未滿 18 歲的講師需由法定代理人一起簽紙本契約","講師選擇改以紙本簽約"]
 PASS  [run 1] MINOR 資料庫：沒有任何簽約紀錄或證據
 PASS  [run 1] MINOR 個人資料頁顯示「紙本簽約處理中」
@@ -405,31 +409,29 @@ PASS  [run 1] SEC 竄改前證據鏈完整
 PASS  [run 1] SEC 換掉已簽 PDF 後「驗證檔案完整性」顯示不一致（指出已簽署成品） — 檔案完整性：不一致（1/4 項有問題）
 
 不一致・講師合約書・已簽署成品
-證據記錄 f203ed6552…50d2c63b／現在重算 5846f15b80…e1e6db3a
+證據記錄 a6740677f1…6e58b7bd／現在重算 409aa6794f…6da723cc
 一致・講師守則・範本（第 1 版）
 一致・講師合約書・範本（第 1
-PASS  [run 1] SEC 改一筆證據後「驗證證據鏈」顯示有斷裂，指出被改的那筆證據編號 — 證據鏈：有斷裂（共檢查 1 筆，第一筆有問題的證據編號 e8a51d7a-3f63-41f0-bf8b-41802b73db90）
+PASS  [run 1] SEC 改一筆證據後「驗證證據鏈」顯示有斷裂，指出被改的那筆證據編號 — 證據鏈：有斷裂（共檢查 1 筆，第一筆有問題的證據編號 9ece74b4-f203-4f52-b8c8-1338739aeecf）
 
 證據鏈驗證的是全部簽署證據，不只這一份。
 PASS  [run 1] SEC-09-tamper-detected（390px）無水平溢出 — docWidth=390 
-PASS  [run 1] SEC admin_verify_contract_evidence_chain 回 ok=false、first_broken_id＝被改的那筆 — {"ok":false,"checked":1,"broken_reason":"evidence_hash_mismatch","first_broken_id":"e8a51d7a-3f63-41f0-bf8b-41802b73db90"}
+PASS  [run 1] SEC admin_verify_contract_evidence_chain 回 ok=false、first_broken_id＝被改的那筆 — {"ok":false,"checked":1,"broken_reason":"evidence_hash_mismatch","first_broken_id":"9ece74b4-f203-4f52-b8c8-1338739aeecf"}
 PASS  [run 1] SEC 沒關 trigger 時，連超級使用者直接 UPDATE 證據也被擋（EVIDENCE_IMMUTABLE） — ERROR:  EVIDENCE_IMMUTABLE
-   （SEC10 用時 3.6 秒）
+   （SEC10 用時 3.7 秒）
 PASS  [run 1] 閘道沒有任何 5xx 回應
 
 發現（已知問題與設計行為紀錄，非斷言）：
   - ADM（設計行為，記錄）進度順序和派工單預期不同：待啟用（pending）期間不論資料是否補齊都顯示「待確認 Email／待信箱驗證」；「資料未完整」只會出現在已啟用的老師（src/lib/instructorProgress.js 的 getInstructorProgress 判斷順序：未認領 → 待審核 → 待確認 Email → 待信箱驗證 → 資料未完整 → 待簽約 → 已完成）。測試以「已啟用老師清掉 Line ID」走到「資料未完整」。（補齊資料當下「資料未完整」共 0 位）
   - SEC［UX 小缺口］簽約 OTP 驗證通過後關頁再回來（60 秒內），重新要碼會回 cooldown，但冷卻回覆只帶「未驗證」的碼（supabase/migrations/20261020100000_claim_activation_esign_evidence.sql:1419-1437），剛驗證過的那組前端也已遺失，老師只能等倒數結束再按「重新寄送」。資料面正確（不會留下半套紀錄）。
 
-瀏覽器 console 錯誤（4 則，前 8 則）：
+瀏覽器 console 錯誤（2 則，前 8 則）：
   - SEC-5: pageerror: Worker was terminated
-  - SEC-6: pageerror: Worker was terminated
   - SEC-7: pageerror: Worker was terminated
-  - SEC-8: pageerror: Worker was terminated
 
-RUN 1 結果：PASS 290／FAIL 0／BLOCKED 0／已知問題 1（共 291 項）
+RUN 1 結果：PASS 294／FAIL 0／BLOCKED 0／已知問題 1（共 295 項）
 
 ════════ 總結 ════════
-RUN 1: PASS 290 / FAIL 0 / BLOCKED 0 / KNOWN-ISSUE 1
-TOTAL: PASS 290 / FAIL 0 / BLOCKED 0 / KNOWN-ISSUE 1（1 次；KNOWN-ISSUE 不影響結束碼）
+RUN 1: PASS 294 / FAIL 0 / BLOCKED 0 / KNOWN-ISSUE 1
+TOTAL: PASS 294 / FAIL 0 / BLOCKED 0 / KNOWN-ISSUE 1（1 次；KNOWN-ISSUE 不影響結束碼）
 截圖：/Users/lazylazy/Desktop/夢想一號/Dream_One_Teacher_Web-field-position-fix/.claude/worktrees/esign-owner-decisions/培訓web/docs/verification/2026-10-20-esign-e2e
