@@ -389,10 +389,13 @@ CREATE POLICY "Own or admin can read activations"
   ON public.instructor_account_activations FOR SELECT TO authenticated
   USING (user_id = (SELECT auth.uid()) OR (SELECT private.current_user_is_admin()));
 
+-- 寄送紀錄只給 admin 讀（2026-10-23 資安審查建議 2）：to_email 是收件 Email 全文，本人讀得到等於抵銷
+-- request_email_otp／get_my_activation_status 的遮罩。前端只有後台合約管理的 ContractEvidencePanel 讀這張表。
 DROP POLICY IF EXISTS "Own or admin can read email delivery log" ON public.email_delivery_log;
-CREATE POLICY "Own or admin can read email delivery log"
+DROP POLICY IF EXISTS "Admins can read email delivery log" ON public.email_delivery_log;
+CREATE POLICY "Admins can read email delivery log"
   ON public.email_delivery_log FOR SELECT TO authenticated
-  USING (related_user_id = (SELECT auth.uid()) OR (SELECT private.current_user_is_admin()));
+  USING ((SELECT private.current_user_is_admin()));
 
 DROP POLICY IF EXISTS "Signed-in users can read esign texts" ON public.esign_text_versions;
 CREATE POLICY "Signed-in users can read esign texts"

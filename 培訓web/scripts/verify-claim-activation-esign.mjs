@@ -986,8 +986,14 @@ try {
   // ════════════════════════════════════════════════════════════════
   group('RLS reads');
   const own = (uid, table) => jsonAs(uid, `SELECT count(*) FROM public.${table}`);
-  check('講師讀得到自己的證據、同意、啟用、寄送紀錄', own(uEmail, 'contract_signing_evidence') === 2 && own(uEmail, 'contract_consent_records') >= 5
-    && own(uEmail, 'instructor_account_activations') === 1 && own(uEmail, 'email_delivery_log') >= 1);
+  check('講師讀得到自己的證據、同意、啟用紀錄', own(uEmail, 'contract_signing_evidence') === 2 && own(uEmail, 'contract_consent_records') >= 5
+    && own(uEmail, 'instructor_account_activations') === 1);
+  // 2026-10-23 資安審查建議 2：寄送紀錄含收件 Email 全文，只給 admin 讀（本人也讀不到，避免抵銷遮罩）
+  const ownLogs = Number(suVal(`SELECT count(*) FROM public.email_delivery_log WHERE related_user_id = ${lit(uEmail)}`));
+  check('寄送紀錄只有 admin 讀得到：講師讀自己的 0 筆（資料庫實際有）、admin 讀得到全部',
+    ownLogs >= 1 && own(uEmail, 'email_delivery_log') === 0 && own(uPre, 'email_delivery_log') === 0
+    && own(admin, 'email_delivery_log') === Number(suVal(`SELECT count(*) FROM public.email_delivery_log`)), { ownLogs, teacher: own(uEmail, 'email_delivery_log') });
+  check('寄送紀錄讀取政策只剩 admin 那一條', suVal(`SELECT string_agg(policyname, ',') FROM pg_policies WHERE tablename = 'email_delivery_log'`) === 'Admins can read email delivery log');
   check('講師讀不到別人的證據／同意／啟用紀錄', jsonAs(uPre, `SELECT count(*) FROM public.contract_signing_evidence WHERE user_id = ${lit(uEmail)}`) === 0
     && jsonAs(uPre, `SELECT count(*) FROM public.contract_consent_records WHERE user_id = ${lit(uEmail)}`) === 0
     && jsonAs(uPre, `SELECT count(*) FROM public.instructor_account_activations WHERE user_id = ${lit(uEmail)}`) === 0

@@ -36,7 +36,7 @@
   attempts, max_attempts(5), verified_at, consumed_at, superseded_at, delivery_id。**不存明碼**。
 - `public.email_delivery_log`（寄送紀錄）：id, kind（`otp_activation`｜`otp_contract`｜`contract_signed_copy`）, to_email, subject, related_user_id, related_contract_id,
   requested_at, provider('resend'), net_request_id, status（`queued`｜`sent`｜`failed`｜`not_configured`）, http_status, provider_message_id, error_text, updated_at。
-  信件內文不入庫（OTP 信尤其不可）。
+  信件內文不入庫（OTP 信尤其不可）。**只有 admin 讀得到**（2026-10-23 資安審查建議 2：to_email 是全文，本人讀得到會抵銷遮罩；前端只有後台 ContractEvidencePanel 讀）。
 - `public.contract_consent_records`（append-only）：id, user_id, instructor_id, decision（`agree_electronic`｜`decline_electronic`）, consent_text_version, consent_text,
   doc_versions jsonb, ip_address, user_agent, created_at（伺服器）。
 - `public.contract_signing_evidence`（append-only，雜湊鏈）：id, contract_id, user_id, instructor_id, bound_email, doc_versions, document_sha256 jsonb, signed_pdf_paths jsonb,
