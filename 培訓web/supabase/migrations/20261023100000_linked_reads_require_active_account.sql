@@ -20,7 +20,7 @@
 --   B. 認領判定：已有上課或報酬紀錄的姓名空位不能只靠姓名認領——寫在 20261020100000 的
 --      claim_instructor_name_slot（該檔尚未上線；放在那裡，日後單獨重跑 100000 也不會把這條判定蓋掉）。
 --
--- 盤點（以正式庫順序建庫後查 pg_policies／pg_proc；每條以最後一次定義的版本為底，只多加角色條件）：
+-- 盤點（以正式庫順序建庫後查 pg_policies／pg_proc；每條以正式庫現行版本為底，只多加角色條件）：
 --   加條件：
 --     * class_sessions "Instructors view own sessions"（最後定義：20261018150000）——上課紀錄與報酬金額；
 --       security_invoker 的 instructor_salary_summary（我的報酬彙總、黃卡）跟著這條走。
@@ -33,7 +33,9 @@
 --     * get_teacher_badge_stats(uuid)（最後定義：2026-07-09_gamify_compute.sql）——/profile「我的教學成就」用它算
 --       這個主檔的總時數、堂數、學生數；未啟用者回空集合（畫面顯示全部未解鎖，不會報錯）。
 --     * get_teaching_leaderboard(int)（2026-07-08_teaching_leaderboard.sql）、get_teaching_leaderboard_v2(int,text)
---       （最後定義：2026-07-09_leaderboard_hide.sql）——每位講師的教學時數與學生數；未啟用者回空集合。
+--       （正式版：2026-07-09_gamify_compute.sql，含線上／速解／幼兒三類）——每位講師的教學時數與學生數；未啟用者回空集合。
+--       底版依總指揮 2026-10-23 在正式庫量的 md5(prosrc)：v2＝7793d208（gamify_compute）、v1＝8a6745a6（teaching_leaderboard）、
+--       get_teacher_badge_stats＝94435c44（gamify_compute）；verify-claim-activation-esign 有「底版比對」檢查。
 --       pending 本來就進不了排行榜頁（前端導回 /pending），這裡補上資料庫端的門。
 --   判定不用加：
 --     * instructors 本人讀寫（"Users can view/update own instructor profile"）：pending 要在 /profile 填資料、
@@ -306,24 +308,35 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 4.3 教學排行榜 v2（底：2026-07-09_leaderboard_hide.sql）
+-- 4.3 教學排行榜 v2（底：2026-07-09_gamify_compute.sql——正式庫現行版本，含線上／速解／幼兒三類；
+--     2026-10-23 總指揮以 md5(prosrc) 比對正式庫＝7793d208…，與該檔內文一字不差。hide／expansion 兩版都不是正式版）
 CREATE OR REPLACE FUNCTION public.get_teaching_leaderboard_v2(
   p_year     int  DEFAULT NULL,
-  p_category text DEFAULT 'all'
+  p_category text DEFAULT 'all'          -- 'all' | 'big' | 'small' | 'online' | 'speed' | 'kids'
 )
 RETURNS TABLE (
-  instructor_id uuid, user_id uuid, display_name text, photo_path text,
-  total_hours numeric, session_count bigint, student_reach bigint
+  instructor_id uuid,
+  user_id       uuid,
+  display_name  text,
+  photo_path    text,
+  total_hours   numeric,
+  session_count bigint,
+  student_reach bigint
 ) AS $$
 DECLARE
-  big_types   text[] := ARRAY['collab_lead','collab_assistant','collab_project'];
-  small_types text[] := ARRAY[
+  big_types    text[] := ARRAY['collab_lead','collab_assistant','collab_project'];
+  small_types  text[] := ARRAY[
     'regular_basic','regular_advanced','online','overseas_online',
     'onsite_2hr','onsite_1_5hr','camp',
     'speed_onsite','speed_online','speed_training_lead','speed_training_assistant','speed_camp',
     'kids_lead','kids_assistant',
     'special_lecture_recorded','special_lecture_unrecorded'
   ];
+  online_types text[] := ARRAY['online','overseas_online','speed_online'];
+  speed_types  text[] := ARRAY[
+    'speed_onsite','speed_online','speed_training_lead','speed_training_assistant','speed_camp'
+  ];
+  kids_types   text[] := ARRAY['kids_lead','kids_assistant'];
 BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'authentication required';
@@ -336,7 +349,8 @@ BEGIN
 
   RETURN QUERY
   SELECT
-    i.id, i.user_id,
+    i.id,
+    i.user_id,
     COALESCE(i.nickname, i.full_name, MIN(s.instructor_name), '匿名講師') AS display_name,
     i.photo_path,
     COALESCE(SUM(s.duration_hours), 0)::numeric AS total_hours,
@@ -352,10 +366,22 @@ BEGIN
     )
     AND (
       p_category = 'all'
-      OR (p_category = 'big'   AND s.course_type = ANY(big_types))
-      OR (p_category = 'small' AND s.course_type = ANY(small_types))
+      OR (p_category = 'big'    AND s.course_type = ANY(big_types))
+      OR (p_category = 'small'  AND s.course_type = ANY(small_types))
+      OR (p_category = 'online' AND s.course_type = ANY(online_types))
+      OR (p_category = 'speed'  AND s.course_type = ANY(speed_types))
+      -- 幼兒課：實際資料沒有 kids_* 課程種類，幼兒課掛在合作/營隊/到府下、靠課名辨識
+      -- （關鍵字可調；kids_types 保留給未來若改用課程種類）
+      OR (p_category = 'kids'   AND (
+        s.course_type = ANY(kids_types)
+        OR s.course_name ILIKE '%幼兒%' OR s.course_name ILIKE '%兒童%'
+        OR s.course_name ILIKE '%幼校%' OR s.course_name ILIKE '%親子%'
+        OR s.course_name ILIKE '%蒙特梭利%' OR s.course_name ILIKE '%啟蒙%'
+        OR s.course_name ILIKE '%Kids%'
+        OR s.course_name ILIKE '%安親%' OR s.course_name ILIKE '%課後照顧%'  -- 業主確認納入
+      ))
     )
-    AND i.hide_from_leaderboard = false            -- ← 排除不上榜者
+    AND i.hide_from_leaderboard = false
   GROUP BY i.id, i.user_id, i.nickname, i.full_name, i.photo_path
   HAVING COUNT(s.id) > 0;
 END;

@@ -49,8 +49,10 @@ export const ROOT_SQL_ORDER = [
   '2026-07-09_notification_center.sql',
   '2026-07-09_badges_foundation.sql',
   '2026-07-09_badges_levels.sql',
-  '2026-07-09_gamify_compute.sql',
+  // 2026-10-23：hide 先、gamify 後，與正式庫一致（總指揮以 md5(prosrc) 比對：正式庫的 get_teaching_leaderboard_v2
+  // 是 gamify_compute 版〔含線上／速解／幼兒〕；gamify_compute 檔頭也把 hide 列為前置）
   '2026-07-09_leaderboard_hide.sql',
+  '2026-07-09_gamify_compute.sql',
   '2026-07-09_lesson_tags.sql',
   '2026-07-09_cube_public_flag.sql',
   '2026-07-09_badge_images.sql',

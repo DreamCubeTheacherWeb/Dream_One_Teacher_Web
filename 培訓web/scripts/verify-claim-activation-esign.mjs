@@ -12,6 +12,8 @@
 //   必須有 FAIL（見下方 MUTATIONS）：
 //     --mutate=drop-role-check          拿掉 20261023100000 的「已啟用帳號」條件（未啟用的綁定者讀得到空位的上課與報酬）
 //     --mutate=drop-claim-records-check 拿掉 20261020100000 姓名空位認領的「已有上課或報酬紀錄」排除條件
+//     --mutate=v2-hide-base             20261023100000 的 get_teaching_leaderboard_v2 改用 2026-07-09_leaderboard_hide.sql 當底版
+//                                       （正式版是 gamify_compute；hide 版沒有線上／速解／幼兒三類）
 import path from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +30,41 @@ const LINKED_READS_MIGRATION = path.join(appDir, 'supabase/migrations/2026102310
 // ── 突變測試 ────────────────────────────────────────────────────────
 // 每個突變是一條 SQL 文字修補（同 scripts/e2e/lib/db.mjs 的 SQL_PATCHES 格式）；修補對不到就直接報錯，
 // 確保突變真的生效。測試中途單獨重跑的 migration 也套同一條修補（migrationFile）。
+// ── 統計函式的「正式版」來源（2026-10-23 總指揮在正式庫量 md5(prosrc) 的前 8 碼，與下列檔案內文一字不差）──
+const OFFICIAL_FUNCTION_BASES = [
+  { fn: 'get_teaching_leaderboard_v2', file: 'supabase/2026-07-09_gamify_compute.sql', md5: '7793d208' },
+  { fn: 'get_teaching_leaderboard', file: 'supabase/2026-07-08_teaching_leaderboard.sql', md5: '8a6745a6' },
+  { fn: 'get_teacher_badge_stats', file: 'supabase/2026-07-09_gamify_compute.sql', md5: '94435c44' },
+];
+const FN_END = '$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;';
+// 取出某支函式的 CREATE 敘述（到 $$ LANGUAGE … 為止）與函式內文（AS $$ 與 $$ 之間＝pg_proc.prosrc）
+function functionStatement(sql, fn) {
+  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`);
+  if (start < 0) return null;
+  const end = sql.indexOf(FN_END, start);
+  return end < 0 ? null : sql.slice(start, end + FN_END.length);
+}
+function functionBody(sql, fn) {
+  const statement = functionStatement(sql, fn);
+  if (!statement) return null;
+  const from = statement.indexOf('AS $$') + 'AS $$'.length;
+  return statement.slice(from, statement.lastIndexOf('$$ LANGUAGE'));
+}
+// 20261023100000 在每支函式「必須登入」之後多加的 pending 判斷（唯一允許的差異）
+const PENDING_BLOCK = /\n[ \t]*-- 2026-10-23：[^\n]*\n[ \t]*IF NOT \(SELECT private\.current_user_is_approved_account\(\)\) THEN\n[ \t]*RETURN;\n[ \t]*END IF;\n/g;
+const squashSpace = (text) => String(text).replace(/\s+/g, ' ').trim();
+const withPendingBlock = (statement) => statement.replace(
+  "    RAISE EXCEPTION 'authentication required';\n  END IF;\n",
+  "    RAISE EXCEPTION 'authentication required';\n  END IF;\n\n  -- 2026-10-23：綁定主檔但還沒啟用（pending）的帳號看不到排行榜\n  IF NOT (SELECT private.current_user_is_approved_account()) THEN\n    RETURN;\n  END IF;\n");
+
 const MUTATIONS = {
+  'v2-hide-base': {
+    files: ['20261023100000_linked_reads_require_active_account.sql'],
+    find: /CREATE OR REPLACE FUNCTION public\.get_teaching_leaderboard_v2\([\s\S]*?\$\$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;/,
+    // 用函式回傳替換文字：替換字串裡的 $$ 會被 String.replace 當成跳脫字元
+    replace: () => withPendingBlock(functionStatement(readFileSync(path.join(appDir, 'supabase/2026-07-09_leaderboard_hide.sql'), 'utf8'), 'get_teaching_leaderboard_v2')),
+    reason: '突變測試：get_teaching_leaderboard_v2 改用 2026-07-09_leaderboard_hide.sql 當底版（少了線上／速解／幼兒）',
+  },
   'drop-role-check': {
     files: ['20261023100000_linked_reads_require_active_account.sql'],
     find: /\(SELECT private\.current_user_is_approved_account\(\)\)/g,
@@ -1351,6 +1387,27 @@ try {
   group('linked reads require activated account (必修 1, 20261023100000)');
   check('新 migration 已被套用（chain 包含 20261023100000_linked_reads_require_active_account.sql）',
     chain.applied.includes('supabase/migrations/20261023100000_linked_reads_require_active_account.sql'));
+  // 底版比對（2026-10-23 第二輪審查必修）：20261023100000 重寫的三支統計函式，拿掉新增的 pending 區塊後，
+  // 必須和正式版來源檔的內文完全相同（空白正規化後比較）；正式版來源檔的內文 md5 必須等於總指揮在正式庫量到的值。
+  const linkedSql = readFileSync(migrationFile(LINKED_READS_MIGRATION), 'utf8');
+  for (const base of OFFICIAL_FUNCTION_BASES) {
+    const officialBody = functionBody(readFileSync(path.join(appDir, base.file), 'utf8'), base.fn);
+    check(`底版比對：${base.fn} 正式版來源 ${base.file} 的內文 md5 前 8 碼＝正式庫 ${base.md5}`,
+      officialBody && createHash('md5').update(officialBody).digest('hex').startsWith(base.md5),
+      officialBody ? createHash('md5').update(officialBody).digest('hex') : 'not found');
+    const ours = functionBody(linkedSql, base.fn);
+    const blocks = ours ? (ours.match(PENDING_BLOCK) || []).length : 0;
+    const stripped = ours ? ours.replace(PENDING_BLOCK, '\n') : '';
+    check(`底版比對：20261023100000 的 ${base.fn} 只多一段 pending 判斷，其餘與 ${base.file} 完全相同`,
+      blocks === 1 && squashSpace(stripped) === squashSpace(officialBody), { blocks, same: squashSpace(stripped) === squashSpace(officialBody) });
+    const deployed = suJson(`SELECT jsonb_build_object('md5', md5(p.prosrc), 'definer', p.prosecdef, 'config', p.proconfig,
+        'anon', has_function_privilege('anon', p.oid, 'EXECUTE'), 'auth', has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = ${lit(base.fn)}`);
+    check(`${base.fn}：套完後資料庫裡的內文就是 20261023100000 的版本；SECURITY DEFINER、search_path=public、anon 不能執行、authenticated 可以`,
+      deployed?.md5 === createHash('md5').update(ours || '').digest('hex') && deployed.definer === true
+      && JSON.stringify(deployed.config) === '["search_path=public"]' && deployed.anon === false && deployed.auth === true, deployed);
+  }
+
   su(`INSERT INTO storage.buckets (id, name, public) VALUES ('instructor_uploads', 'instructor_uploads', false) ON CONFLICT DO NOTHING`);
   let sessionSeq = 0;
   // 行政登錄的上課紀錄（以超級使用者寫入＝後台／匯入）；日期都在講師可見範圍（2026-01-01 起）
@@ -1491,6 +1548,23 @@ try {
     sessionsSeen(uP3, p3Instructor) === 0 && Number(summarySeen(uP3)?.[0]?.n) === 0
     && JSON.stringify(badgeStatsSeen(uP3, p3Instructor)) === '[]' && objectSeen(uP3, 'instructors/import/p3-photo.png') === 0);
   check('P3 pending 仍讀得到自己的主檔（啟用前確認資料）', jsonAs(uP3, `SELECT count(*) FROM public.instructors WHERE user_id = auth.uid()`) === 1);
+
+  // 排行榜 v2 的線上／速解／幼兒三類（前端 src/pages/Leaderboard.jsx 的分頁）：teacher 有資料、pending 是空的
+  const catInstructor = makeInstructor('分類排行老師', 'category@t.test', { phone: '0977000333', idNumber: 'G223450003' });
+  su(`INSERT INTO public.class_sessions (course_type, course_name, instructor_id, instructor_name, session_date,
+        duration_hours, student_count, base_salary, bonus, paid_amount, status, pricing_status, source)
+      VALUES ('online', '線上常態課', ${lit(catInstructor)}, '分類排行老師', DATE '2026-05-01', 1.5, 4, 640, 0, 0, 'approved', 'legacy', 'manual'),
+             ('speed_onsite', '速解實體課', ${lit(catInstructor)}, '分類排行老師', DATE '2026-05-02', 2, 6, 800, 0, 0, 'approved', 'legacy', 'manual'),
+             ('collab_lead', '幼兒園合作課', ${lit(catInstructor)}, '分類排行老師', DATE '2026-05-03', 1, 12, 900, 0, 0, 'approved', 'legacy', 'manual')`);
+  const categorySeen = (uid) => jsonAs(uid, `SELECT jsonb_object_agg(c.cat, c.n) FROM (
+      SELECT cat, (SELECT count(*) FROM public.get_teaching_leaderboard_v2(NULL, cat) l WHERE l.instructor_id = ${lit(catInstructor)}) AS n
+        FROM unnest(ARRAY['online', 'speed', 'kids']) AS cat) c`);
+  const teacherCats = categorySeen(legacyTeacher);
+  check('teacher 呼叫排行榜 v2 的線上、速解、幼兒三類都有資料（各含這位老師）',
+    teacherCats?.online === 1 && teacherCats.speed === 1 && teacherCats.kids === 1, teacherCats);
+  const pendingCats = jsonAs(uP3, `SELECT jsonb_object_agg(cat, (SELECT count(*) FROM public.get_teaching_leaderboard_v2(NULL, cat)))
+      FROM unnest(ARRAY['online', 'speed', 'kids']) AS cat`);
+  check('pending 呼叫排行榜 v2 的線上、速解、幼兒三類都是空的', pendingCats?.online === 0 && pendingCats.speed === 0 && pendingCats.kids === 0, pendingCats);
 
   // mentor／admin／既有 teacher 原本的讀取不受影響
   const totalSessions = Number(suVal(`SELECT count(*) FROM public.class_sessions`));
