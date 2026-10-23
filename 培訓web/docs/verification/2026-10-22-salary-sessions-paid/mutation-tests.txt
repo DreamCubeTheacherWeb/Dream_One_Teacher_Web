@@ -1,0 +1,13 @@
+突變測試：把 migration 故意改壞，確認 verify-salary-sessions-paid.mjs 抓得到（SESSIONS_PAID_MIGRATION_SQL 指向改壞的副本）。原版 124/124。
+m01 已領直接＝總額／m02 拿掉金額核對／m03 還原不看 updated_at／m04 標記拿掉 admin 檢查／m05 拿掉期別核對／m06 拿掉講師比對／m07 標記不看匯出紀錄、改標整期已核准／m08 標記跳過逐筆核對／m09 存匯出跳過逐筆核對／m10 狀態核對改回 <>（NULL 狀態會被放行）／m11 還原的三處狀態判斷改回 <>（只改 WHERE 那一處會被 updated_at 比對兜住，不算弱點）
+m01_no_greatest: Total checks: 124   PASS: 122   FAIL: 2   (3.6s)  首兩項 FAIL：FAIL  A5 已領 500 超過總額 300 的那筆：已領維持 500，沒有被改小 ／ FAIL  A9 清單每筆補上：當時應付、舊狀態／舊已領／舊付款時間、新已領、標完當下的 updated_at
+m02_no_amount_check: Total checks: 124   PASS: 121   FAIL: 3   (3.6s)  首兩項 FAIL：FAIL  E 某一筆金額和現在不同 → ok=false、1 筆不符（amount） ／ FAIL  E 以上全部沒存：整張表完全沒變、沒有任何匯出紀錄
+m03_revert_ignores_updated_at: Total checks: 124   PASS: 120   FAIL: 4   (3.6s)  首兩項 FAIL：FAIL  D1 還原匯出 #1：7 筆、$3,650，1 筆（標記後被改過）沒還原、列出原因 ／ FAIL  D4 被改過的那筆維持已付款
+m04_no_admin_check_on_mark: Total checks: 124   PASS: 120   FAIL: 4   (3.6s)  首兩項 FAIL：FAIL  R2 teacher：存匯出／標記／還原都回 42501 ／ FAIL  R2 mentor：存匯出／標記／還原都回 42501
+m05_no_period_check: Total checks: 124   PASS: 121   FAIL: 3   (3.6s)  首兩項 FAIL：FAIL  E 混進別期的列（9/26） → ok=false、1 筆不符（period） ／ FAIL  E 以上全部沒存：整張表完全沒變、沒有任何匯出紀錄
+m06_no_instructor_check: Total checks: 124   PASS: 116   FAIL: 8   (2.6s)  首兩項 FAIL：FAIL  E 混進對不到講師的列 → ok=false、1 筆不符（instructor） ／ FAIL  E 某一堂的講師和資料庫不同 → ok=false、1 筆不符（instructor）
+m07_mark_ignores_export_items: Total checks: 124   PASS: 121   FAIL: 3   (3.7s)  首兩項 FAIL：FAIL  A6 匯出 #1 沒納入的列（異常課、缺帳號講師、取消勾選的人、手動排除的課、對不到講師）、匯出之後才核准的 ／ FAIL  A7 匯出之後才核准的那筆仍是「已核准」
+m08_mark_skips_item_check: Total checks: 124   PASS: 119   FAIL: 5   (2.6s)  首兩項 FAIL：FAIL  I2 標記 → ok=false、1 筆不符（instructor：講師和下載時不同）、0 筆標記 ／ FAIL  I3 整份被擋：同一份另外 2 筆也沒被標、匯出紀錄仍是「未標記」
+m09_record_skips_item_check: Total checks: 124   PASS: 114   FAIL: 10   (3.7s)  首兩項 FAIL：FAIL  E 混進待核准的列 → ok=false、1 筆不符（status） ／ FAIL  E 混進已付款的列 → ok=false、1 筆不符（status）
+m10_status_check_back_to_neq: Total checks: 124   PASS: 121   FAIL: 3   (4.2s)  首兩項 FAIL：FAIL  E 混進狀態為 NULL 的列（金額、講師、期別都對） → ok=false、1 筆不符（status） ／ FAIL  E 以上全部沒存：整張表完全沒變、沒有任何匯出紀錄
+m11_revert_status_back_to_neq: Total checks: 124   PASS: 123   FAIL: 1   (3.8s)  首兩項 FAIL：FAIL  F3 標記後被刪掉的列回報「這筆紀錄已不存在」、狀態被清成 NULL 的列回報「已不是已付款（現在：未設定） ／ FAILED:

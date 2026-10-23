@@ -56,6 +56,7 @@ const editTarget = {
     course_type: 'speed_onsite', course_name: '編輯測試課', session_date: '2026-08-14', month_label: '2026/08',
     duration_hours: 2, student_count: 2, base_salary: 450, total_salary: 450, status: 'approved',
     pricing_status: 'quoted', pricing_basis: 'general_level', pricing_label: '舊級別B', pricing_message: '舊試算',
+    updated_at: '2026-10-21T08:00:00.123456+00:00',
 };
 
 const authUser = {
@@ -78,6 +79,7 @@ let quoteDelayMs = 0;
 let sessionRequests = [];           // /my/salary 送出的 class_sessions GET 清單查詢
 let unfilteredSessionQueries = 0;   // 沒帶 instructor_id 條件的清單查詢
 let patches = [];
+let serverUpdatedAt = editTarget.updated_at;  // mock 資料庫裡這筆目前的 updated_at（B7：模擬別人剛改過）
 let quoteCalls = [];
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'Content-Range' };
@@ -102,7 +104,12 @@ function handleClassSessions(route, request, url) {
     const method = request.method();
     if (method === 'PATCH') {
         patches.push({ search: url.search, body: request.postDataJSON() });
-        return route.fulfill({ status: 204, headers: CORS, body: '' });
+        // 樂觀鎖：帶 updated_at=eq.X 時，只有 X 等於 mock 資料庫目前的值才算更新到 1 列，否則 0 列（同 PostgREST）
+        const lock = url.searchParams.get('updated_at');
+        const matched = !lock || (lock.startsWith('eq.') ? lock.slice(3) === serverUpdatedAt : lock === 'is.null' && serverUpdatedAt === null);
+        const id = (url.searchParams.get('id') || '').replace(/^eq\./, '');
+        if (!(request.headers().prefer || '').includes('return=representation')) return route.fulfill({ status: 204, headers: CORS, body: '' });
+        return json(route, matched ? [{ id }] : []);
     }
     if (method === 'HEAD') {
         return route.fulfill({ status: 200, headers: { ...CORS, 'content-range': '*/1' }, body: '' });
@@ -228,6 +235,7 @@ function resetState() {
     unfilteredSessionQueries = 0;
     patches = [];
     quoteCalls = [];
+    serverUpdatedAt = editTarget.updated_at;
 }
 
 // ── Bug A：我的報酬
@@ -439,6 +447,24 @@ async function run() {
         check('B6 晚到的舊試算被丟掉：沒有試算面板、基本報酬欄仍是原本的 450', await quotePanel(dialog).count() === 0 && await field(dialog, '基本報酬').inputValue() === '450');
         attempt = await saveExpectingError(dialog, /請先重新依報酬表試算/);
         check('B6 儲存：要求重新試算，沒有送出 PATCH', attempt.matched && attempt.sent === 0, `${attempt.text} sent=${attempt.sent}`);
+        await ctx.context.close();
+
+        // B7 樂觀鎖：開視窗之後這筆被別人改了（例如月結匯款剛把它標成已付款）→ 存檔不能用舊畫面蓋掉
+        ctx = await openEditModal(browser);
+        ({ dialog } = ctx);
+        await field(dialog, '備註').fill('舊畫面上改的備註');
+        serverUpdatedAt = '2026-10-22T06:30:00.654321+00:00';
+        const beforeStale = patches.length;
+        await saveButton(dialog).click();
+        const staleAlert = dialog.getByRole('alert');
+        await staleAlert.waitFor();
+        const staleText = await staleAlert.innerText();
+        const stalePatch = patches[beforeStale];
+        check('B7 存檔的 PATCH 帶「開視窗時讀到的 updated_at」當條件', Boolean(stalePatch)
+            && new URLSearchParams(stalePatch.search).get('updated_at') === `eq.${editTarget.updated_at}`, stalePatch?.search);
+        check('B7 被別人改過（0 列被更新）：顯示「這筆紀錄已被其他人修改…這次沒有儲存」，視窗留著不關',
+            /這筆紀錄已被其他人修改（例如剛被標記已付款），這次沒有儲存/.test(staleText) && await dialog.isVisible(), staleText);
+        serverUpdatedAt = editTarget.updated_at;
         await ctx.context.close();
     } finally {
         if (browser) await browser.close();

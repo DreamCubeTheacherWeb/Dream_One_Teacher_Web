@@ -166,7 +166,9 @@ async function handleClassSessions(route, request, url) {
     sessionRequests.push({ method, search: url.search, params: new URLSearchParams(url.search) });
     if (method === 'PATCH') {
         patches.push({ search: url.search, body: request.postDataJSON() });
-        return route.fulfill({ status: 204, headers: CORS, body: '' });
+        // 報酬登記中心存檔改成樂觀鎖＋.select('id')：要回「更新到的列」，否則畫面會當成被別人改過
+        if (!(headers.prefer || '').includes('return=representation')) return route.fulfill({ status: 204, headers: CORS, body: '' });
+        return route.fulfill({ status: 200, headers: { 'content-type': 'application/json', ...CORS }, body: JSON.stringify([{ id: (url.searchParams.get('id') || '').replace(/^eq\./, '') }]) });
     }
     if (method === 'POST') {
         const body = request.postDataJSON();

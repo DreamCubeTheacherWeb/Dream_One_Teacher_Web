@@ -566,11 +566,12 @@ export const buildPayoutWorkbook = async ({ people = [], settings = {} }) => {
     ]);
 };
 
-// 檔名：{YYYYMM}夢想講師轉帳檔_{付款日期}.csv／.xlsx
-export const payoutFilename = ({ periodMonth, payDate, ext }) => {
+// 檔名：{YYYYMM}夢想講師轉帳檔_{付款日期}.csv／.xlsx；有匯出紀錄時加上 _匯出{編號}（檔案內容不變，編號只放檔名）
+export const payoutFilename = ({ periodMonth, payDate, ext, exportId }) => {
     const parsed = parsePeriod(periodMonth);
     const period = parsed ? `${parsed.year}${pad2(parsed.month)}` : 'unknown';
-    return `${period}夢想講師轉帳檔_${toBankDate(payDate) || 'unknown'}.${ext}`;
+    const suffix = Number.isInteger(exportId) && exportId > 0 ? `_匯出${exportId}` : '';
+    return `${period}夢想講師轉帳檔_${toBankDate(payDate) || 'unknown'}${suffix}.${ext}`;
 };
 
 // ───────────────────────── 夥伴號碼匯入（財務供應商分頁匯出的 CSV） ─────────────────────────

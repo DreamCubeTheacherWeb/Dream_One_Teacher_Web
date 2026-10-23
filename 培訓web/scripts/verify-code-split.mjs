@@ -440,12 +440,20 @@ async function main() {
                 });
                 await page.goto(`${base}/leaderboard`, { waitUntil: 'networkidle' });
                 await page.getByText(/榮譽榜|排行/).first().waitFor({ timeout: 10000 });
-                // 站內導覽到 /courses（觸發 CourseList chunk 的第一次下載 → 404）
+                // 站內導覽到 /courses（觸發 CourseList chunk 的第一次下載 → 404 → 自動重新整理一次）。
+                // 2026-10-22 修正競態：舊頁（/leaderboard）的導覽列本來就有「我的課程」，原本的 waitForFunction 可能在重新整理「之前」就成立，
+                // 接著 page.evaluate 撞上重新整理 → Execution context was destroyed（實測：成立當下文件載入 1 次就會中斷、2 次則通過）。
+                // 現在先等「第 2 次文件載入」真的發生、新頁 load 完，才用課程頁自己的內容判斷頁面恢復；斷言不變（仍要文件載入剛好 2 次）。
+                const reloadedLoad = page.waitForEvent('load', { timeout: 15000 }).catch(() => null);  // 觸發之前就開始等，才不會漏掉
                 await page.evaluate(() => { window.history.pushState({}, '', '/courses'); window.dispatchEvent(new PopStateEvent('popstate')); });
-                await page.waitForFunction(() => /我的課程|分檔測試課程|分檔測試大分類/.test(document.body.innerText), null, { timeout: 15000 });
+                const reloadDeadline = Date.now() + 15000;
+                while (documentLoads < 2 && Date.now() < reloadDeadline) await new Promise(resolve => setTimeout(resolve, 50));
+                await reloadedLoad;
+                if (documentLoads >= 2) await page.waitForFunction(() => /分檔測試課程|分檔測試大分類/.test(document.body.innerText), null, { timeout: 15000 });
+                const loadsWhenRecovered = documentLoads;
                 const flag = await page.evaluate(() => sessionStorage.getItem('chunk-reload-at'));
-                check('P1 換版後舊分頁載不到頁面檔：自動重新整理一次後頁面恢復', documentLoads === 2 && chunkRequests >= 2 && Boolean(flag),
-                    `文件載入 ${documentLoads} 次、頁面檔請求 ${chunkRequests} 次、旗標=${flag ? '有' : '無'}`);
+                check('P1 換版後舊分頁載不到頁面檔：自動重新整理一次後頁面恢復', documentLoads === 2 && loadsWhenRecovered === 2 && chunkRequests >= 2 && Boolean(flag),
+                    `文件載入 ${documentLoads} 次（頁面恢復時 ${loadsWhenRecovered} 次）、頁面檔請求 ${chunkRequests} 次、旗標=${flag ? '有' : '無'}`);
                 await context.close();
             }
             {   // P2：永遠載不到 → 只重整一次（不無限重整），並顯示錯誤提示，導覽列還在

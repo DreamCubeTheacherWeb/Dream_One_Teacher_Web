@@ -40,6 +40,8 @@
     "verify:esign-production-order": "node scripts/verify-esign-production-order.mjs",
     "verify:salary-payday:browser": "node scripts/verify-salary-payday-browser.mjs",
     "verify:salary-payout-schedule": "node scripts/verify-salary-payout-schedule.mjs",
+    "verify:salary-sessions-paid": "node scripts/verify-salary-sessions-paid.mjs",
+    "verify:salary-sessions-paid:browser": "node scripts/verify-salary-sessions-paid-browser.mjs",
     "verify:doc-edit-unlock": "node scripts/verify-doc-edit-unlock.mjs",
     "verify:doc-edit-unlock:admin-browser": "node scripts/verify-doc-edit-unlock-admin-browser.mjs",
     "verify:doc-edit-unlock:profile-browser": "node scripts/verify-doc-edit-unlock-profile-browser.mjs",

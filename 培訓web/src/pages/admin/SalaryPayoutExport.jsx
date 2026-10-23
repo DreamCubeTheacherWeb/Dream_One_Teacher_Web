@@ -1,6 +1,7 @@
 // 後台「月結匯款」（2026-10-22 第一版，admin 限定）：把某一期已核准、未付款的講師報酬匯出成財務部的銀行批次轉帳檔。
 // 計算與檢查全部在 src/lib/payoutBankExport.js（有單元測試）；這頁只負責讀資料、收集調整、顯示與下載。
-// 本頁不寫任何報酬資料（不標記已付款，那是另一個功能）；唯一的寫入是 admin 匯入／修改講師的夥伴號碼。
+// 寫入：admin 匯入／修改講師的夥伴號碼；按下載時先存一筆「匯出紀錄」（record_salary_payout_export，存下這份檔案納入的課、
+// 講師與金額，拿到編號才產生檔案）；匯款完成後對某一份匯出「標記為已付款」（見 components/admin/PayoutMarkPaidPanel.jsx）。
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -44,6 +45,8 @@ import {
     sessionPayableCents,
     validatePayoutExport,
 } from '../../lib/payoutBankExport';
+import { MIGRATION_NEEDED_TEXT, amountToCents, buildExportPayload, classifyRpcFailure, duplicateExportWarning, formatTaipeiTime, mismatchLines } from '../../lib/payoutMarkPaid';
+import PayoutMarkPaidPanel from '../../components/admin/PayoutMarkPaidPanel';
 
 const PAGE_SIZE = 1000;
 const BASE_INSTRUCTOR_COLUMNS = 'id,full_name,bank_code,bank_account_number,bank_account_name,id_number,email_primary,household_address,address,phone_mobile';
@@ -168,6 +171,11 @@ const SalaryPayoutExport = () => {
     const [partnerDrafts, setPartnerDrafts] = useState({});
     const [partnerSaving, setPartnerSaving] = useState({});
     const [partnerMessages, setPartnerMessages] = useState({});
+    const [downloading, setDownloading] = useState('');       // '' | 'csv' | 'xlsx'：建立匯出紀錄與產生檔案中
+    const downloadBusy = useRef(false);                       // 連點第二下直接忽略（state 還沒更新前也擋得住）
+    const [exportNotice, setExportNotice] = useState('');     // 資料庫還沒更新：這次下載沒有建立匯出紀錄
+    const [exportsRefresh, setExportsRefresh] = useState(0);  // 匯出紀錄有變動 → 通知下方「匯款完成」區重讀
+    const [duplicateConfirm, setDuplicateConfirm] = useState(null);  // { kind, exports }：這一期已有還沒標記的匯出，先確認再下載
 
     const loadInstructors = useCallback(async () => {
         const result = await fetchInstructors();
@@ -258,6 +266,7 @@ const SalaryPayoutExport = () => {
     const computed = useMemo(() => computePayoutPeople({
         sessions, instructors, periodMonth, memoTemplate: settings.memoTemplate, edits,
     }), [edits, instructors, periodMonth, sessions, settings.memoTemplate]);
+    const exportPayload = useMemo(() => buildExportPayload(computed), [computed]);
 
     const hasEdits = edits.excludedSessionIds.size > 0
         || edits.includedAnomalySessionIds.size > 0
@@ -340,32 +349,113 @@ const SalaryPayoutExport = () => {
         if (dataChanged) return [`${DATA_CHANGED_MESSAGE}後再匯出`];
         return validatePayoutExport({ settings, people: computed.people });
     };
-    const onDownloadCsv = () => {
-        const errors = exportErrors();
-        setDownloadErrors({ csv: errors, xlsx: [] });
-        if (errors.length) return;
+    // 下載前先在資料庫存一筆匯出紀錄（逐筆核對已核准、期別、講師、金額），拿到編號才下載；
+    // 資料庫還沒套這次的更新 → 照舊下載（檔名沒有編號），並提示這份無法在系統標記已付款
+    const recordExport = async (kind) => {
+        const range = periodRange(periodMonth);
+        const { data, error, status } = await supabase.rpc('record_salary_payout_export', {
+            p_period_start: range.periodStart,
+            p_period_end: range.periodEnd,
+            p_items: exportPayload.items,
+            p_people: exportPayload.people,
+            p_expected_total: exportPayload.transferCents / 100,
+            p_pay_date: settings.payDate || null,
+            p_file_kind: kind,
+            p_exclusions: exportPayload.exclusionLines,
+        });
+        if (!error && data?.ok === true && Number.isInteger(data.export_id)) return { exportId: data.export_id };
+        if (!error && data?.ok === false) {
+            return {
+                errors: [`這份檔案有 ${Number(data.mismatch_count || 0)} 筆和資料庫目前不符，沒有建立匯出紀錄，也沒有下載。請按「重新整理」後再下載：`, ...mismatchLines(data.mismatches)],
+            };
+        }
+        const failure = classifyRpcFailure({ error, status });
+        if (failure.kind === 'missing') return { exportId: null, degraded: true };
+        if (failure.kind === 'uncertain') {
+            return { uncertain: true, errors: ['建立匯出紀錄的結果不確定（網路或伺服器沒有正常回應），這次沒有下載。請看下方「匯款完成」區重新讀取匯出紀錄，確認後再下載一次（多出來、沒標記的匯出紀錄不影響任何報酬資料）。'] };
+        }
+        return { errors: [`沒有建立匯出紀錄，也沒有下載：${failure.text}`] };
+    };
+    // 這一期還沒標記的匯出紀錄；讀不到（資料庫還沒更新、網路錯誤）就回空陣列 → 不擋下載，照原本流程（含降級）
+    const findUnmarkedExports = async () => {
+        const range = periodRange(periodMonth);
         try {
-            const csv = buildTransferCsv({ people: computed.people, settings });
-            downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'csv' }));
-            setExportedVersion(editsVersion);
-            setDownloadMessage(`已下載轉帳檔 CSV：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
-        } catch (error) {
-            setDownloadErrors({ csv: [error.message], xlsx: [] });
+            const { data, error } = await supabase
+                .from('salary_payout_exports')
+                .select('id,exported_at,exported_by_name,item_count,people_count,transfer_total')
+                .eq('period_start', range.periodStart)
+                .eq('period_end', range.periodEnd)
+                .is('marked_at', null)
+                .order('id', { ascending: false })
+                .limit(20);
+            return !error && Array.isArray(data) ? data : [];
+        } catch {
+            return [];
         }
     };
-    const onDownloadXlsx = async () => {
+    const runDownload = async (kind, { skipDuplicateCheck = false } = {}) => {
+        if (downloadBusy.current) return;
         const errors = exportErrors();
-        setDownloadErrors({ csv: [], xlsx: errors });
+        setDownloadErrors({ csv: [], xlsx: [], [kind]: errors });
         if (errors.length) return;
+        downloadBusy.current = true;
+        setDownloading(kind);
+        setDownloadMessage('');
+        setExportNotice('');
         try {
-            const bytes = await buildPayoutWorkbook({ people: computed.people, settings });
-            downloadBlob(new Blob([bytes], { type: XLSX_MIME }), payoutFilename({ periodMonth, payDate: settings.payDate, ext: 'xlsx' }));
+            // 這一期已有還沒標記的匯出：先跳確認（若那份已交給銀行，應該回去標記它；再下載一份兩份都上傳會重複匯款）
+            if (!skipDuplicateCheck) {
+                const unmarked = await findUnmarkedExports();
+                if (unmarked.length) {
+                    setDuplicateConfirm({ kind, exports: unmarked });
+                    return;
+                }
+            }
+            // 先產生檔案內容（欄位有問題會在這裡擋下，不會留下沒用的匯出紀錄），再存匯出紀錄，成功才下載
+            const blob = kind === 'csv'
+                ? new Blob([buildTransferCsv({ people: computed.people, settings })], { type: 'text/csv;charset=utf-8' })
+                : new Blob([await buildPayoutWorkbook({ people: computed.people, settings })], { type: XLSX_MIME });
+            const record = await recordExport(kind);
+            if (record.errors) {
+                setDownloadErrors({ csv: [], xlsx: [], [kind]: record.errors });
+                if (record.uncertain) setExportsRefresh((v) => v + 1);
+                return;
+            }
+            downloadBlob(blob, payoutFilename({ periodMonth, payDate: settings.payDate, ext: kind, exportId: record.exportId }));
             setExportedVersion(editsVersion);
-            setDownloadMessage(`已下載完整 Excel：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
+            const label = kind === 'csv' ? '轉帳檔 CSV' : '完整 Excel';
+            setDownloadMessage(`已下載${label}${record.exportId ? `（匯出 #${record.exportId}）` : ''}：${computed.includedPeople.length} 人，共 ${formatMoney(computed.totalCents)}`);
+            if (record.degraded) setExportNotice(`${MIGRATION_NEEDED_TEXT}這次下載沒有建立匯出紀錄，之後無法在系統對這份標記已付款；套用更新後請重新下載。`);
+            else setExportsRefresh((v) => v + 1);
         } catch (error) {
-            setDownloadErrors({ csv: [], xlsx: [error.message] });
+            setDownloadErrors({ csv: [], xlsx: [], [kind]: [error.message] });
+        } finally {
+            downloadBusy.current = false;
+            setDownloading('');
         }
     };
+    const onDownloadCsv = () => runDownload('csv');
+    const onDownloadXlsx = () => runDownload('xlsx');
+    const CANCELLED_DOWNLOAD_MESSAGE = '已取消：沒有建立匯出紀錄，也沒有下載。';
+    const confirmDuplicateDownload = () => {
+        const kind = duplicateConfirm?.kind;
+        setDuplicateConfirm(null);
+        if (kind) runDownload(kind, { skipDuplicateCheck: true });
+    };
+    const cancelDuplicateDownload = () => {
+        setDuplicateConfirm(null);
+        setDownloadMessage(CANCELLED_DOWNLOAD_MESSAGE);
+    };
+    useEffect(() => {
+        if (!duplicateConfirm) return undefined;
+        const onKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            setDuplicateConfirm(null);
+            setDownloadMessage('已取消：沒有建立匯出紀錄，也沒有下載。');
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [duplicateConfirm]);
 
     // ── 夥伴號碼匯入
     const onImportFile = async (event) => {
@@ -455,7 +545,7 @@ const SalaryPayoutExport = () => {
                 <AlertTriangle className="w-6 h-6 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="text-sm sm:text-base font-medium leading-relaxed min-w-0">
                     <p className="font-black text-base sm:text-lg">第一版：格式待財務確認。正式匯款前，請財務先用小額或試算核對。</p>
-                    <p className="mt-1">檔案含身分證字號與銀行帳號，只能提供財務作業使用。匯款完成後，請在<Link to="/admin/salary" className="underline font-black">報酬登記中心</Link>把本期標為已付款（本頁不會改任何報酬資料）。</p>
+                    <p className="mt-1">檔案含身分證字號與銀行帳號，只能提供財務作業使用。每次下載都會存一份匯出紀錄（檔名的「匯出N」）。銀行匯款完成後，請在本頁下方「匯款完成，標記為已付款」對交給銀行的那一份標記：只會標記那份檔案裡的課。</p>
                 </div>
             </div>
 
@@ -752,8 +842,8 @@ const SalaryPayoutExport = () => {
                 </p>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="border-2 border-bauhaus-black rounded-xl p-4">
-                        <button type="button" onClick={onDownloadCsv} className="bh-btn bh-btn-blue px-5 py-3 min-h-[44px] w-full sm:w-auto">
-                            <Download className="w-5 h-5" /> 轉帳檔 CSV
+                        <button type="button" onClick={onDownloadCsv} disabled={Boolean(downloading)} className="bh-btn bh-btn-blue px-5 py-3 min-h-[44px] w-full sm:w-auto disabled:opacity-60">
+                            <Download className="w-5 h-5" /> {downloading === 'csv' ? '建立匯出紀錄中…' : '轉帳檔 CSV'}
                         </button>
                         <p className="mt-3 text-xs font-bold text-bauhaus-black/70 leading-relaxed">
                             CSV 請直接上傳網銀；若要用 Excel 看，請用『資料→從文字/CSV』匯入並把帳號欄設為文字，不要直接雙擊開啟，否則開頭的 0 會不見。要用 Excel 看請下載 Excel 版。
@@ -765,8 +855,8 @@ const SalaryPayoutExport = () => {
                         )}
                     </div>
                     <div className="border-2 border-bauhaus-black rounded-xl p-4">
-                        <button type="button" onClick={onDownloadXlsx} className="bh-btn bh-btn-outline px-5 py-3 min-h-[44px] w-full sm:w-auto">
-                            <FileSpreadsheet className="w-5 h-5" /> 完整 Excel（四分頁）
+                        <button type="button" onClick={onDownloadXlsx} disabled={Boolean(downloading)} className="bh-btn bh-btn-outline px-5 py-3 min-h-[44px] w-full sm:w-auto disabled:opacity-60">
+                            <FileSpreadsheet className="w-5 h-5" /> {downloading === 'xlsx' ? '建立匯出紀錄中…' : '完整 Excel（四分頁）'}
                         </button>
                         <p className="mt-3 text-xs font-bold text-bauhaus-black/70 leading-relaxed">
                             分頁：轉帳檔案、薪資明細、薪資總計、供應商。代碼與帳號都存成文字，開頭的 0 不會不見。
@@ -779,8 +869,17 @@ const SalaryPayoutExport = () => {
                     </div>
                 </div>
                 {downloadMessage && <p role="status" data-testid="payout-download-message" className="mt-4 text-sm font-black text-bauhaus-blue">{downloadMessage}</p>}
+                {exportNotice && <p role="status" data-testid="payout-export-degraded" className="mt-2 text-sm font-black text-bauhaus-black bg-bauhaus-yellow border-2 border-bauhaus-black rounded-xl p-3">{exportNotice}</p>}
                 {dirty && <p className="mt-2 text-xs font-bold text-bauhaus-red">有調整或排除尚未匯出；離開頁面前會提醒。</p>}
             </section>
+
+            {/* ── 匯款完成，標記為已付款（對某一份匯出紀錄） */}
+            <PayoutMarkPaidPanel
+                range={periodRange(periodMonth)}
+                today={today}
+                refreshKey={exportsRefresh}
+                onChanged={() => loadPeriod(periodMonth)}
+            />
 
             {/* ── 夥伴號碼匯入 */}
             <section className="bg-white border-2 lg:border-4 border-bauhaus-black rounded-2xl shadow-hard p-4 sm:p-6" aria-labelledby="payout-partner-heading">
@@ -849,6 +948,32 @@ const SalaryPayoutExport = () => {
                     </>
                 )}
             </section>
+            {duplicateConfirm && (
+                <div className="fixed inset-0 bg-bauhaus-black/60 flex items-center justify-center p-4 z-50" onClick={cancelDuplicateDownload}>
+                    <div role="dialog" aria-modal="true" aria-labelledby="payout-duplicate-title" data-testid="payout-duplicate-confirm"
+                        className="bh-card shadow-hard-lg max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6" onClick={(event) => event.stopPropagation()}>
+                        <h2 id="payout-duplicate-title" className="text-lg sm:text-xl font-black text-bauhaus-black flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-bauhaus-red shrink-0" aria-hidden="true" /> 這一期還有沒標記的匯出
+                        </h2>
+                        <p data-testid="payout-duplicate-text" className="mt-3 text-sm font-bold text-bauhaus-black leading-relaxed">{duplicateExportWarning(duplicateConfirm.exports)}</p>
+                        <ul data-testid="payout-duplicate-list" className="mt-3 space-y-1.5 text-sm font-medium text-bauhaus-black">
+                            {duplicateConfirm.exports.map((row) => (
+                                <li key={row.id} className="border-2 border-bauhaus-black rounded-lg px-3 py-2 bg-bauhaus-yellow/30">
+                                    <span className="font-mono font-black">#{row.id}</span>・{formatTaipeiTime(row.exported_at)}・{row.exported_by_name || '—'}下載・{row.people_count} 人・{row.item_count} 筆・{formatMoney(amountToCents(row.transfer_total))}
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="mt-5 flex gap-2 flex-wrap">
+                            <button type="button" onClick={cancelDuplicateDownload} autoFocus className="bh-btn bh-btn-outline px-4 py-2.5 min-h-[44px]">
+                                取消，不下載
+                            </button>
+                            <button type="button" onClick={confirmDuplicateDownload} className="bh-btn bh-btn-red px-4 py-2.5 min-h-[44px]">
+                                確定再下載一份
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 };

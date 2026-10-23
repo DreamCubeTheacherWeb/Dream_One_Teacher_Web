@@ -48,6 +48,14 @@ const useDialogDismiss = (onClose) => {
 
 const EMPTY_STATS = { total: 0, paid: 0, unpaid: 0, count: 0 };
 
+// 編輯視窗存檔用樂觀鎖：只在這筆紀錄仍是開視窗時讀到的版本（updated_at 相同）才寫入，
+// 避免用舊畫面蓋掉別人剛做的變更（例如月結匯款剛把它標成已付款）。0 列被更新＝已被改過，不寫入。
+const STALE_SESSION_MESSAGE = '這筆紀錄已被其他人修改（例如剛被標記已付款），這次沒有儲存。請重新整理後再改。';
+const updateSessionIfUnchanged = (session, payload) => {
+    const query = supabase.from('class_sessions').update(payload).eq('id', session.id);
+    return (session.updated_at ? query.eq('updated_at', session.updated_at) : query.is('updated_at', null)).select('id');
+};
+
 // 每次都建新的查詢物件（supabase-js 的查詢送出一次就不能再接條件）
 const sessionsQuery = (columns, filters) => applySalaryRegisterFilters(
     supabase.from('class_sessions').select(columns, { count: 'exact' }),
@@ -298,6 +306,17 @@ const SalaryRegister = () => {
             </div>
 
             {profile?.role === 'admin' && <SalaryPaydaySetting />}
+            {/* 「標記已付款」只在月結匯款頁做（只標實際下載的轉帳檔裡的紀錄）；這裡不再有整期一鍵標的入口 */}
+            {profile?.role === 'admin' && (
+                <div role="note" data-testid="salary-mark-paid-hint" className="bh-card p-4 sm:p-5 mb-6 flex items-start gap-3">
+                    <Wallet className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-sm font-medium text-bauhaus-black/80 leading-relaxed">
+                        <span className="font-black text-bauhaus-black">本期匯款完成，要標「已付款」？</span>
+                        請到<Link to="/admin/salary/payout" className="underline font-black text-bauhaus-blue mx-1">月結匯款</Link>下載轉帳檔（系統會存一份匯出紀錄），
+                        銀行匯款完成後在同一頁對那一份標記：只會標記那份檔案裡的紀錄，被排除或被擋下的講師不會被標，標錯可以整份還原。
+                    </p>
+                </div>
+            )}
 
             {(pendingCount > 0 || anomalyCount > 0) && (
                 <div className="flex flex-wrap gap-2 mb-6" aria-label="快速篩選">
@@ -1020,9 +1039,10 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
             payload.paid_at = new Date().toISOString();
             if (!payload.paid_amount) payload.paid_amount = payload.base_salary + payload.bonus;
         }
-        const { error: err } = await supabase.from('class_sessions').update(payload).eq('id', session.id);
+        const { data: savedRows, error: err } = await updateSessionIfUnchanged(session, payload);
         setSaving(false);
         if (err) { setError(salaryErrorMessage(err)); return; }
+        if (!savedRows?.length) { setError(STALE_SESSION_MESSAGE); return; }
         onSaved();
     };
 
@@ -1035,7 +1055,7 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
         }
         setSaving(true);
         setError('');
-        const { error: err } = await supabase.from('class_sessions').update({
+        const { data: savedRows, error: err } = await updateSessionIfUnchanged(session, {
             status: 'pending',
             base_salary: null,
             pricing_status: 'rejected',
@@ -1044,9 +1064,10 @@ const EditSalaryModal = ({ session, instructors, profile, onClose, onSaved }) =>
             pricing_message: `管理員退回：${form.notes.trim()}`,
             manual_adjustment_reason: null,
             notes: form.notes.trim(),
-        }).eq('id', session.id);
+        });
         setSaving(false);
         if (err) { setError(salaryErrorMessage(err)); return; }
+        if (!savedRows?.length) { setError(STALE_SESSION_MESSAGE); return; }
         onSaved();
     };
 
