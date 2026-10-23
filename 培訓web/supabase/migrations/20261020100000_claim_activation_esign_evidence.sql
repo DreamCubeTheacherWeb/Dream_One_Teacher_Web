@@ -2722,6 +2722,14 @@ BEGIN
      AND NULLIF(BTRIM(COALESCE(i.id_front_external_url, '')), '') IS NULL
      AND NULLIF(BTRIM(COALESCE(i.id_back_external_url, '')), '') IS NULL
      AND NULLIF(BTRIM(COALESCE(i.bankbook_external_url, '')), '') IS NULL
+     -- [claim-records-check] 已有上課或報酬紀錄的空位不能只靠姓名認領（2026-10-23 資安審查必修 1）：
+     -- 這種主檔背後是真的老師，同名的人一綁定就會變成「這些紀錄的本人」。改由行政確認 Email 後在後台手動綁定，
+     -- 或請老師走「姓名＋手機＋身分證末四碼」核對。回 not_found，不透露名冊裡有這個姓名。
+     AND NOT EXISTS (SELECT 1 FROM public.class_sessions s WHERE s.instructor_id = i.id)
+     AND NOT EXISTS (SELECT 1 FROM public.class_sessions_quarantine q WHERE q.instructor_id = i.id)
+     AND NOT EXISTS (SELECT 1 FROM public.salary_master_rows m WHERE m.instructor_id = i.id)
+     AND NOT EXISTS (SELECT 1 FROM public.salary_payout_export_items e WHERE e.instructor_id = i.id)
+     -- [/claim-records-check]
    ORDER BY i.created_at, i.id
    LIMIT 1
    FOR UPDATE SKIP LOCKED;
@@ -2758,6 +2766,7 @@ GRANT EXECUTE ON FUNCTION public.claim_instructor_name_slot(text) TO authenticat
 
 COMMENT ON FUNCTION public.claim_instructor_name_slot(text) IS
   'Pending account binds the oldest unclaimed, active, data-free name_slot row whose whitespace-normalized full_name matches. '
+  'Rows that already have class or salary records are never name-claimable (2026-10-23). '
   'Binding only: role stays pending until Email OTP activation (2026-10-20).';
 
 -- 7.5 新建帳號核准＝公司核驗：改 teacher、寫 new_instructor_approved（active）、登錄 Google 信箱為已確認 Email

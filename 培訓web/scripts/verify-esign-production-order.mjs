@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // 認領啟用＋電子簽約線上線前的「正式庫實際套用順序」模擬（2026-10-21；2026-10-22 加入 main 第三批兩支 migration；
 // 同日再加第三支電子簽約 migration 20261022120000「未滿 18 歲不可線上簽約」；
-// 2026-10-22 晚再加 main 已套正式庫的 20261022100000「人員類別」）。
+// 2026-10-22 晚再加 main 已套正式庫的 20261022100000「人員類別」；
+// 2026-10-23 再加 main 已套正式庫的 20261022140000「一鍵標已付款」，以及電子簽約線第四支 20261023100000「未啟用的綁定者讀不到主檔關聯資料」）。
 //
 // 正式庫已依序套過：20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000
 //   → 20261020150000 → 20261020160000，2026-10-22 下午再依序套了 main 的
@@ -28,11 +29,15 @@ const ALREADY_APPLIED = [
   '20261020150000', '20261020160000',
 ];
 const ESIGN = ['20261019233000', '20261020100000', '20261022120000'];
-const MAIN_THIRD = ['20261022010000', '20261022093700', '20261022100000'];
+// 2026-10-23：main 的「一鍵標已付款」20261022140000 已在 10/23 套正式庫，排在人員類別之後
+const MAIN_THIRD = ['20261022010000', '20261022093700', '20261022100000', '20261022140000'];
+// 2026-10-23 資安審查必修 1：未啟用的綁定者讀不到主檔關聯資料；必須和 ESIGN 三支連續套用、排在最後
+const LINKED_READS = ['20261023100000'];
 
 export const PRODUCTION_ORDERS = {
-  primary: [...ALREADY_APPLIED, ...MAIN_THIRD, ...ESIGN],
-  variant: [...ALREADY_APPLIED, ...ESIGN, ...MAIN_THIRD],
+  primary: [...ALREADY_APPLIED, ...MAIN_THIRD, ...ESIGN, ...LINKED_READS],
+  // variant＝接近全新環境的檔名順序：電子簽約三支先於 main 第三批；20261023100000 檔名最晚，仍在最後
+  variant: [...ALREADY_APPLIED, ...ESIGN, ...MAIN_THIRD, ...LINKED_READS],
 };
 // 相容舊用法：單一順序（primary）的逗號字串
 export const PRODUCTION_ORDER = PRODUCTION_ORDERS.primary.join(',');
@@ -175,9 +180,47 @@ try {
       adminEdit.stderr.split('\n')[0] || adminEdit.stdout);
   };
 
+  // 必修 1（20261023100000）：綁定主檔但還沒啟用（pending）讀不到上課紀錄；teacher／mentor 照舊；有紀錄的姓名空位不能被認領
+  const verifyLinkedReads = (stage) => {
+    check(`${tag}${stage}：class_sessions 本人讀取政策含「已啟用帳號」條件`,
+      Number(su(`SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'class_sessions'
+        AND policyname = 'Instructors view own sessions' AND qual LIKE '%current_user_is_approved_account%'`)) === 1);
+    const pendingId = randomUUID();
+    su(`INSERT INTO auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+        VALUES ('00000000-0000-0000-0000-000000000000', ${lit(pendingId)}, 'authenticated', 'authenticated', ${lit(`pending-${pendingId.slice(0, 8)}@order.test`)}, now(),
+                '{"provider":"google","providers":["google"]}'::jsonb, '{}'::jsonb, now(), now());
+        INSERT INTO public.instructors (user_id, full_name) VALUES (${lit(pendingId)}, '順序測試待啟用');
+        INSERT INTO public.class_sessions (course_type, course_name, instructor_id, instructor_name, session_date, duration_hours, student_count,
+            base_salary, bonus, paid_amount, status, pricing_status, source)
+          SELECT 'regular_basic', '順序測試課', i.id, i.full_name, DATE '2026-09-01', 1.5, 3, 640, 0, 0, 'approved', 'legacy', 'manual'
+            FROM public.instructors i WHERE i.user_id IN (${lit(pendingId)}, ${lit(users.teacher)});`);
+    const seen = (uid) => su(`SET ROLE authenticated;
+      SET request.jwt.claims = ${lit(JSON.stringify({ sub: uid, role: 'authenticated', aud: 'authenticated' }))};
+      SELECT count(*) FROM public.class_sessions;`);
+    check(`${tag}${stage}：pending 綁定者讀不到自己主檔的上課紀錄、teacher 讀得到自己的`,
+      su(`SELECT role FROM public.users WHERE id = ${lit(pendingId)}`) === 'pending' && seen(pendingId) === '0' && Number(seen(users.teacher)) >= 1,
+      `pending=${seen(pendingId)} teacher=${seen(users.teacher)}`);
+    su(`INSERT INTO public.instructors (full_name, name_slot) VALUES ('順序測試有課空位', true);
+        INSERT INTO public.class_sessions (course_type, course_name, instructor_id, instructor_name, session_date, duration_hours, student_count,
+            base_salary, bonus, paid_amount, status, pricing_status, source)
+          SELECT 'regular_basic', '空位的課', i.id, i.full_name, DATE '2026-09-02', 1.5, 3, 640, 0, 0, 'approved', 'legacy', 'manual'
+            FROM public.instructors i WHERE i.full_name = '順序測試有課空位';`);
+    const squatId = randomUUID();
+    su(`INSERT INTO auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+        VALUES ('00000000-0000-0000-0000-000000000000', ${lit(squatId)}, 'authenticated', 'authenticated', ${lit(`squat-${squatId.slice(0, 8)}@order.test`)}, now(),
+                '{"provider":"google","providers":["google"]}'::jsonb, '{}'::jsonb, now(), now());`);
+    const claim = su(`SET ROLE authenticated;
+      SET request.jwt.claims = ${lit(JSON.stringify({ sub: squatId, role: 'authenticated', aud: 'authenticated' }))};
+      SELECT public.claim_instructor_name_slot('順序測試有課空位') ->> 'status';`);
+    check(`${tag}${stage}：已有上課紀錄的姓名空位不能被認領（not_found）`, claim === 'not_found', claim);
+    su(`DELETE FROM public.class_sessions WHERE course_name IN ('順序測試課', '空位的課');
+        DELETE FROM public.instructors WHERE full_name IN ('順序測試待啟用', '順序測試有課空位');`);
+  };
+
   verifyPolicy('套完 100000 後（未重跑 140000）');
   verifyMinorGuard('套完全部順序後');
   verifyAdminFieldGuards('套完全部順序後');
+  verifyLinkedReads('套完全部順序後');
   db.psqlSync(null, { file: REVOKE, tuplesOnly: false });
   verifyPolicy('再重跑 140000 後');
   verifyMinorGuard('再重跑 140000 後');

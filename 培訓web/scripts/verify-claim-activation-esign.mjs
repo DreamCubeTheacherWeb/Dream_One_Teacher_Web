@@ -8,17 +8,50 @@
 // 每項印 PASS／FAIL；有 FAIL 就 exit 1。結束時只停自己起的 PostgreSQL（記錄 PID，不 pkill）。
 //
 // 用法：LC_ALL=en_US.UTF-8 node scripts/verify-claim-activation-esign.mjs
+//   突變測試（證明測試抓得到漏洞）：加 --mutate=<名稱>，只在暫存複本上改 SQL（不動 repo 檔），套完照跑全部情境，
+//   必須有 FAIL（見下方 MUTATIONS）：
+//     --mutate=drop-role-check          拿掉 20261023100000 的「已啟用帳號」條件（未啟用的綁定者讀得到空位的上課與報酬）
+//     --mutate=drop-claim-records-check 拿掉 20261020100000 姓名空位認領的「已有上課或報酬紀錄」排除條件
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { TempPostgres } from './e2e/lib/db.mjs';
+import { TempPostgres, SQL_PATCHES } from './e2e/lib/db.mjs';
 import { isMinorOn } from '../src/lib/esign.js';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIGRATION = path.join(appDir, 'supabase/migrations/20261020100000_claim_activation_esign_evidence.sql');
 const LEGAL_COPY = path.join(appDir, 'docs/specs/2026-10-20-esign-legal-copy.md');
 const MINOR_MIGRATION = path.join(appDir, 'supabase/migrations/20261022120000_block_minor_online_signing.sql');
+const LINKED_READS_MIGRATION = path.join(appDir, 'supabase/migrations/20261023100000_linked_reads_require_active_account.sql');
+
+// ── 突變測試 ────────────────────────────────────────────────────────
+// 每個突變是一條 SQL 文字修補（同 scripts/e2e/lib/db.mjs 的 SQL_PATCHES 格式）；修補對不到就直接報錯，
+// 確保突變真的生效。測試中途單獨重跑的 migration 也套同一條修補（migrationFile）。
+const MUTATIONS = {
+  'drop-role-check': {
+    files: ['20261023100000_linked_reads_require_active_account.sql'],
+    find: /\(SELECT private\.current_user_is_approved_account\(\)\)/g,
+    replace: 'true',
+    reason: '突變測試：拿掉 20261023100000 所有「本人是已啟用帳號（teacher／mentor／admin）」條件',
+  },
+  'drop-claim-records-check': {
+    files: ['20261020100000_claim_activation_esign_evidence.sql'],
+    find: /-- \[claim-records-check\][\s\S]*?-- \[\/claim-records-check\]/g,
+    replace: '-- [mutated] claim records check removed',
+    reason: '突變測試：拿掉姓名空位認領的「已有上課或報酬紀錄」排除條件',
+  },
+};
+const mutateArg = (process.argv.find((arg) => arg.startsWith('--mutate=')) || '').slice('--mutate='.length) || null;
+const mutation = mutateArg ? MUTATIONS[mutateArg] : null;
+if (mutateArg && !mutation) {
+  console.error(`未知的突變：${mutateArg}（可用：${Object.keys(MUTATIONS).join(', ')}）`);
+  process.exit(2);
+}
+if (mutation) {
+  SQL_PATCHES.push(mutation);
+  console.log(`*** 突變測試 ${mutateArg}：${mutation.reason}。預期會有 FAIL。***`);
+}
 const COMPANY = '夢想一號文化教育股份有限公司';
 const CONTACT = 'hi@dreamcube.tw';
 const RESEND_KEY = 're_test_key_DO_NOT_USE';
@@ -48,6 +81,16 @@ const errOf = (r) => (r && r.ok === false ? r.message : null);
 
 const db = new TempPostgres({ label: 'claim-esign' });
 const emails = new Map();
+// 測試中途單獨重跑某支 migration：有突變時改用套過同一條修補的暫存複本（否則重跑會把突變蓋回正確版本）
+function migrationFile(file) {
+  if (!mutation || !mutation.files.includes(path.basename(file))) return file;
+  const text = readFileSync(file, 'utf8');
+  const patched = text.replace(mutation.find, mutation.replace);
+  if (patched === text) throw new Error(`mutation ${mutateArg} no longer matches ${file}`);
+  const target = path.join(db.dir, `mutated-${path.basename(file)}`);
+  writeFileSync(target, patched, 'utf8');
+  return target;
+}
 
 // ── 身分切換（與 PostgREST 相同：SET ROLE＋request.jwt.claims＋request.headers） ──
 function sqlAs(uid, sql, { headers = {}, role = 'authenticated' } = {}) {
@@ -233,7 +276,7 @@ try {
   const pendingNewInstructor = makeInstructor('待審新講師', 'pending-new@t.test', { userId: pendingNew });
   const updatedBefore = suVal(`SELECT updated_at FROM public.instructors WHERE id = ${lit(unlinkedOld)}`);
   su(`DELETE FROM private.schema_backfill_markers WHERE name = '20261020100000_claim_activation_esign_evidence'`);
-  const rerun1 = db.psqlSync(null, { file: MIGRATION, tuplesOnly: false, expectFail: true });
+  const rerun1 = db.psqlSync(null, { file: migrationFile(MIGRATION), tuplesOnly: false, expectFail: true });
   check('migration 第二次套用成功（模擬上線時的回填）', rerun1.ok, rerun1.stderr);
   const lt = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE id = ${lit(legacyInstructor)}`);
   check('D2 既有講師：identity_verified_at 已登錄、依據為公司既有核驗結果（非第三方實名認證）',
@@ -252,7 +295,7 @@ try {
   check('D4 既有 teacher 角色不受影響', roleOf(legacyTeacher) === 'teacher');
   check('D4 待審新講師（pending）沒有被補啟用紀錄', (activationsOf(pendingNew) || []).length === 0);
   const markerBefore = suVal(`SELECT applied_at || detail::text FROM private.schema_backfill_markers`);
-  const rerun2 = db.psqlSync(null, { file: MIGRATION, tuplesOnly: false, expectFail: true });
+  const rerun2 = db.psqlSync(null, { file: migrationFile(MIGRATION), tuplesOnly: false, expectFail: true });
   check('migration 第三次套用成功，回填不重做（標記不變、啟用紀錄不重複）',
     rerun2.ok && suVal(`SELECT applied_at || detail::text FROM private.schema_backfill_markers`) === markerBefore && activationsOf(legacyTeacher).length === 1, rerun2.stderr);
   const legacyStatus = call(legacyTeacher, 'public.get_my_activation_status()');
@@ -1137,7 +1180,7 @@ try {
 
   // migration 可重複執行；文案種子 append-only
   const textBefore = suVal(`SELECT content FROM public.esign_text_versions WHERE version_code = 'esign-minor-paper-v1'`);
-  const rerunMinor = db.psqlSync(null, { file: MINOR_MIGRATION, tuplesOnly: false, expectFail: true });
+  const rerunMinor = db.psqlSync(null, { file: migrationFile(MINOR_MIGRATION), tuplesOnly: false, expectFail: true });
   check('新 migration 第二次套用成功（可重複執行）、文案種子不變、trigger 不重複',
     rerunMinor.ok && suVal(`SELECT content FROM public.esign_text_versions WHERE version_code = 'esign-minor-paper-v1'`) === textBefore
     && !/WARNING/.test(rerunMinor.stderr || '')
@@ -1153,6 +1196,175 @@ try {
     const missing = lines.filter((line) => !content.includes(line));
     check(`${code}：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（${lines.length} 句）`, content && lines.length > 0 && missing.length === 0, missing);
   }
+
+  // ════════════════════════════════════════════════════════════════
+  // 2026-10-23 資安審查必修 1：綁定講師主檔但還沒用驗證碼啟用（role 仍是 pending）的帳號，
+  // 讀不到這份主檔背後原本的上課、報酬、徽章資料；已有上課或報酬紀錄的姓名空位不能只靠姓名認領。
+  group('linked reads require activated account (必修 1, 20261023100000)');
+  check('新 migration 已被套用（chain 包含 20261023100000_linked_reads_require_active_account.sql）',
+    chain.applied.includes('supabase/migrations/20261023100000_linked_reads_require_active_account.sql'));
+  su(`INSERT INTO storage.buckets (id, name, public) VALUES ('instructor_uploads', 'instructor_uploads', false) ON CONFLICT DO NOTHING`);
+  let sessionSeq = 0;
+  // 行政登錄的上課紀錄（以超級使用者寫入＝後台／匯入）；日期都在講師可見範圍（2026-01-01 起）
+  const addSessions = (instructorId, name, count = 2) => {
+    const rows = [];
+    for (let k = 0; k < count; k += 1) {
+      sessionSeq += 1;
+      const day = String(1 + (sessionSeq % 27)).padStart(2, '0');
+      const month = String(3 + Math.floor(sessionSeq / 27)).padStart(2, '0');
+      rows.push(`('regular_basic', ${lit(`紀錄課 ${sessionSeq}`)}, ${lit(instructorId)}, ${lit(name)}, DATE '2026-${month}-${day}',
+        1.5, ${3 + k}, 640, 0, 0, 'approved', 'legacy', 'manual')`);
+    }
+    su(`INSERT INTO public.class_sessions (course_type, course_name, instructor_id, instructor_name, session_date,
+          duration_hours, student_count, base_salary, bonus, paid_amount, status, pricing_status, source)
+        VALUES ${rows.join(',')}`);
+    return count;
+  };
+  const sessionsSeen = (uid, instructorId) => jsonAs(uid, `SELECT count(*) FROM public.class_sessions WHERE instructor_id = ${lit(instructorId)}`);
+  const salarySeen = (uid, instructorId) => jsonAs(uid, `SELECT COALESCE(sum(total_salary), 0) FROM public.class_sessions WHERE instructor_id = ${lit(instructorId)}`);
+  const summarySeen = (uid) => jsonAs(uid, `SELECT COALESCE(jsonb_agg(jsonb_build_object('n', s.total_sessions, 'salary', s.total_salary)), '[]'::jsonb)
+      FROM public.instructor_salary_summary s WHERE s.user_id = auth.uid()`);
+  const badgeStatsSeen = (uid, instructorId) => jsonAs(uid, `SELECT COALESCE(jsonb_agg(jsonb_build_object('n', s.session_count, 'hours', s.total_hours)), '[]'::jsonb)
+      FROM public.get_teacher_badge_stats(${lit(instructorId)}) s`);
+  const leaderboardSeen = (uid, instructorId) => jsonAs(uid, `SELECT jsonb_build_object(
+      'v2', (SELECT count(*) FROM public.get_teaching_leaderboard_v2(NULL, 'all')),
+      'v2_mine', (SELECT count(*) FROM public.get_teaching_leaderboard_v2(NULL, 'all') l WHERE l.instructor_id = ${lit(instructorId)}),
+      'v1', (SELECT count(*) FROM public.get_teaching_leaderboard(NULL)))`);
+  const overridesSeen = (uid, instructorId) => jsonAs(uid, `SELECT count(*) FROM public.badge_overrides WHERE instructor_id = ${lit(instructorId)}`);
+  const objectSeen = (uid, name) => jsonAs(uid, `SELECT count(*) FROM storage.objects WHERE bucket_id = 'instructor_uploads' AND name = ${lit(name)}`);
+  const grantOverride = (instructorId) => suVal(`WITH ins AS (
+      INSERT INTO public.badge_overrides (instructor_id, badge_key, state, note)
+      SELECT ${lit(instructorId)}, d.key, 'granted', '後台頒發（測試）' FROM public.badge_definitions d ORDER BY d.key LIMIT 1
+      ON CONFLICT DO NOTHING RETURNING 1) SELECT count(*) FROM ins`);
+
+  // R1（總指揮在正式庫預檢到的真實型態）：name_slot＝true、四項個資全空、但已有上課紀錄的空位
+  const recSlotInsert = exec(admin, `INSERT INTO public.instructors (full_name, name_slot) VALUES ('有紀錄空位', true)`);
+  const recSlot = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE full_name = '有紀錄空位'`);
+  const recSessions = addSessions(recSlot.id, '有紀錄空位', 3);
+  check('R1 前提：name_slot＝true、user_id 空、email／身分證／手機／銀行帳號全空，但有 3 筆上課紀錄',
+    recSlotInsert?.ok && recSlot.name_slot === true && recSlot.user_id === null && !recSlot.email_primary && !recSlot.id_number
+    && !recSlot.phone_mobile && !recSlot.bank_account_number && Number(suVal(`SELECT count(*) FROM public.class_sessions WHERE instructor_id = ${lit(recSlot.id)}`)) === recSessions, recSlot);
+  const uSquat = createAuthUser('squat@t.test', '同名路人');
+  const squat = call(uSquat, `public.claim_instructor_name_slot('有紀錄 空位')`);
+  check('R1 有上課紀錄的姓名空位：輸入同名認領 → not_found（不透露名冊有這個姓名）',
+    squat.result?.status === 'not_found' && !('instructor_id' in (squat.result || {})), squat);
+  check('R1 認領被擋後：空位仍未綁定、認領者沒有主檔、沒有啟用紀錄、角色仍是 pending',
+    suVal(`SELECT user_id IS NULL FROM public.instructors WHERE id = ${lit(recSlot.id)}`) === 't' && !instructorOf(uSquat)
+    && (activationsOf(uSquat) || []).length === 0 && roleOf(uSquat) === 'pending');
+  check('R1 認領被擋的人讀不到該空位任何上課紀錄', sessionsSeen(uSquat, recSlot.id) === 0);
+  // R2：只有隔離區或薪資總表紀錄的空位也一樣（報酬紀錄）
+  exec(admin, `INSERT INTO public.instructors (full_name, name_slot) VALUES ('隔離紀錄空位', true)`);
+  const qSlot = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE full_name = '隔離紀錄空位'`);
+  addSessions(qSlot.id, '隔離紀錄空位', 1);
+  su(`INSERT INTO public.class_sessions_quarantine (id, course_type, course_name, instructor_id, instructor_name, session_date,
+          duration_hours, student_count, base_salary, bonus, paid_amount, status, pricing_status, source, quarantine_batch, quarantine_reason)
+      SELECT s.id, s.course_type, s.course_name, s.instructor_id, s.instructor_name, s.session_date,
+             s.duration_hours, s.student_count, s.base_salary, s.bonus, s.paid_amount, s.status, s.pricing_status, s.source, 'test-batch', '測試隔離'
+        FROM public.class_sessions s WHERE s.instructor_id = ${lit(qSlot.id)};
+      SET session_replication_role = replica;
+      DELETE FROM public.class_sessions WHERE instructor_id = ${lit(qSlot.id)};
+      RESET session_replication_role;`);
+  const uSquat2 = createAuthUser('squat2@t.test', '同名路人二');
+  check('R2 只剩隔離區上課紀錄的姓名空位 → not_found',
+    Number(suVal(`SELECT count(*) FROM public.class_sessions_quarantine WHERE instructor_id = ${lit(qSlot.id)}`)) === 1
+    && Number(suVal(`SELECT count(*) FROM public.class_sessions WHERE instructor_id = ${lit(qSlot.id)}`)) === 0
+    && call(uSquat2, `public.claim_instructor_name_slot('隔離紀錄空位')`).result?.status === 'not_found');
+  // 對照組：沒有任何紀錄的空位照舊可認領（下面 P2 用）
+  exec(admin, `INSERT INTO public.instructors (full_name, name_slot, photo_path) VALUES ('待啟用空位', true, 'instructors/import/slot-photo.png')`);
+  const freshSlot = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE full_name = '待啟用空位'`);
+  su(`INSERT INTO storage.objects (bucket_id, name) VALUES ('instructor_uploads', 'instructors/import/slot-photo.png')`);
+  const uP2 = createAuthUser('p2@t.test', '待啟用老師');
+  const p2Claim = call(uP2, `public.claim_instructor_name_slot('待啟用空位')`);
+  check('對照組：沒有上課／報酬紀錄的姓名空位照舊可認領（claimed、只綁不開通）',
+    p2Claim.result?.status === 'claimed' && p2Claim.result.instructor_id === freshSlot.id && roleOf(uP2) === 'pending', p2Claim);
+
+  // P2：綁定之後行政才登錄課（真實順序：空位先建、老師綁定、行政補登課）＋後台頒徽章
+  const p2Sessions = addSessions(freshSlot.id, '待啟用空位', 2);
+  check('P2 前提：徽章頒發寫入 1 筆', grantOverride(freshSlot.id) === '1');
+  check('P2 pending＋已綁定：讀不到該空位的上課紀錄（class_sessions 0 筆、報酬金額 0）',
+    sessionsSeen(uP2, freshSlot.id) === 0 && Number(salarySeen(uP2, freshSlot.id)) === 0, { n: sessionsSeen(uP2, freshSlot.id) });
+  const p2Summary = summarySeen(uP2);
+  check('P2 pending＋已綁定：報酬彙總 instructor_salary_summary 只看到自己的列、堂數與金額都是 0',
+    Array.isArray(p2Summary) && p2Summary.length === 1 && Number(p2Summary[0].n) === 0 && Number(p2Summary[0].salary) === 0, p2Summary);
+  check('P2 pending＋已綁定：get_teacher_badge_stats(自己綁的主檔) → 空集合', JSON.stringify(badgeStatsSeen(uP2, freshSlot.id)) === '[]', badgeStatsSeen(uP2, freshSlot.id));
+  const p2Board = leaderboardSeen(uP2, freshSlot.id);
+  check('P2 pending＋已綁定：教學排行榜 v1／v2 都是空集合', p2Board?.v2 === 0 && p2Board.v1 === 0 && p2Board.v2_mine === 0, p2Board);
+  check('P2 pending＋已綁定：讀不到後台頒給這個主檔的徽章（badge_overrides）', overridesSeen(uP2, freshSlot.id) === 0);
+  check('P2 pending＋已綁定：讀不到主檔路徑指到、但不在自己資料夾的影像（空位原本的照片）',
+    objectSeen(uP2, 'instructors/import/slot-photo.png') === 0);
+  // 不能擋的：本人主檔、本人資料夾的上傳檔、草稿、通知、啟用流程
+  check('P2 pending 仍讀得到自己的講師主檔', jsonAs(uP2, `SELECT count(*) FROM public.instructors WHERE user_id = auth.uid()`) === 1);
+  const p2Upload = exec(uP2, `INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('instructor_uploads', 'instructors/' || auth.uid() || '/id-front.png', auth.uid())`);
+  check('P2 pending 可上傳到自己的資料夾，並讀得到自己剛上傳的檔',
+    p2Upload?.ok && p2Upload.rows === 1 && objectSeen(uP2, `instructors/${uP2}/id-front.png`) === 1, p2Upload);
+  const p2Fill = exec(uP2, `UPDATE public.instructors SET
+      nickname = '待啟用', gender = '女', birth_date = '1993-03-03', id_number = 'G223450001', phone_mobile = '0977000111',
+      line_id = 'line-p2', address = '桃園市', household_address = '桃園市', email_primary = 'p2@t.test',
+      teaching_freq_semester = '每週 1 次', teaching_freq_vacation = '每週 2 次', teaching_regions = ARRAY['桃園市']::public.tw_county[],
+      bio_notes = '待啟用', bank_account_name = '待啟用老師', bank_name = '銀行', bank_branch = '分行',
+      bank_account_number = '3333333333', bank_code = '0000003',
+      id_front_path = 'instructors/' || auth.uid() || '/id-front.png', id_back_path = 'instructors/' || auth.uid() || '/id-back.png',
+      bankbook_path = 'instructors/' || auth.uid() || '/bankbook.png'
+    WHERE user_id = auth.uid()`);
+  check('P2 pending 可在 /profile 補齊並存檔自己的主檔', p2Fill?.ok && p2Fill.rows === 1, p2Fill);
+  const p2Draft = exec(uP2, `INSERT INTO public.instructor_profile_drafts (user_id, data) VALUES (auth.uid(), '{"nickname":"草稿"}'::jsonb)
+      ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data`);
+  check('P2 pending 可寫入並讀回自己的資料草稿', p2Draft?.ok && jsonAs(uP2, `SELECT count(*) FROM public.instructor_profile_drafts WHERE user_id = auth.uid()`) === 1, p2Draft);
+  su(`INSERT INTO public.notifications (user_id, type, title, body) VALUES (${lit(uP2)}, 'announcement', '測試通知', '本人通知')`);
+  check('P2 pending 讀得到自己的通知', jsonAs(uP2, `SELECT count(*) FROM public.notifications WHERE user_id = auth.uid()`) === 1);
+  check('P2 pending 的啟用狀態查詢照常（pending／name_slot）', call(uP2, 'public.get_my_activation_status()').result?.status === 'pending');
+
+  // 啟用成 teacher 之後就讀得到
+  call(admin, `public.admin_confirm_instructor_email(${ulit(freshSlot.id)}, 'p2@t.test', '10/23 透過 LINE 與老師本人確認')`);
+  const p2Otp = freshOtp(uP2, 'account_activation');
+  const p2Verify = verifyOtp(uP2, p2Otp.id, p2Otp.code);
+  check('P2 用 Email 驗證碼啟用 → teacher', p2Verify?.activated === true && roleOf(uP2) === 'teacher', p2Verify);
+  check('P2 啟用後讀得到該主檔的上課紀錄與報酬金額',
+    sessionsSeen(uP2, freshSlot.id) === p2Sessions && Number(salarySeen(uP2, freshSlot.id)) === 640 * p2Sessions,
+    { n: sessionsSeen(uP2, freshSlot.id), salary: salarySeen(uP2, freshSlot.id) });
+  const p2SummaryAfter = summarySeen(uP2);
+  check('P2 啟用後報酬彙總有堂數與金額', p2SummaryAfter?.length === 1 && Number(p2SummaryAfter[0].n) === p2Sessions && Number(p2SummaryAfter[0].salary) === 640 * p2Sessions, p2SummaryAfter);
+  const p2Badge = badgeStatsSeen(uP2, freshSlot.id);
+  check('P2 啟用後 get_teacher_badge_stats 有統計（堂數＝2）', p2Badge?.length === 1 && Number(p2Badge[0].n) === p2Sessions, p2Badge);
+  const p2BoardAfter = leaderboardSeen(uP2, freshSlot.id);
+  check('P2 啟用後教學排行榜 v1／v2 有資料且包含自己', p2BoardAfter?.v2 > 0 && p2BoardAfter.v1 > 0 && p2BoardAfter.v2_mine === 1, p2BoardAfter);
+  check('P2 啟用後讀得到後台頒的徽章與主檔路徑指到的影像（照片仍是空位原本的路徑）', overridesSeen(uP2, freshSlot.id) === 1
+    && objectSeen(uP2, 'instructors/import/slot-photo.png') === 1 && objectSeen(uP2, `instructors/${uP2}/id-front.png`) === 1);
+
+  // P3：Email 對應（首次登入自動綁定）、主檔原本就有課 → 綁定後 pending，同樣讀不到
+  const p3Instructor = makeInstructor('信箱有課老師', 'p3@t.test', { phone: '0977000222', idNumber: 'G223450002' });
+  su(`UPDATE public.instructors SET photo_path = 'instructors/import/p3-photo.png' WHERE id = ${lit(p3Instructor)};
+      INSERT INTO storage.objects (bucket_id, name) VALUES ('instructor_uploads', 'instructors/import/p3-photo.png');`);
+  const p3Sessions = addSessions(p3Instructor, '信箱有課老師', 2);
+  const uP3 = createAuthUser('p3@t.test', '信箱有課老師 Google');
+  check('P3 前提：Email 對應自動綁定、role pending、主檔有 2 筆上課紀錄',
+    instructorOf(uP3)?.id === p3Instructor && roleOf(uP3) === 'pending' && p3Sessions === 2);
+  check('P3 pending（email_match）讀不到主檔的上課紀錄、報酬彙總為 0、成就統計空、匯入的影像讀不到',
+    sessionsSeen(uP3, p3Instructor) === 0 && Number(summarySeen(uP3)?.[0]?.n) === 0
+    && JSON.stringify(badgeStatsSeen(uP3, p3Instructor)) === '[]' && objectSeen(uP3, 'instructors/import/p3-photo.png') === 0);
+  check('P3 pending 仍讀得到自己的主檔（啟用前確認資料）', jsonAs(uP3, `SELECT count(*) FROM public.instructors WHERE user_id = auth.uid()`) === 1);
+
+  // mentor／admin／既有 teacher 原本的讀取不受影響
+  const totalSessions = Number(suVal(`SELECT count(*) FROM public.class_sessions`));
+  check('admin 讀得到全部上課紀錄（含空位與未啟用者的）', jsonAs(admin, `SELECT count(*) FROM public.class_sessions`) === totalSessions && totalSessions > 0);
+  check('admin 讀得到任一主檔的成就統計、排行榜、徽章頒發',
+    Number(badgeStatsSeen(admin, recSlot.id)?.[0]?.n) === recSessions && leaderboardSeen(admin, recSlot.id)?.v2_mine === 1 && overridesSeen(admin, freshSlot.id) === 1);
+  const mentorSessions = addSessions(mentorInstructor, '輔導員本人', 2);
+  check('mentor 讀得到自己綁定主檔的上課紀錄（照舊）', sessionsSeen(uMentor, mentorInstructor) === mentorSessions);
+  check('mentor 讀不到別人的上課紀錄（照舊）', sessionsSeen(uMentor, recSlot.id) === 0);
+  check('mentor 呼叫排行榜、成就統計照常有資料', leaderboardSeen(uMentor, recSlot.id)?.v2 > 0 && Number(badgeStatsSeen(uMentor, recSlot.id)?.[0]?.n) === recSessions);
+  const legacySessions = addSessions(legacyInstructor, '舊講師', 2);
+  check('既有 teacher（legacy 啟用紀錄）讀得到自己的上課紀錄（照舊）', sessionsSeen(legacyTeacher, legacyInstructor) === legacySessions);
+  const lateSessions = addSessions(lateInstructor.id, '晚建檔老師', 1);
+  check('沒有任何啟用紀錄的 teacher（回填後自建主檔）也讀得到自己的上課紀錄——條件看角色、不看啟用紀錄',
+    (activationsOf(uLate) || []).length === 0 && sessionsSeen(uLate, lateInstructor.id) === lateSessions);
+  check('teacher 讀不到別人的上課紀錄（照舊）', sessionsSeen(legacyTeacher, freshSlot.id) === 0);
+
+  // 可重複執行
+  const rerunLinked = db.psqlSync(null, { file: migrationFile(LINKED_READS_MIGRATION), tuplesOnly: false, expectFail: true });
+  check('20261023100000 第二次套用成功（可重複執行），套完 pending 仍讀不到、teacher 仍讀得到',
+    rerunLinked.ok && sessionsSeen(uP3, p3Instructor) === 0 && sessionsSeen(uP2, freshSlot.id) === p2Sessions
+    && Number(suVal(`SELECT count(*) FROM pg_policies WHERE tablename = 'class_sessions' AND policyname = 'Instructors view own sessions'`)) === 1, rerunLinked.stderr);
 } catch (error) {
   check(`unexpected error: ${error.message.split('\n')[0]}`, false, error.stack);
 } finally {
