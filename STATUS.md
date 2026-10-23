@@ -38,7 +38,7 @@
 - 驗證（2026-10-23 實跑，輸出存 `培訓web/docs/verification/2026-10-23-linked-reads/`）：
   - `verify-claim-activation-esign` 348/348（正式庫順序也 348/348）；突變 `--mutate=drop-role-check` 8 項 FAIL、`--mutate=drop-claim-records-check` 3 項 FAIL（證明測試抓得到）；
   - `verify:esign-production-order` 70/70；`npm test` 286/286；build 通過；改過的 12 個 JS 檔 eslint 0；
-  - `e2e:onboarding --runs=1` 290 PASS／0 FAIL（已知問題 1）；`e2e:profile-save` 見下一次 commit；
+  - `e2e:onboarding --runs=1` 290 PASS／0 FAIL（已知問題 1）；`e2e:profile-save` 81/81（commit 之後、src 乾淨時跑）；
   - 報酬／權限相關既有腳本全過：rls-audience-mentor、salary-payout-schedule 43/43、salary-sessions-paid 124/124、personnel-types 95/95、payout-partner-no 38/38、
     salary-visibility、security-hardening、salary-fixes 34/34、salary-payday-browser 113/113、compensation-confirm-browser 41/41；
   - mock：activation-esign-ui 18/18、teacher-progress-ui 21/21。

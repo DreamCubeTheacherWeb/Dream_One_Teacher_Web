@@ -10,6 +10,7 @@
 | verify-claim-activation-esign-production-order.txt | 同上，加 `E2E_MIGRATION_ORDER`＝正式庫順序（…→140000→233000→100000→120000→20261023100000） | 348/348 PASS |
 | verify-esign-production-order.txt | `npm run verify:esign-production-order`（primary／variant 兩種順序） | 70/70 PASS |
 | e2e-onboarding-runs1.txt | `npm run e2e:onboarding -- --runs=1`（真瀏覽器） | 290 PASS／0 FAIL（已知問題 1：簽約驗證後關頁 60 秒內要等冷卻） |
+| e2e-profile-save.txt | `npm run e2e:profile-save`（commit 後、src 乾淨時跑） | 81/81 PASS |
 
 突變測試說明：只在暫存複本上改 SQL（不動 repo 檔），而且測試中途單獨重跑的 migration 也套同一條修補；修補對不到就直接報錯，確保突變真的生效。
 「drop-claim-records-check」那次，認領成功的同名者仍讀不到該空位的上課紀錄（20261023100000 的角色條件兜住），兩層防線各自都測得到。
