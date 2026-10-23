@@ -7,6 +7,30 @@
 
 ## 🪪 2026-10-20：講師「姓名空位＋Email 驗證碼啟用」＋電子簽約證據與防竄改（🛠 本機全測通過；⚠️ 未上線，需業主先設定 Resend 並套 migration）
 
+**2026-10-23 新的發版候選：分支 `fix/esign-owner-decisions`（取代 `release/esign-20261021`，已含 origin/main 最新、落後 0，未推 main）**：
+- 業主 10/22 說「你做」，授權主對話把待確認事項直接定案：
+  - 保存期間＝合作結束後 15 年；
+  - 隱私權政策生效日＝電子簽約實際上線日（發版者在推 main 的同一個 commit，改 `PrivacyPolicy.jsx` 的 effectiveDate）；
+  - 改紙本照預設文字，不加工作天數與「不影響合作資格」承諾；
+  - 紅燈 R3：**未滿 18 歲一律不能線上簽約**，只能紙本、由本人和法定代理人一起簽。
+- R3 的做法：新 migration `20261022120000_block_minor_online_signing.sql`。
+  - 資料庫擋未成年的「同意電子簽約」和「已簽契約」，錯誤碼 `MINOR_REQUIRES_GUARDIAN`，被擋時驗證碼不會被用掉。
+  - 未成年不能自己把生日改成成年（`BIRTH_DATE_ADMIN_ONLY`）。
+  - 畫面在同意頁就換成紙本說明（`esign-minor-paper-v1`）。
+  - 2/29 出生、成年那年不是閏年的，保守算到 3/1，待律師確認。
+- 合併 origin/main 時抓到並修好：
+  - 原本 `20261019233000` 與 `20261020100000` 會整支覆寫 `guard_instructor_admin_fields`，晚套就會把 10/22 已上線的 personnel_types 保護蓋掉。
+    已改成另加獨立的 `guard_instructor_claim_fields` trigger，不再碰共用 guard（dfc0123）。
+  - 進度追蹤不把職員、工讀計時算成待簽約的老師（a66580b）。
+- 驗證（主對話 2026-10-23 親跑）：
+  - `npm test` 275/275，build 通過；
+  - `verify-claim-activation-esign` 274/274；
+  - `verify:esign-production-order` 64/64；
+  - `e2e:onboarding` 兩輪各 290 PASS／0 FAIL（已知問題 1：簽約驗證後關頁 60 秒內要等冷卻）；
+  - `e2e:profile-save` 81/81。
+- **正式庫套用順序改為三支**：`20261019233000_instructor_name_slots.sql` → `20261020100000_claim_activation_esign_evidence.sql` → `20261022120000_block_minor_online_signing.sql`。
+  `20261020010000` 已在 10/20 套過。套完立刻推前端。前提不變：Vault 兩個 secret、Resend 網域 Verified、業主當天口頭授權。
+
 **2026-10-22 上線前獨立審查：必修 1 已修（分支 `release/esign-20261021`，未推 main）**：
 - 問題：`private.signing_account_state` 要求 role=teacher 必須有 status='active' 的啟用紀錄才能簽約，但回填 D4 只幫「套用當下已綁講師主檔的 teacher」補 legacy 紀錄。
   兩種人會完全簽不了約、也無法自救：(a) 套用當下已是 teacher 但還沒有講師主檔、之後在 /profile 第一次存檔自建主檔的人；(b) 被行政用角色下拉直接改成 teacher 的人。
@@ -98,7 +122,7 @@
    - 前提：`20261019103000_restrict_contract_document_reads.sql` 已套用（狀態見下方 10/19 段，目前「待業主套」）。
    - 套用前先在正式庫**唯讀**查「role=teacher 且沒有講師主檔」的人數並記錄（2026-10-22 必修 1：這些人之後自建主檔會以 legacy 身分簽約）：
      `SELECT count(*) FROM public.users u WHERE u.role = 'teacher' AND NOT EXISTS (SELECT 1 FROM public.instructors i WHERE i.user_id = u.id);`
-   - 依序套：`20261019233000_instructor_name_slots.sql` → `20261020010000_drop_legacy_claim_rpcs.sql` → `20261020100000_claim_activation_esign_evidence.sql`。
+   - 依序套（2026-10-23 更新）：`20261019233000_instructor_name_slots.sql` → `20261020100000_claim_activation_esign_evidence.sql` → `20261022120000_block_minor_online_signing.sql`（`20261020010000` 已於 10/20 套過）。
 4. 第 3 步套完**立刻**推 main 部署前端：舊前端遇到新資料庫會簽不了約（CONSENT_REQUIRED，2026-10-22 更正），認領後也不會開通；反過來先部署前端也會壞。
 5. 上線後驗收：
    - 管理員在講師資料總覽，對一位測試講師按「確認 Email」，填自己能收信的信箱。
@@ -107,7 +131,7 @@
 
 **待業主決定／請律師看**（詳見法規文案檔 §4）：
 - 紅燈：
-  - R3 有沒有未滿 18 歲的講師？有的話，線上簽約要法定代理人同意。
+  - ~~R3 有沒有未滿 18 歲的講師~~ → 2026-10-23 已定案：未成年一律改紙本（見本段最上方）。
   - R2 隱私權政策頁已補上電子簽署紀錄（簽名影像、Email 驗證時間、IP、User Agent）、寄信服務商 Resend、保存期間「合作結束後 15 年」（🟡 已改完未上線，等業主審新舊對照；15 年＝法規顧問建議值待業主確認；上線時要把生效日期改成上線日）。證據：`node 培訓web/scripts/verify-privacy-policy-esign.mjs` 全 PASS，截圖 `培訓web/docs/verification/2026-10-20-privacy-esign/`。
 - 黃燈：
   - Y1 畫面手寫簽名不一定算法律上的「電子簽章」，爭議時要靠驗證碼與證據鏈證明。
