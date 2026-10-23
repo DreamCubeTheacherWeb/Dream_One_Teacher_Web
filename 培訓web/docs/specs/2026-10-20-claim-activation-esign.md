@@ -87,6 +87,13 @@
 - `approve_new_instructor_account`：照舊改 teacher，並寫 `new_instructor_approved` 啟用紀錄（active）、confirmed_email＝該帳號 Google 信箱、identity_verified_at＝now()。
 - 管理員解除綁定（`admin_unlink_instructor`）：啟用紀錄改 revoked。
 
+### 1.6 未啟用的綁定者讀不到主檔關聯資料（migration：`20261023100000_linked_reads_require_active_account.sql`，2026-10-23 資安審查必修 1）
+- 判斷函式 `private.current_user_is_approved_account()`＝本人 `users.role IN ('teacher','mentor','admin')`。加在：class_sessions「Instructors view own sessions」、
+  storage「Users can view files referenced by own instructor profile」、badge_overrides「badge_ovr read」、`get_teacher_badge_stats`、`get_teaching_leaderboard`／`_v2`（未啟用者回空集合）。
+- 姓名空位認領排除已有 class_sessions／class_sessions_quarantine／salary_master_rows／salary_payout_export_items 紀錄的主檔（回 `not_found`）。
+- pending 仍可讀寫自己的主檔、自己 uid 資料夾的上傳檔、草稿、通知與啟用流程。
+- 正式庫四支連續套用：233000 → 100000 → 120000 → 20261023100000。
+
 ## 2. 前端
 - `/pending` 認領成功 → `/profile`；`/profile` 頂端依 `get_my_activation_status()`：
   - pending＋無已確認 Email →「你的 Email 尚未經公司確認，請聯絡行政人員確認後才能啟用帳號」；

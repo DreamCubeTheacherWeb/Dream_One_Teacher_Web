@@ -1,0 +1,79 @@
+
+> teacher-training-platform@0.0.0 verify:esign-production-order
+> node scripts/verify-esign-production-order.mjs
+
+[db] E2E_MIGRATION_ORDER 生效：最後依序套 20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000 → 20261020150000 → 20261020160000 → 20261022010000 → 20261022093700 → 20261022100000 → 20261022140000 → 20261019233000 → 20261020100000 → 20261022120000 → 20261023100000
+PASS  [primary] 套用順序的最後 15 支＝指定順序  — 20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000 → 20261020150000 → 20261020160000 → 20261022010000 → 20261022093700 → 20261022100000 → 20261022140000 → 20261019233000 → 20261020100000 → 20261022120000 → 20261023100000
+[db] E2E_MIGRATION_ORDER 生效：最後依序套 20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000 → 20261020150000 → 20261020160000 → 20261022010000 → 20261022093700 → 20261022100000 → 20261022140000 → 20261019233000 → 20261020100000 → 20261022120000 → 20261023100000
+PASS  [primary] 依正式庫順序套用全部 SQL 成功（78 個檔）  — supabase/migrations/20261020100000_claim_activation_esign_evidence.sql → supabase/migrations/20261022120000_block_minor_online_signing.sql → supabase/migrations/20261023100000_linked_reads_require_active_account.sql
+PASS  [primary] 套完 100000 後（未重跑 140000）：contract-documents 的 SELECT 政策只有 1 條「read contract documents scoped」  — read contract documents scoped :: ((bucket_id = 'contract-documents'::text) AND ((((storage.foldername(name))[1] = 'signed'::text) AND ((storage.foldername(name
+PASS  [primary] 套完 100000 後（未重跑 140000）：政策條件沒有「admin＋mentor 讀整個 bucket」
+PASS  [primary] 套完 100000 後（未重跑 140000）：輔導員讀不到任何人的 signed/、讀得到範本  — mentor 看到：templates/contract/v3.pdf
+PASS  [primary] 套完 100000 後（未重跑 140000）：講師只讀得到自己的 signed/＋範本  — teacher 看到：signed/c0321a74-de36-4764-a0f5-2a78cefe8295/contract_1.pdf,templates/contract/v3.pdf
+PASS  [primary] 套完 100000 後（未重跑 140000）：管理員讀得到全部（3 個檔）  — admin 看到：signed/c0321a74-de36-4764-a0f5-2a78cefe8295/contract_1.pdf,signed/cb177d47-cfe2-40de-8bf9-46940bd6ca4d/contract_1.pdf,templates/contract/v3.pdf
+PASS  [primary] 套完全部順序後：未滿 18 歲防線的函式與 4 個 trigger 都在
+PASS  [primary] 套完全部順序後：文案 esign-minor-paper-v1 已種入
+PASS  [primary] 套完全部順序後：明天才滿 18 歲＝未成年、今天剛好滿 18 歲＝成年  — t/f
+PASS  [primary] 套完全部順序後：未成年的 agree 同意列寫不進去（MINOR_REQUIRES_GUARDIAN）  — ERROR:  MINOR_REQUIRES_GUARDIAN
+PASS  [primary] 套完全部順序後：未成年的 decline（改紙本）寫得進去
+PASS  [primary] 套完全部順序後：instructors 上同時有共用 guard 與獨立的認領欄位 guard
+PASS  [primary] 套完全部順序後：共用 guard 與完整度、合約提醒仍是人員類別版（含 personnel_types）
+PASS  [primary] 套完全部順序後：講師改自己的一般欄位（暱稱）照常成功
+PASS  [primary] 套完全部順序後：講師不能自己改人員類別（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [primary] 套完全部順序後：講師不能自己改姓名空位旗標（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [primary] 套完全部順序後：講師不能自己改已確認 Email（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [primary] 套完全部順序後：講師不能自己改身分核驗時間（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [primary] 套完全部順序後：講師新增主檔時不能自帶人員類別（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be set by instructors
+PASS  [primary] 套完全部順序後：講師新增主檔時不能自帶已確認 Email（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be set by instructors
+PASS  [primary] 套完全部順序後：管理員可以改人員類別與已確認 Email  — instructor+staff teacher@order.test
+PASS  [primary] 套完全部順序後：class_sessions 本人讀取政策含「已啟用帳號」條件
+PASS  [primary] 套完全部順序後：pending 綁定者讀不到自己主檔的上課紀錄、teacher 讀得到自己的  — pending=0 teacher=1
+PASS  [primary] 套完全部順序後：已有上課紀錄的姓名空位不能被認領（not_found）  — not_found
+PASS  [primary] 再重跑 140000 後：contract-documents 的 SELECT 政策只有 1 條「read contract documents scoped」  — read contract documents scoped :: ((bucket_id = 'contract-documents'::text) AND ((((storage.foldername(name))[1] = 'signed'::text) AND ((storage.foldername(name
+PASS  [primary] 再重跑 140000 後：政策條件沒有「admin＋mentor 讀整個 bucket」
+PASS  [primary] 再重跑 140000 後：輔導員讀不到任何人的 signed/、讀得到範本  — mentor 看到：templates/contract/v3.pdf
+PASS  [primary] 再重跑 140000 後：講師只讀得到自己的 signed/＋範本  — teacher 看到：signed/c0321a74-de36-4764-a0f5-2a78cefe8295/contract_1.pdf,templates/contract/v3.pdf
+PASS  [primary] 再重跑 140000 後：管理員讀得到全部（3 個檔）  — admin 看到：signed/c0321a74-de36-4764-a0f5-2a78cefe8295/contract_1.pdf,signed/cb177d47-cfe2-40de-8bf9-46940bd6ca4d/contract_1.pdf,templates/contract/v3.pdf
+PASS  [primary] 再重跑 140000 後：未滿 18 歲防線的函式與 4 個 trigger 都在
+PASS  [primary] 再重跑 140000 後：文案 esign-minor-paper-v1 已種入
+PASS  [primary] 再重跑 140000 後：明天才滿 18 歲＝未成年、今天剛好滿 18 歲＝成年  — t/f
+PASS  [primary] 再重跑 140000 後：未成年的 agree 同意列寫不進去（MINOR_REQUIRES_GUARDIAN）  — ERROR:  MINOR_REQUIRES_GUARDIAN
+PASS  [primary] 再重跑 140000 後：未成年的 decline（改紙本）寫得進去
+[db] E2E_MIGRATION_ORDER 生效：最後依序套 20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000 → 20261020150000 → 20261020160000 → 20261019233000 → 20261020100000 → 20261022120000 → 20261022010000 → 20261022093700 → 20261022100000 → 20261022140000 → 20261023100000
+PASS  [variant] 套用順序的最後 15 支＝指定順序  — 20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000 → 20261020150000 → 20261020160000 → 20261019233000 → 20261020100000 → 20261022120000 → 20261022010000 → 20261022093700 → 20261022100000 → 20261022140000 → 20261023100000
+[db] E2E_MIGRATION_ORDER 生效：最後依序套 20261020010000 → 20261019103000 → 20261020120000 → 20261020130000 → 20261020140000 → 20261020150000 → 20261020160000 → 20261019233000 → 20261020100000 → 20261022120000 → 20261022010000 → 20261022093700 → 20261022100000 → 20261022140000 → 20261023100000
+PASS  [variant] 依正式庫順序套用全部 SQL 成功（78 個檔）  — supabase/migrations/20261022100000_personnel_types.sql → supabase/migrations/20261022140000_mark_salary_sessions_paid.sql → supabase/migrations/20261023100000_linked_reads_require_active_account.sql
+PASS  [variant] 套完 100000 後（未重跑 140000）：contract-documents 的 SELECT 政策只有 1 條「read contract documents scoped」  — read contract documents scoped :: ((bucket_id = 'contract-documents'::text) AND ((((storage.foldername(name))[1] = 'signed'::text) AND ((storage.foldername(name
+PASS  [variant] 套完 100000 後（未重跑 140000）：政策條件沒有「admin＋mentor 讀整個 bucket」
+PASS  [variant] 套完 100000 後（未重跑 140000）：輔導員讀不到任何人的 signed/、讀得到範本  — mentor 看到：templates/contract/v3.pdf
+PASS  [variant] 套完 100000 後（未重跑 140000）：講師只讀得到自己的 signed/＋範本  — teacher 看到：signed/df265545-c2c6-4974-b98c-125298cb261d/contract_1.pdf,templates/contract/v3.pdf
+PASS  [variant] 套完 100000 後（未重跑 140000）：管理員讀得到全部（3 個檔）  — admin 看到：signed/07fd7456-ef5f-4f20-a46c-5e3fd152a288/contract_1.pdf,signed/df265545-c2c6-4974-b98c-125298cb261d/contract_1.pdf,templates/contract/v3.pdf
+PASS  [variant] 套完全部順序後：未滿 18 歲防線的函式與 4 個 trigger 都在
+PASS  [variant] 套完全部順序後：文案 esign-minor-paper-v1 已種入
+PASS  [variant] 套完全部順序後：明天才滿 18 歲＝未成年、今天剛好滿 18 歲＝成年  — t/f
+PASS  [variant] 套完全部順序後：未成年的 agree 同意列寫不進去（MINOR_REQUIRES_GUARDIAN）  — ERROR:  MINOR_REQUIRES_GUARDIAN
+PASS  [variant] 套完全部順序後：未成年的 decline（改紙本）寫得進去
+PASS  [variant] 套完全部順序後：instructors 上同時有共用 guard 與獨立的認領欄位 guard
+PASS  [variant] 套完全部順序後：共用 guard 與完整度、合約提醒仍是人員類別版（含 personnel_types）
+PASS  [variant] 套完全部順序後：講師改自己的一般欄位（暱稱）照常成功
+PASS  [variant] 套完全部順序後：講師不能自己改人員類別（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [variant] 套完全部順序後：講師不能自己改姓名空位旗標（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [variant] 套完全部順序後：講師不能自己改已確認 Email（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [variant] 套完全部順序後：講師不能自己改身分核驗時間（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be changed by instructors
+PASS  [variant] 套完全部順序後：講師新增主檔時不能自帶人員類別（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be set by instructors
+PASS  [variant] 套完全部順序後：講師新增主檔時不能自帶已確認 Email（42501 管理欄位）  — ERROR:  administrator-managed instructor fields cannot be set by instructors
+PASS  [variant] 套完全部順序後：管理員可以改人員類別與已確認 Email  — instructor+staff teacher@order.test
+PASS  [variant] 套完全部順序後：class_sessions 本人讀取政策含「已啟用帳號」條件
+PASS  [variant] 套完全部順序後：pending 綁定者讀不到自己主檔的上課紀錄、teacher 讀得到自己的  — pending=0 teacher=1
+PASS  [variant] 套完全部順序後：已有上課紀錄的姓名空位不能被認領（not_found）  — not_found
+PASS  [variant] 再重跑 140000 後：contract-documents 的 SELECT 政策只有 1 條「read contract documents scoped」  — read contract documents scoped :: ((bucket_id = 'contract-documents'::text) AND ((((storage.foldername(name))[1] = 'signed'::text) AND ((storage.foldername(name
+PASS  [variant] 再重跑 140000 後：政策條件沒有「admin＋mentor 讀整個 bucket」
+PASS  [variant] 再重跑 140000 後：輔導員讀不到任何人的 signed/、讀得到範本  — mentor 看到：templates/contract/v3.pdf
+PASS  [variant] 再重跑 140000 後：講師只讀得到自己的 signed/＋範本  — teacher 看到：signed/df265545-c2c6-4974-b98c-125298cb261d/contract_1.pdf,templates/contract/v3.pdf
+PASS  [variant] 再重跑 140000 後：管理員讀得到全部（3 個檔）  — admin 看到：signed/07fd7456-ef5f-4f20-a46c-5e3fd152a288/contract_1.pdf,signed/df265545-c2c6-4974-b98c-125298cb261d/contract_1.pdf,templates/contract/v3.pdf
+PASS  [variant] 再重跑 140000 後：未滿 18 歲防線的函式與 4 個 trigger 都在
+PASS  [variant] 再重跑 140000 後：文案 esign-minor-paper-v1 已種入
+PASS  [variant] 再重跑 140000 後：明天才滿 18 歲＝未成年、今天剛好滿 18 歲＝成年  — t/f
+PASS  [variant] 再重跑 140000 後：未成年的 agree 同意列寫不進去（MINOR_REQUIRES_GUARDIAN）  — ERROR:  MINOR_REQUIRES_GUARDIAN
+PASS  [variant] 再重跑 140000 後：未成年的 decline（改紙本）寫得進去
+=== 70/70 PASS ===

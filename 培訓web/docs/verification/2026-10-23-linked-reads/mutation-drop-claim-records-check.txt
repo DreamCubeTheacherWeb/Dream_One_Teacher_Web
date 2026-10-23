@@ -1,0 +1,392 @@
+*** 突變測試 drop-claim-records-check：突變測試：拿掉姓名空位認領的「已有上課或報酬紀錄」排除條件。預期會有 FAIL。***
+
+── setup ──
+temporary PostgreSQL pid=74699 port=49173
+PASS: [setup] 全部 SQL 套用成功（77 個檔，含新 migration）
+PASS: [setup] 9 個新 RPC 都是 SECURITY DEFINER＋search_path=''
+PASS: [setup] 9 個新 RPC：anon／service_role 無 EXECUTE、authenticated 有
+PASS: [setup] submit_my_contract 只剩一個多載（v2）
+PASS: [setup] private.email_otp_challenges：authenticated 沒有任何讀取權、anon 沒有 private schema
+PASS: [setup] pg_cron 排程 dreamone-refresh-email-delivery-status 每分鐘
+
+── backfill D2/D4 ──
+PASS: [backfill D2/D4] migration 第二次套用成功（模擬上線時的回填）
+PASS: [backfill D2/D4] D2 既有講師：identity_verified_at 已登錄、依據為公司既有核驗結果（非第三方實名認證）
+PASS: [backfill D2/D4] D2 既有 email_primary 小寫去空白登錄為 confirmed_email（company_existing_record，by NULL）
+PASS: [backfill D2/D4] D2 未綁定的既有主檔也登錄（unlinked.old@t.test）
+PASS: [backfill D2/D4] D2 回填不改 instructors.updated_at
+PASS: [backfill D2/D4] D2 格式錯誤的 Email 不登錄（confirmed_email 維持 NULL，身分仍登錄）
+PASS: [backfill D2/D4] D2 排除「新建帳號待審核」（綁在 pending 帳號的列）
+PASS: [backfill D2/D4] D4 既有 teacher 補一筆 legacy_pre_activation（active）
+PASS: [backfill D2/D4] D4 既有 teacher 角色不受影響
+PASS: [backfill D2/D4] D4 待審新講師（pending）沒有被補啟用紀錄
+PASS: [backfill D2/D4] migration 第三次套用成功，回填不重做（標記不變、啟用紀錄不重複）
+PASS: [backfill D2/D4] legacy teacher 的 get_my_activation_status = active / legacy_pre_activation / 有已確認 Email
+
+── activation: claim paths ──
+PASS: [activation: claim paths] 管理員帳號建立（staff 邀請）
+PASS: [activation: claim paths] Email 對應：首次登入就綁定主檔
+PASS: [activation: claim paths] Email 對應：綁定後 role 仍是 pending（不再直接開通）
+PASS: [activation: claim paths] Email 對應：寫一筆 pending 啟用紀錄（email_match、claimed_at 伺服器時間、instructor_id）
+PASS: [activation: claim paths] Email 對應：再呼叫 claim_my_precreated_instructor → claimed、activation_required=true
+PASS: [activation: claim paths] claim_my_precreated_instructor：status claimed 不變、另加 activation_required:true
+PASS: [activation: claim paths] claim_my_precreated_instructor：role 仍是 pending、啟用紀錄 pending email_match
+PASS: [activation: claim paths] claim_existing_instructor_by_identity：claimed＋activation_required:true
+PASS: [activation: claim paths] claim_existing_instructor_by_identity：role 仍是 pending、啟用紀錄 identity_check
+PASS: [activation: claim paths] 管理員可建立姓名空位
+PASS: [activation: claim paths] 管理員新建講師列：identity_verified_at 登錄、依據「管理員建立講師資料」、Email 未確認
+PASS: [activation: claim paths] claim_instructor_name_slot：claimed＋activation_required:true（只綁不開通）
+PASS: [activation: claim paths] claim_instructor_name_slot：role 仍是 pending、啟用紀錄 name_slot
+PASS: [activation: claim paths] 姓名空位：get_my_activation_status = pending、沒有已確認 Email、資料未完整
+PASS: [activation: claim paths] 姓名空位：沒有已確認 Email → request_email_otp 回 no_confirmed_email
+PASS: [activation: claim paths] teacher／pending 呼叫 admin_confirm_instructor_email → 42501
+PASS: [activation: claim paths] admin_confirm_instructor_email：格式錯 → INVALID_EMAIL
+PASS: [activation: claim paths] admin_confirm_instructor_email：沒有註記 → NOTE_REQUIRED
+PASS: [activation: claim paths] admin_confirm_instructor_email → {status:confirmed}
+PASS: [activation: claim paths] 確認 Email 寫入 confirmed_email（小寫去空白）／by 管理員／admin_trusted_channel／註記
+PASS: [activation: claim paths] 姓名空位：Email 確認後但資料不完整 → profile_incomplete（不能要 OTP）
+PASS: [activation: claim paths] 講師自己改 confirmed_email 被 guard 擋（42501）
+PASS: [activation: claim paths] 講師自己改 identity_verified_at 被 guard 擋（42501）
+PASS: [activation: claim paths] 新進講師自建主檔（不能帶 admin 欄位，照舊可建）
+PASS: [activation: claim paths] 新進講師不能自己登錄 confirmed_email
+PASS: [activation: claim paths] 新進講師沒有啟用紀錄、request_email_otp(account_activation) → not_allowed
+PASS: [activation: claim paths] approve_new_instructor_account 成功
+PASS: [activation: claim paths] 核准後 role = teacher
+PASS: [activation: claim paths] 核准寫 new_instructor_approved（active、activation_email＝Google 信箱）
+PASS: [activation: claim paths] 核准＝公司核驗：confirmed_email＝Google 信箱（google_login_new_instructor、by 管理員）、identity_verified_at＝now、依據「管理員審核新進講師」
+PASS: [activation: claim paths] 認領既有主檔（pending 啟用）的帳號不能由管理員直接核准開通
+PASS: [activation: claim paths] 非 admin 呼叫 admin_link_instructor → 42501
+PASS: [activation: claim paths] admin_link_instructor：綁定成功
+PASS: [activation: claim paths] admin_link_instructor：pending 帳號維持 pending（不再直接升 teacher）
+PASS: [activation: claim paths] admin_link_instructor：寫 pending 啟用紀錄（claim_method admin_link、instructor_id、claimed_at）
+PASS: [activation: claim paths] 手動綁定：get_my_activation_status → pending／admin_link
+PASS: [activation: claim paths] 手動綁定的 pending 帳號也不能由 approve 直接開通
+PASS: [activation: claim paths] 手動綁定帳號由講師本人 OTP 啟用 → teacher、啟用紀錄 active（admin_link、otp 欄位齊全）
+PASS: [activation: claim paths] 已是 teacher 的帳號手動綁定：角色不變、寫 active admin_link（otp 欄位 NULL）
+PASS: [activation: claim paths] 已是 teacher 的手動綁定帳號可直接要簽約碼（帳號有效）
+PASS: [activation: claim paths] mentor 手動綁定：角色維持 mentor、不寫啟用紀錄
+PASS: [activation: claim paths] mentor 手動綁定後可要簽約碼（staff 免啟用，仍須綁主檔＋已確認 Email）
+PASS: [activation: claim paths] 停用主檔手動綁定：只綁定、維持 pending、不寫啟用紀錄
+PASS: [activation: claim paths] admin_link_instructor：主檔不存在 → INSTRUCTOR_NOT_FOUND
+
+── legacy teachers without activation records (必修 1) ──
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-1 前提：teacher 自建主檔成功、完全沒有啟用紀錄、get_my_activation_status = none
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-1 signing_account_state.is_active = true（無啟用紀錄的 teacher 視為 legacy）
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-1 行政確認 Email 前 → no_confirmed_email（走既有待行政確認路徑，不是 account_not_active）
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-1 行政確認 Email 後可要簽約碼（sent，不再回 account_not_active）
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-1 簽約碼可驗證（verified）
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-1 記同意已通過帳號檢查（不再 ACCOUNT_NOT_ACTIVE；尚無啟用中文件 → DOC_VERSION_MISMATCH）
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-1b 角色下拉改成 teacher、沒有啟用紀錄 → signing_account_state.is_active = true
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-2 teacher＋pending 啟用紀錄 → is_active = false、要簽約碼仍回 account_not_active
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-2 記同意仍 ACCOUNT_NOT_ACTIVE
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-3 teacher＋active（legacy_pre_activation／admin_link）→ is_active = true
+PASS: [legacy teachers without activation records (必修 1)] T-legacy-4 teacher 只剩 revoked 紀錄 → is_active = false（有紀錄但沒有 active 一律擋）
+
+── OTP rules ──
+PASS: [OTP rules] Email 對應帳號沒有已確認 Email（新主檔未回填）→ no_confirmed_email
+PASS: [OTP rules] admin 確認後：has_confirmed_email=true、masked_email=e***@t.test（本機名只有 2 字只露 1 字）、profile_complete=true
+PASS: [OTP rules] 遮罩格式：abcdef@gmail.com → ab***@gmail.com
+PASS: [OTP rules] 目的代碼錯 → not_allowed
+PASS: [OTP rules] 已是 teacher（legacy、無 pending）要啟用碼 → not_allowed（already_active）
+PASS: [OTP rules] request_email_otp → sent（challenge_id、expires_at≈5 分、masked_email、resend_after_seconds:60）
+PASS: [OTP rules] 驗證碼是 6 位數字
+PASS: [OTP rules] challenge 只存 salt＋SHA-256：code_hash = sha256(salt:code)、沒有明碼欄位
+PASS: [OTP rules] 資料庫（public／private／auth／storage 所有文字欄）查不到驗證碼明碼（對照組：同一掃描找得到 em@t.test）
+PASS: [OTP rules] 寄信：有設定時呼叫 net.http_post（Resend API、Bearer vault 金鑰、from＝vault resend_from、to＝已確認 Email）
+PASS: [OTP rules] OTP 信：主旨「夢想一號講師資源站驗證碼」、內文含 6 碼、5 分鐘有效、「若非本人操作請忽略並通知行政」
+PASS: [OTP rules] email_delivery_log：otp_activation／queued／net_request_id／subject，且紀錄裡沒有驗證碼
+PASS: [OTP rules] 60 秒內重寄 → cooldown（retry_after_seconds 1～60）
+PASS: [OTP rules] cooldown 一併帶回本人剛寄出、仍有效的 challenge（challenge_id／expires_at／masked_email，可繼續輸入同一組碼）
+PASS: [OTP rules] cooldown 不會另外產生新 challenge 或寄信
+PASS: [OTP rules] 錯碼 → invalid，attempts_remaining 4／3／2／1（格式錯也算一次）
+PASS: [OTP rules] 第 5 次錯 → locked
+PASS: [OTP rules] 鎖住後輸入正確碼仍是 locked
+PASS: [OTP rules] cooldown 時若唯一的 challenge 已鎖 → 只回 retry_after_seconds，不帶 challenge
+PASS: [OTP rules] 冷卻過後可再寄 → sent
+PASS: [OTP rules] 新寄出後舊 challenge 標 superseded
+PASS: [OTP rules] 用舊 challenge 驗證 → superseded
+PASS: [OTP rules] 冒用：別人的 challenge_id＋正確碼 → invalid（attempts_remaining 0）
+PASS: [OTP rules] 冒用不會累計本人的錯誤次數、也不會驗證成功
+PASS: [OTP rules] 過期（5 分鐘後）→ expired
+PASS: [OTP rules] 正確碼 → verified、activated:true
+PASS: [OTP rules] 啟用：users.role pending → teacher
+PASS: [OTP rules] 啟用紀錄 active，claimed_at／otp_verified_at／activated_at／activation_email／instructor_id／otp_challenge_id 齊全
+PASS: [OTP rules] get_my_activation_status → active
+PASS: [OTP rules] 同一碼再驗 → used（只能成功一次）
+PASS: [OTP rules] cooldown 只回本人自己的 challenge（另一位講師拿到的是自己的、遮罩是自己的信箱）
+PASS: [OTP rules] 一小時內第 1～5 封 sent、第 6 封 rate_limited
+PASS: [OTP rules] 超過一小時後恢復可寄
+PASS: [OTP rules] 第二位講師啟用成功（後續簽約用）
+PASS: [OTP rules] 缺 Vault resend_api_key → request_email_otp 回 email_not_configured（不丟錯）
+PASS: [OTP rules] 缺設定：email_delivery_log 記 not_configured、沒有呼叫 net.http_post、沒有產生驗證碼
+PASS: [OTP rules] refresh_email_delivery_status：200 → sent＋provider_message_id；422 → failed＋http_status＋error_text
+PASS: [OTP rules] refresh 不動 not_configured 紀錄
+
+── signing ──
+PASS: [signing] 範本雜湊寫入時正規化成小寫
+PASS: [signing] record_contract_consent(agree) → recorded／consent_id／created_at
+PASS: [signing] 同意紀錄存「實際顯示的全文」：代碼 esign-consent-v1、文件清單與遮罩信箱已代入、無殘留佔位符
+PASS: [signing] 同意紀錄：IP 取 x-forwarded-for 第一段、UA 取 header、doc_versions、instructor_id
+PASS: [signing] 同意紀錄同時存同頁顯示的個資告知：privacy_notice_version＝esign-privacy-notice-v1、privacy_notice_text＝全文（逐句等於法規 §5-d）
+PASS: [signing] 不存在的文案代碼 → CONSENT_TEXT_UNKNOWN
+PASS: [signing] 白名單：agree 配「改紙本說明」代碼 → CONSENT_TEXT_UNKNOWN
+PASS: [signing] 白名單：decline 配「電子簽約同意」代碼 → CONSENT_TEXT_UNKNOWN
+PASS: [signing] 白名單：資料庫裡有、但不是同意文的代碼（個資告知、信件文案、最後確認）→ CONSENT_TEXT_UNKNOWN
+PASS: [signing] 決定值錯 → INVALID_INPUT
+PASS: [signing] pending（未啟用）帳號記同意 → ACCOUNT_NOT_ACTIVE
+PASS: [signing] 簽約驗證碼信：otp_contract、加上法規 §5-f 說明句
+PASS: [signing] pending 帳號要簽約碼 → not_allowed
+PASS: [signing] 沒有同意 → CONSENT_REQUIRED
+PASS: [signing] 同意 id 不存在 → CONSENT_REQUIRED
+PASS: [signing] 用「不同意」紀錄送出 → CONSENT_REQUIRED
+PASS: [signing] 同意的 doc_versions 與送出不一致 → CONSENT_REQUIRED
+PASS: [signing] 同意的 doc_versions 有未知的鍵（extra）→ DOC_VERSION_MISMATCH
+PASS: [signing] 同意的 doc_versions 含停用中的文件類型（misc）→ DOC_VERSION_MISMATCH
+PASS: [signing] 同意的 doc_versions 版本不是正整數（文字、0、小數）→ DOC_VERSION_MISMATCH
+PASS: [signing] 同意的 doc_versions 是空物件 → INVALID_INPUT
+PASS: [signing] 版本用字串數字也接受（"1"）
+PASS: [signing] 被拒的 doc_versions 一筆都沒寫進同意紀錄
+PASS: [signing] 同意超過 2 小時 → CONSENT_REQUIRED
+PASS: [signing] 拿別人的同意紀錄 → CONSENT_REQUIRED
+PASS: [signing] 白名單外版本的 agree 同意紀錄不能拿來簽約 → CONSENT_REQUIRED
+PASS: [signing] 沒有 OTP → OTP_REQUIRED
+PASS: [signing] OTP 尚未驗證 → OTP_REQUIRED
+PASS: [signing] 簽約用途 cooldown 帶回的是同一用途（contract_sign）最新一筆，不是啟用用途的 challenge
+PASS: [signing] 拿啟用用途的 challenge 簽約 → OTP_REQUIRED
+PASS: [signing] 拿別人的（已驗證）簽約 challenge → OTP_REQUIRED
+PASS: [signing] 簽約碼驗證 → verified、activated:false
+PASS: [signing] challenge 已驗證後的 cooldown 不再帶回它
+PASS: [signing] OTP 驗證超過 15 分鐘 → OTP_EXPIRED
+PASS: [signing] 範本雜湊格式錯 → INVALID_HASH
+PASS: [signing] 範本雜湊少一份文件 → INVALID_HASH
+PASS: [signing] 範本雜湊多一個鍵 → INVALID_HASH
+PASS: [signing] 成品雜湊沒給 → INVALID_HASH
+PASS: [signing] 範本雜湊與登錄值不符 → DOC_HASH_MISMATCH
+PASS: [signing] 文件版本不是目前啟用版本 → DOC_VERSION_MISMATCH
+PASS: [signing] 檔案路徑不在自己 signed/<uid>/ → FILE_NOT_UPLOADED
+PASS: [signing] 所有拒絕案都沒有消耗 OTP、沒有留下契約或證據
+PASS: [signing] 成功 → {status:signed, contract_id, signed_at, evidence_id, copy_email_masked}
+PASS: [signing] instructor_contracts 欄位齊全（instructor_id、bound_email、consent_id、otp_challenge_id、otp_verified_at、雜湊 map 小寫、evidence_id）
+PASS: [signing] IP 取 cf-connecting-ip、UA 取 header（前端參數只當後備）
+PASS: [signing] 簽署時間是伺服器時間（在呼叫前後兩個 now() 之間）
+PASS: [signing] OTP 已消耗（consumed_at）
+PASS: [signing] contract_signing_evidence 欄位齊全（第一筆 chain_seq=1、previous NULL）
+PASS: [signing] 簽署完成信排入寄送（contract_signed_copy／queued／寄到綁定信箱）
+PASS: [signing] 簽署完成信內文逐句照抄法規 §5-e（10 句，含台北時間、文件版本、下載網址）
+PASS: [signing] 簽署完成信主旨照 §5-e、HTML 有下載連結、紀錄不存內文
+PASS: [signing] 同一 challenge 第二次送出 → OTP_ALREADY_USED
+PASS: [signing] 重簽成功
+PASS: [signing] 重簽後舊約 voided，voided_at／voided_reason／superseded_by＝新約
+PASS: [signing] 舊約其他欄位沒有被改（ip／簽署時間／雜湊）
+PASS: [signing] 證據兩筆、雜湊鏈相接（第二筆 previous＝第一筆 evidence_sha256、chain_seq=2）
+PASS: [signing] 沒有 cf-connecting-ip 時 IP 取 x-forwarded-for 第一段
+PASS: [signing] 只剩一份 signed
+PASS: [signing] x-real-ip 是第三順位後備
+PASS: [signing] admin_verify_contract_evidence_chain → {ok:true, checked:2, first_broken_id:null}
+PASS: [signing] teacher 呼叫 admin_verify_contract_evidence_chain → 42501
+PASS: [signing] decline 紀錄 → recorded，並通知 admin（type contract）
+PASS: [signing] 紙本通知內文不帶講師自填的姓名（只用資料庫文件名稱＋Google 登入信箱）
+PASS: [signing] decline 紀錄存 esign-decline-paper-v1 全文
+PASS: [signing] decline 紀錄也存個資告知版本與全文
+PASS: [signing] 個資告知欄位在 append-only 保護內（admin 改不了）
+PASS: [signing] 管理員可停用已被引用的版本並上傳新版（只鎖檔案／版本／雜湊）
+PASS: [signing] 簽署途中契約改版 → DOC_VERSION_MISMATCH（不會簽到舊版）
+PASS: [signing] 改版被擋的那次沒有消耗 OTP
+
+── tamper resistance ──
+PASS: [tamper resistance] 講師 UPDATE 自己的已簽契約 → 0 列
+PASS: [tamper resistance] 講師 DELETE 自己的契約 → 0 列
+PASS: [tamper resistance] 講師直接 INSERT 契約 → 被拒（42501）
+PASS: [tamper resistance] 講師 UPDATE／DELETE contract_signing_evidence → 被拒
+PASS: [tamper resistance] 講師 UPDATE／DELETE contract_consent_records → 被拒
+PASS: [tamper resistance] 講師 UPDATE／DELETE instructor_account_activations → 被拒
+PASS: [tamper resistance] admin UPDATE 已簽契約內容 → CONTRACT_IMMUTABLE
+PASS: [tamper resistance] admin 自行 signed→voided（非內部流程）→ CONTRACT_IMMUTABLE
+PASS: [tamper resistance] admin DELETE 契約（含已作廢）→ CONTRACT_IMMUTABLE
+PASS: [tamper resistance] admin 直接 INSERT 偽造契約 → CONTRACT_WRITE_DENIED
+PASS: [tamper resistance] admin UPDATE／DELETE contract_signing_evidence → 被拒
+PASS: [tamper resistance] admin UPDATE／DELETE contract_consent_records → 被拒
+PASS: [tamper resistance] admin UPDATE／DELETE instructor_account_activations → 被拒
+PASS: [tamper resistance] service_role UPDATE 證據 → EVIDENCE_IMMUTABLE（RLS 繞過也擋）
+PASS: [tamper resistance] service_role DELETE 契約 → CONTRACT_IMMUTABLE
+PASS: [tamper resistance] service_role 直接 INSERT 同意紀錄 → EVIDENCE_WRITE_DENIED
+PASS: [tamper resistance] service_role TRUNCATE 證據 → EVIDENCE_IMMUTABLE（trigger 擋，不只是權限）
+PASS: [tamper resistance] service_role 改啟用紀錄 → ACTIVATION_RECORD_IMMUTABLE
+PASS: [tamper resistance] postgres 不繞過 trigger 時 UPDATE 證據 → EVIDENCE_IMMUTABLE
+PASS: [tamper resistance] 法規文案 append-only：同一代碼不能改內容／刪除（ESIGN_TEXT_IMMUTABLE）
+PASS: [tamper resistance] 法規文案：可以新增 -v2
+PASS: [tamper resistance] 法規文案：authenticated 不能新增
+PASS: [tamper resistance] admin DELETE signed/ 物件 → 0 列
+PASS: [tamper resistance] admin UPDATE（覆寫／改名）signed/ 物件 → 0 列
+PASS: [tamper resistance] admin DELETE 被已簽契約引用的範本 → 0 列
+PASS: [tamper resistance] admin UPDATE 被引用的範本 → 0 列
+PASS: [tamper resistance] admin 仍可刪除沒被引用的範本（1 列）
+PASS: [tamper resistance] 講師 DELETE 自己的 signed/ 檔 → 0 列
+PASS: [tamper resistance] storage 物件都還在
+PASS: [tamper resistance] admin 刪除被引用的文件版本 → DOCUMENT_REFERENCED
+PASS: [tamper resistance] admin 改被引用版本的 file_path → DOCUMENT_REFERENCED
+PASS: [tamper resistance] admin 改被引用版本的 version／content_sha256 → DOCUMENT_REFERENCED
+PASS: [tamper resistance] admin 可刪除未被引用的文件版本
+PASS: [tamper resistance] admin_set_document_hash：teacher → 42501
+PASS: [tamper resistance] admin_set_document_hash：格式錯 → INVALID_HASH
+PASS: [tamper resistance] admin_set_document_hash：補登 NULL（即使已被引用）→ saved
+PASS: [tamper resistance] admin_set_document_hash：已有值不能再改 → HASH_ALREADY_SET
+PASS: [tamper resistance] delete_user_completely：有已簽契約 → 拒絕（依簽署證據保存規定不可刪除，請改用停用）
+PASS: [tamper resistance] delete_user_completely：只有同意／不同意紀錄也拒絕
+PASS: [tamper resistance] delete_user_completely：沒有簽署紀錄的 pending 帳號可刪；啟用紀錄保留並改 revoked（account_deleted）
+PASS: [tamper resistance] 刪帳號後講師主檔回到未認領
+PASS: [tamper resistance] admin_unlink_instructor：啟用紀錄改 revoked（admin_unlink）
+PASS: [tamper resistance] 解除綁定後 get_my_activation_status → none
+PASS: [tamper resistance] 超級使用者偷改證據 IP → ok=false、first_broken_id＝該筆
+PASS: [tamper resistance] 改回原值後 ok=true
+PASS: [tamper resistance] 偷改證據雜湊本身 → 抓到第一筆
+PASS: [tamper resistance] 超級使用者偷改契約的身分證欄 → 交叉比對抓到第二筆證據（contract_mismatch）
+PASS: [tamper resistance] 超級使用者刪掉鏈尾證據 → 抓到缺證據的契約（evidence_missing_for_contract）
+PASS: [tamper resistance] 還原後證據鏈 ok=true、checked=2
+
+── RLS reads ──
+PASS: [RLS reads] 講師讀得到自己的證據、同意、啟用紀錄
+PASS: [RLS reads] 寄送紀錄只有 admin 讀得到：講師讀自己的 0 筆（資料庫實際有）、admin 讀得到全部
+PASS: [RLS reads] 寄送紀錄讀取政策只剩 admin 那一條
+PASS: [RLS reads] 講師讀不到別人的證據／同意／啟用紀錄
+PASS: [RLS reads] admin 讀得到全部證據與啟用紀錄
+PASS: [RLS reads] anon 讀證據 → 權限不足
+PASS: [RLS reads] 講師讀不到 private.email_otp_challenges
+
+── minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000） ──
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 新 migration 已被套用（chain 包含 20261022120000_block_minor_online_signing.sql）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 5 個新函式都是 SECURITY DEFINER＋search_path=''
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 5 個新函式：PUBLIC／anon／authenticated 都沒有 EXECUTE
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 4 個新 trigger 都在（擋簽署列、擋 agree 同意、擋未成年改生日、通知管理員）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 既有 append-only／契約 guard trigger 仍在（沒有被我們取代）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 資料庫 is_minor_birth_date 與前端 isMinorOn 在 19 個邊界日期完全一致
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 邊界答案本身正確：生日前一天未成年、當天成年、隔天成年；2/29 出生者 2/28 未成年、3/1 成年
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] birth_date 為 NULL → false（視為成年）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 以台灣今天為準：今天滿 18 歲（成年）、明天才滿 18 歲（未成年）、昨天已滿（成年）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 前提：受測帳號是 teacher（無啟用紀錄視為已啟用）、已確認 Email、出生日期＝明天才滿 18 歲
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年 record_contract_consent(agree) → MINOR_REQUIRES_GUARDIAN（P0001）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年 agree 被擋後沒有留下任何同意紀錄
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年 record_contract_consent(decline, esign-minor-paper-v1) → recorded
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] decline 紀錄存「未成年說明」全文：代碼 esign-minor-paper-v1、文件清單已代入、有法定代理人、無殘留佔位符
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] decline 紀錄同時存個資告知版本與全文（與一般 decline 相同）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年也可以用一般的「不同意」文案記錄（esign-decline-paper-v1 不受影響）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 管理員收到通知：原本「講師選擇改以紙本簽約」×2（兩次 decline）＋「未滿 18 歲…法定代理人」×2
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 成年講師選擇紙本時不會多出「未滿 18 歲」通知
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 對照組：同一人在出生日期是成年時可記同意（agree → recorded）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年（出生日期被更正）呼叫 submit_my_contract → MINOR_REQUIRES_GUARDIAN
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 被擋之後 OTP 沒有被消耗（consumed_at 仍是 NULL，verified_at 還在）：整筆交易回滾
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 被擋之後沒有任何半套紀錄：沒有契約、沒有證據、沒有簽署完成通知信、證據鏈長度不變
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 出生日期更正回成年後，同一組同意＋OTP 可以簽成功（證明被擋時沒有消耗 OTP）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年沒有同意直接送出 → CONSENT_REQUIRED（被擋，沒有留下契約）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年拿別人（成年）的同意紀錄送出 → CONSENT_REQUIRED（被擋，沒有留下契約）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 內部寫入通道也寫不進未成年的 signed 契約列（MINOR_REQUIRES_GUARDIAN）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 內部寫入通道也寫不進未成年的 agree 同意列（MINOR_REQUIRES_GUARDIAN）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] service_role 直接寫未成年的 agree 同意列也被擋（不是靠 RPC 才擋）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 剛好今天滿 18 歲：可記錄 agree 同意
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 剛好今天滿 18 歲：submit_my_contract 簽署成功（signed）、證據多一筆
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 出生日期 NULL：視為成年，可記錄 agree 同意
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 成年人（1990）：同意＋簽署完全不受影響
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 新增三份簽署（corrected 重試、今天滿 18、成年）後證據鏈仍完整
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年講師自己把出生日期改成成年 → BIRTH_DATE_ADMIN_ONLY（42501）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年講師自己清空出生日期 → BIRTH_DATE_ADMIN_ONLY
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 被擋之後出生日期沒變、仍是未成年
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年講師把出生日期改成另一個（仍未成年的）日期 → 允許（更正筆誤）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 未成年講師存檔其他欄位（出生日期沒變）→ 不受影響
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 成年講師把出生日期改成另一個成年日期 → 允許
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 成年講師把出生日期改成未成年日期 → 允許（誤填也不傷人；之後只有管理員能改回）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 管理員可以更正未成年講師的出生日期（改成成年）
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 管理員更正後，原本的未成年講師可以記錄 agree 同意
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] 新 migration 第二次套用成功（可重複執行）、文案種子不變、trigger 不重複
+PASS: [minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）] esign-minor-paper-v1 種入 esign_text_versions 且是 append-only（不能改內容）
+
+── legal copy fidelity ──
+PASS: [legal copy fidelity] esign-read-ack-v1：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（1 句）
+PASS: [legal copy fidelity] esign-consent-v1：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（6 句）
+PASS: [legal copy fidelity] esign-decline-paper-v1：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（7 句）
+PASS: [legal copy fidelity] esign-final-confirm-v1：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（5 句）
+PASS: [legal copy fidelity] esign-privacy-notice-v1：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（10 句）
+PASS: [legal copy fidelity] esign-signed-email-v1：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（10 句）
+PASS: [legal copy fidelity] esign-otp-email-v1：種入的全文逐句等於 docs/specs/2026-10-20-esign-legal-copy.md（1 句）
+
+── OTP abuse limits (建議 5) ──
+PASS: [OTP abuse limits (建議 5)] 前提：10 封啟用碼都寄出，最舊一封仍在 24 小時內
+PASS: [OTP abuse limits (建議 5)] 第 11 封 → daily_limit_reached（不產生驗證碼、不寄信）
+PASS: [OTP abuse limits (建議 5)] 最舊一封超過 24 小時後恢復可寄
+PASS: [OTP abuse limits (建議 5)] 第 1、2 組錯 5 次 → locked（還沒暫停寄碼）
+PASS: [OTP abuse limits (建議 5)] 第 3 組錯 5 次 → locked＋sending_suspended:true
+PASS: [OTP abuse limits (建議 5)] 暫停中要驗證碼 → locked_contact_admin（不產生驗證碼）
+PASS: [OTP abuse limits (建議 5)] 暫停紀錄：暫停 24 小時、記錄被鎖的組數 3
+PASS: [OTP abuse limits (建議 5)] 暫停中冷卻期內也不帶回任何 challenge
+PASS: [OTP abuse limits (建議 5)] 講師不能自己呼叫 admin_reset_email_otp_lock（42501）
+PASS: [OTP abuse limits (建議 5)] admin_reset_email_otp_lock：帳號不存在 → USER_NOT_FOUND
+PASS: [OTP abuse limits (建議 5)] 行政解除 → {status:reset, was_locked:true}，記錄解除者
+PASS: [OTP abuse limits (建議 5)] 解除後可再寄碼；解除前的 3 組不再計入（再鎖 1 組不會立刻又暫停）
+PASS: [OTP abuse limits (建議 5)] 解除後再寄一次照常 sent
+PASS: [OTP abuse limits (建議 5)] 沒被暫停時解除 → was_locked:false
+PASS: [OTP abuse limits (建議 5)] 另一位講師鎖滿 3 組 → 暫停
+PASS: [OTP abuse limits (建議 5)] 暫停 24 小時到期 → 自動恢復可寄
+
+── consent hardening (建議 3) ──
+PASS: [consent hardening (建議 3)] 前提：講師可以改自己的姓名欄（自填文字）
+PASS: [consent hardening (建議 3)] 一小時內第 1～10 筆同意／不同意都記錄成功
+PASS: [consent hardening (建議 3)] 紙本通知內文沒有講師自填的姓名，只有資料庫文件名稱與 Google 登入信箱
+PASS: [consent hardening (建議 3)] 第 11 筆 → CONSENT_RATE_LIMITED，不再通知管理員、不寫紀錄
+PASS: [consent hardening (建議 3)] 同意（agree）也一起受上限
+PASS: [consent hardening (建議 3)] 超過一小時後恢復可記錄
+PASS: [consent hardening (建議 3)] T-legacy-1 續：沒有啟用紀錄的 teacher 在有啟用中文件後可記錄電子簽約同意
+
+── linked reads require activated account (必修 1, 20261023100000) ──
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 新 migration 已被套用（chain 包含 20261023100000_linked_reads_require_active_account.sql）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] R1 前提：name_slot＝true、user_id 空、email／身分證／手機／銀行帳號全空，但有 3 筆上課紀錄
+FAIL: [linked reads require activated account (必修 1, 20261023100000)] R1 有上課紀錄的姓名空位：輸入同名認領 → not_found（不透露名冊有這個姓名） — {"ok":true,"result":{"status":"claimed","claimed_now":true,"instructor_id":"88ac34f7-ed8b-4c4c-88ea-a35090952712","activation_required":true}}
+FAIL: [linked reads require activated account (必修 1, 20261023100000)] R1 認領被擋後：空位仍未綁定、認領者沒有主檔、沒有啟用紀錄、角色仍是 pending
+PASS: [linked reads require activated account (必修 1, 20261023100000)] R1 認領被擋的人讀不到該空位任何上課紀錄
+FAIL: [linked reads require activated account (必修 1, 20261023100000)] R2 只剩隔離區上課紀錄的姓名空位 → not_found
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 對照組：沒有上課／報酬紀錄的姓名空位照舊可認領（claimed、只綁不開通）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 前提：徽章頒發寫入 1 筆
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending＋已綁定：讀不到該空位的上課紀錄（class_sessions 0 筆、報酬金額 0）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending＋已綁定：報酬彙總 instructor_salary_summary 只看到自己的列、堂數與金額都是 0
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending＋已綁定：get_teacher_badge_stats(自己綁的主檔) → 空集合
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending＋已綁定：教學排行榜 v1／v2 都是空集合
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending＋已綁定：讀不到後台頒給這個主檔的徽章（badge_overrides）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending＋已綁定：讀不到主檔路徑指到、但不在自己資料夾的影像（空位原本的照片）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending 仍讀得到自己的講師主檔
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending 可上傳到自己的資料夾，並讀得到自己剛上傳的檔
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending 可在 /profile 補齊並存檔自己的主檔
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending 可寫入並讀回自己的資料草稿
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending 讀得到自己的通知
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 pending 的啟用狀態查詢照常（pending／name_slot）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 用 Email 驗證碼啟用 → teacher
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 啟用後讀得到該主檔的上課紀錄與報酬金額
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 啟用後報酬彙總有堂數與金額
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 啟用後 get_teacher_badge_stats 有統計（堂數＝2）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 啟用後教學排行榜 v1／v2 有資料且包含自己
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P2 啟用後讀得到後台頒的徽章與主檔路徑指到的影像（照片仍是空位原本的路徑）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P3 前提：Email 對應自動綁定、role pending、主檔有 2 筆上課紀錄
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P3 pending（email_match）讀不到主檔的上課紀錄、報酬彙總為 0、成就統計空、匯入的影像讀不到
+PASS: [linked reads require activated account (必修 1, 20261023100000)] P3 pending 仍讀得到自己的主檔（啟用前確認資料）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] admin 讀得到全部上課紀錄（含空位與未啟用者的）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] admin 讀得到任一主檔的成就統計、排行榜、徽章頒發
+PASS: [linked reads require activated account (必修 1, 20261023100000)] mentor 讀得到自己綁定主檔的上課紀錄（照舊）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] mentor 讀不到別人的上課紀錄（照舊）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] mentor 呼叫排行榜、成就統計照常有資料
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 既有 teacher（legacy 啟用紀錄）讀得到自己的上課紀錄（照舊）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 沒有任何啟用紀錄的 teacher（回填後自建主檔）也讀得到自己的上課紀錄——條件看角色、不看啟用紀錄
+PASS: [linked reads require activated account (必修 1, 20261023100000)] teacher 讀不到別人的上課紀錄（照舊）
+PASS: [linked reads require activated account (必修 1, 20261023100000)] 20261023100000 第二次套用成功（可重複執行），套完 pending 仍讀不到、teacher 仍讀得到
+
+=== summary ===
+setup: 6/6
+backfill D2/D4: 12/12
+activation: claim paths: 44/44
+legacy teachers without activation records (必修 1): 11/11
+OTP rules: 38/38
+signing: 69/69
+tamper resistance: 49/49
+RLS reads: 7/7
+minor: 未滿 18 歲不可線上簽約（法遵紅燈 R3，migration 20261022120000）: 44/44
+legal copy fidelity: 7/7
+OTP abuse limits (建議 5): 16/16
+consent hardening (建議 3): 7/7
+linked reads require activated account (必修 1, 20261023100000): 35/38
+TOTAL: 345/348 PASS
