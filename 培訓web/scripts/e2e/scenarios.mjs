@@ -430,15 +430,38 @@ export async function scenarioF(ctx) {
 }
 
 // ═══ G 錯誤認領（規格 §3）：冒認者綁了空位，但驗證碼寄到公司已確認的真老師信箱 → 不能啟用；
-//      管理員用畫面解除綁定 → 真老師可以認領並啟用 ═══════════════════════════════
+//      管理員用畫面解除綁定 → 空位保留已確認 Email，改由後台綁定真老師 → 真老師啟用。
+//      2026-10-23 第二輪資安審查建議 4：已有已確認 Email 的空位不能再用姓名認領（G0）——行政先確認 Email 的空位，
+//      冒認者根本綁不到；真老師也一樣要由後台綁定。═══════════════════════════════
 export async function scenarioG(ctx) {
   const r = ctx.r;
   const { api } = ctx;
   const realEmail = `g-real-${ctx.base.runTag}@e2e.test`;
+
+  // G0：管理員先替空位確認了 Email → 任何人都不能用姓名認領（回 not_found，畫面改請他核對手機＋末四碼）
+  const lockedName = '被冒認老師乙';
+  const lockedSlot = await adminCreateInstructor(api, ctx.base.admin, { full_name: lockedName, name_slot: true, instructor_role: '實習', employment_status: 'active' });
+  const lockedConfirm = await api.rpc(ctx.base.admin.token, 'admin_confirm_instructor_email', { p_instructor_id: lockedSlot.id, p_email: `g-locked-${ctx.base.runTag}@e2e.test`, p_note: '10/23 LINE 與真老師確認（E2E）' });
+  r.check('G0 管理員事先登錄真老師的已確認 Email', lockedConfirm.data?.status === 'confirmed');
+  const impostor0 = await newUser(ctx, 'g-impostor0', '冒認者零');
+  const s0 = await openAs(ctx.browser, ctx.stack, impostor0);
+  try {
+    await goto(ctx, s0, '/pending');
+    await visible(s0.page.getByRole('button', { name: /^認領帳號/ }));
+    await chooseCard(s0.page, '認領帳號');
+    await nameClaimUI(s0.page, lockedName);
+    r.check('G0 已有已確認 Email 的空位不能用姓名認領：畫面改請他核對手機＋末四碼、空位仍未綁定、冒認者沒有主檔',
+      await visible(s0.page.getByText(/後台沒有只登記這個姓名的空位/), 10000)
+      && !instructorById(ctx, lockedSlot.id)?.user_id && !activationOf(ctx, impostor0.id) && roleOf(ctx, impostor0.id) === 'pending');
+    await dualShot(ctx, s0, 'G-00-confirmed-slot-not-claimable', { fullPage: false });
+  } finally {
+    ctx.consoleErrors.push(...s0.consoleErrors.map((e) => `G0: ${e}`));
+    await s0.context.close();
+  }
+
+  // G1：空位還沒確認 Email 時，冒認者用姓名綁到空位；之後行政才登錄真老師的 Email → 驗證碼寄到真老師那裡
   const slotName = '被冒認老師甲';
   const slot = await adminCreateInstructor(api, ctx.base.admin, { full_name: slotName, name_slot: true, instructor_role: '實習', employment_status: 'active' });
-  const confirm = await api.rpc(ctx.base.admin.token, 'admin_confirm_instructor_email', { p_instructor_id: slot.id, p_email: realEmail, p_note: '10/20 LINE 與真老師確認（E2E）' });
-  r.check('G 管理員事先登錄真老師的已確認 Email', confirm.data?.status === 'confirmed');
   const impostor = await newUser(ctx, 'g-impostor', '冒認者');
   const s = await openAs(ctx.browser, ctx.stack, impostor);
   try {
@@ -448,6 +471,8 @@ export async function scenarioG(ctx) {
     await nameClaimUI(s.page, slotName);
     await s.page.waitForURL(/\/profile$/, { timeout: 15000 });
     r.check('G 冒認者用姓名綁到空位（待啟用）', instructorById(ctx, slot.id)?.user_id === impostor.id && activationOf(ctx, impostor.id)?.status === 'pending');
+    const confirm = await api.rpc(ctx.base.admin.token, 'admin_confirm_instructor_email', { p_instructor_id: slot.id, p_email: realEmail, p_note: '10/20 LINE 與真老師確認（E2E）' });
+    r.check('G 管理員登錄真老師的已確認 Email', confirm.data?.status === 'confirmed');
     await fillProfile(s.page, profileData(impostor, slotName));
     await saveProfileAndWait(s);
     await s.page.getByTestId('activation-button').click();
@@ -492,6 +517,7 @@ export async function scenarioG(ctx) {
     leftovers.length === 0 && after.full_name === slotName && after.name_slot && after.confirmed_email === realEmail && after.instructor_role === '實習',
     leftovers.length ? `還留著：${leftovers.join(',')}` : '');
 
+  // 空位已有已確認 Email → 真老師不能用姓名認領，改由管理員後台綁定（admin_link_instructor：只綁不開通）
   const realTeacher = await newUser(ctx, 'g-real', '真老師甲', { email: realEmail });
   const s2 = await openAs(ctx.browser, ctx.stack, realTeacher);
   try {
@@ -499,8 +525,13 @@ export async function scenarioG(ctx) {
     await visible(s2.page.getByRole('button', { name: /^認領帳號/ }));
     await chooseCard(s2.page, '認領帳號');
     await nameClaimUI(s2.page, slotName);
-    await s2.page.waitForURL(/\/profile$/, { timeout: 15000 });
-    r.check('G 真老師用姓名認領成功', instructorById(ctx, slot.id)?.user_id === realTeacher.id);
+    r.check('G 解綁後空位仍有已確認 Email：真老師用姓名也認領不到（改由後台綁定）',
+      await visible(s2.page.getByText(/後台沒有只登記這個姓名的空位/), 10000) && !instructorById(ctx, slot.id)?.user_id);
+    const link = await api.rpc(ctx.base.admin.token, 'admin_link_instructor', { target_instructor_id: slot.id, target_user_id: realTeacher.id });
+    r.check('G 管理員後台綁定真老師：綁定成功、只綁不開通（pending＋admin_link）',
+      link.status < 300 && instructorById(ctx, slot.id)?.user_id === realTeacher.id && roleOf(ctx, realTeacher.id) === 'pending'
+      && activationOf(ctx, realTeacher.id)?.claim_method === 'admin_link', `${link.status} ${JSON.stringify(link.data).slice(0, 160)}`);
+    await goto(ctx, s2, '/profile');
     await fillProfile(s2.page, profileData(realTeacher, slotName));
     r.check('G 真老師補完資料', (await saveProfileAndWait(s2)).includes('個人資料已儲存'));
     const otp = await activateViaUI(ctx, s2, realTeacher, 'G');
