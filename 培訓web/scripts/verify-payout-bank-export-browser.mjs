@@ -92,7 +92,8 @@ const SESSIONS = [
     ...Array.from({ length: 1001 }, (_, n) => s(`丁-八月批次${n + 1}`, I.ding, `2026-08-${String(1 + (n % 25)).padStart(2, '0')}`, 'approved', { base: 10 })),
 ];
 
-const world = { role: 'admin', partnerMissing: false, instructors: [], delayOnceFor: null, delayedServed: false, duplicateApproved: false, countDelta: 0 };
+const world = { role: 'admin', partnerMissing: false, instructors: [], delayOnceFor: null, delayedServed: false, duplicateApproved: false, countDelta: 0,
+    pendingUsers: [], activations: [], activationsMissing: false };
 const resetWorld = ({ role = 'admin', partnerMissing = false } = {}) => {
     world.role = role;
     world.partnerMissing = partnerMissing;
@@ -101,6 +102,9 @@ const resetWorld = ({ role = 'admin', partnerMissing = false } = {}) => {
     world.duplicateApproved = false; // 已核准查詢的回應重複塞一列（去重測試）
     world.countDelta = 0;            // 已核准筆數（count=exact）多報幾筆（讀取期間資料變動）
     world.instructors = INSTRUCTORS_SEED.map((row) => ({ ...row }));
+    world.pendingUsers = [];         // users.role = 'pending' 的帳號（[{ id, role }]）
+    world.activations = [];          // instructor_account_activations（[{ id, user_id, instructor_id, status }]）
+    world.activationsMissing = false; // 啟用紀錄表還沒建（電子簽約 migration 未套）
 };
 const reqLog = [];
 const patches = [];
@@ -176,9 +180,28 @@ async function handleSupabase(route, request, url) {
     if (!url.pathname.startsWith('/rest/v1/')) return reject('not a rest/auth path');
     const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
 
+    // 月結匯款頁讀「role 仍是 pending」的帳號清單（分頁、依 id 排序）；其餘 users 查詢是登入者本人的 profile
+    if (table === 'users' && method === 'GET' && params.has('role')) {
+        if (params.get('select') !== 'id') return reject(`users select ${params.get('select')}`);
+        let rows;
+        try { rows = sortById(world.pendingUsers.filter(compileFilters(params, new Set(['role'])))); } catch (error) { return reject(error.message); }
+        const offset = Number(params.get('offset') || 0);
+        const page = rows.slice(offset, offset + 1000).map((row) => project(row, 'id'));
+        return json(route, page, 200, { 'content-range': `${page.length ? `${offset}-${offset + page.length - 1}` : '*'}/*` });
+    }
     if (table === 'users' && method === 'GET') {
         const row = { id: currentUid(), name: '測試管理員', email: `${world.role}@example.test`, role: world.role, created_at: now };
         return json(route, acceptsObject ? row : [row]);
+    }
+    if (table === 'instructor_account_activations' && method === 'GET') {
+        if (world.activationsMissing) {
+            return json(route, { code: 'PGRST205', message: "Could not find the table 'public.instructor_account_activations' in the schema cache", details: null, hint: null }, 404);
+        }
+        let rows;
+        try { rows = sortById(world.activations.filter(compileFilters(params, new Set(['status'])))); } catch (error) { return reject(error.message); }
+        const offset = Number(params.get('offset') || 0);
+        const page = rows.slice(offset, offset + 1000).map((row) => project(row, params.get('select')));
+        return json(route, page, 200, { 'content-range': `${page.length ? `${offset}-${offset + page.length - 1}` : '*'}/*` });
     }
     if (table === 'salary_payout_schedule' && method === 'GET') {
         const row = { next_payday: '2026-11-10', regular_day: 10 };
@@ -805,6 +828,55 @@ async function run() {
         const dupCsv = await downloadVia(page, '轉帳檔 CSV');
         check('恢復正常後可下載，林測三在檔案裡', parseCsvLines(dupCsv.bytes).textValue.includes('林測三'));
         await dupContext.close();
+
+        // ════════ 7. 帳號尚未完成 Email 驗證啟用的講師不能匯款（2026-10-23 第二輪資安審查建議 2） ════════
+        section('7. 綁定帳號 role 仍是 pending、或有 pending 啟用紀錄的講師：直接排除、寫明原因、不進轉帳檔');
+        resetWorld();
+        const PENDING_UID = '00000000-0000-4000-8000-0000000000e1';
+        const DROPDOWN_UID = '00000000-0000-4000-8000-0000000000e2';
+        world.instructors.find((row) => row.id === I.ding).user_id = PENDING_UID;   // 姓名空位認領後還沒驗證信箱
+        world.instructors.find((row) => row.id === I.wang).user_id = DROPDOWN_UID;  // 角色已是 teacher，但啟用紀錄仍 pending
+        world.pendingUsers = [{ id: PENDING_UID, role: 'pending' }];
+        world.activations = [
+            { id: 'act-1', user_id: PENDING_UID, instructor_id: I.ding, status: 'pending' },
+            { id: 'act-2', user_id: DROPDOWN_UID, instructor_id: I.wang, status: 'pending' },
+            { id: 'act-3', user_id: '00000000-0000-4000-8000-0000000000e3', instructor_id: I.jiang, status: 'active' },
+        ];
+        reqLog.length = 0;
+        const gateContext = await newContext(browser, { viewport: { width: 1280, height: 900 } });
+        page = await newPage(gateContext);
+        await openPayout(page, base);
+        const gateQueries = reqLog.filter((r) => ['/rest/v1/users', '/rest/v1/instructor_account_activations'].includes(r.path) && new URLSearchParams(r.search).has(r.path.endsWith('users') ? 'role' : 'status'));
+        check('讀取時一併查「role=pending 的帳號」與「status=pending 的啟用紀錄」',
+            gateQueries.some((r) => r.path === '/rest/v1/users' && new URLSearchParams(r.search).get('role') === 'eq.pending')
+            && gateQueries.some((r) => r.path === '/rest/v1/instructor_account_activations' && new URLSearchParams(r.search).get('status') === 'eq.pending'),
+            gateQueries.map((r) => `${r.path}${r.search}`).join(' '));
+        const dingGate = await text(testId(page, `payout-row-${I.ding}`));
+        const wangGate = await text(testId(page, `payout-row-${I.wang}`));
+        check('丁測一（帳號 role 仍是 pending）：不納入、勾選框停用、原因「帳號尚未完成 Email 驗證啟用，不能匯款」',
+            !(await lbl(page, '丁測一 納入匯款').isChecked()) && (await lbl(page, '丁測一 納入匯款').isDisabled())
+            && dingGate.includes('帳號尚未完成 Email 驗證啟用，不能匯款'), dingGate);
+        check('王測二（角色 teacher、但啟用紀錄仍 pending）：同樣排除並寫明原因',
+            !(await lbl(page, '王測二 納入匯款').isChecked()) && wangGate.includes('帳號尚未完成 Email 驗證啟用，不能匯款'), wangGate);
+        check('江測五（啟用紀錄 active）照常納入；納入 2 人（江 1200＋陳 1000）、總額 $2,200',
+            (await lbl(page, '江測五 納入匯款').isChecked()) && (await text(testId(page, 'payout-included-count'))) === '2'
+            && (await text(testId(page, 'payout-total'))) === '$2,200', `${await text(testId(page, 'payout-included-count'))} / ${await text(testId(page, 'payout-total'))}`);
+        await lbl(page, '付款帳號').fill('123456789012');
+        await lbl(page, '付款分行').fill('0456');
+        const gateCsv = await downloadVia(page, '轉帳檔 CSV');
+        const gateRows = parseCsvLines(gateCsv.bytes).lines.slice(1, -1).map((line) => line.split(','));
+        check('轉帳檔只有江測五、陳測四媽媽，沒有丁測一與王測二（帳號未啟用）',
+            gateRows.map((r) => r[6]).join() === '江測五,陳測四媽媽' && !parseCsvLines(gateCsv.bytes).textValue.includes('丁測一') && !parseCsvLines(gateCsv.bytes).textValue.includes('王測二'),
+            gateRows.map((r) => r[6]).join());
+        await page.screenshot({ path: shot('desktop-1280-unactivated-blocked.png'), fullPage: true });
+        world.activationsMissing = true;
+        world.activations = [];
+        await page.getByRole('button', { name: '重新整理' }).click();
+        await waitText(testId(page, 'payout-included-count'), '3');
+        check('啟用紀錄表還沒建（電子簽約 migration 未套）：只看角色，丁測一仍被擋、王測二恢復納入、沒有讀取錯誤',
+            (await text(testId(page, `payout-row-${I.ding}`))).includes('帳號尚未完成 Email 驗證啟用，不能匯款')
+            && (await lbl(page, '王測二 納入匯款').isChecked()) && (await page.getByText('資料讀取失敗').count()) === 0);
+        await gateContext.close();
 
         // ════════ 4. 非 admin ════════
         section('4. 輔導員（mentor）直接開網址');

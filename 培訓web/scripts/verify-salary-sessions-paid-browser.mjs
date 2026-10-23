@@ -279,6 +279,16 @@ async function handleSupabase(route, request, url) {
     if (!url.pathname.startsWith('/rest/v1/')) return reject('not a rest/auth path');
     const table = url.pathname.replace('/rest/v1/', '').split('/')[0];
 
+    // 月結匯款頁會查「role 仍是 pending 的帳號」與「pending 啟用紀錄」（未啟用的講師不匯；本腳本沒有這種人，回空）。
+    // 那個情境由 verify-payout-bank-export-browser.mjs 第 7 段驗。
+    if (table === 'users' && method === 'GET' && params.has('role')) {
+        if (params.get('role') !== 'eq.pending' || params.get('select') !== 'id') return reject(`users ${url.search}`);
+        return json(route, [], 200, { 'content-range': '*/*' });
+    }
+    if (table === 'instructor_account_activations' && method === 'GET') {
+        if (params.get('status') !== 'eq.pending') return reject(`activations ${url.search}`);
+        return json(route, [], 200, { 'content-range': '*/*' });
+    }
     if (table === 'users' && method === 'GET') {
         const row = { id: ADMIN_UID, name: '測試管理員', email: 'admin@example.test', role: 'admin', created_at: now };
         return json(route, acceptsObject ? row : [row]);

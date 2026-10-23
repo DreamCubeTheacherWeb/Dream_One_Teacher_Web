@@ -23,6 +23,7 @@ import {
     ID_FORMAT_WARNING,
     isCommonIdFormat,
     isMissingPartnerNoError,
+    markUnactivatedInstructors,
     maskAccount,
     maskIdNumber,
     memoLength,
@@ -36,6 +37,7 @@ import {
     renderMemo,
     sessionPayableCents,
     toBankDate,
+    UNACTIVATED_PAYOUT_BLOCKER,
     validatePayoutExport,
 } from './payoutBankExport.js';
 import { VENDOR_CSV_HEADERS } from './vendorCsvExport.js';
@@ -544,4 +546,38 @@ test('阻擋原因都有簡短標籤（手機姓名格用）', () => {
 test('dedupeById：同一列出現兩次只留一筆', () => {
     assert.deepEqual(dedupeById([{ id: 'a', v: 1 }, { id: 'b' }, { id: 'a', v: 2 }]), [{ id: 'a', v: 1 }, { id: 'b' }]);
     assert.deepEqual(dedupeById(null), []);
+});
+
+test('帳號尚未完成 Email 驗證啟用（role pending 或有 pending 啟用紀錄）的講師一律不匯（2026-10-23 第二輪資安審查建議 2）', () => {
+    const U = { pending: 'u-pending', teacherWithPendingActivation: 'u-teacher-pending-act', active: 'u-active' };
+    const raw = [
+        instructor(T.ding, { full_name: '丁測一', bank_account_name: '丁測一', user_id: U.pending }),               // 綁定帳號 role 仍是 pending
+        instructor(T.wang, { full_name: '王測二', bank_account_name: '王測二', user_id: U.teacherWithPendingActivation }), // role 被改成 teacher，但啟用紀錄仍 pending
+        instructor(T.lin, { full_name: '林測三', bank_account_name: '林測三', user_id: U.active }),                 // 已啟用
+        instructor(T.chen, { full_name: '陳測四', bank_account_name: '陳測四', user_id: null }),                    // 沒有綁帳號的既有講師：照常匯
+    ];
+    const marked = markUnactivatedInstructors(raw, {
+        pendingRoleUserIds: [U.pending],
+        pendingActivations: [{ id: 'a1', user_id: U.teacherWithPendingActivation, instructor_id: T.wang }],
+    });
+    assert.deepEqual(marked.map((i) => i.account_not_activated), [true, true, false, false]);
+    assert.equal(raw[0].account_not_activated, undefined, '不改動傳入的陣列');
+    // 只有啟用紀錄的 instructor_id 對得上（帳號 id 不同）也擋
+    assert.equal(markUnactivatedInstructors([instructor(T.bad, { user_id: 'someone-else' })],
+        { pendingActivations: [{ user_id: 'other', instructor_id: T.bad }] })[0].account_not_activated, true);
+    assert.deepEqual(markUnactivatedInstructors(raw).map((i) => i.account_not_activated), [false, false, false, false], '沒有任何待啟用資料時都不擋');
+
+    const result = compute([session(T.ding), session(T.wang), session(T.lin), session(T.chen)], {}, marked);
+    for (const id of [T.ding, T.wang]) {
+        const p = person(result, id);
+        assert.equal(p.blocked, true);
+        assert.equal(p.included, false);
+        assert.ok(p.blockers.includes(UNACTIVATED_PAYOUT_BLOCKER), p.blockers.join());
+        assert.ok(p.blockerTags.includes('帳號未啟用'));
+    }
+    assert.equal(UNACTIVATED_PAYOUT_BLOCKER, '帳號尚未完成 Email 驗證啟用，不能匯款');
+    assert.equal(person(result, T.lin).included, true);
+    assert.equal(person(result, T.chen).included, true);
+    const rows = buildTransferRows({ people: result.people, settings: SETTINGS });
+    assert.deepEqual(rows.map((r) => r[6]).sort(), ['林測三', '陳測四'].sort(), '未啟用的人不在轉帳檔裡');
 });

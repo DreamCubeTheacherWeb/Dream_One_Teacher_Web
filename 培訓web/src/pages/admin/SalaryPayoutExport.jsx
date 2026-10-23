@@ -34,6 +34,7 @@ import {
     defaultPayoutPlan,
     formatMoney,
     isMissingPartnerNoError,
+    markUnactivatedInstructors,
     maskAccount,
     maskIdNumber,
     memoLength,
@@ -49,7 +50,7 @@ import { MIGRATION_NEEDED_TEXT, amountToCents, buildExportPayload, classifyRpcFa
 import PayoutMarkPaidPanel from '../../components/admin/PayoutMarkPaidPanel';
 
 const PAGE_SIZE = 1000;
-const BASE_INSTRUCTOR_COLUMNS = 'id,full_name,bank_code,bank_account_number,bank_account_name,id_number,email_primary,household_address,address,phone_mobile';
+const BASE_INSTRUCTOR_COLUMNS = 'id,user_id,full_name,bank_code,bank_account_number,bank_account_name,id_number,email_primary,household_address,address,phone_mobile';
 const SESSION_COLUMNS = 'id,instructor_id,instructor_name,session_date,course_type,course_name,base_salary,bonus,total_salary,paid_amount,status,pricing_status,is_anomaly,anomaly_reasons';
 const STORAGE_KEYS = { payerAccount: 'dreamone.payout.payerAccount', payerBranch: 'dreamone.payout.payerBranch' };
 const PRICING_LABELS = { needs_review: '待確認報價', rejected: '已退回', manual_override: '手動改價', quoted: '已報價', legacy: '舊資料' };
@@ -84,13 +85,29 @@ const countRows = async (build) => {
     if (error) throw error;
     return count ?? 0;
 };
+// 綁定帳號還沒完成 Email 驗證啟用的講師不能匯款（2026-10-23 第二輪資安審查建議 2）。
+// admin 讀得到 users（"Admins can manage profiles"）與 instructor_account_activations（"Own or admin can read activations"）；
+// 啟用紀錄表還沒建（電子簽約 migration 未套）時只看角色。任一查詢失敗就整頁讀取失敗（寧可不匯，也不要匯錯人）。
+const fetchActivationGate = async () => {
+    const pendingUsers = await fetchAll('users', 'id', (q) => q.eq('role', 'pending'));
+    let pendingActivations = [];
+    try {
+        pendingActivations = await fetchAll('instructor_account_activations', 'id,user_id,instructor_id', (q) => q.eq('status', 'pending'));
+    } catch (error) {
+        if (!MISSING_TABLE_CODES.has(error?.code)) throw error;
+    }
+    return { pendingRoleUserIds: pendingUsers.map((row) => row.id), pendingActivations };
+};
 // partner_no 還沒建（migration 未套）時改用不含它的查詢
 const fetchInstructors = async () => {
+    const gate = await fetchActivationGate();
     try {
-        return { rows: await fetchAll('instructors', `${BASE_INSTRUCTOR_COLUMNS},partner_no`), partnerNoMissing: false };
+        const rows = await fetchAll('instructors', `${BASE_INSTRUCTOR_COLUMNS},partner_no`);
+        return { rows: markUnactivatedInstructors(rows, gate), partnerNoMissing: false };
     } catch (error) {
         if (!isMissingPartnerNoError(error)) throw error;
-        return { rows: await fetchAll('instructors', BASE_INSTRUCTOR_COLUMNS), partnerNoMissing: true };
+        const rows = await fetchAll('instructors', BASE_INSTRUCTOR_COLUMNS);
+        return { rows: markUnactivatedInstructors(rows, gate), partnerNoMissing: true };
     }
 };
 

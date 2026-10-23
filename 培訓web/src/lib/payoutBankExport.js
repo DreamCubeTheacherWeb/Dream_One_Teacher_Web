@@ -202,6 +202,24 @@ const compareSessions = (a, b) => (
     || String(a.id).localeCompare(String(b.id))
 );
 
+// ───────────────────────── 帳號尚未完成 Email 驗證啟用 ─────────────────────────
+// 2026-10-23 第二輪資安審查建議 2：姓名空位的綁定者在 pending 狀態下就能改主檔的匯款欄位，
+// 冒認者搶先認領、填自己的帳號，之後行政登課、匯出轉帳檔，錢就會匯給他。
+// 綁定帳號的 role 仍是 pending，或還有 pending 啟用紀錄（只綁不開通）的講師一律不匯。
+export const UNACTIVATED_PAYOUT_BLOCKER = '帳號尚未完成 Email 驗證啟用，不能匯款';
+// pendingRoleUserIds：users.role = 'pending' 的帳號 id；pendingActivations：instructor_account_activations 裡 status = 'pending' 的列（user_id、instructor_id）
+export const markUnactivatedInstructors = (instructors = [], { pendingRoleUserIds = [], pendingActivations = [] } = {}) => {
+    const pendingUsers = toSet(pendingRoleUserIds);
+    const activationUsers = new Set((pendingActivations || []).map((row) => row?.user_id).filter(Boolean));
+    const activationInstructors = new Set((pendingActivations || []).map((row) => row?.instructor_id).filter(Boolean));
+    return (instructors || []).map((instructor) => {
+        const userId = instructor?.user_id || null;
+        const unactivated = Boolean(userId && (pendingUsers.has(userId) || activationUsers.has(userId)))
+            || activationInstructors.has(instructor?.id);
+        return { ...instructor, account_not_activated: unactivated };
+    });
+};
+
 // ───────────────────────── 每人一列 ─────────────────────────
 // sessions：該期 status='approved' 的課（已依期別起訖篩好）
 // instructors：講師主檔（id、full_name、bank_code、bank_account_number、bank_account_name、id_number、email_primary、partner_no…）
@@ -274,6 +292,7 @@ export const computePayoutPeople = ({ sessions = [], instructors = [], periodMon
         if (!instructor) {
             block('找不到講師主檔', '找不到主檔');
         } else {
+            if (instructor.account_not_activated) block(UNACTIVATED_PAYOUT_BLOCKER, '帳號未啟用');
             if (!bankCode) block('缺解款行（銀行＋分行代碼）', '缺解款行');
             else if (!/^\d{7}$/.test(bankCode)) block(`解款行需為 7 碼數字（目前 ${[...bankCode].length} 碼${/^\d+$/.test(bankCode) ? '' : '，含非數字'}）`, '解款行有誤');
             if (!accountNumber) block('缺收款帳號', '缺帳號');
