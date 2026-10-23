@@ -38,6 +38,7 @@
     "verify:salary-register-paging:browser": "node scripts/verify-salary-register-paging-browser.mjs",
     "e2e:onboarding": "node scripts/e2e/run-onboarding.mjs",
     "verify:esign-production-order": "node scripts/verify-esign-production-order.mjs",
+    "verify:esign-pdf-teardown": "node scripts/verify-esign-pdf-teardown.mjs",
     "verify:salary-payday:browser": "node scripts/verify-salary-payday-browser.mjs",
     "verify:salary-payout-schedule": "node scripts/verify-salary-payout-schedule.mjs",
     "verify:salary-sessions-paid": "node scripts/verify-salary-sessions-paid.mjs",
