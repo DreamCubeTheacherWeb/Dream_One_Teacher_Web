@@ -19,7 +19,7 @@
 - 驗證（輸出與說明在 `培訓web/docs/verification/2026-10-23-linked-reads/README.md`）：verify-claim-activation-esign 365/365（正式庫順序也 365/365）；
   四種突變都抓得到（drop-role-check 12 項 FAIL、drop-claim-records-check 3、v2-hide-base 2、old-otp-lockout-count 4）；verify:esign-production-order 70/70；
   npm test 287/287、build 通過、改過的 10 個 JS 檔 eslint 0；payout 匯出瀏覽器 131/131（含新案例）、sessions-paid 瀏覽器 57/57、payout-partner-no 38/38、
-  salary-sessions-paid 124/124、salary-payout-schedule 43/43、about-me（含排行榜 mock）69/69；e2e:onboarding 1 輪 294 PASS／0 FAIL（已知問題 1；情境 G 改成新規則：先確認 Email 的空位不能姓名認領、真老師由後台綁定）；e2e:profile-save 在 commit 後另跑。
+  salary-sessions-paid 124/124、salary-payout-schedule 43/43、about-me（含排行榜 mock）69/69；e2e:onboarding 1 輪 294 PASS／0 FAIL（已知問題 1；情境 G 改成新規則：先確認 Email 的空位不能姓名認領、真老師由後台綁定）；e2e:profile-save 81/81（commit 後、src 乾淨時跑）。
 - 套用順序不變（四支連續套用，見下一段）。
 
 **2026-10-23 晚：獨立資安審查「必修 1、建議 5」全部修好（分支 `fix/esign-owner-decisions`，已合併 origin/main `20654ec`〔一鍵標已付款〕，未推 main、未碰正式庫）**：

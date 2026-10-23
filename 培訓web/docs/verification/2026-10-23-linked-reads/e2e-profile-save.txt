@@ -3,179 +3,179 @@
 > node scripts/e2e/profile-save-scenarios.mjs
 
 
-════════ A 目前程式（a4780b2）（全新資料庫） ════════
-[stack] PostgreSQL 49595（PID 93942）已套 78 個 SQL 檔（1222 ms）
-[stack] PostgREST 49596（PID 95242）ready
-[stack] 閘道 http://127.0.0.1:49600
-[stack] vite build 完成（2718 ms）
-[stack] Vite（preview）http://127.0.0.1:49601（PID 95250）
-PASS  A 目前程式（a4780b2） 套用 repo 全部 SQL（77 個檔），instructors 上的 guard trigger 都在 — set_instructors_updated_at,trg_guard_instructor_admin_fields,trg_guard_instructor_claim_fields,trg_guard_instructor_file_paths,trg_guard_instructor_identity_email,trg_guard_instructor_locked_documents,trg_guard_instructor_partner_no,trg_guard_instructor_role,trg_guard_minor_birth_date_change,trg_log_instructor_document_changes,trg_revoke_activation_on_unlink,trg_stamp_admin_created_instructor,trg_sync_instructor_name,trg_sync_instructor_portal_access
+════════ A 目前程式（80ac754）（全新資料庫） ════════
+[stack] PostgreSQL 56976（PID 1017）已套 78 個 SQL 檔（1167 ms）
+[stack] PostgREST 56977（PID 2508）ready
+[stack] 閘道 http://127.0.0.1:56981
+[stack] vite build 完成（2750 ms）
+[stack] Vite（preview）http://127.0.0.1:56982（PID 2519）
+PASS  A 目前程式（80ac754） 套用 repo 全部 SQL（77 個檔），instructors 上的 guard trigger 都在 — set_instructors_updated_at,trg_guard_instructor_admin_fields,trg_guard_instructor_claim_fields,trg_guard_instructor_file_paths,trg_guard_instructor_identity_email,trg_guard_instructor_locked_documents,trg_guard_instructor_partner_no,trg_guard_instructor_role,trg_guard_minor_birth_date_change,trg_log_instructor_document_changes,trg_revoke_activation_on_unlink,trg_stamp_admin_created_instructor,trg_sync_instructor_name,trg_sync_instructor_portal_access
 
 ── P1 ──
 PASS  P1 起始狀態：沒有主檔、帳號為 pending
 PASS  P1 /profile 預填登入 Email
 PASS  P1 存檔成功（恭喜完成註冊） — 恭喜你完成註冊！（成功彈窗）
-PASS  P1 寫入順序：先 PATCH（0 列）再 INSERT 建主檔 — PATCH instructors?user_id=eq.1aa3b9d3-3fd5-4ce4-ab3b-e3ca6adce602&select=updated_at→200, POST instructors?select=updated_at→201
-PASS  P1 主檔已建立：user_id＝本人、主要 Email＝Google 信箱 — email_primary=p1-new-mvkq385f-1@e2e.test
+PASS  P1 寫入順序：先 PATCH（0 列）再 INSERT 建主檔 — PATCH instructors?user_id=eq.cda89da2-173c-464a-b748-4647d667c706&select=updated_at→200, POST instructors?select=updated_at→201
+PASS  P1 主檔已建立：user_id＝本人、主要 Email＝Google 信箱 — email_primary=p1-new-mvkrf5o2-1@e2e.test
 PASS  P1 文字欄位逐欄與畫面輸入一致
 PASS  P1 接課地區已存 — ["臺北市","新北市"]
-PASS  P1 四份證件路徑都在 instructors/<uid>/<種類>/，mime／size 正確，storage 物件存在且 owner＝本人 — 例：instructors/1aa3b9d3-3fd5-4ce4-ab3b-e3ca6adce602/id_front/17eb82d6-b10e-4c60-a9e8-93b6dca9fe50.png
+PASS  P1 四份證件路徑都在 instructors/<uid>/<種類>/，mime／size 正確，storage 物件存在且 owner＝本人 — 例：instructors/cda89da2-173c-464a-b748-4647d667c706/id_front/8272f782-a635-43a2-a203-d8f92dc42fd1.png
 PASS  P1 草稿已清除
 NOTE  P1 存檔後帳號角色＝pending（新講師送出後等待管理員審核）
    （P1 用時 2.1 秒）
 
 ── P2 ──
-PASS  P2 姓名＋手機＋末四碼認領成功（同一列綁定本人、只綁不開通：pending＋identity_check 待啟用），用 Email 驗證碼啟用後角色 teacher — url=http://127.0.0.1:49601/profile 認領後 role=pending 啟用後 role=teacher
+PASS  P2 姓名＋手機＋末四碼認領成功（同一列綁定本人、只綁不開通：pending＋identity_check 待啟用），用 Email 驗證碼啟用後角色 teacher — url=http://127.0.0.1:56982/profile 認領後 role=pending 啟用後 role=teacher
 PASS  P2 /profile 帶入舊主要 Email（≠ Google 信箱）
 PASS  P2 存檔成功 — 個人資料已儲存！
-PASS  P2 寫入只有一次 PATCH（UPDATE 1 列），沒有 INSERT／upsert — PATCH instructors?user_id=eq.f981f47f-8489-43ae-b041-370b32909561&select=updated_at→200
-PASS  P2 暱稱已更新、主要 Email 仍是舊信箱 — nickname=陳暱稱3 email_primary=legacy-chen-2-mvkq39sf@old-mail.example
+PASS  P2 寫入只有一次 PATCH（UPDATE 1 列），沒有 INSERT／upsert — PATCH instructors?user_id=eq.92757be6-3a18-44fb-b325-6bc58638d4d2&select=updated_at→200
+PASS  P2 暱稱已更新、主要 Email 仍是舊信箱 — nickname=陳暱稱3 email_primary=legacy-chen-2-mvkrf790@old-mail.example
 PASS  P2 其他欄位（含 4 份證件、管理員欄位、舊資料參考欄）都沒被改掉 — 變動欄位：phone_home, email_secondary, nickname
 NOTE  P2 原本空值被存成空字串（無資料遺失）：phone_home: null→""; email_secondary: null→""
 PASS  P2 這次沒有送任何證件欄位
-   （P2 用時 2.2 秒）
+   （P2 用時 2.1 秒）
 
 ── P3 ──
-PASS  P3 Email 自動對應認領（同一列綁定本人、只綁不開通：pending＋email_match 待啟用）、啟用後角色 teacher、四份證件在 form-import/ — 認領後 role=pending 啟用後 role=teacher photo_path=form-import/inst-3838b07b-3b1e-4393-b12d-980c28a60cfc--photo.jpg
+PASS  P3 Email 自動對應認領（同一列綁定本人、只綁不開通：pending＋email_match 待啟用）、啟用後角色 teacher、四份證件在 form-import/ — 認領後 role=pending 啟用後 role=teacher photo_path=form-import/inst-7094eff3-f38a-48d3-9109-c51054fbe599--photo.jpg
 PASS  P3 存檔成功 — 個人資料已儲存！
-PASS  P3 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.b4ff1b23-c8e4-403b-bd62-6c71570a046e&select=updated_at→200
+PASS  P3 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.cc51a284-7a66-47f0-bdfb-d1f5eb861a5e&select=updated_at→200
 PASS  P3 PATCH 沒有夾帶任何證件欄位（omitUnchangedDocumentFields 生效）
 PASS  P3 三個文字欄位都已更新 — nickname=林暱稱5; line_id=new_line_5; bio_notes=更新後的教學理念 5
-PASS  P3 四份證件的 path／mime／size／uploaded_at 原樣保留 — 例：id_front=form-import/inst-3838b07b-3b1e-4393-b12d-980c28a60cfc--id_front.jpg image/jpeg 179
+PASS  P3 四份證件的 path／mime／size／uploaded_at 原樣保留 — 例：id_front=form-import/inst-7094eff3-f38a-48d3-9109-c51054fbe599--id_front.jpg image/jpeg 179
 PASS  P3 其他欄位（管理員欄位、外部網址、舊資料參考欄）都沒被改掉 — 變動欄位：phone_home, line_id, email_secondary, bio_notes, nickname
 NOTE  P3 原本空值被存成空字串（無資料遺失）：phone_home: null→""; email_secondary: null→""
-   （P3 用時 2.1 秒）
+   （P3 用時 1.9 秒）
 
 ── P4 ──
 PASS  P4 身分核對認領成功（只綁不開通：pending＋identity_check）、啟用後 teacher、四份證件在 form-import/、主要 Email ≠ Google — 認領後 role=pending 啟用後 role=teacher
 PASS  P4 存檔成功 — 個人資料已儲存！
-PASS  P4 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.4b6a939d-3a11-4193-875d-543d94b30f19&select=updated_at→200
+PASS  P4 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.99d108b9-8949-4989-9ef9-01f311ac1cdf&select=updated_at→200
 PASS  P4 PATCH 只送身分證正面的 4 個欄位 — id_front_mime, id_front_path, id_front_size, id_front_uploaded_at
-PASS  P4 身分證正面換成 instructors/<uid>/id_front/ 新路徑，mime／size 正確，storage 物件 owner＝本人 — id_front_path=instructors/4b6a939d-3a11-4193-875d-543d94b30f19/id_front/b5978ac9-4de7-43ff-be66-5bd192eded77.png mime=image/png size=215 obj={"owner_id":"4b6a939d-3a11-4193-875d-543d94b30f19","size":215,"mimetype":"image/png"}
-PASS  P4 其他三份（大頭照、身分證反面、存摺）path／mime／size／uploaded_at 原樣保留 — 例：bankbook=form-import/inst-a632af4a-5272-42a6-af4d-7de5aeeb28ec--bankbook.jpg
+PASS  P4 身分證正面換成 instructors/<uid>/id_front/ 新路徑，mime／size 正確，storage 物件 owner＝本人 — id_front_path=instructors/99d108b9-8949-4989-9ef9-01f311ac1cdf/id_front/51b5fe85-72df-4f94-8898-999c0d792d31.png mime=image/png size=215 obj={"owner_id":"99d108b9-8949-4989-9ef9-01f311ac1cdf","size":215,"mimetype":"image/png"}
+PASS  P4 其他三份（大頭照、身分證反面、存摺）path／mime／size／uploaded_at 原樣保留 — 例：bankbook=form-import/inst-ffd2d2ad-972a-47dd-950c-08cedfa513ed--bankbook.jpg
 PASS  P4 主要 Email 仍是舊信箱、其他欄位都沒被改掉 — 變動欄位：phone_home, email_secondary, id_front_path, id_front_mime, id_front_size, id_front_uploaded_at
 NOTE  P4 原本空值被存成空字串（無資料遺失）：phone_home: null→""; email_secondary: null→""
-PASS  P4 被換掉的 form-import 舊檔仍在 storage（講師刪不到管理員匯入檔） — form-import/inst-a632af4a-5272-42a6-af4d-7de5aeeb28ec--id_front.jpg
-PASS  P4 開放修改一次已被這次存檔用掉（存檔後自動鎖回） — {"consumed_by":"4b6a939d-3a11-4193-875d-543d94b30f19","consumed":true}
-PASS  P4 修改紀錄寫入：講師本人、用了開放權限、舊檔＝form-import 原檔、新檔＝新路徑 — {"role":"instructor","by":"4b6a939d-3a11-4193-875d-543d94b30f19","unlock":"0192d275-28e3-4598-b884-dfdb087f0534","old_path":"form-import/inst-a632af4a-5272-42a6-af4d-7de5aeeb28ec--id_front.jpg","new_path":"instructors/4b6a939d-3a11-4193-875d-543d94b30f19/id_front/b5978ac9-4de7-43ff-be66-5bd192eded77.png"}
+PASS  P4 被換掉的 form-import 舊檔仍在 storage（講師刪不到管理員匯入檔） — form-import/inst-ffd2d2ad-972a-47dd-950c-08cedfa513ed--id_front.jpg
+PASS  P4 開放修改一次已被這次存檔用掉（存檔後自動鎖回） — {"consumed_by":"99d108b9-8949-4989-9ef9-01f311ac1cdf","consumed":true}
+PASS  P4 修改紀錄寫入：講師本人、用了開放權限、舊檔＝form-import 原檔、新檔＝新路徑 — {"role":"instructor","by":"99d108b9-8949-4989-9ef9-01f311ac1cdf","unlock":"db48767a-4f90-42f4-9383-9defcd9f4385","old_path":"form-import/inst-ffd2d2ad-972a-47dd-950c-08cedfa513ed--id_front.jpg","new_path":"instructors/99d108b9-8949-4989-9ef9-01f311ac1cdf/id_front/51b5fe85-72df-4f94-8898-999c0d792d31.png"}
 PASS  P4 存檔後身分證正面回到鎖定（畫面）
-   （P4 用時 2.4 秒）
+   （P4 用時 2.1 秒）
 
 ── P5 ──
 PASS  P5 起始：已有主檔（本人、teacher、證件在本人資料夾）
-PASS  P5 第一次存檔（改電話）成功、資料庫已是新電話 — 個人資料已儲存！；phone_mobile=0988140164；PATCH instructors?user_id=eq.31427ec4-f98e-436b-b0f0-5c0c9cc4488a&select=updated_at→200
-PASS  P5 第二次存檔（改地址）成功 — 個人資料已儲存！；PATCH instructors?user_id=eq.31427ec4-f98e-436b-b0f0-5c0c9cc4488a&select=updated_at→200
-PASS  P5 兩次改動都在：電話＝第一次的新值、地址＝第二次的新值 — phone_mobile=0988140164 address=臺北市大安區第二次存檔路 9 號
+PASS  P5 第一次存檔（改電話）成功、資料庫已是新電話 — 個人資料已儲存！；phone_mobile=0988748521；PATCH instructors?user_id=eq.d6700919-dfc4-4198-ae9b-e437bc0e6a1b&select=updated_at→200
+PASS  P5 第二次存檔（改地址）成功 — 個人資料已儲存！；PATCH instructors?user_id=eq.d6700919-dfc4-4198-ae9b-e437bc0e6a1b&select=updated_at→200
+PASS  P5 兩次改動都在：電話＝第一次的新值、地址＝第二次的新值 — phone_mobile=0988748521 address=臺北市大安區第二次存檔路 9 號
 PASS  P5 沒有任何失敗／衝突訊息（只有兩次「個人資料已儲存」） — ["個人資料已儲存！","個人資料已儲存！"]
-PASS  P5 兩次都是 PATCH 200（各更新 1 列） — PATCH instructors?user_id=eq.31427ec4-f98e-436b-b0f0-5c0c9cc4488a&select=updated_at→200 | PATCH instructors?user_id=eq.31427ec4-f98e-436b-b0f0-5c0c9cc4488a&select=updated_at→200
+PASS  P5 兩次都是 PATCH 200（各更新 1 列） — PATCH instructors?user_id=eq.d6700919-dfc4-4198-ae9b-e437bc0e6a1b&select=updated_at→200 | PATCH instructors?user_id=eq.d6700919-dfc4-4198-ae9b-e437bc0e6a1b&select=updated_at→200
 PASS  P5 其他欄位（含 4 份證件）都沒被改掉 — 變動欄位：phone_mobile, phone_home, address, email_secondary
 NOTE  P5 原本空值被存成空字串（無資料遺失）：phone_home: null→""; email_secondary: null→""
 PASS  P5 存檔後沒有殘留草稿
-   （P5 用時 2.7 秒）
+   （P5 用時 2.4 秒）
 
 ── P7 ──
-PASS  P7 起始：mentor 帳號、已有自己的主檔（主要 Email＝Google） — role=mentor email_primary=p7-mentor-10-mvkq3h4s@e2e.test
+PASS  P7 起始：mentor 帳號、已有自己的主檔（主要 Email＝Google） — role=mentor email_primary=p7-mentor-10-mvkrfdro@e2e.test
 PASS  P7 mentor 存檔成功 — 個人資料已儲存！
-PASS  P7 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.6e8d6a0b-edda-425c-a4e4-ce44d543e285&select=updated_at→200
+PASS  P7 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.5e369272-a2b4-4afa-80a3-8f38d1594f4f&select=updated_at→200
 PASS  P7 PATCH 沒送 user_id，也沒送沒改的主要 Email — user_id=false email_primary=false
-PASS  P7 資料庫：暱稱已更新、主要 Email 不變、角色仍是 mentor — nickname=周暱稱11 email_primary=p7-mentor-10-mvkq3h4s@e2e.test role=mentor
+PASS  P7 資料庫：暱稱已更新、主要 Email 不變、角色仍是 mentor — nickname=周暱稱11 email_primary=p7-mentor-10-mvkrfdro@e2e.test role=mentor
 PASS  P7 其他欄位（含 4 份證件、管理員欄位）都沒被改掉 — 變動欄位：phone_home, email_secondary, nickname
 NOTE  P7 原本空值被存成空字串（無資料遺失）：phone_home: null→""; email_secondary: null→""
-   （P7 用時 2.2 秒）
+   （P7 用時 1.9 秒）
 
 ── P8 ──
 PASS  P8 起始：凍結時 trigger 已把角色降為 pending，管理員手動改回 teacher；主檔 employment_status=frozen — 凍結後 role=pending；現在 role=teacher employment_status=frozen
 PASS  P8 存檔成功 — 個人資料已儲存！
-PASS  P8 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.c843da37-fd95-4a92-900b-4f11f9cecc7e&select=updated_at→200
+PASS  P8 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.d4d951ea-9720-4e3f-8276-d8965412ad65&select=updated_at→200
 PASS  P8 PATCH 沒送 user_id、主要 Email、employment_status — user_id=false email_primary=false employment_status=false
 PASS  P8 存檔後角色仍是 teacher（沒被自動降回 pending） — role=teacher
-PASS  P8 資料庫：暱稱已更新、任職狀態仍是 frozen、主要 Email 不變 — nickname=吳暱稱13 employment_status=frozen email_primary=p8-frozen-12-mvkq3iu3@e2e.test
+PASS  P8 資料庫：暱稱已更新、任職狀態仍是 frozen、主要 Email 不變 — nickname=吳暱稱13 employment_status=frozen email_primary=p8-frozen-12-mvkrff81@e2e.test
 PASS  P8 其他欄位（含 4 份證件、管理員欄位）都沒被改掉 — 變動欄位：phone_home, email_secondary, nickname
 NOTE  P8 原本空值被存成空字串（無資料遺失）：phone_home: null→""; email_secondary: null→""
-NOTE  P8 參考：存檔後重新載入頁面，登入檢查（claim_my_precreated_instructor）把凍結講師的角色改成 pending，網址=http://127.0.0.1:49601/
-   （P8 用時 2.2 秒）
+NOTE  P8 參考：存檔後重新載入頁面，登入檢查（claim_my_precreated_instructor）把凍結講師的角色改成 pending，網址=http://127.0.0.1:56982/
+   （P8 用時 2.1 秒）
 
 ── P9 ──
-PASS  P9 起始：姓名＋手機＋末四碼認領成功（認領後 pending 待啟用，驗證碼啟用後 teacher）、主要 Email＝舊信箱（≠ Google） — url=http://127.0.0.1:49601/profile 認領後 role=pending 啟用後 role=teacher email_primary=legacy-cheng-14-mvkq3kju@old-mail.example
-PASS  P9 存檔被擋，畫面顯示中文說明（含登入的 Google 信箱），不再是英文錯誤 — 儲存失敗：主要 Email 必須是你登入用的 Google 信箱（p9-google-mvkq3kjx-15@e2e.test）；若要改用其他信箱，請聯繫管理員。
-PASS  P9 寫入是一次 PATCH（送出新的主要 Email、沒送 user_id），被資料庫 Email 守門以 403／42501 擋下 — PATCH instructors?user_id=eq.8ae09ebc-5c11-486f-959a-96d51b5680ac&select=updated_at→403(42501)；message=changed instructor email must match the signed-in Google account
-PASS  P9 被擋後資料庫主檔完全沒變（主要 Email 仍是舊信箱）、角色仍是 teacher — ；email_primary=legacy-cheng-14-mvkq3kju@old-mail.example role=teacher
-   （P9 用時 2.1 秒）
-PASS  A 目前程式（a4780b2） 閘道沒有任何 5xx 回應
+PASS  P9 起始：姓名＋手機＋末四碼認領成功（認領後 pending 待啟用，驗證碼啟用後 teacher）、主要 Email＝舊信箱（≠ Google） — url=http://127.0.0.1:56982/profile 認領後 role=pending 啟用後 role=teacher email_primary=legacy-cheng-14-mvkrfgvk@old-mail.example
+PASS  P9 存檔被擋，畫面顯示中文說明（含登入的 Google 信箱），不再是英文錯誤 — 儲存失敗：主要 Email 必須是你登入用的 Google 信箱（p9-google-mvkrfgvq-15@e2e.test）；若要改用其他信箱，請聯繫管理員。
+PASS  P9 寫入是一次 PATCH（送出新的主要 Email、沒送 user_id），被資料庫 Email 守門以 403／42501 擋下 — PATCH instructors?user_id=eq.9ad2fa3b-b858-4c8d-a39f-91c495eaa554&select=updated_at→403(42501)；message=changed instructor email must match the signed-in Google account
+PASS  P9 被擋後資料庫主檔完全沒變（主要 Email 仍是舊信箱）、角色仍是 teacher — ；email_primary=legacy-cheng-14-mvkrfgvk@old-mail.example role=teacher
+   （P9 用時 3.1 秒）
+PASS  A 目前程式（80ac754） 閘道沒有任何 5xx 回應
 
 [P6] 已暫時把 src/pages/ProfilePage.jsx 換成 1f5c350 版（upsert 版），build 完立刻還原
 
 ════════ P6 反向對照（1f5c350 upsert 版）（全新資料庫） ════════
-[stack] PostgreSQL 49773（PID 99891）已套 78 個 SQL 檔（1180 ms）
-[stack] PostgREST 49774（PID 1756）ready
-[stack] 閘道 http://127.0.0.1:49778
-[stack] vite build 完成（2660 ms）
-[stack] Vite（preview）http://127.0.0.1:49779（PID 1764）
+[stack] PostgreSQL 57142（PID 7109）已套 78 個 SQL 檔（1167 ms）
+[stack] PostgREST 57143（PID 8410）ready
+[stack] 閘道 http://127.0.0.1:57147
+[stack] vite build 完成（2755 ms）
+[stack] Vite（preview）http://127.0.0.1:57148（PID 8415）
 [P6] build 完成，src/pages/ProfilePage.jsx 已寫回原檔
 PASS  P6 反向對照（1f5c350 upsert 版） 套用 repo 全部 SQL（77 個檔），instructors 上的 guard trigger 都在 — set_instructors_updated_at,trg_guard_instructor_admin_fields,trg_guard_instructor_claim_fields,trg_guard_instructor_file_paths,trg_guard_instructor_identity_email,trg_guard_instructor_locked_documents,trg_guard_instructor_partner_no,trg_guard_instructor_role,trg_guard_minor_birth_date_change,trg_log_instructor_document_changes,trg_revoke_activation_on_unlink,trg_stamp_admin_created_instructor,trg_sync_instructor_name,trg_sync_instructor_portal_access
 
 ── P6-P2 ──
-PASS  P6-P2 姓名＋手機＋末四碼認領成功（同一列綁定本人、只綁不開通：pending＋identity_check 待啟用），用 Email 驗證碼啟用後角色 teacher — url=http://127.0.0.1:49779/profile 認領後 role=pending 啟用後 role=teacher
+PASS  P6-P2 姓名＋手機＋末四碼認領成功（同一列綁定本人、只綁不開通：pending＋identity_check 待啟用），用 Email 驗證碼啟用後角色 teacher — url=http://127.0.0.1:57148/profile 認領後 role=pending 啟用後 role=teacher
 PASS  P6-P2 /profile 帶入舊主要 Email（≠ Google 信箱）
 PASS  P6-P2 舊 upsert 版存檔被擋（畫面顯示儲存失敗） — 儲存失敗：new instructor email must match the signed-in Google account
 PASS  P6-P2 寫入請求是 POST …?on_conflict=user_id 且回 403／42501 — POST instructors?on_conflict=user_id&select=updated_at→403(42501)；message=new instructor email must match the signed-in Google account
 PASS  P6-P2 被擋後資料庫主檔完全沒變
-   （P6-P2 用時 2.1 秒）
+   （P6-P2 用時 2.2 秒）
 
 ── P6-P3 ──
-PASS  P6-P3 Email 自動對應認領（同一列綁定本人、只綁不開通：pending＋email_match 待啟用）、啟用後角色 teacher、四份證件在 form-import/ — 認領後 role=pending 啟用後 role=teacher photo_path=form-import/inst-c03d7250-f156-419a-a023-7bc5607ca9a3--photo.jpg
+PASS  P6-P3 Email 自動對應認領（同一列綁定本人、只綁不開通：pending＋email_match 待啟用）、啟用後角色 teacher、四份證件在 form-import/ — 認領後 role=pending 啟用後 role=teacher photo_path=form-import/inst-5d14125d-2693-469e-87aa-aa865f7cd5b6--photo.jpg
 PASS  P6-P3 舊 upsert 版存檔被擋（畫面顯示儲存失敗） — 儲存失敗：instructor file paths must remain inside the current user folder
 PASS  P6-P3 寫入請求是 POST …?on_conflict=user_id 且回 403／42501 — POST instructors?on_conflict=user_id&select=updated_at→403(42501)；message=instructor file paths must remain inside the current user folder
 PASS  P6-P3 被擋後資料庫主檔完全沒變
    （P6-P3 用時 1.9 秒）
 PASS  P6 反向對照（1f5c350 upsert 版） 閘道沒有任何 5xx 回應
-PASS  P6 還原後 git diff --quiet -- 培訓web/src 乾淨（ProfilePage.jsx 回到 a4780b2）
+PASS  P6 還原後 git diff --quiet -- 培訓web/src 乾淨（ProfilePage.jsx 回到 80ac754）
 
 [P10] 已暫時把 src/pages/ProfilePage.jsx 換成 3168949 版（UPDATE 每次帶 user_id／email_primary），build 完立刻還原
 
 ════════ P10 反向對照（3168949 版）（全新資料庫） ════════
-[stack] PostgreSQL 49835（PID 3119）已套 78 個 SQL 檔（1156 ms）
-[stack] PostgREST 49836（PID 4419）ready
-[stack] 閘道 http://127.0.0.1:49840
-[stack] vite build 完成（2619 ms）
-[stack] Vite（preview）http://127.0.0.1:49841（PID 4425）
+[stack] PostgreSQL 57198（PID 9727）已套 78 個 SQL 檔（1186 ms）
+[stack] PostgREST 57199（PID 11030）ready
+[stack] 閘道 http://127.0.0.1:57203
+[stack] vite build 完成（2622 ms）
+[stack] Vite（preview）http://127.0.0.1:57204（PID 11035）
 [P10] build 完成，src/pages/ProfilePage.jsx 已寫回原檔
 PASS  P10 反向對照（3168949 版） 套用 repo 全部 SQL（77 個檔），instructors 上的 guard trigger 都在 — set_instructors_updated_at,trg_guard_instructor_admin_fields,trg_guard_instructor_claim_fields,trg_guard_instructor_file_paths,trg_guard_instructor_identity_email,trg_guard_instructor_locked_documents,trg_guard_instructor_partner_no,trg_guard_instructor_role,trg_guard_minor_birth_date_change,trg_log_instructor_document_changes,trg_revoke_activation_on_unlink,trg_stamp_admin_created_instructor,trg_sync_instructor_name,trg_sync_instructor_portal_access
 
 ── P10-P7 ──
-   ↳ [3168949 跑 P7 斷言] 通過：P10-P7 起始：mentor 帳號、已有自己的主檔（主要 Email＝Google） — role=mentor email_primary=p7-mentor-20-mvkq3ydq@e2e.test
+   ↳ [3168949 跑 P7 斷言] 通過：P10-P7 起始：mentor 帳號、已有自己的主檔（主要 Email＝Google） — role=mentor email_primary=p7-mentor-20-mvkrfuu6@e2e.test
    ↳ [3168949 跑 P7 斷言] 未過：P10-P7 mentor 存檔成功 — 儲存失敗：instructor identity is not owned by the signed-in account
-   ↳ [3168949 跑 P7 斷言] 未過：P10-P7 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.b08d5127-38cc-4d19-a73e-6d92e6fa9605&select=updated_at→403(42501)
+   ↳ [3168949 跑 P7 斷言] 未過：P10-P7 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.37245c1a-ac98-4a8b-8e9f-09bb8babe75f&select=updated_at→403(42501)
    ↳ [3168949 跑 P7 斷言] 未過：P10-P7 PATCH 沒送 user_id，也沒送沒改的主要 Email — user_id=true email_primary=true
-   ↳ [3168949 跑 P7 斷言] 未過：P10-P7 資料庫：暱稱已更新、主要 Email 不變、角色仍是 mentor — nickname=20老師 email_primary=p7-mentor-20-mvkq3ydq@e2e.test role=mentor
+   ↳ [3168949 跑 P7 斷言] 未過：P10-P7 資料庫：暱稱已更新、主要 Email 不變、角色仍是 mentor — nickname=20老師 email_primary=p7-mentor-20-mvkrfuu6@e2e.test role=mentor
    ↳ [3168949 跑 P7 斷言] 通過：P10-P7 其他欄位（含 4 份證件、管理員欄位）都沒被改掉 — 變動欄位：
 PASS  P10-P7 舊版（3168949）跑同一套 P7 斷言會 FAIL — 未過：P10-P7 mentor 存檔成功；P10-P7 寫入只有一次 PATCH（UPDATE 1 列）；P10-P7 PATCH 沒送 user_id，也沒送沒改的主要 Email；P10-P7 資料庫：暱稱已更新、主要 Email 不變、角色仍是 mentor
-PASS  P10-P7 舊版重現問題：PATCH 夾帶 user_id、email_primary，mentor 被 Email 守門以 403／42501 擋下 — 儲存失敗：instructor identity is not owned by the signed-in account；PATCH instructors?user_id=eq.b08d5127-38cc-4d19-a73e-6d92e6fa9605&select=updated_at→403(42501)
-   （P10-P7 用時 1.9 秒）
+PASS  P10-P7 舊版重現問題：PATCH 夾帶 user_id、email_primary，mentor 被 Email 守門以 403／42501 擋下 — 儲存失敗：instructor identity is not owned by the signed-in account；PATCH instructors?user_id=eq.37245c1a-ac98-4a8b-8e9f-09bb8babe75f&select=updated_at→403(42501)
+   （P10-P7 用時 16.7 秒）
 
 ── P10-P8 ──
    ↳ [3168949 跑 P8 斷言] 通過：P10-P8 起始：凍結時 trigger 已把角色降為 pending，管理員手動改回 teacher；主檔 employment_status=frozen — 凍結後 role=pending；現在 role=teacher employment_status=frozen
    ↳ [3168949 跑 P8 斷言] 通過：P10-P8 存檔成功 — 個人資料已儲存！
-   ↳ [3168949 跑 P8 斷言] 通過：P10-P8 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.b90f90bd-9e8c-4c94-b0f8-1a87934a2884&select=updated_at→200
+   ↳ [3168949 跑 P8 斷言] 通過：P10-P8 寫入只有一次 PATCH（UPDATE 1 列） — PATCH instructors?user_id=eq.33d223ea-b532-43c5-9bc3-b1704ae8d975&select=updated_at→200
    ↳ [3168949 跑 P8 斷言] 未過：P10-P8 PATCH 沒送 user_id、主要 Email、employment_status — user_id=true email_primary=true employment_status=false
    ↳ [3168949 跑 P8 斷言] 未過：P10-P8 存檔後角色仍是 teacher（沒被自動降回 pending） — role=pending
-   ↳ [3168949 跑 P8 斷言] 通過：P10-P8 資料庫：暱稱已更新、任職狀態仍是 frozen、主要 Email 不變 — nickname=吳暱稱23 employment_status=frozen email_primary=p8-frozen-22-mvkq3zvo@e2e.test
+   ↳ [3168949 跑 P8 斷言] 通過：P10-P8 資料庫：暱稱已更新、任職狀態仍是 frozen、主要 Email 不變 — nickname=吳暱稱23 employment_status=frozen email_primary=p8-frozen-22-mvkrg7oz@e2e.test
    ↳ [3168949 跑 P8 斷言] 通過：P10-P8 其他欄位（含 4 份證件、管理員欄位）都沒被改掉 — 變動欄位：phone_home, email_secondary, nickname
    ↳ [3168949 跑 P8 斷言] NOTE P10-P8 原本空值被存成空字串（無資料遺失）：phone_home: null→""; email_secondary: null→""
-   ↳ [3168949 跑 P8 斷言] NOTE P10-P8 參考：存檔後重新載入頁面，登入檢查（claim_my_precreated_instructor）把凍結講師的角色改成 pending，網址=http://127.0.0.1:49841/profile
+   ↳ [3168949 跑 P8 斷言] NOTE P10-P8 參考：存檔後重新載入頁面，登入檢查（claim_my_precreated_instructor）把凍結講師的角色改成 pending，網址=http://127.0.0.1:57204/profile
 PASS  P10-P8 舊版（3168949）跑同一套 P8 斷言會 FAIL — 未過：P10-P8 PATCH 沒送 user_id、主要 Email、employment_status；P10-P8 存檔後角色仍是 teacher（沒被自動降回 pending）
-PASS  P10-P8 舊版重現問題：PATCH 夾帶 user_id，存檔後角色被自動降回 pending — 個人資料已儲存！；role=pending；PATCH instructors?user_id=eq.b90f90bd-9e8c-4c94-b0f8-1a87934a2884&select=updated_at→200
-   （P10-P8 用時 1.9 秒）
+PASS  P10-P8 舊版重現問題：PATCH 夾帶 user_id，存檔後角色被自動降回 pending — 個人資料已儲存！；role=pending；PATCH instructors?user_id=eq.33d223ea-b532-43c5-9bc3-b1704ae8d975&select=updated_at→200
+   （P10-P8 用時 2.2 秒）
 
 ── P10-P9 ──
-   ↳ [3168949 跑 P9 斷言] 通過：P10-P9 起始：姓名＋手機＋末四碼認領成功（認領後 pending 待啟用，驗證碼啟用後 teacher）、主要 Email＝舊信箱（≠ Google） — url=http://127.0.0.1:49841/profile 認領後 role=pending 啟用後 role=teacher email_primary=legacy-cheng-24-mvkq41c0@old-mail.example
+   ↳ [3168949 跑 P9 斷言] 通過：P10-P9 起始：姓名＋手機＋末四碼認領成功（認領後 pending 待啟用，驗證碼啟用後 teacher）、主要 Email＝舊信箱（≠ Google） — url=http://127.0.0.1:57204/profile 認領後 role=pending 啟用後 role=teacher email_primary=legacy-cheng-24-mvkrg9es@old-mail.example
    ↳ [3168949 跑 P9 斷言] 未過：P10-P9 存檔被擋，畫面顯示中文說明（含登入的 Google 信箱），不再是英文錯誤 — 儲存失敗：changed instructor email must match the signed-in Google account
-   ↳ [3168949 跑 P9 斷言] 未過：P10-P9 寫入是一次 PATCH（送出新的主要 Email、沒送 user_id），被資料庫 Email 守門以 403／42501 擋下 — PATCH instructors?user_id=eq.5fb8af2f-e9f8-479f-9e24-f5eb7731d7a1&select=updated_at→403(42501)；message=changed instructor email must match the signed-in Google account
-   ↳ [3168949 跑 P9 斷言] 通過：P10-P9 被擋後資料庫主檔完全沒變（主要 Email 仍是舊信箱）、角色仍是 teacher — ；email_primary=legacy-cheng-24-mvkq41c0@old-mail.example role=teacher
+   ↳ [3168949 跑 P9 斷言] 未過：P10-P9 寫入是一次 PATCH（送出新的主要 Email、沒送 user_id），被資料庫 Email 守門以 403／42501 擋下 — PATCH instructors?user_id=eq.d1c5c90a-fa6f-46f3-8fab-ecc24ba71b92&select=updated_at→403(42501)；message=changed instructor email must match the signed-in Google account
+   ↳ [3168949 跑 P9 斷言] 通過：P10-P9 被擋後資料庫主檔完全沒變（主要 Email 仍是舊信箱）、角色仍是 teacher — ；email_primary=legacy-cheng-24-mvkrg9es@old-mail.example role=teacher
 PASS  P10-P9 舊版（3168949）跑同一套 P9 斷言會 FAIL（畫面是英文錯誤） — 未過：P10-P9 存檔被擋，畫面顯示中文說明（含登入的 Google 信箱），不再是英文錯誤；P10-P9 寫入是一次 PATCH（送出新的主要 Email、沒送 user_id），被資料庫 Email 守門以 403／42501 擋下；畫面：儲存失敗：changed instructor email must match the signed-in Google account
-   （P10-P9 用時 2.1 秒）
+   （P10-P9 用時 2.4 秒）
 PASS  P10 反向對照（3168949 版） 閘道沒有任何 5xx 回應
-PASS  P10 還原後 git diff --quiet -- 培訓web/src 乾淨（ProfilePage.jsx 回到 a4780b2）
+PASS  P10 還原後 git diff --quiet -- 培訓web/src 乾淨（ProfilePage.jsx 回到 80ac754）
 
 ════════ 總結 ════════
 81/81 PASS（FAIL 0／BLOCKED 0）

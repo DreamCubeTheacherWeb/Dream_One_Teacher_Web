@@ -16,7 +16,7 @@
 | verify-salary-sessions-paid-browser.txt | `node scripts/verify-salary-sessions-paid-browser.mjs` | 57/57 PASS |
 | verify-about-me-dashboard.txt | `node scripts/verify-about-me-dashboard.mjs`（含排行榜 mock） | 69/69 PASS |
 | e2e-onboarding-runs1.txt | `npm run e2e:onboarding -- --runs=1`（真瀏覽器） | 294 PASS／0 FAIL（已知問題 1：簽約驗證後關頁 60 秒內要等冷卻） |
-| e2e-profile-save.txt | `npm run e2e:profile-save`（commit 後、src 乾淨時跑） | 見檔尾總結 |
+| e2e-profile-save.txt | `npm run e2e:profile-save`（commit 後、src 乾淨時跑） | 81/81 PASS |
 
 底版比對（第二輪必修）：20261023100000 重寫的 get_teaching_leaderboard_v2／get_teaching_leaderboard／get_teacher_badge_stats，
 拿掉新增的 pending 區塊後與正式版來源檔（gamify_compute／teaching_leaderboard／gamify_compute）空白正規化後完全相同；
