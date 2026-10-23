@@ -2899,6 +2899,15 @@ BEGIN
      AND NOT EXISTS (SELECT 1 FROM public.salary_master_rows m WHERE m.instructor_id = i.id)
      AND NOT EXISTS (SELECT 1 FROM public.salary_payout_export_items e WHERE e.instructor_id = i.id)
      -- [/claim-records-check]
+     -- [claim-contact-check] 已有已確認 Email，或主檔已有任何聯絡資料（Email、第二 Email、市話、LINE）的空位也不能只靠姓名認領
+     -- （2026-10-23 第二輪資安審查建議 4）：冒認者一綁定就讀得到這些資料，已確認 Email 的那位老師也會被擋在門外。
+     -- 這些一律由行政在後台手動綁定（admin_link_instructor）。
+     AND i.confirmed_email IS NULL
+     AND NULLIF(BTRIM(COALESCE(i.email_primary, '')), '') IS NULL
+     AND NULLIF(BTRIM(COALESCE(i.email_secondary, '')), '') IS NULL
+     AND NULLIF(BTRIM(COALESCE(i.phone_home, '')), '') IS NULL
+     AND NULLIF(BTRIM(COALESCE(i.line_id, '')), '') IS NULL
+     -- [/claim-contact-check]
    ORDER BY i.created_at, i.id
    LIMIT 1
    FOR UPDATE SKIP LOCKED;
@@ -2935,7 +2944,8 @@ GRANT EXECUTE ON FUNCTION public.claim_instructor_name_slot(text) TO authenticat
 
 COMMENT ON FUNCTION public.claim_instructor_name_slot(text) IS
   'Pending account binds the oldest unclaimed, active, data-free name_slot row whose whitespace-normalized full_name matches. '
-  'Rows that already have class or salary records are never name-claimable (2026-10-23). '
+  'Rows that already have class or salary records, a confirmed_email, or any contact field (email_primary, email_secondary, '
+  'phone_home, line_id) are never name-claimable; admins bind those manually (2026-10-23). '
   'Binding only: role stays pending until Email OTP activation (2026-10-20).';
 
 -- 7.5 新建帳號核准＝公司核驗：改 teacher、寫 new_instructor_approved（active）、登錄 Google 信箱為已確認 Email

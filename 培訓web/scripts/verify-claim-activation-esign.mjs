@@ -1516,6 +1516,31 @@ try {
     Number(suVal(`SELECT count(*) FROM public.class_sessions_quarantine WHERE instructor_id = ${lit(qSlot.id)}`)) === 1
     && Number(suVal(`SELECT count(*) FROM public.class_sessions WHERE instructor_id = ${lit(qSlot.id)}`)) === 0
     && call(uSquat2, `public.claim_instructor_name_slot('隔離紀錄空位')`).result?.status === 'not_found');
+  // R3（第二輪審查建議 4）：已有已確認 Email、或主檔已有任何聯絡資料（Email、第二 Email、市話、LINE）的空位，一律不能姓名認領，改由後台綁定
+  const contactCases = [
+    ['已確認Email空位', null],
+    ['主Email空位', `email_primary = 'slot-main@t.test'`],
+    ['第二Email空位', `email_secondary = 'slot-second@t.test'`],
+    ['市話空位', `phone_home = '02-2345-6789'`],
+    ['LINE空位', `line_id = 'slot-line'`],
+  ];
+  const contactResults = [];
+  for (const [name, assignment] of contactCases) {
+    exec(admin, `INSERT INTO public.instructors (full_name, name_slot) VALUES (${lit(name)}, true)`);
+    const slotId = suVal(`SELECT id FROM public.instructors WHERE full_name = ${lit(name)}`);
+    if (assignment) su(`UPDATE public.instructors SET ${assignment} WHERE id = ${lit(slotId)}`);
+    else call(admin, `public.admin_confirm_instructor_email(${ulit(slotId)}, 'slot-confirmed@t.test', '10/23 電話確認')`);
+    const claimer = createAuthUser(`claimer-${contactResults.length}@t.test`, `${name}路人`);
+    const r = call(claimer, `public.claim_instructor_name_slot(${lit(name)})`);
+    contactResults.push({ name, status: r.result?.status, bound: suVal(`SELECT user_id IS NOT NULL FROM public.instructors WHERE id = ${lit(slotId)}`), slotId, claimer });
+  }
+  check('R3 已確認 Email／主 Email／第二 Email／市話／LINE 任一有值的姓名空位 → not_found、空位仍未綁定',
+    contactResults.every((x) => x.status === 'not_found' && x.bound === 'f'), contactResults.map(({ name, status, bound }) => `${name}:${status}:${bound}`));
+  const manualLink = exec(admin, `SELECT public.admin_link_instructor(${ulit(contactResults[0].slotId)}, ${ulit(contactResults[0].claimer)})`);
+  check('R3 這類空位改由後台手動綁定：admin_link_instructor 成功、只綁不開通（pending＋admin_link 啟用紀錄）',
+    manualLink?.ok && instructorOf(contactResults[0].claimer)?.id === contactResults[0].slotId && roleOf(contactResults[0].claimer) === 'pending'
+    && openActivation(contactResults[0].claimer)?.claim_method === 'admin_link', manualLink);
+
   // 對照組：沒有任何紀錄的空位照舊可認領（下面 P2 用）
   exec(admin, `INSERT INTO public.instructors (full_name, name_slot, photo_path) VALUES ('待啟用空位', true, 'instructors/import/slot-photo.png')`);
   const freshSlot = suJson(`SELECT to_jsonb(i) FROM public.instructors i WHERE full_name = '待啟用空位'`);

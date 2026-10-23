@@ -91,6 +91,8 @@
 - 判斷函式 `private.current_user_is_approved_account()`＝本人 `users.role IN ('teacher','mentor','admin')`。加在：class_sessions「Instructors view own sessions」、
   storage「Users can view files referenced by own instructor profile」、badge_overrides「badge_ovr read」、`get_teacher_badge_stats`、`get_teaching_leaderboard`／`_v2`（未啟用者回空集合）。
 - 姓名空位認領排除已有 class_sessions／class_sessions_quarantine／salary_master_rows／salary_payout_export_items 紀錄的主檔（回 `not_found`）。
+- 也排除 confirmed_email 已有值、或 email_primary／email_secondary／phone_home／line_id 任一有值的空位（2026-10-23 第二輪建議 4）；這些一律由行政後台綁定（`admin_link_instructor`）。
+  注意：行政若先替空位「確認 Email」，老師就不能再用姓名認領，要改由後台綁定。
 - pending 仍可讀寫自己的主檔、自己 uid 資料夾的上傳檔、草稿、通知與啟用流程。
 - 正式庫四支連續套用：233000 → 100000 → 120000 → 20261023100000。
 
