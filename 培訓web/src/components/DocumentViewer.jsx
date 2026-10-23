@@ -10,40 +10,38 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-const PDF_TYPE = 'application/pdf';
-
-// 先把整份 PDF 下載完，再交給 PDF.js（react-pdf 的 file 收 Blob，會自己讀成位元組）。
+// 已上傳的文件（fileUrl）先在主執行緒整份下載完，再以 Blob 交給 PDF.js（react-pdf 會自己讀成位元組）。
 // 為什麼不讓 PDF.js 直接用網址下載：那樣它的 worker 會「邊下載邊等資料」，文件還沒載完就被拆掉
 // （換到下一份文件、進入簽約同意頁、離開頁面）時，PDF.js worker 內部會丟出沒有人接住的
 // 「Worker was terminated」。改成下載完才交給 PDF.js 後，worker 收到的是完整位元組、在同一輪就解析完，
 // 拆掉時不會停在半路；還在下載時拆掉，就用 AbortController 取消這次下載。
-// 動態產生的表單（fileData）同樣包成 Blob：不經過 blob: 網址，正式站 CSP 不會擋；
-// 每個 <Document> 各自讀一份位元組，PDF.js 把位元組轉交 worker 後，放大檢視那份也還能用。
+// 動態產生的表單（fileData）本來就是直接交給 PDF.js bytes（避免正式站 CSP 阻擋 blob: URL 的 fetch），維持不變。
 const usePdfFile = (fileUrl, fileData) => {
-  const dataBlob = useMemo(() => (fileData ? new Blob([fileData], { type: PDF_TYPE }) : null), [fileData]);
+  const requested = useMemo(() => (fileData ? { data: fileData } : fileUrl), [fileData, fileUrl]);
+  const downloadUrl = typeof requested === 'string' ? requested : null;
   const [download, setDownload] = useState({ url: null, blob: null, failed: false });
 
   useEffect(() => {
-    if (dataBlob || !fileUrl) return undefined;
+    if (!downloadUrl) return undefined;
     const controller = new AbortController();
-    fetch(fileUrl, { signal: controller.signal })
+    fetch(downloadUrl, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.blob();
       })
-      .then((blob) => setDownload({ url: fileUrl, blob, failed: false }))
+      .then((blob) => setDownload({ url: downloadUrl, blob, failed: false }))
       .catch((error) => {
         // 元件已拆掉或換了文件：這次下載是我們自己取消的，畫面也已不需要它
         if (controller.signal.aborted) return;
         console.error('[DocumentViewer] 文件下載失敗：', error);
-        setDownload({ url: fileUrl, blob: null, failed: true });
+        setDownload({ url: downloadUrl, blob: null, failed: true });
       });
     return () => controller.abort();
-  }, [dataBlob, fileUrl]);
+  }, [downloadUrl]);
 
-  if (dataBlob) return { status: 'ready', file: dataBlob };
-  if (!fileUrl) return { status: 'empty', file: null };
-  if (download.url !== fileUrl) return { status: 'loading', file: null };
+  if (!requested) return { status: 'empty', file: null };
+  if (!downloadUrl) return { status: 'ready', file: requested };
+  if (download.url !== downloadUrl) return { status: 'loading', file: null };
   if (download.failed) return { status: 'error', file: null };
   return { status: 'ready', file: download.blob };
 };
