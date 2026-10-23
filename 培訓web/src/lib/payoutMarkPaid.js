@@ -145,5 +145,17 @@ export const exportStatusText = (row) => {
     if (reverted >= total) return '已還原';
     return `已還原 ${reverted}/${total} 筆`;
 };
+// 下載前提醒：這一期已有還沒標記的匯出（再下載一份會包含同樣的課，兩份都上傳會重複匯款）
+export const duplicateExportWarning = (rows) => {
+    const ids = (Array.isArray(rows) ? rows : []).map((row) => `#${row.id}`).join('、');
+    return `這一期已有尚未標記的匯出 ${ids}。如果 ${ids} 已經交給銀行，請先回去標記它；再下載一份會包含同樣的課，兩份都上傳會重複匯款。確定要再下載一份嗎？`;
+};
+// 台北時間 YYYY/MM/DD HH:mm
+export const formatTaipeiTime = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
 export const canRevertExport = (row) => Boolean(row?.marked_at) && Number(row.reverted_count || 0) < Number(row.marked_count ?? row.item_count ?? 0);
 export const amountToCents = toCents;

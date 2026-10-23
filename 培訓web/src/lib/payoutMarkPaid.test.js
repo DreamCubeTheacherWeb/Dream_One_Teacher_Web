@@ -7,6 +7,8 @@ import {
     buildExportPayload,
     canRevertExport,
     classifyRpcFailure,
+    duplicateExportWarning,
+    formatTaipeiTime,
     exportStatusText,
     mismatchLines,
     negativeAdjustments,
@@ -127,4 +129,12 @@ test('不符明細最多列 10 筆；匯出紀錄的狀態與能不能還原', (
     assert.equal(canRevertExport({ marked_at: null, item_count: 8 }), false);
     assert.equal(canRevertExport({ marked_at: 'x', marked_count: 8, reverted_count: 7 }), true);
     assert.equal(canRevertExport({ marked_at: 'x', marked_count: 8, reverted_count: 8 }), false);
+});
+
+test('下載前提醒：列出還沒標記的匯出編號；時間用台北時間', () => {
+    assert.equal(duplicateExportWarning([{ id: 3 }]),
+        '這一期已有尚未標記的匯出 #3。如果 #3 已經交給銀行，請先回去標記它；再下載一份會包含同樣的課，兩份都上傳會重複匯款。確定要再下載一份嗎？');
+    assert.match(duplicateExportWarning([{ id: 4 }, { id: 3 }]), /^這一期已有尚未標記的匯出 #4、#3。如果 #4、#3 已經交給銀行/);
+    assert.match(formatTaipeiTime('2026-10-22T07:05:00Z'), /^2026\/10\/22\s15:05$/u);  // 中間的空白依 ICU 版本可能是一般空白或窄空白
+    assert.equal(formatTaipeiTime(null), '');
 });

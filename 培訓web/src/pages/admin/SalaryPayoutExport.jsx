@@ -45,7 +45,7 @@ import {
     sessionPayableCents,
     validatePayoutExport,
 } from '../../lib/payoutBankExport';
-import { MIGRATION_NEEDED_TEXT, buildExportPayload, classifyRpcFailure, mismatchLines } from '../../lib/payoutMarkPaid';
+import { MIGRATION_NEEDED_TEXT, amountToCents, buildExportPayload, classifyRpcFailure, duplicateExportWarning, formatTaipeiTime, mismatchLines } from '../../lib/payoutMarkPaid';
 import PayoutMarkPaidPanel from '../../components/admin/PayoutMarkPaidPanel';
 
 const PAGE_SIZE = 1000;
@@ -175,6 +175,7 @@ const SalaryPayoutExport = () => {
     const downloadBusy = useRef(false);                       // 連點第二下直接忽略（state 還沒更新前也擋得住）
     const [exportNotice, setExportNotice] = useState('');     // 資料庫還沒更新：這次下載沒有建立匯出紀錄
     const [exportsRefresh, setExportsRefresh] = useState(0);  // 匯出紀錄有變動 → 通知下方「匯款完成」區重讀
+    const [duplicateConfirm, setDuplicateConfirm] = useState(null);  // { kind, exports }：這一期已有還沒標記的匯出，先確認再下載
 
     const loadInstructors = useCallback(async () => {
         const result = await fetchInstructors();
@@ -375,7 +376,24 @@ const SalaryPayoutExport = () => {
         }
         return { errors: [`沒有建立匯出紀錄，也沒有下載：${failure.text}`] };
     };
-    const runDownload = async (kind) => {
+    // 這一期還沒標記的匯出紀錄；讀不到（資料庫還沒更新、網路錯誤）就回空陣列 → 不擋下載，照原本流程（含降級）
+    const findUnmarkedExports = async () => {
+        const range = periodRange(periodMonth);
+        try {
+            const { data, error } = await supabase
+                .from('salary_payout_exports')
+                .select('id,exported_at,exported_by_name,item_count,people_count,transfer_total')
+                .eq('period_start', range.periodStart)
+                .eq('period_end', range.periodEnd)
+                .is('marked_at', null)
+                .order('id', { ascending: false })
+                .limit(20);
+            return !error && Array.isArray(data) ? data : [];
+        } catch {
+            return [];
+        }
+    };
+    const runDownload = async (kind, { skipDuplicateCheck = false } = {}) => {
         if (downloadBusy.current) return;
         const errors = exportErrors();
         setDownloadErrors({ csv: [], xlsx: [], [kind]: errors });
@@ -385,6 +403,14 @@ const SalaryPayoutExport = () => {
         setDownloadMessage('');
         setExportNotice('');
         try {
+            // 這一期已有還沒標記的匯出：先跳確認（若那份已交給銀行，應該回去標記它；再下載一份兩份都上傳會重複匯款）
+            if (!skipDuplicateCheck) {
+                const unmarked = await findUnmarkedExports();
+                if (unmarked.length) {
+                    setDuplicateConfirm({ kind, exports: unmarked });
+                    return;
+                }
+            }
             // 先產生檔案內容（欄位有問題會在這裡擋下，不會留下沒用的匯出紀錄），再存匯出紀錄，成功才下載
             const blob = kind === 'csv'
                 ? new Blob([buildTransferCsv({ people: computed.people, settings })], { type: 'text/csv;charset=utf-8' })
@@ -410,6 +436,26 @@ const SalaryPayoutExport = () => {
     };
     const onDownloadCsv = () => runDownload('csv');
     const onDownloadXlsx = () => runDownload('xlsx');
+    const CANCELLED_DOWNLOAD_MESSAGE = '已取消：沒有建立匯出紀錄，也沒有下載。';
+    const confirmDuplicateDownload = () => {
+        const kind = duplicateConfirm?.kind;
+        setDuplicateConfirm(null);
+        if (kind) runDownload(kind, { skipDuplicateCheck: true });
+    };
+    const cancelDuplicateDownload = () => {
+        setDuplicateConfirm(null);
+        setDownloadMessage(CANCELLED_DOWNLOAD_MESSAGE);
+    };
+    useEffect(() => {
+        if (!duplicateConfirm) return undefined;
+        const onKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            setDuplicateConfirm(null);
+            setDownloadMessage('已取消：沒有建立匯出紀錄，也沒有下載。');
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [duplicateConfirm]);
 
     // ── 夥伴號碼匯入
     const onImportFile = async (event) => {
@@ -902,6 +948,32 @@ const SalaryPayoutExport = () => {
                     </>
                 )}
             </section>
+            {duplicateConfirm && (
+                <div className="fixed inset-0 bg-bauhaus-black/60 flex items-center justify-center p-4 z-50" onClick={cancelDuplicateDownload}>
+                    <div role="dialog" aria-modal="true" aria-labelledby="payout-duplicate-title" data-testid="payout-duplicate-confirm"
+                        className="bh-card shadow-hard-lg max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6" onClick={(event) => event.stopPropagation()}>
+                        <h2 id="payout-duplicate-title" className="text-lg sm:text-xl font-black text-bauhaus-black flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-bauhaus-red shrink-0" aria-hidden="true" /> 這一期還有沒標記的匯出
+                        </h2>
+                        <p data-testid="payout-duplicate-text" className="mt-3 text-sm font-bold text-bauhaus-black leading-relaxed">{duplicateExportWarning(duplicateConfirm.exports)}</p>
+                        <ul data-testid="payout-duplicate-list" className="mt-3 space-y-1.5 text-sm font-medium text-bauhaus-black">
+                            {duplicateConfirm.exports.map((row) => (
+                                <li key={row.id} className="border-2 border-bauhaus-black rounded-lg px-3 py-2 bg-bauhaus-yellow/30">
+                                    <span className="font-mono font-black">#{row.id}</span>・{formatTaipeiTime(row.exported_at)}・{row.exported_by_name || '—'}下載・{row.people_count} 人・{row.item_count} 筆・{formatMoney(amountToCents(row.transfer_total))}
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="mt-5 flex gap-2 flex-wrap">
+                            <button type="button" onClick={cancelDuplicateDownload} autoFocus className="bh-btn bh-btn-outline px-4 py-2.5 min-h-[44px]">
+                                取消，不下載
+                            </button>
+                            <button type="button" onClick={confirmDuplicateDownload} className="bh-btn bh-btn-red px-4 py-2.5 min-h-[44px]">
+                                確定再下載一份
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 };

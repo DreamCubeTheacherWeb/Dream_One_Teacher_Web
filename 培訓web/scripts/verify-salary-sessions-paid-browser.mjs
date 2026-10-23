@@ -92,7 +92,7 @@ const EXPECTED_EXCLUSIONS = ['異常標記預設排除 1 筆（$1,000）', '手�
     '資料不全被擋下的講師 1 位、1 筆（$900）：解款行有誤 1 位', '取消勾選的講師 1 位、1 筆（$700）'];
 
 // mode：ok｜missing（表與函式都還沒套）｜record-5xx（存了但回 503 看不懂的頁面）｜mark-abort（標了但連線中斷）
-const world = { sessions: [], exports: [], items: [], exportSeq: 0, mode: 'ok', rpcDelayMs: 500, register: false };
+const world = { sessions: [], exports: [], items: [], exportSeq: 0, mode: 'ok', rpcDelayMs: 500, register: false, exportsGetFail: false };
 const resetWorld = ({ mode = 'ok' } = {}) => {
     seq = SEED.length;
     world.sessions = SEED.map((row) => ({ ...row }));
@@ -100,6 +100,7 @@ const resetWorld = ({ mode = 'ok' } = {}) => {
     world.items = [];
     world.exportSeq = 0;
     world.mode = mode;
+    world.exportsGetFail = false;  // true：讀匯出紀錄回 500（函式照常）
 };
 const reqLog = [];
 const rpcCalls = [];
@@ -126,6 +127,7 @@ function compileFilters(params, allowed) {
         else if (op === 'gte') tests.push((row) => String(row[key]) >= value);
         else if (op === 'lte') tests.push((row) => String(row[key]) <= value);
         else if (op === 'lt') tests.push((row) => String(row[key]) < value);
+        else if (op === 'is') tests.push((row) => (value === 'null' ? row[key] == null : String(row[key]) === value));
         else throw new Error(`unexpected op ${key}=${raw}`);
     }
     return (row) => tests.every((t) => t(row));
@@ -287,8 +289,9 @@ async function handleSupabase(route, request, url) {
     }
     if (table === 'salary_payout_exports' && method === 'GET') {
         if (world.mode === 'missing') return json(route, MISSING_TABLE(table), 404);
+        if (world.exportsGetFail) return json(route, { code: 'XX000', message: 'mock internal error', details: null, hint: null }, 500);
         let rows;
-        try { rows = world.exports.filter(compileFilters(params, new Set(['period_start', 'period_end']))); } catch (error) { return reject(error.message); }
+        try { rows = world.exports.filter(compileFilters(params, new Set(['period_start', 'period_end', 'marked_at']))); } catch (error) { return reject(error.message); }
         if (params.get('order') !== 'id.desc') return reject(`exports order ${params.get('order')}`);
         rows = [...rows].sort((a, b) => b.id - a.id).slice(0, Number(params.get('limit') || 1000)).map((row) => project(row, params.get('select')));
         return json(route, rows);
@@ -509,7 +512,7 @@ async function run() {
         check('重新整理後匯出 #1 還在（存在資料庫），不用重新下載就能標記', await markExportButton(page, 1).isVisible());
         const confirm = await openConfirm(page, 1);
         check('確認框：匯出 #1、測試管理員下載的 CSV、2 位講師、4 筆課、課程應付 $2,700、轉帳檔總額 $2,500',
-            /^確定把匯出 #1（2026\/10\/22 \d{2}:\d{2} 測試管理員 下載的 CSV）標記為已付款嗎？2 位講師、4 筆課，課程應付 \$2,700；轉帳檔總額 \$2,500。$/.test((await text(testId(page, 'payout-mark-paid-confirm-main'))).replace(/\s+/g, ' ').replace('？ ', '？')),
+            /^確定把匯出 #1（\d{4}\/\d{2}\/\d{2} \d{2}:\d{2} 測試管理員 下載的 CSV）標記為已付款嗎？2 位講師、4 筆課，課程應付 \$2,700；轉帳檔總額 \$2,500。$/.test((await text(testId(page, 'payout-mark-paid-confirm-main'))).replace(/\s+/g, ' ').replace('？ ', '？')),
             await text(testId(page, 'payout-mark-paid-confirm-main')));
         const peopleRows = await testId(page, 'payout-mark-paid-people').locator('tbody tr').allTextContents();
         check('確認框列出每位講師的實付（對銀行）：丁測一 $1,500、王測二 $1,000（人工調整 -$200）',
@@ -540,7 +543,7 @@ async function run() {
             && ['丁-晚到課', '丁-重複', '王-手動排除', '林-體驗課', '陳-常態課', '對不到的課'].every((name) => byName(name).status === 'approved'));
         await waitText(testId(page, 'payout-export-1'), /已標記/);
         check('匯出 #1 狀態變「已標記」（附標記時間與人），只剩「還原」按鈕',
-            /已標記2026\/10\/22\d{2}:\d{2}測試管理員還原$/.test(flat(await text(testId(page, 'payout-export-1')))) && (await markExportButton(page, 1).count()) === 0,
+            /已標記\d{4}\/\d{2}\/\d{2}\d{2}:\d{2}測試管理員還原$/.test(flat(await text(testId(page, 'payout-export-1')))) && (await markExportButton(page, 1).count()) === 0,
             await text(testId(page, 'payout-export-1')));
         await waitText(testId(page, 'payout-stats-period'), /已付 5 筆/);
         check('頁面重新讀取：本期「已付 5 筆」', (await text(testId(page, 'payout-stats-period'))).includes('已付 5 筆'));
@@ -560,6 +563,9 @@ async function run() {
             (await text(testId(page, 'payout-export-1'))).includes('已還原 3/4 筆') && (await revertExportButton(page, 1).count()) === 1
             && ['丁-部分已付', '丁-溢付', '王-線上課'].every((name) => byName(name).status === 'approved') && byName('丁-部分已付').paid_amount === 100);
         await page.screenshot({ path: shot('desktop-1280-after-revert.png'), fullPage: false });
+        const afterMarked = await downloadVia(page, '轉帳檔 CSV');
+        check('這一期只有已標記的匯出時按下載：不跳提醒，直接建 #2 並下載',
+            afterMarked.name.endsWith('_匯出2.csv') && (await testId(page, 'payout-duplicate-confirm').count()) === 0 && world.exports.length === 2, afterMarked.name);
         await context.close();
 
         // ════════ 2. 和資料庫不符：下載時擋、標記時擋（換講師） ════════
@@ -637,7 +643,8 @@ async function run() {
         await prepareEdits(page);
         check(`標記區顯示「${MIGRATION_TEXT}」`, (await waitText(testId(page, 'payout-exports-missing'), MIGRATION_TEXT)) === MIGRATION_TEXT);
         const degraded = await downloadVia(page, '轉帳檔 CSV');
-        check('照舊下載，檔名沒有匯出編號：202609夢想講師轉帳檔_20261010.csv', degraded.name === '202609夢想講師轉帳檔_20261010.csv', degraded.name);
+        check('照舊下載，檔名沒有匯出編號：202609夢想講師轉帳檔_20261010.csv；讀不到匯出紀錄所以不跳重複下載提醒',
+            degraded.name === '202609夢想講師轉帳檔_20261010.csv' && (await testId(page, 'payout-duplicate-confirm').count()) === 0, degraded.name);
         check('下載訊息照舊、另外提示「這次下載沒有建立匯出紀錄，之後無法在系統對這份標記已付款」',
             (await text(testId(page, 'payout-download-message'))) === '已下載轉帳檔 CSV：2 人，共 $2,500'
             && (await text(testId(page, 'payout-export-degraded'))).includes('這次下載沒有建立匯出紀錄，之後無法在系統對這份標記已付款'));
@@ -677,6 +684,74 @@ async function run() {
         const ackBox = await testId(page, 'payout-mark-paid-negative').locator('label').boundingBox();
         check('390 寬：確認鈕與負數確認勾選區高度都 ≥ 44px', confirmBtn?.height >= 44 && ackBox?.height >= 44, `${JSON.stringify(confirmBtn)} ${JSON.stringify(ackBox)}`);
         await testId(page, 'payout-mark-paid-confirm').screenshot({ path: shot('mobile-390-confirm.png') });
+        await testId(page, 'payout-mark-paid-confirm').getByRole('button', { name: '取消', exact: true }).click();
+        await page.getByRole('button', { name: '轉帳檔 CSV' }).scrollIntoViewIfNeeded();
+        await page.getByRole('button', { name: '轉帳檔 CSV' }).click();
+        const mobileDup = testId(page, 'payout-duplicate-confirm');
+        await mobileDup.waitFor({ timeout: 5000 });
+        await page.waitForTimeout(300);
+        const dupBox = await mobileDup.boundingBox();
+        const dupButtons = await Promise.all(['取消，不下載', '確定再下載一份'].map((name) => mobileDup.getByRole('button', { name }).boundingBox()));
+        check('390 寬：重複下載提醒整個在螢幕內，兩個按鈕都在螢幕內且高度 ≥ 44px',
+            dupBox && dupBox.x >= 0 && dupBox.x + dupBox.width <= 390 && dupBox.y >= 0 && dupBox.y + dupBox.height <= 844
+            && dupButtons.every((b) => b && b.height >= 44 && b.x >= 0 && b.x + b.width <= 390 && b.y + b.height <= 844), `${JSON.stringify(dupBox)} ${JSON.stringify(dupButtons)}`);
+        await page.screenshot({ path: shot('mobile-390-duplicate-confirm.png'), fullPage: false });
+        await mobileDup.getByRole('button', { name: '取消，不下載' }).click();
+        check('390 寬：按「取消，不下載」關掉提醒、沒有新的匯出紀錄', (await mobileDup.count()) === 0 && world.exports.length === 1);
+        await context.close();
+
+        // ════════ 8. 下載前提醒：已有還沒標記的匯出 ════════
+        section('8. 已有未標記的匯出時按下載 → 先跳提醒；取消不建紀錄不下載；確定才建紀錄並下載；查詢失敗不擋');
+        resetWorld();
+        ({ context, page } = await newContext(browser));
+        await openPayout(page, base);
+        await prepareEdits(page);
+        const first = await downloadVia(page, '轉帳檔 CSV');
+        check('這一期還沒有匯出紀錄時按下載：不跳提醒，直接建 #1 並下載',
+            first.name.endsWith('_匯出1.csv') && (await testId(page, 'payout-duplicate-confirm').count()) === 0 && world.exports.length === 1, first.name);
+        await testId(page, 'payout-export-1').waitFor({ timeout: 10000 });
+        let extraDownloads = 0;
+        const countDownload = () => { extraDownloads += 1; };
+        page.on('download', countDownload);
+        rpcCalls.length = 0;
+        await page.getByRole('button', { name: '轉帳檔 CSV' }).click();
+        const dup = testId(page, 'payout-duplicate-confirm');
+        await dup.waitFor({ timeout: 5000 });
+        check('再按下載：跳出提醒（role=dialog、aria-modal），說明 #1 若已交給銀行要先標記、兩份都上傳會重複匯款',
+            (await dup.getAttribute('role')) === 'dialog' && (await dup.getAttribute('aria-modal')) === 'true'
+            && (await text(testId(page, 'payout-duplicate-text'))) === '這一期已有尚未標記的匯出 #1。如果 #1 已經交給銀行，請先回去標記它；再下載一份會包含同樣的課，兩份都上傳會重複匯款。確定要再下載一份嗎？',
+            await text(testId(page, 'payout-duplicate-text')));
+        const dupItems = await testId(page, 'payout-duplicate-list').locator('li').allTextContents();
+        check('提醒列出那一份的編號、下載時間、下載者、人數、筆數、金額',
+            dupItems.length === 1 && /^#1・\d{4}\/\d{2}\/\d{2}\d{2}:\d{2}・測試管理員下載・2人・4筆・\$2,500$/.test(flat(dupItems[0])), dupItems.join(' | '));
+        check('提醒跳出前沒有建立匯出紀錄（還沒呼叫 record）', rpcCalls.filter((c) => c.name === 'record_salary_payout_export').length === 0);
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: shot('desktop-1280-duplicate-confirm.png'), fullPage: false });
+        await dup.getByRole('button', { name: '取消，不下載' }).click();
+        await page.waitForTimeout(1500);
+        check('按「取消，不下載」：沒有下載、沒有新的匯出紀錄、沒呼叫 record，顯示「已取消：沒有建立匯出紀錄，也沒有下載。」',
+            extraDownloads === 0 && world.exports.length === 1 && rpcCalls.filter((c) => c.name === 'record_salary_payout_export').length === 0
+            && (await dup.count()) === 0 && (await text(testId(page, 'payout-download-message'))) === '已取消：沒有建立匯出紀錄，也沒有下載。');
+        await page.getByRole('button', { name: '轉帳檔 CSV' }).click();
+        await dup.waitFor({ timeout: 5000 });
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(800);
+        check('按 Esc 也等於取消：提醒關掉、沒有下載、沒有新紀錄', (await dup.count()) === 0 && extraDownloads === 0 && world.exports.length === 1);
+        page.off('download', countDownload);
+        await page.getByRole('button', { name: '轉帳檔 CSV' }).click();
+        await dup.waitFor({ timeout: 5000 });
+        const confirmedDownload = page.waitForEvent('download', { timeout: 10000 });
+        await dup.getByRole('button', { name: '確定再下載一份' }).click();
+        const second = await confirmedDownload;
+        check('按「確定再下載一份」：才建立匯出 #2 並下載（檔名 _匯出2.csv），只呼叫 1 次 record',
+            second.suggestedFilename().endsWith('_匯出2.csv') && world.exports.length === 2 && rpcCalls.filter((c) => c.name === 'record_salary_payout_export').length === 1,
+            second.suggestedFilename());
+        await testId(page, 'payout-export-2').waitFor({ timeout: 10000 });
+        world.exportsGetFail = true;  // 讀匯出紀錄失敗（伺服器 500），函式照常
+        const third = await downloadVia(page, '轉帳檔 CSV');
+        check('讀不到匯出紀錄（伺服器 500）時不擋下載：不跳提醒、照常建 #3 並下載',
+            third.name.endsWith('_匯出3.csv') && (await testId(page, 'payout-duplicate-confirm').count()) === 0 && world.exports.length === 3, third.name);
+        world.exportsGetFail = false;
         await context.close();
 
         // ════════ 7. 報酬登記中心只剩提示 ════════
