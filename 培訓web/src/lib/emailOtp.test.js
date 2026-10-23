@@ -113,7 +113,7 @@ test('寄送結果：每日上限與連續輸錯暫停（2026-10-23）都請他�
   assert.ok(!locked.message.includes('locked_contact_admin'));
 });
 
-test('驗證結果：第 3 組被鎖（sending_suspended）→ 不再叫他重寄，改請他聯絡行政人員', () => {
+test('驗證結果：24 小時內累計答錯 15 次（sending_suspended）→ 不再叫他重寄，改請他聯絡行政人員', () => {
   const suspended = interpretVerifyResult({ status: 'locked', sending_suspended: true });
   assert.equal(suspended.kind, 'dead');
   assert.equal(suspended.needsNewCode, false);

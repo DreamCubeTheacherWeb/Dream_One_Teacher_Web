@@ -272,14 +272,15 @@ CREATE INDEX IF NOT EXISTS idx_email_otp_challenges_user_purpose
 ALTER TABLE private.email_otp_challenges ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE private.email_otp_challenges FROM PUBLIC, anon, authenticated;
 
--- 3.2b 驗證碼寄送暫停（2026-10-23 資安審查建議 5）：24 小時內被鎖（錯 5 次）的 challenge 累計 3 個 →
---      暫停寄碼 24 小時，request_email_otp 回 locked_contact_admin；行政用 admin_reset_email_otp_lock 解除。
---      解除時記 reset_at，之前被鎖的 challenge 不再計入（解除後重新累計）。
+-- 3.2b 驗證碼寄送暫停（2026-10-23 資安審查建議 5；第二輪建議 3 改算法）：24 小時內「累計答錯次數」滿 15 次 →
+--      暫停寄碼 24 小時（也不能再驗證手上的碼），request_email_otp 回 locked_contact_admin；行政用 admin_reset_email_otp_lock 解除。
+--      不能只算「錯滿 5 次被鎖的組數」：重新要碼會把舊的那組作廢，每組錯 4 次就換碼，那種算法永遠不會觸發。
+--      解除時記 reset_at，之前的答錯次數不再計入（解除後重新累計）。
 CREATE TABLE IF NOT EXISTS private.email_otp_send_locks (
   user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   locked_at timestamptz,
   locked_until timestamptz,
-  locked_challenge_count integer NOT NULL DEFAULT 0 CHECK (locked_challenge_count >= 0),
+  wrong_attempt_count integer NOT NULL DEFAULT 0 CHECK (wrong_attempt_count >= 0),
   reset_at timestamptz,
   reset_by uuid
 );
@@ -1348,8 +1349,8 @@ END;
 $$;
 
 -- 6.2 寄送 OTP
--- 某人某 challenge 剛被鎖（錯第 5 次）時呼叫：24 小時內（且在最近一次行政解除之後）被鎖的 challenge 累計 3 個，
--- 就暫停寄碼 24 小時。回傳是否進入暫停。只由 verify_email_otp 呼叫。
+-- 每答錯一次就呼叫（verify_email_otp）：24 小時內（且在最近一次行政解除之後）建立的 challenge，答錯次數加總滿 15 次，
+-- 就暫停寄碼 24 小時。回傳是否進入暫停。答錯次數存在各 challenge 的 attempts，作廢（superseded）的那組也照算。
 CREATE OR REPLACE FUNCTION private.note_email_otp_lockout(p_uid uuid, p_now timestamptz)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -1358,24 +1359,25 @@ SET search_path = ''
 AS $$
 DECLARE
   v_reset timestamptz;
-  v_locked integer;
+  v_wrong integer;
 BEGIN
   SELECT l.reset_at INTO v_reset FROM private.email_otp_send_locks l WHERE l.user_id = p_uid;
-  SELECT count(*) INTO v_locked
+  -- [otp-lockout-count]
+  SELECT COALESCE(sum(c.attempts), 0) INTO v_wrong
     FROM private.email_otp_challenges c
    WHERE c.user_id = p_uid
-     AND c.attempts >= c.max_attempts
      AND c.created_at > p_now - interval '24 hours'
      AND (v_reset IS NULL OR c.created_at > v_reset);
-  IF v_locked < 3 THEN
+  -- [/otp-lockout-count]
+  IF v_wrong < 15 THEN
     RETURN false;
   END IF;
-  INSERT INTO private.email_otp_send_locks AS l (user_id, locked_at, locked_until, locked_challenge_count)
-  VALUES (p_uid, p_now, p_now + interval '24 hours', v_locked)
+  INSERT INTO private.email_otp_send_locks AS l (user_id, locked_at, locked_until, wrong_attempt_count)
+  VALUES (p_uid, p_now, p_now + interval '24 hours', v_wrong)
   ON CONFLICT (user_id) DO UPDATE
     SET locked_at = EXCLUDED.locked_at,
         locked_until = EXCLUDED.locked_until,
-        locked_challenge_count = EXCLUDED.locked_challenge_count;
+        wrong_attempt_count = EXCLUDED.wrong_attempt_count;
   RETURN true;
 END;
 $$;
@@ -1471,7 +1473,7 @@ BEGIN
       '這組驗證碼用來確認是你本人要簽署夢想一號的講師合作文件，5 分鐘內有效。請不要把驗證碼告訴任何人。');
   END IF;
 
-  -- 連續輸錯被暫停（2026-10-23 資安審查建議 5）：先於冷卻判斷，暫停期間也不帶回進行中的 challenge
+  -- 答錯太多次被暫停（24 小時內累計 15 次；2026-10-23 資安審查建議 5、第二輪建議 3）：先於冷卻判斷，暫停期間也不帶回進行中的 challenge
   IF EXISTS (
     SELECT 1 FROM private.email_otp_send_locks l
      WHERE l.user_id = v_uid AND l.locked_until > v_now
@@ -1619,6 +1621,14 @@ BEGIN
     RETURN jsonb_build_object('status', 'invalid', 'attempts_remaining', 0);
   END IF;
 
+  -- 答錯太多次被暫停中：手上的碼也不能再驗（2026-10-23 第二輪建議 3），請他聯絡行政解除
+  IF EXISTS (
+    SELECT 1 FROM private.email_otp_send_locks l
+     WHERE l.user_id = v_uid AND l.locked_until > v_now
+  ) THEN
+    RETURN jsonb_build_object('status', 'locked', 'sending_suspended', true);
+  END IF;
+
   IF v_ch.superseded_at IS NOT NULL THEN
     RETURN jsonb_build_object('status', 'superseded');
   END IF;
@@ -1648,11 +1658,12 @@ BEGIN
      OR encode(sha256(convert_to(v_ch.salt || ':' || v_code, 'UTF8')), 'hex') <> v_ch.code_hash THEN
     v_attempts := v_ch.attempts + 1;
     UPDATE private.email_otp_challenges c SET attempts = v_attempts WHERE c.id = v_ch.id;
+    -- 24 小時內累計答錯滿 15 次 → 暫停寄碼 24 小時，這一組也一併鎖住（2026-10-23 資安審查建議 5、第二輪建議 3）
+    IF private.note_email_otp_lockout(v_uid, v_now) THEN
+      UPDATE private.email_otp_challenges c SET attempts = GREATEST(c.attempts, c.max_attempts) WHERE c.id = v_ch.id;
+      RETURN jsonb_build_object('status', 'locked', 'sending_suspended', true);
+    END IF;
     IF v_attempts >= v_ch.max_attempts THEN
-      -- 這一組剛被鎖：24 小時內累計 3 組 → 暫停寄碼 24 小時（2026-10-23 資安審查建議 5）
-      IF private.note_email_otp_lockout(v_uid, v_now) THEN
-        RETURN jsonb_build_object('status', 'locked', 'sending_suspended', true);
-      END IF;
       RETURN jsonb_build_object('status', 'locked');
     END IF;
     RETURN jsonb_build_object('status', 'invalid', 'attempts_remaining', v_ch.max_attempts - v_attempts);
@@ -2247,7 +2258,7 @@ END;
 $$;
 
 -- 6.7 管理員補登範本雜湊（只能補 NULL）
--- 行政解除「連續輸錯暫停寄碼」（2026-10-23 資安審查建議 5）。解除後之前被鎖的 challenge 不再計入。
+-- 行政解除「答錯太多次暫停寄碼」（2026-10-23 資安審查建議 5）。解除後之前的答錯次數不再計入（重新累計）。
 -- 不影響 60 秒冷卻、每小時 5 封、每 24 小時 10 封的上限。
 CREATE OR REPLACE FUNCTION public.admin_reset_email_otp_lock(p_user_id uuid)
 RETURNS jsonb

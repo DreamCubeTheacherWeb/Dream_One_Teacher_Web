@@ -5,7 +5,7 @@
  *                                              | locked_contact_admin | no_confirmed_email
  *                                              | profile_incomplete | not_allowed | email_not_configured
  *   verify_email_otp(p_challenge_id, p_code) → status: verified | invalid | expired | used | locked | superseded
- *                                              （locked 可能帶 sending_suspended:true＝24 小時內第 3 組被鎖，已暫停寄碼）
+ *                                              （locked 可能帶 sending_suspended:true＝24 小時內累計答錯滿 15 次，已暫停寄碼）
  * 畫面與 Supabase 呼叫在 components/EmailOtpDialog.jsx，這裡不碰網路，方便單獨測試。
  */
 
@@ -16,7 +16,7 @@ export const OTP_PURPOSES = Object.freeze({
 
 export const OTP_LENGTH = 6;
 // 規格：5 分鐘有效、同目的 60 秒冷卻、每人每小時 5 封、每 24 小時 10 封、錯 5 次鎖定；
-// 24 小時內被鎖 3 組 → 暫停寄碼 24 小時，要請行政解除（2026-10-23）
+// 24 小時內累計答錯 15 次 → 暫停寄碼 24 小時（手上的碼也不能驗），要請行政解除（2026-10-23）
 export const OTP_VALID_SECONDS = 300;
 export const OTP_RESEND_SECONDS = 60;
 export const OTP_MAX_ATTEMPTS = 5;
@@ -217,7 +217,7 @@ export const interpretVerifyResult = (result) => {
       };
     case 'locked':
       if (result?.sending_suspended) {
-        // 24 小時內第 3 組被鎖：資料庫已暫停寄碼，重寄也寄不出去，請他找行政
+        // 24 小時內累計答錯滿 15 次：資料庫已暫停寄碼，重寄也寄不出去，請他找行政
         return {
           status, kind: 'dead', activated: false, verifiedAt: null, attemptsRemaining: 0, needsNewCode: false,
           sendingSuspended: true,

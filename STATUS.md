@@ -21,7 +21,7 @@
     改紙本時給管理員的通知（含 120000 的未成年通知）不再帶講師自填的姓名，只有資料庫文件名稱＋Google 登入信箱。
   - 同意文案版本白名單：agree 只收 `esign-consent-v1`，decline 只收 `esign-decline-paper-v1`／`esign-minor-paper-v1`，其他回 `CONSENT_TEXT_UNKNOWN`；
     `submit_my_contract` 只認 agree＋白名單版本。日後升版要改的四處寫在 migration 註解。
-  - 驗證碼：每人每 24 小時 10 封（`daily_limit_reached`）；24 小時內被鎖 3 組就暫停寄碼 24 小時（`locked_contact_admin`），
+  - 驗證碼：每人每 24 小時 10 封（`daily_limit_reached`）；24 小時內累計答錯 15 次就暫停寄碼 24 小時（`locked_contact_admin`；第二輪審查改成算答錯次數，原本只算錯滿 5 次的組數，每組錯 4 次換碼就繞得過），
     行政用 `admin_reset_email_otp_lock(p_user_id)` 解除（目前只有 RPC，後台還沒有按鈕）。後台「確認 Email」對姓名空位不再預填認領者填的 Email。
   - 100000 整支加 `SET LOCAL lock_timeout = '5s'`（在 BEGIN 之後，涵蓋兩處 DISABLE TRIGGER）。
 - pg_net（總指揮 10/23 預檢：正式庫還沒裝）：100000 的 `CREATE EXTENSION` 改成 Supabase 文件寫法 `WITH SCHEMA extensions`（函式仍在 net schema），

@@ -58,18 +58,18 @@
 | 函式 | 參數 | 回傳（jsonb） |
 |---|---|---|
 | `get_my_activation_status()` | — | `{status:'none'｜'pending'｜'active', claim_method, has_confirmed_email:bool, masked_email:'ab***@gmail.com'｜null, profile_complete:bool}` |
-| `request_email_otp(p_purpose text)` | `account_activation`／`contract_sign` | `{status:'sent', challenge_id, expires_at, masked_email, resend_after_seconds:60}`；`{status:'cooldown', retry_after_seconds}`；`{status:'rate_limited'}`（每人每小時 5 封）；`{status:'daily_limit_reached'}`（每人每 24 小時 10 封，2026-10-23）；`{status:'locked_contact_admin'}`（24 小時內被鎖 3 組 → 暫停寄碼 24 小時，2026-10-23）；`{status:'no_confirmed_email'}`；`{status:'profile_incomplete'}`（僅啟用）；`{status:'not_allowed', reason}`；`{status:'email_not_configured'}` |
-| `verify_email_otp(p_challenge_id uuid, p_code text)` | 6 位數字 | `{status:'verified', verified_at, activated:bool}`；`{status:'invalid', attempts_remaining}`；`{status:'expired'}`；`{status:'used'}`；`{status:'locked'}`（剛好是 24 小時內第 3 組被鎖時另帶 `sending_suspended:true`）；`{status:'superseded'}` |
+| `request_email_otp(p_purpose text)` | `account_activation`／`contract_sign` | `{status:'sent', challenge_id, expires_at, masked_email, resend_after_seconds:60}`；`{status:'cooldown', retry_after_seconds}`；`{status:'rate_limited'}`（每人每小時 5 封）；`{status:'daily_limit_reached'}`（每人每 24 小時 10 封，2026-10-23）；`{status:'locked_contact_admin'}`（24 小時內累計答錯 15 次 → 暫停寄碼 24 小時，2026-10-23）；`{status:'no_confirmed_email'}`；`{status:'profile_incomplete'}`（僅啟用）；`{status:'not_allowed', reason}`；`{status:'email_not_configured'}` |
+| `verify_email_otp(p_challenge_id uuid, p_code text)` | 6 位數字 | `{status:'verified', verified_at, activated:bool}`；`{status:'invalid', attempts_remaining}`；`{status:'expired'}`；`{status:'used'}`；`{status:'locked'}`（累計答錯滿 15 次、或暫停中時另帶 `sending_suspended:true`，手上的碼也不能再驗）；`{status:'superseded'}` |
 | `record_contract_consent(p_decision text, p_doc_versions jsonb, p_consent_text_version text)` | `agree_electronic`／`decline_electronic` | `{status:'recorded', consent_id, created_at}`（decline 另通知所有 admin，內文只有資料庫文件名稱＋Google 登入信箱，不帶講師自填文字）；錯誤：`ACCOUNT_NOT_ACTIVE`、`INVALID_INPUT`（含空物件）、`CONSENT_RATE_LIMITED`（每人每小時 10 筆，同意＋不同意合計）、`DOC_VERSION_MISMATCH`（鍵不是目前啟用中的契約文件類型、或版本不是正整數）、`CONSENT_TEXT_UNKNOWN`（2026-10-23） |
 | `submit_my_contract(...)` v2 | 既有參數 ＋ `p_otp_challenge_id uuid, p_consent_id uuid, p_document_sha256 jsonb, p_signed_pdf_sha256 jsonb` | `{status:'signed', contract_id, signed_at, evidence_id, copy_email_masked}`；錯誤用 RAISE，MESSAGE 為代碼：`OTP_REQUIRED`、`OTP_EXPIRED`、`OTP_ALREADY_USED`、`CONSENT_REQUIRED`、`DOC_VERSION_MISMATCH`、`DOC_HASH_MISMATCH`、`INVALID_HASH`、`ACCOUNT_NOT_ACTIVE` 等 |
 | `admin_confirm_instructor_email(p_instructor_id uuid, p_email text, p_note text)` | admin | `{status:'confirmed'}` |
 | `admin_set_document_hash(p_document_id uuid, p_sha256 text)` | admin；只能補登 NULL 的 | `{status:'saved'}` |
 | `admin_verify_contract_evidence_chain()` | admin | `{ok, checked, first_broken_id}` |
-| `admin_reset_email_otp_lock(p_user_id uuid)` | admin（2026-10-23） | `{status:'reset', was_locked}`；解除「連續輸錯暫停寄碼」，之前被鎖的 challenge 不再計入；帳號不存在 `USER_NOT_FOUND` |
+| `admin_reset_email_otp_lock(p_user_id uuid)` | admin（2026-10-23） | `{status:'reset', was_locked}`；解除「答錯太多次暫停寄碼」，之前的答錯次數不再計入；帳號不存在 `USER_NOT_FOUND` |
 
 規則：
 - OTP：6 位數、5 分鐘有效、只能驗證成功一次、錯 5 次鎖該 challenge；同目的重寄冷卻 60 秒，新寄出後舊的作廢（superseded）；每人每小時最多 5 封、
-  每 24 小時最多 10 封（兩種用途合計）；24 小時內被鎖的 challenge 累計 3 個就暫停寄碼 24 小時（`private.email_otp_send_locks`），行政用 `admin_reset_email_otp_lock` 解除（2026-10-23）。
+  每 24 小時最多 10 封（兩種用途合計）；24 小時內累計答錯 15 次（各 challenge 的 attempts 加總，作廢的也算）就暫停寄碼 24 小時（`private.email_otp_send_locks`），行政用 `admin_reset_email_otp_lock` 解除（2026-10-23）。
 - 啟用：OTP 驗證成功當下把 users.role pending→teacher、活化紀錄 active、寫 otp_verified_at／activated_at；需要主檔資料完整（`private.instructor_profile_is_complete`）且有 confirmed_email。
 - 簽約 OTP：驗證後 15 分鐘內須送出；`submit_my_contract` 會 consume，同一 challenge 不能用第二次。
 - 同意紀錄：agree 且 2 小時內、doc_versions 與送出時一致才算數。

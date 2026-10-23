@@ -12,6 +12,7 @@
 //   必須有 FAIL（見下方 MUTATIONS）：
 //     --mutate=drop-role-check          拿掉 20261023100000 的「已啟用帳號」條件（未啟用的綁定者讀得到空位的上課與報酬）
 //     --mutate=drop-claim-records-check 拿掉 20261020100000 姓名空位認領的「已有上課或報酬紀錄」排除條件
+//     --mutate=old-otp-lockout-count    暫停寄碼改回舊算法（只算錯滿 5 次的組數；每組錯 4 次就換碼永遠不會觸發）
 //     --mutate=v2-hide-base             20261023100000 的 get_teaching_leaderboard_v2 改用 2026-07-09_leaderboard_hide.sql 當底版
 //                                       （正式版是 gamify_compute；hide 版沒有線上／速解／幼兒三類）
 import path from 'node:path';
@@ -58,6 +59,18 @@ const withPendingBlock = (statement) => statement.replace(
   "    RAISE EXCEPTION 'authentication required';\n  END IF;\n\n  -- 2026-10-23：綁定主檔但還沒啟用（pending）的帳號看不到排行榜\n  IF NOT (SELECT private.current_user_is_approved_account()) THEN\n    RETURN;\n  END IF;\n");
 
 const MUTATIONS = {
+  'old-otp-lockout-count': {
+    files: ['20261020100000_claim_activation_esign_evidence.sql'],
+    find: /-- \[otp-lockout-count\][\s\S]*?-- \[\/otp-lockout-count\]/,
+    // 舊算法：只算「錯滿 5 次被鎖」的組數，3 組才暫停（×5 換算成同一個門檻 15）
+    replace: `SELECT count(*) * 5 INTO v_wrong
+    FROM private.email_otp_challenges c
+   WHERE c.user_id = p_uid
+     AND c.attempts >= c.max_attempts
+     AND c.created_at > p_now - interval '24 hours'
+     AND (v_reset IS NULL OR c.created_at > v_reset);`,
+    reason: '突變測試：暫停寄碼改回舊算法（只算錯滿 5 次被鎖的組數，3 組才暫停）',
+  },
   'v2-hide-base': {
     files: ['20261023100000_linked_reads_require_active_account.sql'],
     find: /CREATE OR REPLACE FUNCTION public\.get_teaching_leaderboard_v2\([\s\S]*?\$\$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;/,
@@ -1297,7 +1310,7 @@ try {
   su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '5 hours' WHERE user_id = ${lit(daily.uid)}`);
   check('最舊一封超過 24 小時後恢復可寄', requestOtp(daily.uid, 'account_activation')?.status === 'sent');
 
-  // 連續輸錯：24 小時內被鎖 3 組 → 暫停寄碼
+  // 答錯太多次：24 小時內累計答錯 15 次 → 暫停寄碼（每組錯 5 次、3 組正好 15 次）
   const lockU = readyPending('lockout', '0988000212', 'H223450012');
   const lockOne = () => {
     su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(lockU.uid)}`);
@@ -1310,17 +1323,17 @@ try {
   };
   const lock1 = lockOne();
   const lock2 = lockOne();
-  check('第 1、2 組錯 5 次 → locked（還沒暫停寄碼）',
+  check('第 1、2 組錯 5 次 → locked（累計 10 次，還沒暫停寄碼）',
     lock1.last?.status === 'locked' && !lock1.last.sending_suspended && lock2.last?.status === 'locked' && !lock2.last.sending_suspended, { lock1, lock2 });
   const lock3 = lockOne();
-  check('第 3 組錯 5 次 → locked＋sending_suspended:true', lock3.last?.status === 'locked' && lock3.last.sending_suspended === true, lock3);
+  check('第 3 組錯 5 次（累計 15 次）→ locked＋sending_suspended:true', lock3.last?.status === 'locked' && lock3.last.sending_suspended === true, lock3);
   su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(lockU.uid)}`);
   const beforeSuspended = challengeCount(lockU.uid);
   const suspended = requestOtp(lockU.uid, 'account_activation');
   check('暫停中要驗證碼 → locked_contact_admin（不產生驗證碼）', suspended?.status === 'locked_contact_admin' && challengeCount(lockU.uid) === beforeSuspended, suspended);
   const lockRow = suJson(`SELECT to_jsonb(l) FROM private.email_otp_send_locks l WHERE user_id = ${lit(lockU.uid)}`);
   const lockHours = Number(suVal(`SELECT round(extract(epoch FROM (locked_until - locked_at)) / 3600) FROM private.email_otp_send_locks WHERE user_id = ${lit(lockU.uid)}`));
-  check('暫停紀錄：暫停 24 小時、記錄被鎖的組數 3', lockRow?.locked_challenge_count === 3 && lockHours === 24, lockRow);
+  check('暫停紀錄：暫停 24 小時、記錄累計答錯 15 次', lockRow?.wrong_attempt_count === 15 && lockHours === 24, lockRow);
   check('暫停中冷卻期內也不帶回任何 challenge', !('challenge_id' in (requestOtp(lockU.uid, 'account_activation') || {})));
   check('講師不能自己呼叫 admin_reset_email_otp_lock（42501）', call(lockU.uid, `public.admin_reset_email_otp_lock(${ulit(lockU.uid)})`)?.sqlstate === '42501'
     && call(uEmail, `public.admin_reset_email_otp_lock(${ulit(lockU.uid)})`)?.sqlstate === '42501');
@@ -1329,13 +1342,42 @@ try {
   check('行政解除 → {status:reset, was_locked:true}，記錄解除者', resetResult.result?.status === 'reset' && resetResult.result.was_locked === true
     && suVal(`SELECT reset_by FROM private.email_otp_send_locks WHERE user_id = ${lit(lockU.uid)}`) === admin, resetResult);
   const afterReset = lockOne();
-  check('解除後可再寄碼；解除前的 3 組不再計入（再鎖 1 組不會立刻又暫停）',
+  check('解除後可再寄碼；解除前的答錯次數不再計入（再錯 5 次不會立刻又暫停）',
     afterReset.sent?.status === 'sent' && afterReset.last?.status === 'locked' && !afterReset.last.sending_suspended, afterReset);
   check('解除後再寄一次照常 sent', (() => {
     su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(lockU.uid)}`);
     return requestOtp(lockU.uid, 'account_activation')?.status === 'sent';
   })());
   check('沒被暫停時解除 → was_locked:false', call(admin, `public.admin_reset_email_otp_lock(${ulit(daily.uid)})`).result?.was_locked === false);
+  // 第二輪審查建議 3：每組錯 4 次就換新碼（舊的被作廢、從來沒被鎖），換 4 輪也要被暫停
+  const dodgeU = readyPending('dodge', '0988000214', 'H223450014');
+  const dodgeLog = [];
+  let dodgeCurrent = null;
+  for (let round = 0; round < 4; round += 1) {
+    su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(dodgeU.uid)}`);
+    const sent = requestOtp(dodgeU.uid, 'account_activation');
+    dodgeLog.push(`r${round + 1}:${sent?.status}`);
+    if (sent?.status !== 'sent') break;
+    dodgeCurrent = sent.challenge_id;
+    const wrongCode = codeOf(sent.challenge_id) === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 4; i += 1) {
+      const v = verifyOtp(dodgeU.uid, sent.challenge_id, wrongCode);
+      dodgeLog.push(`${v?.status}${v?.sending_suspended ? '+suspended' : ''}`);
+      if (v?.sending_suspended) break;
+    }
+  }
+  check('每組錯 4 次就換碼（舊的被作廢、沒有一組被鎖滿 5 次），第 4 輪累計到第 15 次答錯 → locked＋sending_suspended',
+    dodgeLog.join(',') === 'r1:sent,invalid,invalid,invalid,invalid,r2:sent,invalid,invalid,invalid,invalid,r3:sent,invalid,invalid,invalid,invalid,r4:sent,invalid,invalid,locked+suspended'
+    && Number(suVal(`SELECT count(*) FROM private.email_otp_challenges WHERE user_id = ${lit(dodgeU.uid)} AND superseded_at IS NOT NULL`)) === 3, dodgeLog.join(','));
+  su(`UPDATE private.email_otp_challenges SET created_at = created_at - interval '61 seconds' WHERE user_id = ${lit(dodgeU.uid)}`);
+  check('換碼 4 輪後要驗證碼 → locked_contact_admin', requestOtp(dodgeU.uid, 'account_activation')?.status === 'locked_contact_admin');
+  check('暫停中手上那組（即使是正確的碼）也不能驗證 → locked＋sending_suspended、帳號仍是 pending',
+    dodgeCurrent && (() => { const v = verifyOtp(dodgeU.uid, dodgeCurrent, codeOf(dodgeCurrent)); return v?.status === 'locked' && v.sending_suspended === true; })()
+    && roleOf(dodgeU.uid) === 'pending');
+  check('admin_reset_email_otp_lock 可以解除換碼繞過的暫停，解除後照常可寄',
+    call(admin, `public.admin_reset_email_otp_lock(${ulit(dodgeU.uid)})`).result?.was_locked === true
+    && requestOtp(dodgeU.uid, 'account_activation')?.status === 'sent');
+
   // 暫停到期自動恢復；超過 24 小時的鎖定不計入
   const autoU = readyPending('autounlock', '0988000213', 'H223450013');
   for (let k = 0; k < 3; k += 1) {
