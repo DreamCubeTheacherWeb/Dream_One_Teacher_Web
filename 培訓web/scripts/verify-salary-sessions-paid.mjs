@@ -192,9 +192,8 @@ const ROWS = {
 };
 // 匯出之後才核准的晚到紀錄（P 期內）：不在轉帳檔裡
 const LATE = ['2026-09-22', 'approved', 'legacy', 450, 0, 0, I1, 'manual'];
-const idOf = (key) => (key === 'x_late'
-  ? '20000000-0000-4000-8000-000000000999'
-  : `20000000-0000-4000-8000-${String(Object.keys(ROWS).indexOf(key) + 1).padStart(12, '0')}`);
+const SPECIAL_IDS = { x_late: '20000000-0000-4000-8000-000000000999', x_nullstatus: '20000000-0000-4000-8000-000000000998' };
+const idOf = (key) => SPECIAL_IDS[key] ?? `20000000-0000-4000-8000-${String(Object.keys(ROWS).indexOf(key) + 1).padStart(12, '0')}`;
 const instOf = (key) => (key === 'x_late' ? LATE[6] : ROWS[key]?.[6]);
 const idList = (keys) => keys.map((k) => `'${idOf(k)}'`).join(',');
 const FILE = { f_start: 1000, f_bonus: 850, f_partial: 500, f_over: 0, f_other: 1200, f_quoted: 450, f_dup1: 200, f_end: 300 };
@@ -453,10 +452,17 @@ try {
 
   section('存匯出：清單和資料庫不符 → 不存（ok=false，逐筆列原因）');
   await step('E record mismatch', () => {
+    // 狀態是 NULL 的課（欄位允許 NULL）：NULL <> 'approved' 會得到 NULL，若用 <> 比較就會被當成「沒有不符」而放行
+    must(DB, `INSERT INTO public.class_sessions (id, course_type, course_name, instructor_id, instructor_name, session_date, duration_hours, student_count,
+        base_salary, bonus, paid_amount, status, pricing_status, source)
+      VALUES ('${idOf('x_nullstatus')}', 'regular_basic', '狀態空白的課', '${I1}', '測試講師一', DATE '2026-09-08', 1.5, 3, 640, 0, 0, NULL, 'legacy', 'manual')`);
+    check('E0 準備：資料庫裡有一筆狀態為 NULL 的課（9/8、講師一、$640）',
+      must(DB, `SELECT (status IS NULL)::text || '|' || total_salary FROM public.class_sessions WHERE id = '${idOf('x_nullstatus')}'`) === 'true|640.00');
     const before = tableMd5();
     const cases = [
       ['混進待核准的列', { ...FILE, x_pending: 700 }, {}, 'status', /狀態已不是「已核准」（現在：待核准）/],
       ['混進已付款的列', { ...FILE, x_paid: 0 }, {}, 'status', /現在：已付款/],
+      ['混進狀態為 NULL 的列（金額、講師、期別都對）', { ...FILE, x_nullstatus: 640 }, { instructorOverride: { x_nullstatus: I1 } }, 'status', /狀態已不是「已核准」（現在：未設定）/],
       ['混進別期的列（9/26）', { ...FILE, x_after: 4000 }, {}, 'period', /日期 2026-09-26 不在這一期/],
       ['混進對不到講師的列', { ...FILE, x_unmatched: 350 }, { instructorOverride: { x_unmatched: I1 } }, 'instructor', /已沒有連到講師主檔/],
       ['某一堂的講師和資料庫不同', FILE, { instructorOverride: { f_start: I2 } }, 'instructor', /講師和下載時不同（現在：測試講師一）/],
@@ -667,9 +673,12 @@ ROLLBACK;` });
     const old = parse(asAdmin(revert(e1)));
     check('F2 再還原匯出 #1：不會碰到新匯出標的列', old?.reverted_count === 0 && tableMd5() === before, JSON.stringify(old));
     must(DB, `DELETE FROM public.class_sessions WHERE id = '${idOf('f_end')}'`);
+    must(DB, `UPDATE public.class_sessions SET status = NULL WHERE id = '${idOf('f_partial')}'`);  // 標記後狀態被清成 NULL
     const del = parse(asAdmin(revert(r?.export_id)));
-    check('F3 標記後被刪掉的列：還原時回報「這筆紀錄已不存在」，其他 2 筆照常還原',
-      del?.reverted_count === 2 && del.skipped_count === 1 && del.skipped[0].reason === 'not_found', JSON.stringify(del));
+    const reasons = (del?.skipped || []).map((x) => `${x.id === idOf('f_end') ? 'f_end' : x.id === idOf('f_partial') ? 'f_partial' : x.id}:${x.reason}`).sort().join(',');
+    check('F3 標記後被刪掉的列回報「這筆紀錄已不存在」、狀態被清成 NULL 的列回報「已不是已付款（現在：未設定）」，只有沒被動過的 1 筆照常還原',
+      del?.reverted_count === 1 && del.skipped_count === 2 && reasons === 'f_end:not_found,f_partial:status'
+        && del.skipped.some((x) => /已不是已付款（現在：未設定）/.test(x.message)) && statusOf(DB, 'f_start').startsWith('approved|'), JSON.stringify(del));
     check('F4 匯出清單仍保留被刪除那筆（沒有外鍵連帶刪除）',
       must(DB, `SELECT count(*) FROM public.salary_payout_export_items WHERE export_id = ${r?.export_id} AND session_id = '${idOf('f_end')}'`) === '1');
   });

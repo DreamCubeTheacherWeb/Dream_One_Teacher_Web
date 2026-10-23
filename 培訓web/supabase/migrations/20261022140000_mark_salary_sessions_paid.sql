@@ -31,6 +31,7 @@
 --     其他列回報原因、不動。可重跑。
 --
 --   三個函式：SECURITY DEFINER、search_path=''、只有 admin（其他人 42501）、anon／PUBLIC 不能執行。
+--   可能為 NULL 的欄位一律用 IS DISTINCT FROM 比較（NULL <> 'approved' 會得到 NULL、被當成「沒有不符」而放行）。
 --   class_sessions 的三個 trigger 照常跑（updated_at、異常標記、定價檢查），函式不停用任何 trigger。
 --
 -- 本檔可重複執行；整支在一個交易內（任何一句失敗整支取消）。
@@ -162,10 +163,10 @@ AS $$
     SELECT chk.*,
            CASE
              WHEN found_id IS NULL THEN 'not_found'
-             WHEN status <> 'approved' THEN 'status'
-             WHEN session_date < p_period_start OR session_date > p_period_end THEN 'period'
+             WHEN status IS DISTINCT FROM 'approved' THEN 'status'
+             WHEN session_date IS NULL OR session_date < p_period_start OR session_date > p_period_end THEN 'period'
              WHEN instructor_id IS DISTINCT FROM expected_instructor_id THEN 'instructor'
-             WHEN round(payable, 2) <> round(amount, 2) THEN 'amount'
+             WHEN round(payable, 2) IS DISTINCT FROM round(amount, 2) THEN 'amount'
            END AS reason
       FROM chk
   )
@@ -182,8 +183,8 @@ AS $$
            'message', CASE reason
              WHEN 'not_found' THEN '找不到這筆紀錄（可能已刪除）'
              WHEN 'status' THEN format('狀態已不是「已核准」（現在：%s）',
-               CASE status::text WHEN 'paid' THEN '已付款' WHEN 'pending' THEN '待核准' ELSE status::text END)
-             WHEN 'period' THEN format('日期 %s 不在這一期', session_date)
+               CASE status::text WHEN 'paid' THEN '已付款' WHEN 'pending' THEN '待核准' ELSE COALESCE(status::text, '未設定') END)
+             WHEN 'period' THEN format('日期 %s 不在這一期', COALESCE(session_date::text, '未填'))
              WHEN 'instructor' THEN CASE WHEN instructor_id IS NULL THEN '已沒有連到講師主檔'
                ELSE format('講師和下載時不同（現在：%s）', COALESCE(NULLIF(btrim(instructor_name), ''), '未填姓名')) END
              WHEN 'amount' THEN format('應付金額已變動（下載時 $%s，現在 $%s）',
@@ -318,7 +319,7 @@ BEGIN
   IF EXISTS (
     SELECT 1
       FROM jsonb_array_elements(p_people) AS q(p)
-     WHERE round((p ->> 'amount')::numeric, 2) <> round(
+     WHERE round((p ->> 'amount')::numeric, 2) IS DISTINCT FROM round(
              COALESCE((SELECT sum((e ->> 'amount')::numeric) FROM jsonb_array_elements(p_items) AS t(e)
                         WHERE (e ->> 'instructor_id')::uuid = (p ->> 'instructor_id')::uuid), 0)
              + (p ->> 'adjustment')::numeric, 2)
@@ -326,7 +327,7 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = '講師實付和他的課加總＋人工調整不一致。';
   END IF;
   SELECT sum((p ->> 'amount')::numeric) INTO v_people_total FROM jsonb_array_elements(p_people) AS q(p);
-  IF p_expected_total IS NULL OR round(p_expected_total, 2) <> round(v_people_total, 2) THEN
+  IF p_expected_total IS NULL OR round(p_expected_total, 2) IS DISTINCT FROM round(v_people_total, 2) THEN
     RAISE EXCEPTION USING ERRCODE = '22023',
       MESSAGE = format('講師實付合計（$%s）與轉帳檔總額（$%s）不同。',
         replace(to_char(v_people_total, 'FM999,999,999,990.00'), '.00', ''),
@@ -407,7 +408,7 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = format('匯出 #%s 已經標記過已付款，不能再標一次。', p_export_id);
   END IF;
   IF p_expected_count IS DISTINCT FROM v_export.item_count
-     OR p_expected_amount IS NULL OR round(p_expected_amount, 2) <> round(v_export.total_amount, 2) THEN
+     OR p_expected_amount IS NULL OR round(p_expected_amount, 2) IS DISTINCT FROM round(v_export.total_amount, 2) THEN
     RAISE EXCEPTION USING ERRCODE = '22023',
       MESSAGE = format('確認的筆數／金額（%s 筆、$%s）和匯出 #%s（%s 筆、$%s）不同，這次沒有標記任何紀錄，請重新讀取。',
         COALESCE(p_expected_count::text, '?'), COALESCE(replace(to_char(p_expected_amount, 'FM999,999,999,990.00'), '.00', ''), '?'),
@@ -557,18 +558,18 @@ BEGIN
            'id', session_id,
            'session_date', session_date,
            'instructor_name', instructor_name,
-           'reason', CASE WHEN found_id IS NULL THEN 'not_found' WHEN status <> 'paid' THEN 'status' ELSE 'changed' END,
+           'reason', CASE WHEN found_id IS NULL THEN 'not_found' WHEN status IS DISTINCT FROM 'paid' THEN 'status' ELSE 'changed' END,
            'message', CASE
              WHEN found_id IS NULL THEN '這筆紀錄已不存在'
-             WHEN status <> 'paid' THEN format('已不是已付款（現在：%s）',
-               CASE status::text WHEN 'approved' THEN '已核准' WHEN 'pending' THEN '待核准' ELSE status::text END)
+             WHEN status IS DISTINCT FROM 'paid' THEN format('已不是已付款（現在：%s）',
+               CASE status::text WHEN 'approved' THEN '已核准' WHEN 'pending' THEN '待核准' ELSE COALESCE(status::text, '未設定') END)
              ELSE '標記後被改過（已領金額、付款時間或其他欄位）'
            END
          ) ORDER BY session_date, session_id), '[]'::jsonb)
     INTO v_skipped
     FROM cur
    WHERE found_id IS NULL
-      OR status <> 'paid'
+      OR status IS DISTINCT FROM 'paid'
       OR paid_amount IS DISTINCT FROM new_paid_amount
       OR paid_at IS DISTINCT FROM new_paid_at
       OR updated_at IS DISTINCT FROM new_updated_at;

@@ -1,7 +1,7 @@
 
 == 0. 重現舊問題：被擋下的舊函式 mark_salary_period_paid（git f907616）把轉帳檔沒納入的列也標成已付款 ==
 PASS  O1 從 git 歷史取出舊 migration 原文並套用成功
-PASS  O2 舊函式一次標了 14 筆（轉帳檔只有 8 筆）  [{"paid_at": "2026-10-22T15:47:29.381046+08:00", "marked_count": 14, "marked_amount": 8150.00}]
+PASS  O2 舊函式一次標了 14 筆（轉帳檔只有 8 筆）  [{"paid_at": "2026-10-23T14:46:05.205182+08:00", "marked_count": 14, "marked_amount": 8150.00}]
 PASS  O3 問題重現：異常課、缺帳號講師、取消勾選的人、手動排除的課、對不到講師、匯出後才核准的晚到紀錄，全部被標成已付款  [被標成已付款：x_dup2,x_noacct,x_person,x_session,x_unmatched,x_late]
 PASS  O4 問題重現：標完後這一期已核准未付款剩 0 筆 → 下次匯款檔再也看不到這些沒匯的錢（永久漏匯）  [剩 0 筆]
 
@@ -73,8 +73,10 @@ PASS  V 排除摘要不是文字陣列 → 22023  [psql:<stdin>:4: ERROR:  22023
 PASS  V 以上全部被擋：整張表完全沒變、沒有任何匯出紀錄
 
 == 存匯出：清單和資料庫不符 → 不存（ok=false，逐筆列原因） ==
+PASS  E0 準備：資料庫裡有一筆狀態為 NULL 的課（9/8、講師一、$640）
 PASS  E 混進待核准的列 → ok=false、1 筆不符（status）  [{"ok": false, "mismatches": [{"id": "20000000-0000-4000-8000-000000000014", "reason": "status", "message": "狀態已不是「已核准」（現在：待核准）", "session_date": "2026-09-15", "current_amount": 700.00, "current_status": "pending", "expected_amount": 700, "instructor_name": "測試講師一", "current_instructor_id": "10000000-0000-4000-8000-000000000001", "expected_instructor_id": "10000000-0000-4000-8000-000000000001"}], "mismatch_count": 1}]
 PASS  E 混進已付款的列 → ok=false、1 筆不符（status）  [{"ok": false, "mismatches": [{"id": "20000000-0000-4000-8000-000000000016", "reason": "status", "message": "狀態已不是「已核准」（現在：已付款）", "session_date": "2026-09-07", "current_amount": 0.00, "current_status": "paid", "expected_amount": 0, "instructor_name": "測試講師一", "current_instructor_id": "10000000-0000-4000-8000-000000000001", "expected_instructor_id": "10000000-0000-4000-8000-000000000001"}], "mismatch_count": 1}]
+PASS  E 混進狀態為 NULL 的列（金額、講師、期別都對） → ok=false、1 筆不符（status）  [{"ok": false, "mismatches": [{"id": "20000000-0000-4000-8000-000000000998", "reason": "status", "message": "狀態已不是「已核准」（現在：未設定）", "session_date": "2026-09-08", "current_amount": 640.00, "current_status": null, "expected_amount": 640, "instructor_name": "測試講師一", "current_instructor_id": "10000000-0000-4000-8000-000000000001", "expected_instructor_id": "10000000-0000-4000-8000-000000000001"}], "mismatch_count": 1}]
 PASS  E 混進別期的列（9/26） → ok=false、1 筆不符（period）  [{"ok": false, "mismatches": [{"id": "20000000-0000-4000-8000-000000000017", "reason": "period", "message": "日期 2026-09-26 不在這一期", "session_date": "2026-09-26", "current_amount": 4000.00, "current_status": "approved", "expected_amount": 4000, "instructor_name": "測試講師一", "current_instructor_id": "10000000-0000-4000-8000-000000000001", "expected_instructor_id": "10000000-0000-4000-8000-000000000001"}], "mismatch_count": 1}]
 PASS  E 混進對不到講師的列 → ok=false、1 筆不符（instructor）  [{"ok": false, "mismatches": [{"id": "20000000-0000-4000-8000-000000000013", "reason": "instructor", "message": "已沒有連到講師主檔", "session_date": "2026-09-06", "current_amount": 350.00, "current_status": "approved", "expected_amount": 350, "instructor_name": "對不到測試", "current_instructor_id": null, "expected_instructor_id": "10000000-0000-4000-8000-000000000001"}], "mismatch_count": 1}]
 PASS  E 某一堂的講師和資料庫不同 → ok=false、1 筆不符（instructor）  [{"ok": false, "mismatches": [{"id": "20000000-0000-4000-8000-000000000001", "reason": "instructor", "message": "講師和下載時不同（現在：測試講師一）", "session_date": "2026-08-26", "current_amount": 1000.00, "current_status": "approved", "expected_amount": 1000, "instructor_name": "測試講師一", "current_instructor_id": "10000000-0000-4000-8000-000000000001", "expected_instructor_id": "10000000-0000-4000-8000-000000000002"}], "mismatch_count": 1}]
@@ -101,11 +103,11 @@ PASS  L4 admin 看得到 1 份匯出、8 筆清單  [1
 PASS  K 確認筆數不同（7 筆） → 22023、沒有標記  [psql:<stdin>:4: ERROR:  22023: 確認的筆數／金額（7 筆、$4,500）和匯出 #1（8 筆、$4,500）不同，這次沒有標記任何紀錄，請重新讀取。]
 PASS  K 確認金額不同（$4,499） → 22023、沒有標記  [psql:<stdin>:4: ERROR:  22023: 確認的筆數／金額（8 筆、$4,499）和匯出 #1（8 筆、$4,500）不同，這次沒有標記任何紀錄，請重新讀取。]
 PASS  K 匯出編號不存在 → 22023、沒有標記  [psql:<stdin>:4: ERROR:  22023: 找不到匯出 #999999。]
-PASS  K 這一期還沒結束（迄日＝台北今天）→ 22023「結束後才能標記已付款」  [psql:<stdin>:6: ERROR:  22023: 這一期到 10/22 才結束，結束後才能標記已付款。]
+PASS  K 這一期還沒結束（迄日＝台北今天）→ 22023「結束後才能標記已付款」  [psql:<stdin>:6: ERROR:  22023: 這一期到 10/23 才結束，結束後才能標記已付款。]
 PASS  K 以上全部擋下：報酬紀錄與匯出紀錄完全沒變
 
 == 隔天、另一個連線、另一位管理員直接標記昨天那份（之間又核准了一筆晚到的） ==
-PASS  A1 管理員二（不同連線）只用匯出編號＋確認值就標記成功：8 筆、$4,500  [{"ok": true, "paid_at": "2026-10-22T15:47:30.249687+08:00", "export_id": 1, "marked_count": 8, "marked_amount": 4500.00}]
+PASS  A1 管理員二（不同連線）只用匯出編號＋確認值就標記成功：8 筆、$4,500  [{"ok": true, "paid_at": "2026-10-23T14:46:06.080924+08:00", "export_id": 1, "marked_count": 8, "marked_amount": 4500.00}]
 PASS  A2 匯出 #1 裡的 8 筆都變成已付款、paid_at 同一個時間、updated_at 有更新  [8|1|true|true]
 PASS  A3 一般列：已領＝總額（有獎金那筆 850）
 PASS  A4 先付過 100 的那筆：已領改成總額 600  [paid|600.00|600.00]
@@ -127,15 +129,15 @@ PASS  I3 整份被擋：同一份另外 2 筆也沒被標、匯出紀錄仍是�
 PASS  I4 擋完沒有殘留鎖（另一個連線馬上可以改這些列）
 
 == 兩位管理員同時標記同一份（匯出 #2，講師已改回） ==
-PASS  C1 先按的那位標到 3 筆、$5,530  [{"ok": true, "paid_at": "2026-10-22T15:47:30.450152+08:00", "export_id": 2, "marked_count": 3, "marked_amount": 5530.00}]
-PASS  C2 後按的那位等前一位完成後 → 22023「已經標記過」、不會重複標  [ms=1015 psql:<stdin>:4: ERROR:  22023: 匯出 #2 已經標記過已付款，不能再標一次。
+PASS  C1 先按的那位標到 3 筆、$5,530  [{"ok": true, "paid_at": "2026-10-23T14:46:06.279857+08:00", "export_id": 2, "marked_count": 3, "marked_amount": 5530.00}]
+PASS  C2 後按的那位等前一位完成後 → 22023「已經標記過」、不會重複標  [ms=1010 psql:<stdin>:4: ERROR:  22023: 匯出 #2 已經標記過已付款，不能再標一次。
 CONTEXT:  PL/pgSQL function public.mark_salary_payout_export_paid(bigint,integer,numeric) line 24 at RAISE
 LOCATION:  exec_stmt_raise, pl_exec.c:3911]
 PASS  C3 3 筆 paid_at 只有一個
 
 == 同一期兩份匯出有重疊的課（7 月期：#3＝a＋b、#4＝b＋c） ==
 PASS  O1 兩份都存得進去（存的當下 3 筆都是已核准）  [{"ok":true,"export_id":3,"item_count":2,"people_count":1,"total_amount":300,"transfer_total":300} {"ok":true,"export_id":4,"item_count":2,"people_count":2,"total_amount":500,"transfer_total":500}]
-PASS  O2 先標 #3 成功（a、b 變已付款）  [{"ok":true,"paid_at":"2026-10-22T15:47:32.019947+08:00","export_id":3,"marked_count":2,"marked_amount":300}]
+PASS  O2 先標 #3 成功（a、b 變已付款）  [{"ok":true,"paid_at":"2026-10-23T14:46:07.821665+08:00","export_id":3,"marked_count":2,"marked_amount":300}]
 PASS  O3 再標 #4 → ok=false（b 已是已付款）、整份被擋：c 仍是已核准  [{"ok":false,"export_id":4,"mismatches":[{"id":"20000000-0000-4000-8000-000000000022","reason":"status","message":"狀態已不是「已核准」（現在：已付款）","session_date":"2026-07-02","current_amount":0,"current_status":"paid","expected_amount":200,"instructor_name":"測試講師一","current_instructor_id":"10000000-0000-4000-8000-000000000001","expected_instructor_id":"10000000-0000-4000-8000-000000000001"}],"marked_count":0,"mismatch_count":1}]
 PASS  O4 #4 仍是「未標記」
 
@@ -152,14 +154,14 @@ PASS  D9 還原不存在的匯出 → 22023  [psql:<stdin>:4: ERROR:  22023: 找
 PASS  D10 還原過的匯出不能再標一次（要重新下載一份）  [psql:<stdin>:4: ERROR:  22023: 匯出 #1 已經標記過已付款，不能再標一次。]
 
 == 還原後重新下載再標、刪除列的還原 ==
-PASS  F1 重新下載（新匯出）→ 標記成功（3 筆、$1,800）  [{"ok":true,"export_id":5,"item_count":3,"people_count":1,"total_amount":1800,"transfer_total":1800} {"ok":true,"paid_at":"2026-10-22T15:47:32.220301+08:00","export_id":5,"marked_count":3,"marked_amount":1800}]
+PASS  F1 重新下載（新匯出）→ 標記成功（3 筆、$1,800）  [{"ok":true,"export_id":5,"item_count":3,"people_count":1,"total_amount":1800,"transfer_total":1800} {"ok":true,"paid_at":"2026-10-23T14:46:08.018629+08:00","export_id":5,"marked_count":3,"marked_amount":1800}]
 PASS  F2 再還原匯出 #1：不會碰到新匯出標的列  [{"skipped":[{"id":"20000000-0000-4000-8000-000000000002","reason":"changed","message":"標記後被改過（已領金額、付款時間或其他欄位）","session_date":"2026-09-10","instructor_name":"測試講師一"}],"export_id":1,"skipped_count":1,"reverted_count":0,"remaining_count":1,"reverted_amount":0}]
-PASS  F3 標記後被刪掉的列：還原時回報「這筆紀錄已不存在」，其他 2 筆照常還原  [{"skipped":[{"id":"20000000-0000-4000-8000-000000000008","reason":"not_found","message":"這筆紀錄已不存在","session_date":null,"instructor_name":null}],"export_id":5,"skipped_count":1,"reverted_count":2,"remaining_count":1,"reverted_amount":1500}]
+PASS  F3 標記後被刪掉的列回報「這筆紀錄已不存在」、狀態被清成 NULL 的列回報「已不是已付款（現在：未設定）」，只有沒被動過的 1 筆照常還原  [{"skipped":[{"id":"20000000-0000-4000-8000-000000000003","reason":"status","message":"已不是已付款（現在：未設定）","session_date":"2026-09-12","instructor_name":"測試講師一"},{"id":"20000000-0000-4000-8000-000000000008","reason":"not_found","message":"這筆紀錄已不存在","session_date":null,"instructor_name":null}],"export_id":5,"skipped_count":2,"reverted_count":1,"remaining_count":2,"reverted_amount":1000}]
 PASS  F4 匯出清單仍保留被刪除那筆（沒有外鍵連帶刪除）
 
 == 用過之後再重套 migration ==
 PASS  G1 已有匯出紀錄時重套 migration 仍成功、紀錄完全保留、anon 仍不能執行
 
 ------------------------------------------------------------
-Total checks: 122   PASS: 122   FAIL: 0   (3.8s)
+Total checks: 124   PASS: 124   FAIL: 0   (3.8s)
 ALL PASS: record / mark / revert salary payout export verified on isolated PostgreSQL
