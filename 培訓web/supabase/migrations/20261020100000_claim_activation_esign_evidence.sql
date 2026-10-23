@@ -1656,6 +1656,13 @@ DECLARE
   v_prev text;
   v_login_email text;
   v_recent integer;
+  -- 同意文案版本白名單（2026-10-23 資安審查建議 4）：agree 只收電子簽約同意文、decline 只收兩種改紙本說明，
+  -- 其他代碼（含 esign_text_versions 裡的個資告知、信件文案等）一律 CONSENT_TEXT_UNKNOWN。
+  -- 日後升版（例如新增 esign-consent-v2）要一起改四處：
+  --   1. 這裡的陣列；2. submit_my_contract 的 v_agree_versions（簽約只認 agree＋白名單版本）；
+  --   3. 用新代碼把新文案種入 esign_text_versions（append-only，舊代碼不能改內容）；4. 前端 src/lib/esignCopy.js 的版本代碼。
+  v_agree_versions constant text[] := ARRAY['esign-consent-v1'];
+  v_decline_versions constant text[] := ARRAY['esign-decline-paper-v1', 'esign-minor-paper-v1'];
   -- 同意頁上同時顯示的個資告知：前端參數不變，由資料庫固定帶入目前版本（改版時改這裡並新增 -v2 文案）
   v_privacy_version constant text := 'esign-privacy-notice-v1';
   v_privacy_content text;
@@ -1678,6 +1685,11 @@ BEGIN
      OR char_length(p_doc_versions::text) > 4000
      OR v_version = '' OR char_length(v_version) > 64 THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'INVALID_INPUT';
+  END IF;
+
+  IF (v_decision = 'agree_electronic' AND v_version <> ALL (v_agree_versions))
+     OR (v_decision = 'decline_electronic' AND v_version <> ALL (v_decline_versions)) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONSENT_TEXT_UNKNOWN';
   END IF;
 
   -- 每人每小時最多 10 筆（同意與不同意合計；2026-10-23 資安審查建議 3）。不同意會通知全部管理員，沒有上限就能洗通知。
@@ -1834,6 +1846,9 @@ DECLARE
   v_html text;
   v_vars jsonb;
   v_download_url text;
+  -- 簽約只認「agree＋白名單版本」的同意紀錄（2026-10-23 資安審查建議 4）。
+  -- 升版時與 record_contract_consent 的 v_agree_versions 一起改（見該函式註解的四處清單）。
+  v_agree_versions constant text[] := ARRAY['esign-consent-v1'];
 BEGIN
   -- a. 必須登入
   IF v_uid IS NULL THEN
@@ -1864,7 +1879,7 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'INVALID_INPUT';
   END IF;
 
-  -- d. 電子簽約同意：本人、agree、2 小時內、doc_versions 與送出時一致
+  -- d. 電子簽約同意：本人、agree、白名單版本（esign-consent-v1）、2 小時內、doc_versions 與送出時一致
   IF p_consent_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONSENT_REQUIRED';
   END IF;
@@ -1873,6 +1888,7 @@ BEGIN
    WHERE r.id = p_consent_id AND r.user_id = v_uid;
   IF NOT FOUND
      OR v_consent.decision <> 'agree_electronic'
+     OR v_consent.consent_text_version <> ALL (v_agree_versions)
      OR v_consent.created_at < v_now - interval '2 hours'
      OR v_consent.doc_versions IS DISTINCT FROM p_doc_versions THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONSENT_REQUIRED';

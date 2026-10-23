@@ -71,6 +71,9 @@
 - 啟用：OTP 驗證成功當下把 users.role pending→teacher、活化紀錄 active、寫 otp_verified_at／activated_at；需要主檔資料完整（`private.instructor_profile_is_complete`）且有 confirmed_email。
 - 簽約 OTP：驗證後 15 分鐘內須送出；`submit_my_contract` 會 consume，同一 challenge 不能用第二次。
 - 同意紀錄：agree 且 2 小時內、doc_versions 與送出時一致才算數。
+- 同意文案版本白名單（2026-10-23）：agree 只收 `esign-consent-v1`；decline 只收 `esign-decline-paper-v1`／`esign-minor-paper-v1`；其他回 `CONSENT_TEXT_UNKNOWN`。
+  `submit_my_contract` 只認 agree＋白名單版本的同意紀錄（否則 `CONSENT_REQUIRED`）。升版要同時改 record_contract_consent 與 submit_my_contract 的白名單、
+  以新代碼種入新文案、改前端 esignCopy.js 的版本代碼（四處，見 migration 註解）。
 - IP：`request.headers` 的 `cf-connecting-ip` → `x-forwarded-for` 第一段 → `x-real-ip`；UA 用 header `user-agent`（前端參數只當後備）。時間全用伺服器 `now()`，timestamptz（UTC 儲存，顯示 Asia/Taipei）。
 - 簽約成功後寄「簽署完成通知」到 bound_email，內含登入後可下載的網址 `https://dream-one-teacher.zeabur.app/contract/view/<contract_id>`，寫 email_delivery_log。
 - 寄信設定：Vault secret `resend_api_key`、`resend_from`（例 `夢想一號 <no-reply@網域>`）；缺任一 → 寄信紀錄 `not_configured`，`request_email_otp` 回 `email_not_configured`。

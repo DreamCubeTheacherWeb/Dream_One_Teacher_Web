@@ -728,6 +728,13 @@ try {
     consentRow.privacy_notice_version === 'esign-privacy-notice-v1' && consentRow.privacy_notice_text === privacySeed
     && privacyLegal.length >= 10 && privacyLegal.every((line) => consentRow.privacy_notice_text.includes(line)), consentRow.privacy_notice_text);
   check('不存在的文案代碼 → CONSENT_TEXT_UNKNOWN', errOf(recordConsent(uEmail, 'agree_electronic', V, 'esign-consent-v9')) === 'CONSENT_TEXT_UNKNOWN');
+  // 2026-10-23 資安審查建議 4：版本白名單（agree 只收 esign-consent-v1；decline 只收 esign-decline-paper-v1／esign-minor-paper-v1）
+  check('白名單：agree 配「改紙本說明」代碼 → CONSENT_TEXT_UNKNOWN', errOf(recordConsent(uEmail, 'agree_electronic', V, 'esign-decline-paper-v1')) === 'CONSENT_TEXT_UNKNOWN');
+  check('白名單：decline 配「電子簽約同意」代碼 → CONSENT_TEXT_UNKNOWN', errOf(recordConsent(uEmail, 'decline_electronic', V, 'esign-consent-v1')) === 'CONSENT_TEXT_UNKNOWN');
+  check('白名單：資料庫裡有、但不是同意文的代碼（個資告知、信件文案、最後確認）→ CONSENT_TEXT_UNKNOWN',
+    ['esign-privacy-notice-v1', 'esign-otp-email-v1', 'esign-final-confirm-v1', 'esign-read-ack-v1'].every((code) =>
+      errOf(recordConsent(uEmail, 'agree_electronic', V, code)) === 'CONSENT_TEXT_UNKNOWN'
+      && errOf(recordConsent(uEmail, 'decline_electronic', V, code)) === 'CONSENT_TEXT_UNKNOWN'));
   check('決定值錯 → INVALID_INPUT', errOf(recordConsent(uEmail, 'maybe', V)) === 'INVALID_INPUT');
   check('pending（未啟用）帳號記同意 → ACCOUNT_NOT_ACTIVE', errOf(recordConsent(uSlot, 'agree_electronic', V)) === 'ACCOUNT_NOT_ACTIVE');
 
@@ -760,6 +767,15 @@ try {
   check('同意超過 2 小時 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentOld })) === 'CONSENT_REQUIRED');
   const consentOfOther = recordConsent(uPre, 'agree_electronic', V).result.consent_id;
   check('拿別人的同意紀錄 → CONSENT_REQUIRED', errOf(submit(uEmail, { otp: k1.id, consent: consentOfOther })) === 'CONSENT_REQUIRED');
+  // 白名單外版本的 agree 紀錄（只可能由資料庫內部寫入，例如舊版或日後下架的文案）送出簽約 → CONSENT_REQUIRED
+  const offListConsent = suVal(`DO $d$ DECLARE v_prev text; v_id uuid; BEGIN
+      v_prev := private.internal_write_begin();
+      INSERT INTO public.contract_consent_records (user_id, instructor_id, decision, consent_text_version, consent_text, doc_versions)
+      VALUES (${lit(uEmail)}, ${lit(emailInstructor)}, 'agree_electronic', 'esign-privacy-notice-v1', 'x', ${jlit(V)}) RETURNING id INTO v_id;
+      PERFORM private.internal_write_end(v_prev);
+      PERFORM set_config('t.off_list_consent', v_id::text, false);
+    END $d$; SELECT current_setting('t.off_list_consent');`);
+  check('白名單外版本的 agree 同意紀錄不能拿來簽約 → CONSENT_REQUIRED', offListConsent && errOf(submit(uEmail, { otp: k1.id, consent: offListConsent })) === 'CONSENT_REQUIRED', offListConsent);
 
   // OTP
   const consentId = consentOk.result.consent_id;
