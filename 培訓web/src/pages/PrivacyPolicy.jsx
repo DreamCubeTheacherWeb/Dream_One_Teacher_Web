@@ -134,13 +134,12 @@ const sections = [
     },
 ];
 
-// 【上線步驟】業主 2026-10-22 授權定案：生效日期＝電子簽約實際上線日。
-// 發版者在推 main 的同一個 commit 把下面 effectiveDate 改成當天（例：2026 年 10 月 23 日）。
+// 業主 2026-10-22 授權定案：生效日期＝電子簽約實際上線日（2026-10-24 上線）。
 const PrivacyPolicy = () => (
     <LegalDocumentPage
         title="隱私權政策"
         summary="我們在講師培訓、資格管理與合作支援所需的範圍內處理個人資料，並以清楚、必要及可受控的方式說明資料如何被使用。"
-        effectiveDate="2026 年 8 月 23 日"
+        effectiveDate="2026 年 10 月 24 日"
         sections={sections}
     />
 );
