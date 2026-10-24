@@ -12,6 +12,13 @@
 - 正式庫：套前唯讀預檢與函式指紋基線存 `.claude/ops/esign-apply-1024.txt`；四支在瀏覽器端逐支 SHA-256 與 repo 相符（d1184fd9／32786997／6d5b32dd／f77eea86）；
   串成單一交易預演（最後故意 RAISE）：pg_net 可在交易內安裝、寄信設定齊全、回填＝身分已核驗 275／已確認 Email 251／legacy 啟用 3／舊約補 instructor_id 5、cron 排程 1、文案 8 版，
   class_sessions／合約／使用者筆數不變；確認全部回滾後正式套用（結果見下方「套用後驗收」）。
+- 正式套用：2026-10-24 18:24 單一交易成功；前端 9cd6f4f 18:24:56 推 main，兩網域 18:26 起載到 index-Bu9pLY-O.js（`.claude/ops/wait-name-9cd6f4f.txt`）。
+- 套用後驗收（唯讀，細節 `.claude/ops/esign-apply-1024.txt`）：pg_net 已裝、寄信設定齊全、寄送狀態排程每分鐘 active；回填 275／251／3／5 同預演；7 張新表 RLS 全開；
+  private.current_user_is_approved_account 只開給 authenticated；不可變函式（instructor_profile_is_complete、ensure_my_contract_reminder、guard_instructor_admin_fields、
+  guard_instructor_partner_no、mentor_instructor_directory、月結匯款三支）md5 與套前相同；排行榜 v2 仍含線上／速解／幼兒（線上分頁實開有 4 筆）；
+  class_sessions 讀取政策含 approved 判斷、email_delivery_log 只剩 admin 政策；class_sessions 5,444 筆與已領合計不變。
+  未登入身分 REST：5 張新表與 request_email_otp 一律 401。管理員實開 /privacy（生效日 2026 年 10 月 24 日）、/admin/contracts、/leaderboard、/profile、/contract：請求全 200、console 0 錯。
+- **還沒驗**：真帳號寄一次驗證碼並查 email_delivery_log 是否變 sent（要走簽約流程會留下一筆不可刪的同意紀錄，等業主決定用誰的帳號測）。
 - 上線後行政要知道：新增老師的順序改為「老師先用姓名認領 → 行政確認 Email → 老師用驗證碼啟用」；**認領前不要先確認 Email、也不要先填 Email／電話／LINE**（有資料的空位只能後台綁定）。
   解綁冒認者時同時清空匯款欄與存摺檔（後續任務 fix/esign-unbind-bank-reconfirm 修好前的暫行做法）。驗證碼被暫停時目前只能由工程端呼叫 admin_reset_email_otp_lock。
 
