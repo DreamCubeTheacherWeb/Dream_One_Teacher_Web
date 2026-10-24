@@ -18,7 +18,7 @@
   guard_instructor_partner_no、mentor_instructor_directory、月結匯款三支）md5 與套前相同；排行榜 v2 仍含線上／速解／幼兒（線上分頁實開有 4 筆）；
   class_sessions 讀取政策含 approved 判斷、email_delivery_log 只剩 admin 政策；class_sessions 5,444 筆與已領合計不變。
   未登入身分 REST：5 張新表與 request_email_otp 一律 401。管理員實開 /privacy（生效日 2026 年 10 月 24 日）、/admin/contracts、/leaderboard、/profile、/contract：請求全 200、console 0 錯。
-- **還沒驗**：真帳號寄一次驗證碼並查 email_delivery_log 是否變 sent（要走簽約流程會留下一筆不可刪的同意紀錄，等業主決定用誰的帳號測）。
+- ✅ 真帳號寄信（2026-10-24 19:01，業主授權「好，我授權你今天用我的帳號從資料庫寄一封測試驗證碼到我自己的信箱，並查寄送紀錄。」）：在 SQL Editor 以業主帳號身分直接呼叫 request_email_otp('contract_sign')（不走網頁，所以沒有產生同意紀錄）→ 回 sent；19:02 cron 把 email_delivery_log 更新為 sent、HTTP 200、有 Resend 信件編號、收件人＝已確認 Email。待業主確認信箱收到、寄件人顯示「夢想一號」。
 - 上線後行政要知道：新增老師的順序改為「老師先用姓名認領 → 行政確認 Email → 老師用驗證碼啟用」；**認領前不要先確認 Email、也不要先填 Email／電話／LINE**（有資料的空位只能後台綁定）。
   解綁冒認者時同時清空匯款欄與存摺檔（後續任務 fix/esign-unbind-bank-reconfirm 修好前的暫行做法）。驗證碼被暫停時目前只能由工程端呼叫 admin_reset_email_otp_lock。
 
